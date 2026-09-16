@@ -26,6 +26,9 @@ importers:
       '@atlas/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@atlas/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@atlas/instruments':
         specifier: workspace:*
         version: link:../../packages/instruments
@@ -115,6 +118,22 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  packages/core:
+    dependencies:
+      '@atlas/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@atlas/instruments':
+        specifier: workspace:*
+        version: link:../instruments
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+    devDependencies:
+      '@types/luxon':
+        specifier: ^3.4.2
+        version: 3.7.5
 
   packages/instruments:
     dependencies:

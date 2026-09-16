@@ -1,6 +1,8 @@
 import { useSession, selectedAccount, activeInstrument } from '../state/session';
 import { formatClock, formatMicros, pnlClass } from '../state/format';
 import { useClock } from './usePersistentSize';
+import { FeedBadge } from '../panels/FeedBadge';
+import { useFreshness } from '../market/useFreshness';
 import type { JSX } from 'react';
 
 /**
@@ -18,6 +20,7 @@ export function TerminalHeader(): JSX.Element {
   const signOut = useSession((s) => s.signOut);
   const user = useSession((s) => s.user);
   const now = useClock();
+  const freshness = useFreshness(instrument?.root ?? null);
 
   const tz = instrument?.sessionTimezone ?? 'America/Chicago';
   const marketState = instrument?.marketState.state ?? 'CLOSED';
@@ -92,12 +95,8 @@ export function TerminalHeader(): JSX.Element {
         <MarketPill state={marketState} reason={instrument?.marketState.reason ?? null} />
       </div>
 
-      {/* Live feed state arrives with the market-data gateway in Milestone 2. */}
       <div className="hdr-group">
-        <span className="conn conn-pending" title="Market-data gateway lands in Milestone 2">
-          <i />
-          FEED NOT CONNECTED
-        </span>
+        <FeedBadge freshness={freshness} />
       </div>
 
       <button className="hdr-user" onClick={() => void signOut()} title="Sign out">

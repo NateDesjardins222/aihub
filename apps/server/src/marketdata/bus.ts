@@ -1,0 +1,180 @@
+/**
+ * Market event bus.
+ *
+ * Sits between the provider and every consumer, and is where ordering and
+ * duplication are dealt with once rather than in each consumer:
+ *
+ *   - each symbol has a monotonic sequence number;
+ *   - an event whose exchange timestamp regresses is dropped, so a reconnect
+ *     replay cannot rewind a symbol's clock or double-count volume;
+ *   - an event identical to the previous one is dropped.
+ *
+ * Bars are exempt from the timestamp-regression rule because a bar update for
+ * the CURRENT bucket legitimately repeats its own open time.
+ */
+import { EventEmitter } from 'node:events';
+import type {
+  ConnectionStatus,
+  NormalizedBar,
+  NormalizedDepth,
+  NormalizedQuote,
+  NormalizedTrade,
+} from '@atlas/contracts';
+
+export interface MarketEventMap {
+  quote: NormalizedQuote;
+  trade: NormalizedTrade;
+  bar: NormalizedBar;
+  depth: NormalizedDepth;
+  status: ConnectionStatus;
+}
+
+export interface BusStats {
+  published: number;
+  droppedOutOfOrder: number;
+  droppedDuplicate: number;
+  bySymbol: Record<string, number>;
+}
+
+interface SymbolClock {
+  lastQuoteTs: number;
+  lastTradeTs: number;
+  lastTradeSeq: number;
+  seq: number;
+}
+
+export class MarketEventBus {
+  private readonly emitter = new EventEmitter();
+  private readonly clocks = new Map<string, SymbolClock>();
+  private readonly stats: BusStats = {
+    published: 0,
+    droppedOutOfOrder: 0,
+    droppedDuplicate: 0,
+    bySymbol: {},
+  };
+
+  constructor() {
+    // Many charts and many accounts can watch one symbol.
+    this.emitter.setMaxListeners(0);
+  }
+
+  private clock(symbol: string): SymbolClock {
+    let c = this.clocks.get(symbol);
+    if (!c) {
+      c = { lastQuoteTs: 0, lastTradeTs: 0, lastTradeSeq: -1, seq: 0 };
+      this.clocks.set(symbol, c);
+    }
+    return c;
+  }
+
+  /** Next sequence number for a symbol's stream. */
+  nextSeq(symbol: string): number {
+    const c = this.clock(symbol);
+    c.seq += 1;
+    return c.seq;
+  }
+
+  currentSeq(symbol: string): number {
+    return this.clock(symbol).seq;
+  }
+
+  publishQuote(quote: NormalizedQuote): boolean {
+    const c = this.clock(quote.symbol);
+    if (quote.exchangeTs < c.lastQuoteTs) {
+      this.stats.droppedOutOfOrder += 1;
+      return false;
+    }
+    if (quote.exchangeTs === c.lastQuoteTs) {
+      this.stats.droppedDuplicate += 1;
+      return false;
+    }
+    c.lastQuoteTs = quote.exchangeTs;
+    this.record(quote.symbol);
+    this.emitter.emit('quote', quote);
+    this.emitter.emit(`quote:${quote.symbol}`, quote);
+    return true;
+  }
+
+  publishTrade(trade: NormalizedTrade): boolean {
+    const c = this.clock(trade.symbol);
+    if (trade.seq <= c.lastTradeSeq) {
+      this.stats.droppedDuplicate += 1;
+      return false;
+    }
+    if (trade.exchangeTs < c.lastTradeTs) {
+      this.stats.droppedOutOfOrder += 1;
+      return false;
+    }
+    c.lastTradeSeq = trade.seq;
+    c.lastTradeTs = trade.exchangeTs;
+    this.record(trade.symbol);
+    this.emitter.emit('trade', trade);
+    this.emitter.emit(`trade:${trade.symbol}`, trade);
+    return true;
+  }
+
+  /**
+   * Bars are published unconditionally: the aggregator owns bar identity by
+   * bucket time, and a repeated bucket time is a legitimate revision of the
+   * forming candle rather than an out-of-order event.
+   */
+  publishBar(bar: NormalizedBar): boolean {
+    this.record(bar.symbol);
+    this.emitter.emit('bar', bar);
+    this.emitter.emit(`bar:${bar.symbol}`, bar);
+    return true;
+  }
+
+  publishDepth(depth: NormalizedDepth): boolean {
+    this.record(depth.symbol);
+    this.emitter.emit('depth', depth);
+    this.emitter.emit(`depth:${depth.symbol}`, depth);
+    return true;
+  }
+
+  publishStatus(status: ConnectionStatus): void {
+    this.emitter.emit('status', status);
+  }
+
+  onQuote(symbol: string, listener: (q: NormalizedQuote) => void): () => void {
+    return this.listen(`quote:${symbol}`, listener);
+  }
+  onTrade(symbol: string, listener: (t: NormalizedTrade) => void): () => void {
+    return this.listen(`trade:${symbol}`, listener);
+  }
+  onBar(symbol: string, listener: (b: NormalizedBar) => void): () => void {
+    return this.listen(`bar:${symbol}`, listener);
+  }
+  onDepth(symbol: string, listener: (d: NormalizedDepth) => void): () => void {
+    return this.listen(`depth:${symbol}`, listener);
+  }
+  onStatus(listener: (s: ConnectionStatus) => void): () => void {
+    return this.listen('status', listener);
+  }
+  onAnyQuote(listener: (q: NormalizedQuote) => void): () => void {
+    return this.listen('quote', listener);
+  }
+
+  private listen(event: string, listener: (...args: never[]) => void): () => void {
+    this.emitter.on(event, listener as (...args: unknown[]) => void);
+    return () => this.emitter.off(event, listener as (...args: unknown[]) => void);
+  }
+
+  private record(symbol: string): void {
+    this.stats.published += 1;
+    this.stats.bySymbol[symbol] = (this.stats.bySymbol[symbol] ?? 0) + 1;
+  }
+
+  getStats(): BusStats {
+    return { ...this.stats, bySymbol: { ...this.stats.bySymbol } };
+  }
+
+  /** Forget a symbol's ordering state, e.g. when a replay seeks backwards. */
+  resetSymbol(symbol: string): void {
+    this.clocks.delete(symbol);
+  }
+
+  resetAll(): void {
+    this.clocks.clear();
+  }
+}

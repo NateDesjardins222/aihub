@@ -10,3 +10,4 @@ coverage/
 data/recordings/*.jsonl
 .DS_Store
 apps/web/dist/
+apps/server/data/

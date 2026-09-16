@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useSession, activeInstrument, selectedAccount } from '../state/session';
 import { formatMicros } from '../state/format';
 import { Pending } from './Pending';
+import { ReplayPanel } from './ReplayPanel';
+import { DomPanel } from './DomPanel';
 import './RightPanel.css';
 import type { JSX } from 'react';
 
-type RightTab = 'ORDER' | 'DOM';
+type RightTab = 'ORDER' | 'DOM' | 'REPLAY';
 
 /** Right column: order entry and the price ladder, switchable. */
 export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Element {
@@ -26,6 +28,12 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
           <button className={`tab ${tab === 'DOM' ? 'tab-active' : ''}`} onClick={() => setTab('DOM')}>
             DOM
           </button>
+          <button
+            className={`tab ${tab === 'REPLAY' ? 'tab-active' : ''}`}
+            onClick={() => setTab('REPLAY')}
+          >
+            Replay
+          </button>
         </div>
         <div className="hdr-spacer" />
         <button className="icon-btn" onClick={onCollapse} title="Collapse panel">
@@ -34,15 +42,9 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
       </div>
 
       <div className="panel-body">
-        {tab === 'ORDER' ? (
-          <OrderPanelPreview />
-        ) : (
-          <Pending title="Price ladder / DOM" milestone="Milestone 7">
-            The ladder shares one order state with the chart and the orders table. It will show
-            top-of-book from the delayed feed and will state plainly that full market depth is
-            unavailable, rather than inventing ladder rows.
-          </Pending>
-        )}
+        {tab === 'ORDER' ? <OrderPanelPreview /> : null}
+        {tab === 'DOM' ? <DomPanel /> : null}
+        {tab === 'REPLAY' ? <ReplayPanel /> : null}
       </div>
 
       {instrument && account ? (

@@ -9,8 +9,18 @@ import { registerAuth } from './auth-plugin.js';
 import { authRoutes } from './routes/auth.js';
 import { instrumentRoutes } from './routes/instruments.js';
 import { accountRoutes, ruleTemplateRoutes } from './routes/accounts.js';
+import { marketDataRoutes } from './routes/marketdata.js';
+import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
+import { getDb } from '../db/client.js';
+import { MarketDataGateway } from '../ws/gateway.js';
 
-export async function buildApp(): Promise<FastifyInstance> {
+export interface BuiltApp {
+  readonly app: FastifyInstance;
+  readonly stack: MarketDataStack;
+  readonly gateway: MarketDataGateway;
+}
+
+export async function buildApp(): Promise<BuiltApp> {
   const app = Fastify({
     logger: {
       level: isProduction() ? 'info' : 'warn',
@@ -30,6 +40,25 @@ export async function buildApp(): Promise<FastifyInstance> {
     max: 600,
     timeWindow: '1 minute',
   });
+
+  // Several control endpoints (replay play/pause/reset) legitimately take no
+  // body. A client that still sets a JSON content-type would otherwise be
+  // rejected outright, so an empty body is read as an empty object.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_request, body: string, done) => {
+      if (body === undefined || body === null || body.length === 0) {
+        done(null, {});
+        return;
+      }
+      try {
+        done(null, JSON.parse(body));
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
 
   registerAuth(app);
 
@@ -53,6 +82,20 @@ export async function buildApp(): Promise<FastifyInstance> {
         .code(429)
         .send({ error: { code: 'RATE_LIMITED', message: 'Too many requests.' } });
     }
+
+    // A framework error already carries a meaningful status and code. Reporting
+    // a 400 as INTERNAL_ERROR sends the caller hunting for a server fault that
+    // does not exist.
+    const framework = error as { statusCode?: number; code?: string; message?: string };
+    if (typeof framework.statusCode === 'number' && framework.statusCode < 500) {
+      return reply.code(framework.statusCode).send({
+        error: {
+          code: framework.code ?? 'BAD_REQUEST',
+          message: framework.message ?? 'Request could not be processed.',
+        },
+      });
+    }
+
     request.log.error({ err: error }, 'unhandled error');
     return reply
       .code(500)
@@ -65,10 +108,20 @@ export async function buildApp(): Promise<FastifyInstance> {
     env: env().NODE_ENV,
   }));
 
+  const { db } = getDb();
+  const stack = buildMarketDataStack(db);
+  const gateway = new MarketDataGateway(stack.market);
+  gateway.register(app);
+
+  app.addHook('onClose', async () => {
+    await stack.market.stop();
+  });
+
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(instrumentRoutes, { prefix: '/api/v1/instruments' });
   await app.register(accountRoutes, { prefix: '/api/v1/accounts' });
   await app.register(ruleTemplateRoutes, { prefix: '/api/v1/rule-templates' });
+  await app.register(marketDataRoutes(stack), { prefix: '/api/v1/marketdata' });
 
-  return app;
+  return { app, stack, gateway };
 }

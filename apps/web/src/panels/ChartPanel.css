@@ -8,7 +8,7 @@
 .chart-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   height: var(--tab-h);
   min-height: var(--tab-h);
   padding: 0 8px;
@@ -17,8 +17,13 @@
 }
 
 .chart-symbol {
-  min-width: 190px;
-  max-width: 280px;
+  min-width: 180px;
+  max-width: 260px;
+  font-family: var(--font-ui);
+  background: var(--bg-raised);
+}
+
+.chart-type {
   font-family: var(--font-ui);
   background: var(--bg-raised);
 }
@@ -37,7 +42,7 @@
   gap: 1px;
 }
 .tf-btn {
-  padding: 3px 8px;
+  padding: 3px 7px;
   border-radius: var(--radius);
   color: var(--text-muted);
   font-size: var(--fs-sm);
@@ -56,20 +61,136 @@
   flex: 1;
 }
 
-.chart-specs {
-  display: flex;
-  gap: 12px;
-  font-size: var(--fs-xs);
+.chip {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   color: var(--text-muted);
-}
-.chart-specs b {
-  color: var(--text-secondary);
+  font-size: var(--fs-xs);
   font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.chip-on {
+  background: var(--accent-bg);
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
-.chart-canvas {
+.conn-replay {
+  color: var(--link-purple);
+  border-color: var(--link-purple);
+}
+.conn-latency {
+  margin-left: 4px;
+  font-style: normal;
+  opacity: 0.65;
+  font-family: var(--font-mono);
+}
+
+/* ------------------------------------------------------------------ stage -- */
+
+.chart-stage {
   position: relative;
   flex: 1;
   min-height: 0;
   background: var(--bg-base);
+}
+
+.chart-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* The legend floats above the canvas so the chart keeps the full height. */
+.chart-legend {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  pointer-events: none;
+  font-size: var(--fs-sm);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.legend-symbol {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.legend-tf {
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.legend-price {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+.legend-change {
+  font-size: var(--fs-sm);
+}
+.legend-ohlc {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.legend-ohlc b {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.legend-sep {
+  width: 1px;
+  height: 11px;
+  background: var(--border-strong);
+}
+.legend-meta {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.legend-meta .num {
+  color: var(--text-secondary);
+}
+
+.chart-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  background: rgba(11, 14, 20, 0.72);
+  color: var(--text-secondary);
+  font-size: var(--fs-lg);
+  letter-spacing: 0.04em;
+}
+.chart-overlay-error {
+  color: var(--short);
+}
+
+.chart-history-note {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  z-index: 3;
+  max-width: 460px;
+  padding: 4px 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
 }

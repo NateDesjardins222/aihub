@@ -25,7 +25,8 @@
     "luxon": "^3.7.2",
     "postgres": "^3.4.5",
     "ws": "^8.21.3",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@atlas/core": "workspace:*"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.7",
