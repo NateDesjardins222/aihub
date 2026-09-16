@@ -355,9 +355,9 @@ function runScenario(seed: number): Violation[] {
 }
 
 describe('engine stress: no impossible fills', () => {
-  it('holds every invariant across 400 randomized scenarios', () => {
+  it('holds every invariant across 5000 randomized scenarios', () => {
     const violations: Violation[] = [];
-    for (let seed = 1; seed <= 400; seed += 1) {
+    for (let seed = 1; seed <= 5000; seed += 1) {
       violations.push(...runScenario(seed));
     }
     const sample = violations.slice(0, 12).map((v) => `seed ${v.seed}: ${v.message}`);
