@@ -7,9 +7,9 @@
  * client computed for itself is a risk figure that disagrees with the one that
  * will actually fail you.
  */
-import { useMemo, type JSX } from 'react';
+import { useMemo, useState, type JSX } from 'react';
 import { useTrading } from '../trading/store';
-import type { ApiRuleConfig, ApiRuleStatus } from '../trading/api';
+import { tradingApi, type ApiRuleConfig, type ApiRuleStatus } from '../trading/api';
 import './RiskPanel.css';
 
 const DOLLARS = 1_000_000;
@@ -67,6 +67,24 @@ export function RiskPanel(): JSX.Element {
   const ruleBook = useTrading((s) => s.ruleBook);
   const pnl = useTrading((s) => s.pnl);
   const positions = useTrading((s) => s.positions);
+  const accountId = useTrading((s) => s.accountId);
+  const refresh = useTrading((s) => s.refresh);
+  const loadRules = useTrading((s) => s.loadRules);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const reset = async (): Promise<void> => {
+    if (!accountId) return;
+    setBusy(true);
+    try {
+      await tradingApi.resetAccount(accountId);
+      await loadRules();
+      await refresh();
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
 
   const config: ApiRuleConfig | null = ruleBook?.config ?? null;
 
@@ -262,6 +280,33 @@ export function RiskPanel(): JSX.Element {
           ) : null}
         </div>
       </section>
+
+      {rules.status === 'FAILED' || rules.status === 'PASSED' ? (
+        <section className="risk-block risk-reset">
+          <header>
+            <h4>Programme over</h4>
+          </header>
+          <p className="risk-note">
+            {rules.status === 'FAILED'
+              ? 'A breached account cannot be revived - that is what a breach means. Starting again clears the balance, the drawdown anchor, the day counters and the trade history.'
+              : 'This programme is complete. Starting again clears the balance, the drawdown anchor, the day counters and the trade history.'}
+          </p>
+          {confirming ? (
+            <div className="risk-row">
+              <button className="chip" disabled={busy} onClick={() => void reset()}>
+                Yes, start again
+              </button>
+              <button className="chip" disabled={busy} onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button className="chip" onClick={() => setConfirming(true)}>
+              Start the programme again
+            </button>
+          )}
+        </section>
+      ) : null}
 
       {ruleBook && ruleBook.days.length > 0 ? (
         <section className="risk-block">

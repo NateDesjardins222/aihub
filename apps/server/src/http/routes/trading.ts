@@ -22,7 +22,15 @@ import { normalizeEnvironment, unrealizedPnlMicros } from '@atlas/core';
 import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
 import { getDb } from '../../db/client.js';
-import { accounts, executions, orders, positions, ruleTemplates, trades } from '../../db/schema.js';
+import {
+  accounts,
+  dailyAccountStats,
+  executions,
+  orders,
+  positions,
+  ruleTemplates,
+  trades,
+} from '../../db/schema.js';
 import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
 import { toEnginePosition, unscaleTicks } from '../../trading/mapping.js';
 import {
@@ -502,6 +510,59 @@ export function tradingRoutes(deps: Deps) {
       // effect now, not on the next tick.
       const status = await deps.engine.enforceRules(params.id);
       return reply.send({ config: merged, status });
+    });
+
+    /**
+     * Start the programme again.
+     *
+     * A failed account is final - that is the whole point of a breach, and
+     * nothing the trader does afterwards may revive it. A SIMULATOR still has
+     * to let them take the evaluation again, so this is an explicit reset that
+     * clears the account back to its opening state: balance, drawdown anchor,
+     * day counters and history all go. It is destructive and says so.
+     */
+    app.post('/accounts/:id/reset', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertOwnership(request.user!.id, params.id);
+
+      const loaded = await loadAccountAndTemplate(db, params.id);
+      if (!loaded) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+      const { account } = loaded;
+      const config = ruleConfigFor(account, loaded.template);
+      const size = account.startingBalanceMicros;
+
+      await db.transaction(async (tx) => {
+        // Working orders and open positions belong to the account that had
+        // them; a reset account starts flat, with no history to reconcile.
+        await tx.delete(executions).where(eq(executions.accountId, params.id));
+        await tx.delete(trades).where(eq(trades.accountId, params.id));
+        await tx.delete(orders).where(eq(orders.accountId, params.id));
+        await tx.delete(positions).where(eq(positions.accountId, params.id));
+        await tx.delete(dailyAccountStats).where(eq(dailyAccountStats.accountId, params.id));
+        await tx
+          .update(accounts)
+          .set({
+            status: 'ACTIVE',
+            balanceMicros: size,
+            realizedPnlMicros: 0,
+            feesMicros: 0,
+            highWaterMarkMicros: size,
+            drawdownFloorMicros: config.maxLossMicros > 0 ? size - config.maxLossMicros : 0,
+            dayStartBalanceMicros: size,
+            dayStartEquityMicros: size,
+            tradingDaysCount: 0,
+            winningDaysCount: 0,
+            bestDayProfitMicros: 0,
+            currentTradeDate: null,
+            lockedUntilDate: null,
+            failedReason: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(accounts.id, params.id));
+      });
+
+      const status = await deps.engine.enforceRules(params.id);
+      return reply.send({ accountId: params.id, status });
     });
 
     // -- environment settings ---------------------------------------------

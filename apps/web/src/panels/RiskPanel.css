@@ -184,3 +184,9 @@
 
 .risk-day-date { color: var(--muted); }
 .risk-day-flag { margin-left: auto; font-size: 9px; color: var(--muted); }
+
+.risk-reset .risk-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}

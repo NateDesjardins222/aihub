@@ -78,6 +78,7 @@ export function ChartTrading({
   const orders = useTrading((s) => s.orders);
   const positions = useTrading((s) => s.positions);
   const canTrade = useTrading((s) => s.rules?.canTrade ?? true);
+  const rejection = useTrading((s) => s.lastRejection);
   const setRejection = useTrading((s) => s.setRejection);
   const refresh = useTrading((s) => s.refresh);
 
@@ -440,6 +441,16 @@ export function ChartTrading({
           </div>
         );
       })}
+
+      {rejection ? (
+        <div className="ct-reject" role="alert">
+          <span className="ct-reject-code">{rejection.code.replace(/_/g, ' ')}</span>
+          <span className="ct-reject-message">{rejection.message}</span>
+          <button className="ct-tag-btn" onClick={() => setRejection(null)} title="Dismiss">
+            ✕
+          </button>
+        </div>
+      ) : null}
 
       {menu ? (
         <div

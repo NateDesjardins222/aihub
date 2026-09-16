@@ -236,6 +236,11 @@ export const tradingApi = {
       patch,
     ),
   rules: (accountId: string) => api.get<ApiRules>(`/api/v1/accounts/${accountId}/rules`),
+  resetAccount: (accountId: string) =>
+    api.post<{ accountId: string; status: ApiRuleStatus | null }>(
+      `/api/v1/accounts/${accountId}/reset`,
+      {},
+    ),
   setRules: (accountId: string, patch: Partial<ApiRuleConfig>) =>
     api.put<{ config: ApiRuleConfig; status: ApiRuleStatus | null }>(
       `/api/v1/accounts/${accountId}/rules`,

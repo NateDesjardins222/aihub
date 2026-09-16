@@ -5,6 +5,7 @@ import { useTrading } from '../trading/store';
 import { useMotion } from '../state/motion-store';
 import { PRESETS, presetMatches, type EnvironmentPreset } from '../state/presets';
 import { tradingApi, type SimulationEnvironment } from '../trading/api';
+import { replayApi } from '../market/api';
 import './EnvironmentPanel.css';
 
 /**
@@ -44,6 +45,11 @@ export function EnvironmentPanel(): JSX.Element {
       if (preset.rules && accountId) {
         await tradingApi.setRules(accountId, preset.rules);
         await loadRules();
+      }
+      // Replay speed belongs to the preset too, but only while a replay is
+      // actually running: setting it otherwise would fail for no reason.
+      if (preset.replaySpeed !== undefined) {
+        await replayApi.speed(preset.replaySpeed).catch(() => undefined);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not apply that preset.');

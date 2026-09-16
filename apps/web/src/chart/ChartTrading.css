@@ -195,3 +195,32 @@
   margin: 4px 0;
   background: var(--line);
 }
+
+/* A rejected action must SAY so. An order that silently does not appear is the
+   worst possible outcome: the trader believes they are in a position. */
+.ct-reject {
+  position: absolute;
+  top: 70px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+  padding: 6px 8px;
+  border: 1px solid var(--down);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--down));
+  color: var(--text);
+  font-size: 11px;
+  pointer-events: auto;
+}
+
+.ct-reject-code {
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--down);
+  white-space: nowrap;
+}
+
+.ct-reject-message { color: var(--muted); }
