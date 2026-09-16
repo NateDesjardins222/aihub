@@ -481,7 +481,8 @@ describe('risk gate', () => {
     await setup();
     await market.quote('NQ', 20_000);
     market.setFrozen(15 * 60_000);
-    await expect(submit({ qty: 1 })).rejects.toMatchObject({ reason: 'MARKET_DATA_STALE' });
+    // Blocked, and named for what it is: the session shut, the feed did not break.
+    await expect(submit({ qty: 1 })).rejects.toMatchObject({ reason: 'MARKET_CLOSED' });
     market.setFrozen(null);
   });
 

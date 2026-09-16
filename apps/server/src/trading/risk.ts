@@ -116,10 +116,20 @@ export function checkOrder(ctx: RiskContext, request: RiskRequest): RiskRejectio
   const overAge =
     ctx.freshness.ageMs !== null && ctx.freshness.ageMs > ctx.freshness.thresholdMs;
   if (ctx.freshness.state === 'STALE' || overAge) {
+    // Say WHY it stopped. A feed that froze because the session shut is a
+    // closed market, not a broken feed, and the trader can act on the
+    // difference: one of them ends at a known time.
+    const closed = ctx.freshness.state === 'MARKET_CLOSED';
     return {
-      reason: 'MARKET_DATA_STALE',
-      message: 'Market data is stale. Order entry is disabled until the feed recovers.',
-      detail: { ageMs: ctx.freshness.ageMs, thresholdMs: ctx.freshness.thresholdMs },
+      reason: closed ? 'MARKET_CLOSED' : 'MARKET_DATA_STALE',
+      message: closed
+        ? `${spec.root} is closed: the feed stopped updating at the session break.`
+        : 'Market data is stale. Order entry is disabled until the feed recovers.',
+      detail: {
+        ageMs: ctx.freshness.ageMs,
+        thresholdMs: ctx.freshness.thresholdMs,
+        freshness: ctx.freshness.state,
+      },
     };
   }
 
