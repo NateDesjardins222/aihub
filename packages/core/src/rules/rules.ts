@@ -123,6 +123,14 @@ export type BreachCode =
   | 'DAILY_LOSS_LIMIT'
   | 'MAX_TRADING_DAYS';
 
+/** What each breach means, in the words the trader sees. */
+const BREACH_MESSAGE: Record<BreachCode, string> = {
+  MAX_LOSS_LIMIT: 'Maximum loss reached: equity fell to the account floor.',
+  TRAILING_DRAWDOWN_BREACH: 'Trailing drawdown breached: equity fell to the drawdown floor.',
+  DAILY_LOSS_LIMIT: 'Daily loss limit reached.',
+  MAX_TRADING_DAYS: 'The programme ran past its maximum number of trading days.',
+};
+
 export interface Breach {
   readonly code: BreachCode;
   readonly message: string;
@@ -385,11 +393,14 @@ function firstBreach(
     tradingDaysCount: number;
   },
 ): Breach | null {
-  // An account already failed stays failed; nothing can un-fail it.
+  // An account already failed stays failed; nothing can un-fail it. It keeps
+  // reporting the rule that ENDED it rather than a generic "already failed",
+  // because the reason is the only part a trader can learn anything from.
   if (state.status === 'FAILED') {
+    const code = (state.failedReason as BreachCode | null) ?? 'MAX_LOSS_LIMIT';
     return {
-      code: state.failedReason === 'DAILY_LOSS_LIMIT' ? 'DAILY_LOSS_LIMIT' : 'MAX_LOSS_LIMIT',
-      message: 'Account has already failed.',
+      code,
+      message: BREACH_MESSAGE[code] ?? BREACH_MESSAGE.MAX_LOSS_LIMIT,
       status: 'FAILED',
       detail: { reason: state.failedReason },
     };
@@ -401,8 +412,8 @@ function firstBreach(
     return {
       code: trailing ? 'TRAILING_DRAWDOWN_BREACH' : 'MAX_LOSS_LIMIT',
       message: trailing
-        ? 'Trailing drawdown breached. Equity fell to the drawdown floor.'
-        : 'Maximum loss reached. Equity fell to the account floor.',
+        ? BREACH_MESSAGE.TRAILING_DRAWDOWN_BREACH
+        : BREACH_MESSAGE.MAX_LOSS_LIMIT,
       status: 'FAILED',
       detail: {
         equityMicros: mark.equityMicros,
@@ -418,7 +429,7 @@ function firstBreach(
       code: 'DAILY_LOSS_LIMIT',
       message: fails
         ? 'Daily loss limit reached. The account has failed.'
-        : 'Daily loss limit reached. Trading is locked for the rest of the day.',
+        : 'Daily loss limit reached. Trading is locked for the rest of the trading day.',
       status: fails ? 'FAILED' : 'LOCKED',
       detail: {
         dayPnlMicros: mark.equityMicros - state.dayStartEquityMicros,
@@ -431,7 +442,7 @@ function firstBreach(
   if (config.maxTradingDays !== null && computed.tradingDaysCount > config.maxTradingDays) {
     return {
       code: 'MAX_TRADING_DAYS',
-      message: 'The programme ran past its maximum number of trading days.',
+      message: BREACH_MESSAGE.MAX_TRADING_DAYS,
       status: 'FAILED',
       detail: { tradingDaysCount: computed.tradingDaysCount, maxTradingDays: config.maxTradingDays },
     };

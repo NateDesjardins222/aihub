@@ -26,6 +26,11 @@ export function TerminalHeader(): JSX.Element {
   // Live account figures. Every one is computed server-side and pushed here;
   // the header derives nothing of its own.
   const pnl = useTrading((s) => s.pnl);
+  // The rule status is the authoritative view of where the account stands. It
+  // arrives with every valuation, so the header cannot show more room than the
+  // engine will actually give.
+  const rules = useTrading((s) => s.rules);
+  const ruleBook = useTrading((s) => s.ruleBook);
   const attach = useTrading((s) => s.attach);
 
   useEffect(() => {
@@ -62,7 +67,7 @@ export function TerminalHeader(): JSX.Element {
             </option>
           ))}
         </select>
-        {account ? <StatusPill status={account.status} /> : null}
+        {rules ? <StatusPill status={rules.status} /> : account ? <StatusPill status={account.status} /> : null}
       </div>
 
       <Metric
@@ -72,37 +77,53 @@ export function TerminalHeader(): JSX.Element {
       />
       <Metric
         label="Equity"
-        value={pnl ? formatMicros(pnl.equityMicros) : '—'}
+        value={rules ? formatMicros(rules.equityMicros) : pnl ? formatMicros(pnl.equityMicros) : '—'}
         title="Balance plus open P&L"
       />
       <Metric
         label="Day P&L"
-        value={pnl ? formatMicros(pnl.dayPnlMicros, { sign: true }) : '—'}
-        tone={pnl ? pnlClass(pnl.dayPnlMicros) : 'flat'}
+        value={rules ? formatMicros(rules.dayPnlMicros, { sign: true }) : '—'}
+        tone={rules ? pnlClass(rules.dayPnlMicros) : 'flat'}
+        title="Equity change since this trading day opened"
       />
       <Metric
         label="Open P&L"
-        value={pnl ? formatMicros(pnl.openPnlMicros, { sign: true }) : '—'}
-        tone={pnl ? pnlClass(pnl.openPnlMicros) : 'flat'}
+        value={rules ? formatMicros(rules.openPnlMicros, { sign: true }) : '—'}
+        tone={rules ? pnlClass(rules.openPnlMicros) : 'flat'}
       />
       <Metric
         label="Drawdown left"
-        value={pnl ? formatMicros(pnl.remainingDrawdownMicros) : '—'}
+        value={rules ? formatMicros(Math.max(0, rules.remainingDrawdownMicros)) : '—'}
         tone={
-          pnl && account && pnl.remainingDrawdownMicros < account.ruleTemplate.maxLossMicros * 0.25
+          rules && maxLoss(ruleBook) > 0 && rules.remainingDrawdownMicros < maxLoss(ruleBook) * 0.25
             ? 'neg'
             : 'flat'
         }
-        title={account ? `${account.ruleTemplate.drawdownType.replace(/_/g, ' ')} drawdown` : undefined}
-      />
-      <Metric
-        label="Target"
-        value={
-          pnl
-            ? `${formatMicros(pnl.profitTargetProgressMicros, { sign: true })} / ${formatMicros(pnl.profitTargetMicros)}`
-            : '—'
+        title={
+          ruleBook
+            ? `${ruleBook.config.drawdownType.replace(/_/g, ' ').toLowerCase()} drawdown, floor ${formatMicros(rules?.drawdownFloorMicros ?? 0)}`
+            : undefined
         }
       />
+      {rules?.remainingDailyLossMicros !== null && rules !== null ? (
+        <Metric
+          label="Daily loss left"
+          value={formatMicros(Math.max(0, rules.remainingDailyLossMicros ?? 0))}
+          tone={
+            (rules.remainingDailyLossMicros ?? 0) <= (rules.dailyLossLimitMicros ?? 1) * 0.25
+              ? 'neg'
+              : 'flat'
+          }
+          title="Loss allowed before trading stops for the day"
+        />
+      ) : null}
+      {rules && rules.profitTargetMicros > 0 ? (
+        <Metric
+          label="Target"
+          value={`${formatMicros(rules.profitProgressMicros, { sign: true })} / ${formatMicros(rules.profitTargetMicros)}`}
+          tone={rules.profitTargetMet ? 'pos' : 'flat'}
+        />
+      ) : null}
 
       <div className="hdr-spacer" />
 
@@ -121,6 +142,11 @@ export function TerminalHeader(): JSX.Element {
       </button>
     </header>
   );
+}
+
+/** The programme's drawdown allowance, or 0 when it has none. */
+function maxLoss(ruleBook: { config: { maxLossMicros: number } } | null): number {
+  return ruleBook?.config.maxLossMicros ?? 0;
 }
 
 function Metric({
