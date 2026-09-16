@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+.env
+.env.local
+coverage/
+.pgdata/
+data/recordings/*.jsonl
+.DS_Store
+apps/web/dist/

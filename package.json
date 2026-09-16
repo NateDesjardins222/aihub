@@ -1,0 +1,23 @@
+{
+  "name": "atlas-futures-terminal",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' build && pnpm --filter @atlas/server build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "pnpm --parallel --filter @atlas/server --filter @atlas/web dev",
+    "db:generate": "pnpm --filter @atlas/server db:generate",
+    "db:migrate": "pnpm --filter @atlas/server db:migrate",
+    "db:seed": "pnpm --filter @atlas/server db:seed"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.1",
+    "tsx": "^4.19.2"
+  }
+}
