@@ -110,6 +110,7 @@ export class ReplayProvider implements DescribableProvider {
       state: this.state,
       mode: this.mode,
       delaySeconds: 0,
+      declaredDelaySeconds: 0,
       lastEventAt: this.lastEventAt,
       lastMessageAt: this.lastEventAt,
       reconnectAttempts: 0,

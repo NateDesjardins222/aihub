@@ -1,0 +1,78 @@
+.env-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px;
+}
+
+.env-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.env-intro {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.env-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.env-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.env-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.env-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.env-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.env-numeric {
+  display: grid;
+  grid-template-columns: 1fr 76px auto;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.env-numeric input {
+  width: 100%;
+  padding: 4px 6px;
+}
+.env-suffix {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.env-error {
+  padding: 6px 8px;
+  background: var(--short-bg);
+  border: 1px solid var(--short-dim);
+  border-radius: var(--radius);
+  color: var(--short);
+  font-size: var(--fs-xs);
+}

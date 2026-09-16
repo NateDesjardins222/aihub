@@ -54,6 +54,7 @@ export class MarketStream {
 
   private readonly barListeners = new Map<string, Set<Listener<NormalizedBar>>>();
   private readonly quoteListeners = new Map<string, Set<Listener<NormalizedQuote>>>();
+  private readonly rawListeners = new Map<string, Set<Listener<unknown>>>();
   private readonly statusListeners = new Set<Listener<ConnectionStatus>>();
   private readonly diagListeners = new Set<Listener<StreamDiagnostics>>();
 
@@ -205,6 +206,11 @@ export class MarketStream {
   }
 
   private dispatch(stream: string, data: unknown): void {
+    // Raw subscribers are notified even for an empty payload: for account
+    // streams the signal is "state changed", not the payload itself.
+    const raw = this.rawListeners.get(stream);
+    if (raw) for (const listener of raw) listener(data);
+
     if (data === null || data === undefined) return;
 
     if (stream.startsWith('md.bar.')) {
@@ -232,6 +238,18 @@ export class MarketStream {
   subscribeQuote(symbol: string, listener: Listener<NormalizedQuote>): () => void {
     const stream = `md.quote.${symbol}`;
     return this.addListener(this.quoteListeners, stream, listener as Listener<unknown>) as () => void;
+  }
+
+  /**
+   * Subscribe to any stream by name.
+   *
+   * Used for account channels, whose payloads the market stream does not need
+   * to understand: the trading store treats a frame as "something changed" and
+   * re-reads authoritative state from the REST API rather than trusting the
+   * frame's contents.
+   */
+  subscribeRaw(stream: string, listener: Listener<unknown>): () => void {
+    return this.addListener(this.rawListeners, stream, listener);
   }
 
   subscribeStatus(listener: Listener<ConnectionStatus>): () => void {

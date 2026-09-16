@@ -154,6 +154,9 @@ export class MarketEventBus {
   onAnyQuote(listener: (q: NormalizedQuote) => void): () => void {
     return this.listen('quote', listener);
   }
+  onAnyBar(listener: (b: NormalizedBar) => void): () => void {
+    return this.listen('bar', listener);
+  }
 
   private listen(event: string, listener: (...args: never[]) => void): () => void {
     this.emitter.on(event, listener as (...args: unknown[]) => void);

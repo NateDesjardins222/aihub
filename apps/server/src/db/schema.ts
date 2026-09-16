@@ -117,6 +117,12 @@ export const accounts = pgTable(
     dayStartEquityMicros: micros('day_start_equity_micros').notNull(),
     /** Monotonic event sequence used for WebSocket snapshot/delta recovery. */
     seq: bigint('seq', { mode: 'number' }).notNull().default(0),
+    /**
+     * Per-account simulation environment: fill model, latency, slippage,
+     * liquidity cap, fee handling. Data, so one trader can be evaluated under
+     * different assumptions from another without a code change.
+     */
+    simulationEnvironment: jsonb('simulation_environment'),
     failedReason: text('failed_reason'),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -146,9 +152,39 @@ export const orders = pgTable(
     stopTicks: integer('stop_ticks'),
     tif: varchar('tif', { length: 4 }).notNull().default('DAY'),
     status: varchar('status', { length: 20 }).notNull(),
-    avgFillTicks: real('avg_fill_ticks'),
+    /**
+     * Sum of price x qty x tickValue across every fill, micro-dollars.
+     * Average fill price is DERIVED from this rather than stored: a float
+     * average accumulates error across partial fills, and an order's average
+     * price feeds directly into realized P&L.
+     */
+    fillNotionalMicros: micros('fill_notional_micros').notNull().default(0),
+    /** A stop-limit that has been elected behaves as a limit from then on. */
+    stopTriggered: boolean('stop_triggered').notNull().default(false),
+    /** False while the order is still marketable; see FillDecision.marketable. */
+    hasRested: boolean('has_rested').notNull().default(false),
+    /**
+     * Exchange time the order started resting at, null until it does.
+     *
+     * A closed bar may only fill an order that was already working when that
+     * bar opened, so the engine compares the bar's open against this.
+     */
+    restedMarketTs: bigint('rested_market_ts', { mode: 'number' }),
+    /** Wall clock from which the order may fill; models submission latency. */
+    eligibleAt: bigint('eligible_at', { mode: 'number' }).notNull().default(0),
+    /** Trading date the order belongs to, for DAY expiry. */
+    tradingDate: date('trading_date'),
     ocoGroupId: uuid('oco_group_id'),
     parentOrderId: uuid('parent_order_id'),
+    /**
+     * Bracket offsets requested with an ENTRY order, in ticks.
+     *
+     * Stored rather than held in the request handler, because an entry rarely
+     * fills on submission: latency, a resting limit or an unreachable price all
+     * mean the fill lands on a later market event, and the protective legs are
+     * created from the actual fill price at that point.
+     */
+    bracketConfig: jsonb('bracket_config'),
     bracketRole: varchar('bracket_role', { length: 16 }).notNull().default('STANDALONE'),
     trailTicks: integer('trail_ticks'),
     trailAnchorTicks: integer('trail_anchor_ticks'),
@@ -203,8 +239,14 @@ export const positions = pgTable(
       .references(() => accounts.id, { onDelete: 'cascade' }),
     symbol: varchar('symbol', { length: 12 }).notNull(),
     side: varchar('side', { length: 6 }).notNull().default('FLAT'),
+    /** Signed: positive long, negative short. */
     qty: integer('qty').notNull().default(0),
-    avgEntryTicks: real('avg_entry_ticks').notNull().default(0),
+    /**
+     * Signed notional of the OPEN quantity in micro-dollars. Average entry is
+     * derived from it. Storing a float average instead lets rounding error
+     * accumulate into every subsequent realized P&L figure.
+     */
+    costBasisMicros: micros('cost_basis_micros').notNull().default(0),
     realizedPnlMicros: micros('realized_pnl_micros').notNull().default(0),
     feesMicros: micros('fees_micros').notNull().default(0),
     openedAt: timestamp('opened_at', { withTimezone: true }),
@@ -225,8 +267,9 @@ export const trades = pgTable(
     symbol: varchar('symbol', { length: 12 }).notNull(),
     side: varchar('side', { length: 6 }).notNull(),
     qty: integer('qty').notNull(),
-    entryTicks: real('entry_ticks').notNull(),
-    exitTicks: real('exit_ticks').notNull(),
+    /** Fractional by nature (a weighted average of tick prices), scaled x1e6. */
+    entryTicksScaled: bigint('entry_ticks_scaled', { mode: 'number' }).notNull(),
+    exitTicksScaled: bigint('exit_ticks_scaled', { mode: 'number' }).notNull(),
     entryTime: timestamp('entry_time', { withTimezone: true }).notNull(),
     exitTime: timestamp('exit_time', { withTimezone: true }).notNull(),
     grossPnlMicros: micros('gross_pnl_micros').notNull(),

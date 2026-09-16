@@ -5,7 +5,7 @@ import { closeDb } from './db/client.js';
 import { listInstruments } from '@atlas/instruments';
 
 async function main(): Promise<void> {
-  const { app, stack } = await buildApp();
+  const { app, stack, engine } = await buildApp();
 
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');
@@ -26,6 +26,10 @@ async function main(): Promise<void> {
       app.log.warn({ err, symbol: spec.root }, 'initial subscribe failed');
     });
   }
+
+  // The engine follows the market only once data is flowing, so a restart does
+  // not evaluate stops against an empty quote store.
+  await engine.start();
 
   const status = stack.market.getConnectionStatus();
   console.log(`atlas server listening on http://${env().HOST}:${env().PORT}`);

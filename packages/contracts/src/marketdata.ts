@@ -17,8 +17,17 @@ export interface ConnectionStatus {
   readonly providerId: string;
   readonly state: ConnectionState;
   readonly mode: FeedMode;
-  /** Measured or declared delay of the feed, in seconds. 0 for realtime. */
+  /** Measured delay of the feed, in seconds. 0 for realtime. */
   readonly delaySeconds: number;
+  /**
+   * The delay the feed is CONTRACTED to have, in seconds.
+   *
+   * Staleness is judged against this rather than the measured figure. A feed
+   * that has stopped updating measures an ever-growing delay, and calibrating
+   * to that would make a frozen feed permanently "fresh" - which is precisely
+   * the condition the check exists to catch.
+   */
+  readonly declaredDelaySeconds: number;
   /** Exchange timestamp (epoch ms) of the newest event we have seen, any symbol. */
   readonly lastEventAt: number | null;
   /** Wall-clock (epoch ms) when we last received anything from the provider. */

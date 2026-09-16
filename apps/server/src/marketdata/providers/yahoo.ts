@@ -141,6 +141,16 @@ export class YahooDelayedProvider implements DescribableProvider {
   private readonly subscribed = new Set<string>();
   private readonly quotes = new Map<string, NormalizedQuote>();
   private readonly seqBySymbol = new Map<string, number>();
+  /**
+   * The last bar published per symbol, so a poll republishes only what changed.
+   *
+   * Every poll returns the vendor's whole intraday window - hundreds of bars
+   * that were already published on the previous poll. Re-emitting them floods
+   * every downstream consumer (the socket, the aggregators, and the matching
+   * engine, which treats a closed bar as an opportunity to fill) with events
+   * that carry no new information.
+   */
+  private readonly lastBarBySymbol = new Map<string, { time: number; signature: string }>();
   private timer: NodeJS.Timeout | null = null;
   /** The poll currently running, if any. */
   private pollInFlight: Promise<void> | null = null;
@@ -222,7 +232,11 @@ export class YahooDelayedProvider implements DescribableProvider {
   }
 
   unsubscribe(symbol: string): void {
-    this.subscribed.delete(symbol.toUpperCase());
+    const root = symbol.toUpperCase();
+    this.subscribed.delete(root);
+    // Forget the republish watermark: a later resubscribe has to reseed the
+    // aggregators with the whole window again.
+    this.lastBarBySymbol.delete(root);
   }
 
   subscriptions(): readonly string[] {
@@ -249,6 +263,7 @@ export class YahooDelayedProvider implements DescribableProvider {
       state: this.state,
       mode: this.mode,
       delaySeconds: Math.round(this.measuredDelaySeconds),
+      declaredDelaySeconds: this.options.declaredDelaySeconds,
       lastEventAt: this.lastEventAt,
       lastMessageAt: this.lastMessageAt,
       error: this.lastError,
@@ -446,9 +461,38 @@ export class YahooDelayedProvider implements DescribableProvider {
       this.emit({ kind: 'quote', quote });
     }
 
-    for (const bar of this.extractBars(spec, result, { marketTs, barMs: 60_000 })) {
+    for (const bar of this.newBars(spec.root, this.extractBars(spec, result, { marketTs, barMs: 60_000 }))) {
       this.emit({ kind: 'bar', bar });
     }
+  }
+
+  /**
+   * Drop bars a previous poll already published.
+   *
+   * The first poll for a symbol seeds the aggregators with the whole window and
+   * is let through untouched. After that only two things are news: a bucket
+   * later than the newest one published, and a revision of that newest bucket,
+   * whose extremes and volume still move while it forms.
+   */
+  private newBars(symbol: string, bars: NormalizedBar[]): NormalizedBar[] {
+    const seen = this.lastBarBySymbol.get(symbol);
+    const signature = (b: NormalizedBar): string =>
+      `${b.open}|${b.high}|${b.low}|${b.close}|${b.volume}|${b.closed ? 1 : 0}`;
+
+    let fresh: NormalizedBar[];
+    if (!seen) {
+      fresh = bars;
+    } else {
+      fresh = bars.filter((bar) => {
+        if (bar.time > seen.time) return true;
+        if (bar.time < seen.time) return false;
+        return signature(bar) !== seen.signature;
+      });
+    }
+
+    const newest = fresh[fresh.length - 1];
+    if (newest) this.lastBarBySymbol.set(symbol, { time: newest.time, signature: signature(newest) });
+    return fresh;
   }
 
   /**

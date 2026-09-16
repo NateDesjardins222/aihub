@@ -1,0 +1,470 @@
+/**
+ * /api/v1/orders, /positions, /trades, /executions
+ *
+ * A thin, validating shell over the engine. It converts human decimal prices
+ * into integer ticks at the boundary and converts nothing back the other way
+ * without the instrument's own specification. It makes no trading decisions.
+ */
+import type { FastifyInstance } from 'fastify';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { z } from 'zod';
+import { orderModifySchema, orderRequestSchema } from '@atlas/contracts';
+import {
+  getInstrument,
+  microsToTicks,
+  priceToTicks,
+  requireInstrument,
+  ticksPerPoint,
+  ticksToPrice,
+  MICROS,
+} from '@atlas/instruments';
+import { normalizeEnvironment, unrealizedPnlMicros } from '@atlas/core';
+import { ApiError } from '../errors.js';
+import { requireUser } from '../auth-plugin.js';
+import { getDb } from '../../db/client.js';
+import { accounts, executions, orders, positions, ruleTemplates, trades } from '../../db/schema.js';
+import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
+import { toEnginePosition, unscaleTicks } from '../../trading/mapping.js';
+import type { MarketDataService } from '../../marketdata/service.js';
+
+const REJECTION_STATUS = 422;
+
+interface Deps {
+  readonly engine: TradingEngine;
+  readonly market: MarketDataService;
+}
+
+/** Bracket offsets arrive in ticks, points or dollars; the engine wants ticks. */
+function offsetToTicks(
+  spec: ReturnType<typeof requireInstrument>,
+  offset: { unit: 'TICKS' | 'POINTS' | 'DOLLARS'; value: number } | null | undefined,
+  qty: number,
+): number | null {
+  if (!offset) return null;
+  switch (offset.unit) {
+    case 'TICKS':
+      return Math.max(1, Math.round(offset.value));
+    case 'POINTS':
+      return Math.max(1, Math.round(offset.value * ticksPerPoint(spec)));
+    case 'DOLLARS': {
+      const ticks = microsToTicks(spec, Math.round(offset.value * MICROS), qty);
+      return ticks > 0 ? ticks : null;
+    }
+  }
+}
+
+function toTicks(
+  spec: ReturnType<typeof requireInstrument>,
+  price: number | null | undefined,
+): number | null {
+  if (price === null || price === undefined) return null;
+  return priceToTicks(spec, price);
+}
+
+/** Verify the account belongs to the caller before anything else happens. */
+async function assertOwnership(userId: string, accountId: string): Promise<void> {
+  const { db } = getDb();
+  const [row] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, userId)));
+  if (!row) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+}
+
+function mapRejection(err: unknown): never {
+  if (err instanceof OrderRejectedError) {
+    throw new ApiError(REJECTION_STATUS, err.reason, err.message, err.detail);
+  }
+  throw err;
+}
+
+export function tradingRoutes(deps: Deps) {
+  return async function register(app: FastifyInstance): Promise<void> {
+    const { db } = getDb();
+    app.addHook('preHandler', requireUser);
+
+    // -- orders -----------------------------------------------------------
+
+    app.post(
+      '/orders',
+      { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const body = orderRequestSchema.parse(request.body);
+        await assertOwnership(request.user!.id, body.accountId);
+
+        const spec = getInstrument(body.symbol);
+        if (!spec) throw ApiError.notFound('UNKNOWN_INSTRUMENT', `No instrument ${body.symbol}.`);
+
+        try {
+          const change = await deps.engine.submitOrder({
+            accountId: body.accountId,
+            userId: request.user!.id,
+            clientOrderId: body.clientOrderId,
+            symbol: spec.root,
+            side: body.side,
+            qty: body.qty,
+            type: body.type,
+            limitTicks: toTicks(spec, body.limitPrice),
+            stopTicks: toTicks(spec, body.stopPrice),
+            tif: body.tif,
+            trailTicks: body.trailTicks ?? null,
+            bracket: body.bracket
+              ? {
+                  stopLossTicks: offsetToTicks(spec, body.bracket.stopLoss, body.qty),
+                  takeProfitTicks: offsetToTicks(spec, body.bracket.takeProfit, body.qty),
+                  trailingStopTicks: offsetToTicks(spec, body.bracket.trailingStop, body.qty),
+                }
+              : null,
+          });
+          return reply.code(201).send(change);
+        } catch (err) {
+          mapRejection(err);
+        }
+      },
+    );
+
+    app.patch<{ Params: { id: string } }>('/orders/:id', async (request, reply) => {
+      const body = orderModifySchema.parse(request.body);
+      const query = z.object({ accountId: z.string().uuid() }).parse(request.query);
+      await assertOwnership(request.user!.id, query.accountId);
+
+      const [row] = await db
+        .select({ symbol: orders.symbol })
+        .from(orders)
+        .where(and(eq(orders.id, request.params.id), eq(orders.accountId, query.accountId)));
+      if (!row) throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
+      const spec = requireInstrument(row.symbol);
+
+      try {
+        const change = await deps.engine.modifyOrder(
+          query.accountId,
+          request.params.id,
+          {
+            ...(body.qty !== undefined ? { qty: body.qty } : {}),
+            ...(body.limitPrice !== undefined ? { limitTicks: toTicks(spec, body.limitPrice) } : {}),
+            ...(body.stopPrice !== undefined ? { stopTicks: toTicks(spec, body.stopPrice) } : {}),
+            ...(body.trailTicks !== undefined ? { trailTicks: body.trailTicks ?? null } : {}),
+          },
+          body.expectedVersion,
+        );
+        return reply.send(change);
+      } catch (err) {
+        mapRejection(err);
+      }
+    });
+
+    app.delete<{ Params: { id: string } }>('/orders/:id', async (request, reply) => {
+      const query = z.object({ accountId: z.string().uuid() }).parse(request.query);
+      await assertOwnership(request.user!.id, query.accountId);
+      try {
+        return reply.send(await deps.engine.cancelOrder(query.accountId, request.params.id));
+      } catch (err) {
+        mapRejection(err);
+      }
+    });
+
+    app.post('/orders/cancel-all', async (request, reply) => {
+      const body = z
+        .object({ accountId: z.string().uuid(), symbol: z.string().max(12).optional() })
+        .parse(request.body);
+      await assertOwnership(request.user!.id, body.accountId);
+      return reply.send(await deps.engine.cancelAll(body.accountId, body.symbol));
+    });
+
+    app.get('/orders', async (request, reply) => {
+      const query = z
+        .object({
+          accountId: z.string().uuid(),
+          open: z.coerce.boolean().optional(),
+          limit: z.coerce.number().int().min(1).max(500).default(200),
+        })
+        .parse(request.query);
+      await assertOwnership(request.user!.id, query.accountId);
+
+      const where = query.open
+        ? and(
+            eq(orders.accountId, query.accountId),
+            inArray(orders.status, ['WORKING', 'PARTIALLY_FILLED', 'CANCEL_PENDING']),
+          )
+        : eq(orders.accountId, query.accountId);
+
+      const rows = await db
+        .select()
+        .from(orders)
+        .where(where)
+        .orderBy(desc(orders.createdAt))
+        .limit(query.limit);
+
+      return reply.send({
+        orders: rows.map((row) => {
+          const spec = requireInstrument(row.symbol);
+          return {
+            ...row,
+            limitPrice: row.limitTicks === null ? null : ticksToPrice(spec, row.limitTicks),
+            stopPrice: row.stopTicks === null ? null : ticksToPrice(spec, row.stopTicks),
+            avgFillPrice:
+              row.filledQty === 0
+                ? null
+                : ticksToPrice(spec, row.fillNotionalMicros / (row.filledQty * spec.tickValueMicros)),
+            remainingQty: Math.max(0, row.qty - row.filledQty),
+            createdAt: row.createdAt.getTime(),
+            updatedAt: row.updatedAt.getTime(),
+          };
+        }),
+      });
+    });
+
+    // -- positions --------------------------------------------------------
+
+    app.get('/positions', async (request, reply) => {
+      const query = z.object({ accountId: z.string().uuid() }).parse(request.query);
+      await assertOwnership(request.user!.id, query.accountId);
+
+      const rows = await db
+        .select()
+        .from(positions)
+        .where(eq(positions.accountId, query.accountId));
+
+      const openOrders = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.accountId, query.accountId),
+            inArray(orders.status, ['WORKING', 'PARTIALLY_FILLED']),
+          ),
+        );
+
+      const views = rows
+        .filter((row) => row.qty !== 0)
+        .map((row) => {
+          const spec = requireInstrument(row.symbol);
+          const position = toEnginePosition(row, row.symbol);
+          const markTicks = deps.engine.markTicks(spec);
+          const protective = openOrders.filter((o) => o.symbol === row.symbol);
+          const avg = position.qty === 0 ? null : position.costBasisMicros / (position.qty * spec.tickValueMicros);
+          return {
+            symbol: row.symbol,
+            side: row.side,
+            qty: Math.abs(row.qty),
+            signedQty: row.qty,
+            avgEntryTicks: avg,
+            avgEntryPrice: avg === null ? null : ticksToPrice(spec, avg),
+            markTicks,
+            markPrice: markTicks === null ? null : ticksToPrice(spec, markTicks),
+            unrealizedPnlMicros: unrealizedPnlMicros(spec, position, markTicks),
+            realizedPnlMicros: row.realizedPnlMicros,
+            feesMicros: row.feesMicros,
+            openedAt: row.openedAt?.getTime() ?? null,
+            updatedAt: row.updatedAt.getTime(),
+            stopOrderId: protective.find((o) => o.bracketRole === 'STOP_LOSS')?.id ?? null,
+            targetOrderId: protective.find((o) => o.bracketRole === 'TAKE_PROFIT')?.id ?? null,
+          };
+        });
+
+      return reply.send({ positions: views });
+    });
+
+    app.post<{ Params: { symbol: string } }>('/positions/:symbol/flatten', async (request, reply) => {
+      const body = z.object({ accountId: z.string().uuid() }).parse(request.body);
+      await assertOwnership(request.user!.id, body.accountId);
+      try {
+        return reply.send(
+          await deps.engine.flatten(body.accountId, request.user!.id, request.params.symbol.toUpperCase()),
+        );
+      } catch (err) {
+        mapRejection(err);
+      }
+    });
+
+    app.post<{ Params: { symbol: string } }>('/positions/:symbol/reverse', async (request, reply) => {
+      const body = z.object({ accountId: z.string().uuid() }).parse(request.body);
+      await assertOwnership(request.user!.id, body.accountId);
+      try {
+        return reply.send(
+          await deps.engine.reverse(body.accountId, request.user!.id, request.params.symbol.toUpperCase()),
+        );
+      } catch (err) {
+        mapRejection(err);
+      }
+    });
+
+    // -- history ----------------------------------------------------------
+
+    app.get('/trades', async (request, reply) => {
+      const query = z
+        .object({ accountId: z.string().uuid(), limit: z.coerce.number().int().min(1).max(500).default(200) })
+        .parse(request.query);
+      await assertOwnership(request.user!.id, query.accountId);
+
+      const rows = await db
+        .select()
+        .from(trades)
+        .where(eq(trades.accountId, query.accountId))
+        .orderBy(desc(trades.exitTime))
+        .limit(query.limit);
+
+      return reply.send({
+        trades: rows.map((row) => {
+          const spec = requireInstrument(row.symbol);
+          return {
+            id: row.id,
+            symbol: row.symbol,
+            side: row.side,
+            qty: row.qty,
+            entryPrice: ticksToPrice(spec, unscaleTicks(row.entryTicksScaled)),
+            exitPrice: ticksToPrice(spec, unscaleTicks(row.exitTicksScaled)),
+            entryTime: row.entryTime.getTime(),
+            exitTime: row.exitTime.getTime(),
+            grossPnlMicros: row.grossPnlMicros,
+            feesMicros: row.feesMicros,
+            netPnlMicros: row.netPnlMicros,
+            tradeDate: row.tradeDate,
+          };
+        }),
+      });
+    });
+
+    app.get('/executions', async (request, reply) => {
+      const query = z
+        .object({ accountId: z.string().uuid(), limit: z.coerce.number().int().min(1).max(500).default(200) })
+        .parse(request.query);
+      await assertOwnership(request.user!.id, query.accountId);
+
+      const rows = await db
+        .select()
+        .from(executions)
+        .where(eq(executions.accountId, query.accountId))
+        .orderBy(desc(executions.execTime))
+        .limit(query.limit);
+
+      return reply.send({
+        executions: rows.map((row) => {
+          const spec = requireInstrument(row.symbol);
+          return {
+            id: row.id,
+            orderId: row.orderId,
+            symbol: row.symbol,
+            side: row.side,
+            qty: row.qty,
+            price: ticksToPrice(spec, row.priceTicks),
+            feesMicros: row.feesMicros,
+            slippageTicks: row.slippageTicks,
+            liquidity: row.liquidity,
+            execTime: row.execTime.getTime(),
+            seq: row.seq,
+          };
+        }),
+      });
+    });
+
+    // -- account P&L ------------------------------------------------------
+
+    /** Equity = settled balance + open P&L. Computed here, never in the browser. */
+    app.get('/accounts/:id/pnl', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertOwnership(request.user!.id, params.id);
+
+      const [row] = await db
+        .select({ account: accounts, template: ruleTemplates })
+        .from(accounts)
+        .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
+        .where(eq(accounts.id, params.id));
+      if (!row) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+
+      const positionRows = await db
+        .select()
+        .from(positions)
+        .where(eq(positions.accountId, params.id));
+
+      let openPnlMicros = 0;
+      let openContracts = 0;
+      for (const p of positionRows) {
+        if (p.qty === 0) continue;
+        const spec = requireInstrument(p.symbol);
+        openPnlMicros += unrealizedPnlMicros(spec, toEnginePosition(p, p.symbol), deps.engine.markTicks(spec));
+        openContracts += Math.abs(p.qty);
+      }
+
+      const equityMicros = row.account.balanceMicros + openPnlMicros;
+      return reply.send({
+        accountId: params.id,
+        status: row.account.status,
+        startingBalanceMicros: row.account.startingBalanceMicros,
+        balanceMicros: row.account.balanceMicros,
+        equityMicros,
+        openPnlMicros,
+        realizedPnlMicros: row.account.realizedPnlMicros,
+        feesMicros: row.account.feesMicros,
+        dayPnlMicros: row.account.balanceMicros - row.account.dayStartBalanceMicros + openPnlMicros,
+        drawdownFloorMicros: row.account.drawdownFloorMicros,
+        remainingDrawdownMicros: equityMicros - row.account.drawdownFloorMicros,
+        profitTargetProgressMicros: row.account.balanceMicros - row.account.startingBalanceMicros,
+        profitTargetMicros: row.template.profitTargetMicros,
+        openContracts,
+        maxContracts: row.template.maxContracts,
+        seq: row.account.seq,
+      });
+    });
+
+    // -- environment settings ---------------------------------------------
+
+    app.get('/accounts/:id/environment', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertOwnership(request.user!.id, params.id);
+      const [row] = await db
+        .select({ env: accounts.simulationEnvironment })
+        .from(accounts)
+        .where(eq(accounts.id, params.id));
+      return reply.send({
+        environment: normalizeEnvironment((row?.env ?? null) as never),
+        depthLevels: deps.market.currentProvider.depthLevels,
+        depthAwareAvailable: deps.market.currentProvider.depthLevels > 1,
+      });
+    });
+
+    app.put('/accounts/:id/environment', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertOwnership(request.user!.id, params.id);
+
+      const patch = z
+        .object({
+          fillModel: z.enum(['SIMPLE', 'ADVANCED', 'DEPTH_AWARE']).optional(),
+          useBarRange: z.boolean().optional(),
+          intrabarPolicy: z.enum(['ADVERSE_FIRST', 'OBSERVED_ONLY']).optional(),
+          latencyMs: z.number().int().min(0).max(60_000).optional(),
+          marketSlippageTicks: z.number().int().min(0).max(100).optional(),
+          stopSlippageTicks: z.number().int().min(0).max(100).optional(),
+          maxContractsPerFill: z.number().int().min(1).max(1000).nullable().optional(),
+          requireThroughTradeForLimit: z.boolean().optional(),
+          feesEnabled: z.boolean().optional(),
+          commissionPerSideMicrosOverride: z.number().int().min(0).nullable().optional(),
+        })
+        .parse(request.body);
+
+      if (patch.fillModel === 'DEPTH_AWARE' && deps.market.currentProvider.depthLevels <= 1) {
+        throw ApiError.badRequest(
+          'FILL_MODEL_UNAVAILABLE',
+          'Depth-aware filling needs a market data feed with Level 2 depth. ' +
+            'The development feed provides none, so this model cannot be honoured.',
+        );
+      }
+
+      const [current] = await db
+        .select({ env: accounts.simulationEnvironment })
+        .from(accounts)
+        .where(eq(accounts.id, params.id));
+      const merged = normalizeEnvironment({
+        ...((current?.env ?? {}) as object),
+        ...patch,
+      } as never);
+
+      await db
+        .update(accounts)
+        .set({ simulationEnvironment: merged as never, updatedAt: new Date() })
+        .where(eq(accounts.id, params.id));
+
+      return reply.send({ environment: merged });
+    });
+  };
+}

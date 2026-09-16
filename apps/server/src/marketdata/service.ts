@@ -16,11 +16,11 @@ import type {
   Timeframe,
 } from '@atlas/contracts';
 import { getInstrument, getMarketState, requireInstrument } from '@atlas/instruments';
-import { CandleAggregator, bucketStart, type BarUpdate } from '@atlas/core';
+import { CandleAggregator, bucketStart, timeframeMs, type BarUpdate } from '@atlas/core';
 import type { Database } from '../db/client.js';
 import { marketDataMeta } from '../db/schema.js';
 import { MarketEventBus } from './bus.js';
-import { QuoteStore, type Freshness } from './quote-store.js';
+import { QuoteStore, freshnessClock, type Freshness } from './quote-store.js';
 import { BarService, type BarPage, type BarQuery } from './bar-service.js';
 import type { MarketDataProvider, ProviderCapabilities } from './provider.js';
 
@@ -148,7 +148,10 @@ export class MarketDataService {
         case 'status': {
           this.status = event.status;
           if (event.status.mode === 'DELAYED') {
-            this.quotes.setExpectedDelayMs(event.status.delaySeconds * 1000);
+            // The DECLARED delay, never the measured one. A feed that has
+            // stopped publishing measures an ever-growing delay, so calibrating
+            // staleness to it would keep reporting a frozen feed as fresh.
+            this.quotes.setExpectedDelayMs(event.status.declaredDelaySeconds * 1000);
           }
           this.bus.publishStatus(event.status);
           return;
@@ -274,12 +277,53 @@ export class MarketDataService {
     return this.quotes.getQuote(symbol.toUpperCase());
   }
 
+  /**
+   * The most recently SETTLED base bar for a symbol.
+   *
+   * The execution engine uses a closed bar's high and low to fill orders the
+   * quote stream never sampled. A forming bar is excluded deliberately: its
+   * extremes are not final, and filling against a high that later turns out not
+   * to have been the high would be filling on data that did not exist.
+   */
+  /** Length of the fine bars `lastClosedBar` returns, in ms. */
+  baseBarMs(symbol: string): number {
+    const agg = this.aggregators.get(symbol.toUpperCase());
+    return timeframeMs(agg?.baseTimeframe ?? '1m');
+  }
+
+  lastClosedBar(symbol: string): NormalizedBar | null {
+    const agg = this.aggregators.get(symbol.toUpperCase());
+    if (!agg) return null;
+    const fine = agg.fineSeries();
+    for (let i = fine.length - 1; i >= 0; i -= 1) {
+      const bar = fine[i]!;
+      if (bar.closed) return bar;
+    }
+    return null;
+  }
+
   markPrice(symbol: string): number | null {
     return this.quotes.markPrice(symbol.toUpperCase());
   }
 
+  /**
+   * The clock staleness is judged against.
+   *
+   * Wall clock for a live feed. For a REPLAY it is the playback position: a
+   * recording of last Tuesday is not stale data, it is data from last Tuesday,
+   * and judging it against the server clock would call every replayed quote
+   * hours out of date and block order entry for the whole session.
+   */
   freshness(symbol: string): Freshness {
-    return this.quotes.freshness(requireInstrument(symbol));
+    const root = symbol.toUpperCase();
+    // Read the provider directly: `this.status` is only as current as the last
+    // status EVENT, and a provider that has just been swapped in has not sent
+    // one yet - which would judge a fresh replay against the server clock.
+    const clock = freshnessClock(
+      this.provider.getConnectionStatus(),
+      this.quotes.getQuote(root)?.exchangeTs ?? null,
+    );
+    return this.quotes.freshness(requireInstrument(root), clock);
   }
 
   getConnectionStatus(): ConnectionStatus {

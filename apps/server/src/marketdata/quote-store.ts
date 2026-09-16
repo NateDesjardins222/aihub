@@ -10,10 +10,34 @@
  * reports MARKET_CLOSED rather than STALE. Telling a trader their data is broken
  * at 3am on a Saturday would be wrong.
  */
-import type { InstrumentSpec, NormalizedQuote, NormalizedTrade } from '@atlas/contracts';
+import type {
+  ConnectionStatus,
+  InstrumentSpec,
+  NormalizedQuote,
+  NormalizedTrade,
+} from '@atlas/contracts';
 import { getMarketState } from '@atlas/instruments';
 
 export type FreshnessState = 'FRESH' | 'STALE' | 'MARKET_CLOSED' | 'NO_DATA';
+
+/**
+ * The clock a symbol's freshness is judged against.
+ *
+ * Live feeds are judged against the server clock: the quote should be no older
+ * than the delay the provider declares. A REPLAY is judged against the
+ * recording itself - a session from last Tuesday is not late data, it is data
+ * from last Tuesday, and measuring it against today would block order entry for
+ * the whole replay. A symbol the recording does not carry has no quote, which
+ * reports as NO_DATA rather than as stale.
+ */
+export function freshnessClock(
+  status: Pick<ConnectionStatus, 'mode'> & { lastEventAt: number | null },
+  quoteExchangeTs: number | null,
+  now = Date.now(),
+): number {
+  if (status.mode !== 'REPLAY') return now;
+  return quoteExchangeTs ?? status.lastEventAt ?? now;
+}
 
 export interface Freshness {
   readonly symbol: string;

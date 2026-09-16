@@ -10,6 +10,8 @@ import { authRoutes } from './routes/auth.js';
 import { instrumentRoutes } from './routes/instruments.js';
 import { accountRoutes, ruleTemplateRoutes } from './routes/accounts.js';
 import { marketDataRoutes } from './routes/marketdata.js';
+import { tradingRoutes } from './routes/trading.js';
+import { TradingEngine } from '../trading/engine.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb } from '../db/client.js';
 import { MarketDataGateway } from '../ws/gateway.js';
@@ -18,6 +20,7 @@ export interface BuiltApp {
   readonly app: FastifyInstance;
   readonly stack: MarketDataStack;
   readonly gateway: MarketDataGateway;
+  readonly engine: TradingEngine;
 }
 
 export async function buildApp(): Promise<BuiltApp> {
@@ -110,10 +113,12 @@ export async function buildApp(): Promise<BuiltApp> {
 
   const { db } = getDb();
   const stack = buildMarketDataStack(db);
-  const gateway = new MarketDataGateway(stack.market);
+  const engine = new TradingEngine(db, stack.market);
+  const gateway = new MarketDataGateway(stack.market, engine);
   gateway.register(app);
 
   app.addHook('onClose', async () => {
+    engine.stop();
     await stack.market.stop();
   });
 
@@ -122,6 +127,7 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(accountRoutes, { prefix: '/api/v1/accounts' });
   await app.register(ruleTemplateRoutes, { prefix: '/api/v1/rule-templates' });
   await app.register(marketDataRoutes(stack), { prefix: '/api/v1/marketdata' });
+  await app.register(tradingRoutes({ engine, market: stack.market }), { prefix: '/api/v1' });
 
-  return { app, stack, gateway };
+  return { app, stack, gateway, engine };
 }

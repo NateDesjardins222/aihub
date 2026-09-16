@@ -3,11 +3,13 @@ import { useSession, activeInstrument, selectedAccount } from '../state/session'
 import { formatMicros } from '../state/format';
 import { Pending } from './Pending';
 import { ReplayPanel } from './ReplayPanel';
+import { OrderPanel } from './OrderPanel';
+import { EnvironmentPanel } from './EnvironmentPanel';
 import { DomPanel } from './DomPanel';
 import './RightPanel.css';
 import type { JSX } from 'react';
 
-type RightTab = 'ORDER' | 'DOM' | 'REPLAY';
+type RightTab = 'ORDER' | 'DOM' | 'REPLAY' | 'ENV';
 
 /** Right column: order entry and the price ladder, switchable. */
 export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Element {
@@ -34,6 +36,13 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
           >
             Replay
           </button>
+          <button
+            className={`tab ${tab === 'ENV' ? 'tab-active' : ''}`}
+            onClick={() => setTab('ENV')}
+            title="Simulation environment settings"
+          >
+            Sim
+          </button>
         </div>
         <div className="hdr-spacer" />
         <button className="icon-btn" onClick={onCollapse} title="Collapse panel">
@@ -42,9 +51,10 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
       </div>
 
       <div className="panel-body">
-        {tab === 'ORDER' ? <OrderPanelPreview /> : null}
+        {tab === 'ORDER' ? <OrderPanel /> : null}
         {tab === 'DOM' ? <DomPanel /> : null}
         {tab === 'REPLAY' ? <ReplayPanel /> : null}
+        {tab === 'ENV' ? <EnvironmentPanel /> : null}
       </div>
 
       {instrument && account ? (
@@ -68,75 +78,5 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
         </footer>
       ) : null}
     </>
-  );
-}
-
-/**
- * The order ticket's layout, rendered with real instrument values but with
- * submission disabled: the execution engine lands in Milestone 5, and a BUY
- * button that does nothing is exactly what this project must not ship.
- */
-function OrderPanelPreview(): JSX.Element {
-  const instrument = useSession(activeInstrument);
-  if (!instrument) return <Pending title="No instrument selected" milestone="—" />;
-
-  return (
-    <div className="order-panel">
-      <div className="op-notice">
-        <span className="pending-tag">Milestone 5 / 6</span>
-        <p>
-          Order submission is disabled until the server-side simulation engine is live. The
-          controls below are laid out against real {instrument.root} specifications and become
-          active the moment the engine accepts orders.
-        </p>
-      </div>
-
-      <div className="op-grid">
-        <label>
-          <span className="label">Quantity</span>
-          <input className="num" type="number" defaultValue={1} min={instrument.minOrderQty} disabled />
-        </label>
-        <label>
-          <span className="label">Order type</span>
-          <select disabled>
-            {instrument.supportedOrderTypes.map((t) => (
-              <option key={t}>{t.replace('_', ' ')}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="label">Limit price</span>
-          <input className="num" type="text" placeholder={`× ${instrument.tickSize}`} disabled />
-        </label>
-        <label>
-          <span className="label">Stop price</span>
-          <input className="num" type="text" placeholder={`× ${instrument.tickSize}`} disabled />
-        </label>
-      </div>
-
-      <div className="op-bracket">
-        <span className="label">Bracket</span>
-        <div className="op-bracket-row">
-          <span>Stop loss</span>
-          <input className="num" type="number" placeholder="ticks" disabled />
-          <span>Take profit</span>
-          <input className="num" type="number" placeholder="ticks" disabled />
-        </div>
-      </div>
-
-      <div className="op-actions">
-        <button className="op-buy" disabled>
-          BUY MKT
-        </button>
-        <button className="op-sell" disabled>
-          SELL MKT
-        </button>
-      </div>
-      <div className="op-actions op-actions-secondary">
-        <button disabled>Flatten</button>
-        <button disabled>Reverse</button>
-        <button disabled>Cancel all</button>
-      </div>
-    </div>
   );
 }

@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import { useSession, selectedAccount, activeInstrument } from '../state/session';
 import { formatClock, formatMicros, pnlClass } from '../state/format';
 import { useClock } from './usePersistentSize';
 import { FeedBadge } from '../panels/FeedBadge';
 import { useFreshness } from '../market/useFreshness';
+import { useTrading } from '../trading/store';
 import type { JSX } from 'react';
 
 /**
@@ -21,6 +23,14 @@ export function TerminalHeader(): JSX.Element {
   const user = useSession((s) => s.user);
   const now = useClock();
   const freshness = useFreshness(instrument?.root ?? null);
+  // Live account figures. Every one is computed server-side and pushed here;
+  // the header derives nothing of its own.
+  const pnl = useTrading((s) => s.pnl);
+  const attach = useTrading((s) => s.attach);
+
+  useEffect(() => {
+    if (account) attach(account.id);
+  }, [account, attach]);
 
   const tz = instrument?.sessionTimezone ?? 'America/Chicago';
   const marketState = instrument?.marketState.state ?? 'CLOSED';
@@ -55,34 +65,41 @@ export function TerminalHeader(): JSX.Element {
         {account ? <StatusPill status={account.status} /> : null}
       </div>
 
-      <Metric label="Balance" value={account ? formatMicros(account.balanceMicros) : '—'} />
+      <Metric
+        label="Balance"
+        value={pnl ? formatMicros(pnl.balanceMicros) : account ? formatMicros(account.balanceMicros) : '—'}
+        title="Settled cash: starting balance plus realized P&L, less fees"
+      />
+      <Metric
+        label="Equity"
+        value={pnl ? formatMicros(pnl.equityMicros) : '—'}
+        title="Balance plus open P&L"
+      />
       <Metric
         label="Day P&L"
-        value={account ? formatMicros(account.dayPnlMicros, { sign: true }) : '—'}
-        tone={account ? pnlClass(account.dayPnlMicros) : 'flat'}
+        value={pnl ? formatMicros(pnl.dayPnlMicros, { sign: true }) : '—'}
+        tone={pnl ? pnlClass(pnl.dayPnlMicros) : 'flat'}
       />
       <Metric
         label="Open P&L"
-        value={account ? formatMicros(account.openPnlMicros, { sign: true }) : '—'}
-        tone={account ? pnlClass(account.openPnlMicros) : 'flat'}
+        value={pnl ? formatMicros(pnl.openPnlMicros, { sign: true }) : '—'}
+        tone={pnl ? pnlClass(pnl.openPnlMicros) : 'flat'}
       />
       <Metric
         label="Drawdown left"
-        value={account ? formatMicros(account.remainingDrawdownMicros) : '—'}
+        value={pnl ? formatMicros(pnl.remainingDrawdownMicros) : '—'}
         tone={
-          account && account.remainingDrawdownMicros < account.ruleTemplate.maxLossMicros * 0.25
+          pnl && account && pnl.remainingDrawdownMicros < account.ruleTemplate.maxLossMicros * 0.25
             ? 'neg'
             : 'flat'
         }
-        title={account ? `${account.ruleTemplate.drawdownType} drawdown` : undefined}
+        title={account ? `${account.ruleTemplate.drawdownType.replace(/_/g, ' ')} drawdown` : undefined}
       />
       <Metric
         label="Target"
         value={
-          account
-            ? `${formatMicros(account.profitTargetProgressMicros, { sign: true })} / ${formatMicros(
-                account.ruleTemplate.profitTargetMicros,
-              )}`
+          pnl
+            ? `${formatMicros(pnl.profitTargetProgressMicros, { sign: true })} / ${formatMicros(pnl.profitTargetMicros)}`
             : '—'
         }
       />

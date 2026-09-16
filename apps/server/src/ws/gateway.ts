@@ -13,6 +13,7 @@ import type { ClientFrame, ServerFrame, Timeframe } from '@atlas/contracts';
 import { getInstrument } from '@atlas/instruments';
 import { verifyAccessToken } from '../auth/tokens.js';
 import type { MarketDataService } from '../marketdata/service.js';
+import type { EngineChange, TradingEngine } from '../trading/engine.js';
 import { STREAM, StreamRegistry } from './streams.js';
 
 const HEARTBEAT_MS = 5_000;
@@ -25,6 +26,8 @@ interface Client {
   readonly socket: WebSocket;
   userId: string | null;
   readonly streams: Set<string>;
+  /** Accounts this socket has been authorised to follow. */
+  readonly accounts: Set<string>;
   lastSeenAt: number;
   alive: boolean;
 }
@@ -38,7 +41,10 @@ export class MarketDataGateway {
   private readonly streamRefCounts = new Map<string, number>();
   private heartbeat: NodeJS.Timeout | null = null;
 
-  constructor(private readonly market: MarketDataService) {
+  constructor(
+    private readonly market: MarketDataService,
+    private readonly engine?: TradingEngine,
+  ) {
     this.wss = new WebSocketServer({ noServer: true });
   }
 
@@ -50,6 +56,25 @@ export class MarketDataGateway {
 
     // Status changes are global, so this source is always live.
     this.market.onStatus((status) => this.publish(STREAM.status, status));
+
+    // Trading state is PUSHED. The browser holds a replica and is told when it
+    // changes; it never polls for a fill, and never decides it had one.
+    this.engine?.onChange((change: EngineChange) => {
+      this.publish(`acct.${change.accountId}.orders`, change.orders);
+      if (change.position) this.publish(`acct.${change.accountId}.positions`, change.position);
+      if (change.fills.length > 0) {
+        this.publish(`acct.${change.accountId}.executions`, change.fills);
+      }
+      if (change.trades.length > 0) {
+        this.publish(`acct.${change.accountId}.trades`, change.trades);
+      }
+    });
+
+    // Account valuations carry the full P&L picture, so the client updates
+    // directly from the frame instead of issuing a REST read per push.
+    this.engine?.onValuation((valuation) => {
+      this.publish(`acct.${valuation.accountId}.pnl`, valuation);
+    });
 
     this.heartbeat = setInterval(() => this.tick(), HEARTBEAT_MS);
     this.heartbeat.unref?.();
@@ -76,6 +101,7 @@ export class MarketDataGateway {
       socket,
       userId: null,
       streams: new Set(),
+      accounts: new Set(),
       lastSeenAt: Date.now(),
       alive: true,
     };
@@ -140,6 +166,14 @@ export class MarketDataGateway {
           return;
         }
         for (const stream of frame.channels) {
+          if (stream.startsWith('acct.') && !(await this.mayFollowAccount(client, stream))) {
+            this.send(client, {
+              t: 'error',
+              code: 'FORBIDDEN',
+              message: 'That account does not belong to you.',
+            });
+            continue;
+          }
           if (client.streams.size >= MAX_SUBSCRIPTIONS) {
             this.send(client, {
               t: 'error',
@@ -236,6 +270,13 @@ export class MarketDataGateway {
       return true;
     }
 
+    // Account streams carry no server-side source: the engine pushes into them
+    // directly. They still have to be recognised so a client may subscribe.
+    if (stream.startsWith('acct.')) {
+      this.sources.set(stream, () => undefined);
+      return true;
+    }
+
     const depthSymbol = this.registry.parseSymbolStream(stream, 'depth');
     if (depthSymbol) {
       const spec = getInstrument(depthSymbol);
@@ -251,6 +292,7 @@ export class MarketDataGateway {
 
   private isKnownStream(stream: string): boolean {
     if (stream === STREAM.status) return true;
+    if (stream.startsWith('acct.')) return true;
     if (this.registry.parseBarStream(stream)) return true;
     for (const kind of ['quote', 'trade', 'depth'] as const) {
       if (this.registry.parseSymbolStream(stream, kind)) return true;
@@ -270,6 +312,31 @@ export class MarketDataGateway {
       stop();
       this.sources.delete(stream);
     }
+  }
+
+  /**
+   * May this socket follow an account stream?
+   *
+   * Account streams carry positions, fills and balances. Without this check any
+   * authenticated user could subscribe to `acct.<someone-else's-id>.pnl` simply
+   * by guessing an id.
+   */
+  private async mayFollowAccount(client: Client, stream: string): Promise<boolean> {
+    if (!client.userId) return false;
+    const accountId = stream.split('.')[1];
+    if (!accountId) return false;
+    if (client.accounts.has(accountId)) return true;
+
+    const { db } = await import('../db/client.js').then((m) => ({ db: m.getDb().db }));
+    const { accounts } = await import('../db/schema.js');
+    const { and, eq } = await import('drizzle-orm');
+    const [row] = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.id, accountId), eq(accounts.userId, client.userId)));
+    if (!row) return false;
+    client.accounts.add(accountId);
+    return true;
   }
 
   /** Authoritative current state for a stream. Replaces the client's copy. */
@@ -316,6 +383,8 @@ export class MarketDataGateway {
       return;
     }
 
+    // Account streams are seeded by the REST read APIs, which the client calls
+    // on connect; a null here would tell it it has no orders.
     this.send(client, { t: 'snapshot', stream, seq, serverTime: Date.now(), data: null });
   }
 

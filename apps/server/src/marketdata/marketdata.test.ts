@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import { requireInstrument } from '@atlas/instruments';
 import type { NormalizedQuote, NormalizedTrade } from '@atlas/contracts';
 import { MarketEventBus } from './bus.js';
-import { QuoteStore } from './quote-store.js';
+import { QuoteStore, freshnessClock } from './quote-store.js';
 import { emptyStats, isPlausibleExchangeTs, normalizeBar } from './normalize.js';
 import { YahooDelayedProvider, chooseVendorInterval } from './providers/yahoo.js';
 
@@ -227,11 +227,76 @@ describe('staleness detection', () => {
     expect(f.blocksOrderEntry).toBe(true);
   });
 
-  it('follows the measured delay when the provider revises it', () => {
+  it('follows the delay the provider declares when it is revised', () => {
     const s = store();
     s.setExpectedDelayMs(0); // e.g. a licensed real-time feed was attached
     s.putQuote(quote({ exchangeTs: OPEN_NOW - 300_000 }), OPEN_NOW);
     expect(s.freshness(NQ, OPEN_NOW).state).toBe('STALE');
+  });
+
+  it('does not calibrate staleness to a growing measured delay', async () => {
+    // A frozen feed measures an ever-growing delay. Calibrating to it would make
+    // the freeze invisible: the check exists precisely to catch this.
+    const frozenAt = Math.floor((Date.now() - 30 * 60_000) / 1000);
+    const impl = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: { symbol: 'NQ=F', regularMarketPrice: 20_000.25, regularMarketTime: frozenAt },
+              timestamp: [frozenAt - 60],
+              indicators: {
+                quote: [{ open: [20_000], high: [20_010], low: [19_990], close: [20_005], volume: [7] }],
+              },
+            },
+          ],
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    const provider = new YahooDelayedProvider({
+      pollIntervalMs: 1_000_000,
+      declaredDelaySeconds: 600,
+      fetchImpl: impl,
+    });
+    provider.subscribe('NQ');
+    await (provider as unknown as { pollOnce: () => Promise<void> }).pollOnce();
+
+    const status = provider.getConnectionStatus();
+    // The measured figure reflects the freeze; the contracted one does not move.
+    expect(status.delaySeconds).toBeGreaterThan(1_500);
+    expect(status.declaredDelaySeconds).toBe(600);
+
+    // Calibrated on the declared delay, a thirty-minute-old quote is stale.
+    const s = store();
+    s.setExpectedDelayMs(status.declaredDelaySeconds * 1_000);
+    s.putQuote(quote({ exchangeTs: OPEN_NOW - 30 * 60_000 }), OPEN_NOW);
+    expect(s.freshness(NQ, OPEN_NOW).state).toBe('STALE');
+
+    await provider.disconnect();
+  });
+
+  it('judges a replay against the recording rather than the server clock', () => {
+    const recorded = ct('2026-09-15T10:00:00');
+    const status = { mode: 'REPLAY' as const, lastEventAt: recorded };
+    const now = recorded + 47 * 3_600_000; // two days later, in the real world
+
+    // A quote from the replay is exactly as recent as the playback position.
+    expect(freshnessClock(status, recorded, now)).toBe(recorded);
+    const s = store();
+    s.setExpectedDelayMs(0);
+    s.putQuote(quote({ exchangeTs: recorded }), recorded);
+    expect(s.freshness(NQ, freshnessClock(status, recorded, now)).state).toBe('FRESH');
+
+    // A symbol the recording does not carry has nothing to trade against.
+    expect(store().freshness(GC, freshnessClock(status, null, now)).state).toBe('NO_DATA');
+  });
+
+  it('judges a live feed against the server clock', () => {
+    const status = { mode: 'DELAYED' as const, lastEventAt: OPEN_NOW - EXPECTED_DELAY };
+    expect(freshnessClock(status, OPEN_NOW - EXPECTED_DELAY, OPEN_NOW)).toBe(OPEN_NOW);
   });
 
   it('marks against the last trade and never invents a bid/ask spread', () => {
@@ -272,6 +337,118 @@ describe('vendor granularity selection', () => {
         expect(chosen.interval).toBeTruthy();
       }
     }
+  });
+});
+
+describe('poll republication', () => {
+  /**
+   * The vendor returns its whole intraday window on every poll. Republishing
+   * all of it turns one poll into hundreds of bar events, every one of which
+   * the matching engine treats as a chance to fill a resting order.
+   */
+  function windowFetch(state: { minutes: number; lastClose: number }): typeof fetch {
+    return (async () => {
+      const nowSec = Math.floor(Date.now() / 1000) - 600;
+      const base = Math.floor(nowSec / 60) * 60 - state.minutes * 60;
+      const timestamp: number[] = [];
+      const open: number[] = [];
+      const high: number[] = [];
+      const low: number[] = [];
+      const close: number[] = [];
+      const volume: number[] = [];
+      for (let i = 0; i < state.minutes; i += 1) {
+        timestamp.push(base + i * 60);
+        open.push(20_000 + i);
+        high.push(20_010 + i);
+        low.push(19_990 + i);
+        close.push(i === state.minutes - 1 ? state.lastClose : 20_005 + i);
+        volume.push(42 + i);
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          chart: {
+            result: [
+              {
+                meta: {
+                  symbol: 'NQ=F',
+                  regularMarketPrice: 20_000.25,
+                  regularMarketTime: nowSec,
+                },
+                timestamp,
+                indicators: { quote: [{ open, high, low, close, volume }] },
+              },
+            ],
+          },
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  async function poll(provider: YahooDelayedProvider): Promise<void> {
+    await (provider as unknown as { pollOnce: () => Promise<void> }).pollOnce();
+  }
+
+  it('publishes the window once and then only what changed', async () => {
+    const state = { minutes: 8, lastClose: 20_012 };
+    const provider = new YahooDelayedProvider({
+      pollIntervalMs: 1_000_000,
+      declaredDelaySeconds: 600,
+      fetchImpl: windowFetch(state),
+    });
+    const bars: number[] = [];
+    provider.on((e) => {
+      if (e.kind === 'bar') bars.push(e.bar.time);
+    });
+
+    provider.subscribe('NQ');
+    await poll(provider);
+    const seeded = bars.length;
+    expect(seeded).toBeGreaterThan(1);
+
+    // Nothing moved: a second poll of the same window is not news.
+    bars.length = 0;
+    await poll(provider);
+    expect(bars).toHaveLength(0);
+
+    // The newest bucket revises: exactly one bar, and it is that bucket.
+    state.lastClose = 20_099;
+    await poll(provider);
+    expect(bars).toHaveLength(1);
+
+    // A new bucket appears: again exactly one bar.
+    bars.length = 0;
+    state.minutes = 9;
+    await poll(provider);
+    expect(bars).toHaveLength(1);
+
+    await provider.disconnect();
+  });
+
+  it('reseeds the window after a resubscribe', async () => {
+    const state = { minutes: 5, lastClose: 20_012 };
+    const provider = new YahooDelayedProvider({
+      pollIntervalMs: 1_000_000,
+      declaredDelaySeconds: 600,
+      fetchImpl: windowFetch(state),
+    });
+    let bars = 0;
+    provider.on((e) => {
+      if (e.kind === 'bar') bars += 1;
+    });
+
+    provider.subscribe('NQ');
+    await poll(provider);
+    expect(bars).toBeGreaterThan(1);
+
+    provider.unsubscribe('NQ');
+    provider.subscribe('NQ');
+    bars = 0;
+    await poll(provider);
+    expect(bars).toBeGreaterThan(1);
+
+    await provider.disconnect();
   });
 });
 
