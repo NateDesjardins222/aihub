@@ -13,6 +13,8 @@ import { marketStream } from '../market/stream';
 import {
   tradingApi,
   type ApiAccountPnl,
+  type ApiRules,
+  type ApiRuleStatus,
   type ApiExecution,
   type ApiOrder,
   type ApiPosition,
@@ -27,6 +29,10 @@ interface TradingState {
   trades: ApiTrade[];
   executions: ApiExecution[];
   pnl: ApiAccountPnl | null;
+  /** Live rule status, pushed with every valuation frame. */
+  rules: ApiRuleStatus | null;
+  /** The programme itself: limits, requirements and the days behind them. */
+  ruleBook: ApiRules | null;
   environment: SimulationEnvironment | null;
   depthAwareAvailable: boolean;
   loading: boolean;
@@ -39,6 +45,7 @@ interface TradingState {
   readAll: (accountId: string) => Promise<void>;
   refreshPnl: () => Promise<void>;
   loadEnvironment: () => Promise<void>;
+  loadRules: () => Promise<void>;
   setEnvironment: (patch: Partial<SimulationEnvironment>) => Promise<void>;
   setError: (message: string | null) => void;
   setRejection: (rejection: { code: string; message: string } | null) => void;
@@ -69,6 +76,8 @@ export const useTrading = create<TradingState>((set, get) => ({
   trades: [],
   executions: [],
   pnl: null,
+  rules: null,
+  ruleBook: null,
   environment: null,
   depthAwareAvailable: false,
   loading: false,
@@ -78,7 +87,16 @@ export const useTrading = create<TradingState>((set, get) => ({
   attach(accountId) {
     if (get().accountId === accountId) return;
     detach?.();
-    set({ accountId, orders: [], positions: [], trades: [], executions: [], pnl: null });
+    set({
+      accountId,
+      orders: [],
+      positions: [],
+      trades: [],
+      executions: [],
+      pnl: null,
+      rules: null,
+      ruleBook: null,
+    });
 
     marketStream.connect();
     // Follow the account's streams. The server pushes; nothing here polls for
@@ -108,11 +126,21 @@ export const useTrading = create<TradingState>((set, get) => ({
           dayPnlMicros?: number;
           remainingDrawdownMicros?: number;
           openContracts?: number;
+          rules?: ApiRuleStatus;
           positions?: Array<{ symbol: string; unrealizedPnlMicros: number; markPrice: number | null }>;
         } | null;
         if (!valuation || valuation.accountId !== accountId) return;
 
+        // A status change is the one thing that needs the authoritative read:
+        // a failed account's orders and positions have just been closed by the
+        // server, and the replica has to catch up rather than guess.
+        const previousStatus = get().rules?.status;
+        if (valuation.rules && previousStatus && valuation.rules.status !== previousStatus) {
+          schedule();
+        }
+
         set((state) => ({
+          rules: valuation.rules ?? state.rules,
           pnl: state.pnl
             ? {
                 ...state.pnl,
@@ -140,6 +168,7 @@ export const useTrading = create<TradingState>((set, get) => ({
 
     void get().refresh();
     void get().loadEnvironment();
+    void get().loadRules();
   },
 
   async refresh() {
@@ -170,12 +199,13 @@ export const useTrading = create<TradingState>((set, get) => ({
   async readAll(accountId: string) {
     set({ loading: true });
     try {
-      const [orders, positions, trades, executions, pnl] = await Promise.all([
+      const [orders, positions, trades, executions, pnl, ruleBook] = await Promise.all([
         tradingApi.orders(accountId),
         tradingApi.positions(accountId),
         tradingApi.trades(accountId),
         tradingApi.executions(accountId),
         tradingApi.pnl(accountId),
+        tradingApi.rules(accountId).catch(() => null),
       ]);
       set({
         orders: orders.orders,
@@ -183,6 +213,8 @@ export const useTrading = create<TradingState>((set, get) => ({
         trades: trades.trades,
         executions: executions.executions,
         pnl,
+        ruleBook: ruleBook ?? get().ruleBook,
+        rules: ruleBook?.status ?? get().rules,
         error: null,
       });
     } catch (err) {
@@ -199,6 +231,17 @@ export const useTrading = create<TradingState>((set, get) => ({
       set({ pnl: await tradingApi.pnl(accountId) });
     } catch {
       /* the next refresh will pick it up */
+    }
+  },
+
+  async loadRules() {
+    const accountId = get().accountId;
+    if (!accountId) return;
+    try {
+      const ruleBook = await tradingApi.rules(accountId);
+      set({ ruleBook, rules: ruleBook.status ?? get().rules });
+    } catch {
+      /* the risk panel shows its own error */
     }
   },
 

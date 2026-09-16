@@ -90,6 +90,88 @@ export interface ApiAccountPnl {
   seq: number;
 }
 
+/** Where an account stands against its programme. Computed by the server. */
+export interface ApiRuleRequirement {
+  key: string;
+  label: string;
+  met: boolean;
+  current: number;
+  required: number;
+  unit: 'MICROS' | 'COUNT' | 'RATIO';
+}
+
+export interface ApiRuleStatus {
+  status: 'ACTIVE' | 'GOAL_REACHED' | 'PASSED' | 'FAILED' | 'LOCKED';
+  balanceMicros: number;
+  equityMicros: number;
+  openPnlMicros: number;
+  dayPnlMicros: number;
+  dayRealizedPnlMicros: number;
+  highWaterMarkMicros: number;
+  drawdownFloorMicros: number;
+  remainingDrawdownMicros: number;
+  dailyLossLimitMicros: number | null;
+  remainingDailyLossMicros: number | null;
+  profitTargetMicros: number;
+  profitProgressMicros: number;
+  profitTargetMet: boolean;
+  consistency: {
+    threshold: number;
+    bestDayProfitMicros: number;
+    denominatorMicros: number;
+    ratio: number | null;
+    passing: boolean;
+    additionalProfitNeededMicros: number;
+  } | null;
+  tradingDaysCount: number;
+  winningDaysCount: number;
+  requirements: ApiRuleRequirement[];
+  breach: { code: string; message: string; status: string } | null;
+  canTrade: boolean;
+}
+
+export interface ApiRuleConfig {
+  accountSizeMicros: number;
+  profitTargetMicros: number;
+  maxLossMicros: number;
+  drawdownType: 'STATIC' | 'INTRADAY_TRAILING' | 'EOD_TRAILING';
+  trailingLockAtMicros: number | null;
+  dailyLossLimitMicros: number | null;
+  dailyLossPolicy: 'LOCK_DAY' | 'FAIL';
+  consistencyFormula: 'BEST_DAY_OVER_TOTAL' | 'BEST_DAY_OVER_TARGET';
+  consistencyThreshold: number | null;
+  minTradingDays: number;
+  minWinningDays: number;
+  maxTradingDays: number | null;
+  minDailyPnlToCountMicros: number;
+  minWinningDayPnlMicros: number;
+  maxContracts: number;
+  microsCountAsFraction: boolean;
+  flattenOnBreach: boolean;
+}
+
+export interface ApiRules {
+  accountId: string;
+  config: ApiRuleConfig;
+  templateName: string | null;
+  status: ApiRuleStatus | null;
+  account: {
+    startingBalanceMicros: number;
+    highWaterMarkMicros: number;
+    drawdownFloorMicros: number;
+    currentTradeDate: string | null;
+    lockedUntilDate: string | null;
+    failedReason: string | null;
+  };
+  days: Array<{
+    tradeDate: string;
+    startingBalanceMicros: number;
+    endingBalanceMicros: number;
+    realizedPnlMicros: number;
+    counted: boolean;
+  }>;
+}
+
 export interface SimulationEnvironment {
   fillModel: 'SIMPLE' | 'ADVANCED' | 'DEPTH_AWARE';
   useBarRange: boolean;
@@ -151,6 +233,12 @@ export const tradingApi = {
   setEnvironment: (accountId: string, patch: Partial<SimulationEnvironment>) =>
     api.put<{ environment: SimulationEnvironment }>(
       `/api/v1/accounts/${accountId}/environment`,
+      patch,
+    ),
+  rules: (accountId: string) => api.get<ApiRules>(`/api/v1/accounts/${accountId}/rules`),
+  setRules: (accountId: string, patch: Partial<ApiRuleConfig>) =>
+    api.put<{ config: ApiRuleConfig; status: ApiRuleStatus | null }>(
+      `/api/v1/accounts/${accountId}/rules`,
       patch,
     ),
 };

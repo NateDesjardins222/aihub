@@ -76,3 +76,8 @@
   color: var(--short);
   font-size: var(--fs-xs);
 }
+
+/* Presets wrap: there are more of them than fit on one row. */
+.env-presets {
+  flex-wrap: wrap;
+}

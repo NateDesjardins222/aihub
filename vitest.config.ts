@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['packages/**/*.test.ts', 'apps/server/**/*.test.ts'],
+    include: ['packages/**/*.test.ts', 'apps/server/**/*.test.ts', 'apps/web/**/*.test.ts'],
     environment: 'node',
     testTimeout: 30_000,
     // Engine integration tests share one PostgreSQL database. They each create

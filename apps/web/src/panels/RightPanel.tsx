@@ -6,10 +6,11 @@ import { ReplayPanel } from './ReplayPanel';
 import { OrderPanel } from './OrderPanel';
 import { EnvironmentPanel } from './EnvironmentPanel';
 import { DomPanel } from './DomPanel';
+import { RiskPanel } from './RiskPanel';
 import './RightPanel.css';
 import type { JSX } from 'react';
 
-type RightTab = 'ORDER' | 'DOM' | 'REPLAY' | 'ENV';
+type RightTab = 'ORDER' | 'DOM' | 'RISK' | 'REPLAY' | 'ENV';
 
 /** Right column: order entry and the price ladder, switchable. */
 export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Element {
@@ -29,6 +30,13 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
           </button>
           <button className={`tab ${tab === 'DOM' ? 'tab-active' : ''}`} onClick={() => setTab('DOM')}>
             DOM
+          </button>
+          <button
+            className={`tab ${tab === 'RISK' ? 'tab-active' : ''}`}
+            onClick={() => setTab('RISK')}
+            title="Account rules, drawdown and programme progress"
+          >
+            Risk
           </button>
           <button
             className={`tab ${tab === 'REPLAY' ? 'tab-active' : ''}`}
@@ -53,6 +61,7 @@ export function RightPanel({ onCollapse }: { onCollapse: () => void }): JSX.Elem
       <div className="panel-body">
         {tab === 'ORDER' ? <OrderPanel /> : null}
         {tab === 'DOM' ? <DomPanel /> : null}
+        {tab === 'RISK' ? <RiskPanel /> : null}
         {tab === 'REPLAY' ? <ReplayPanel /> : null}
         {tab === 'ENV' ? <EnvironmentPanel /> : null}
       </div>

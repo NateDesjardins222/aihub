@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { useSession, selectedAccount } from '../state/session';
 import { useTrading } from '../trading/store';
-import type { SimulationEnvironment } from '../trading/api';
+import { useMotion } from '../state/motion-store';
+import { PRESETS, presetMatches, type EnvironmentPreset } from '../state/presets';
+import { tradingApi, type SimulationEnvironment } from '../trading/api';
 import './EnvironmentPanel.css';
 
 /**
@@ -21,6 +23,34 @@ export function EnvironmentPanel(): JSX.Element {
   const loadEnvironment = useTrading((s) => s.loadEnvironment);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const motion = useMotion((s) => s.settings);
+  const setMotion = useMotion((s) => s.set);
+  const loadRules = useTrading((s) => s.loadRules);
+  const accountId = useTrading((s) => s.accountId);
+
+  /**
+   * Apply a preset.
+   *
+   * The three layers go to three different places and that separation is the
+   * architecture: execution and rules are the server's, motion never leaves the
+   * browser. A preset is a bundle of settings, not a mode the engine knows about.
+   */
+  const applyPreset = async (preset: EnvironmentPreset): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (preset.motion) setMotion(preset.motion, preset.id);
+      if (preset.execution) await setEnvironment(preset.execution);
+      if (preset.rules && accountId) {
+        await tradingApi.setRules(accountId, preset.rules);
+        await loadRules();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not apply that preset.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     void loadEnvironment();
@@ -46,6 +76,87 @@ export function EnvironmentPanel(): JSX.Element {
         How the simulator fills your orders. Defaults are deliberately pessimistic — a
         simulator that flatters you teaches habits that lose money live.
       </p>
+
+      <section className="env-section">
+        <div className="label">Preset</div>
+        <div className="env-row env-presets">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              className={`chip ${presetMatches(preset, environment, motion) ? 'chip-on' : ''}`}
+              disabled={busy}
+              title={preset.description}
+              onClick={() => void applyPreset(preset)}
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+        <p className="env-note">
+          A preset sets three separate things: how the simulator fills, how the chart animates,
+          and - where the preset says so - the account&apos;s rules. Changing how the chart looks
+          can never change what fills.
+        </p>
+      </section>
+
+      <section className="env-section">
+        <div className="label">Chart motion</div>
+        <div className="env-row">
+          {(['RAW', 'SMOOTH'] as const).map((mode) => (
+            <button
+              key={mode}
+              className={`chip ${motion.mode === mode ? 'chip-on' : ''}`}
+              onClick={() => setMotion({ mode })}
+              title={
+                mode === 'RAW'
+                  ? 'Draw every observation the instant it arrives'
+                  : 'Ease between observations'
+              }
+            >
+              {mode === 'RAW' ? 'Raw ticks' : 'Smooth'}
+            </button>
+          ))}
+        </div>
+        <Numeric
+          id="motion-smoothing"
+          label="Smoothing strength"
+          suffix="0-1"
+          value={motion.smoothing}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={motion.mode === 'RAW'}
+          onCommit={(v) => setMotion({ smoothing: v })}
+        />
+        <Numeric
+          id="motion-speed"
+          label="Animation speed"
+          suffix="×"
+          value={motion.animationSpeed}
+          min={0.25}
+          max={8}
+          step={0.25}
+          disabled={motion.mode === 'RAW'}
+          onCommit={(v) => setMotion({ animationSpeed: v })}
+        />
+        <Numeric
+          id="motion-catchup"
+          label="Catch-up deadline"
+          suffix="ms"
+          value={motion.maxCatchUpMs}
+          min={0}
+          max={10_000}
+          step={100}
+          disabled={motion.mode === 'RAW'}
+          onCommit={(v) => setMotion({ maxCatchUpMs: v })}
+        />
+        <p className="env-note">
+          Animation is a DRAWING choice. Interpolated values never reach the engine: fills,
+          stops, targets, P&amp;L, the OHLC behind the candle and anything recorded use genuine
+          observations only. The catch-up deadline is what guarantees the drawn price can lag
+          the market but never disagree with it.
+        </p>
+      </section>
 
       <section className="env-section">
         <div className="label">Fill model</div>

@@ -1,0 +1,197 @@
+/* Chart trading overlay: order lines, the position line and the price menu. */
+
+.chart-trading {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.ct-toolbar {
+  position: absolute;
+  top: 34px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.ct-qty {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ct-qty-btn {
+  width: 20px;
+  height: 22px;
+  border: 0;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.ct-qty-btn:hover { background: var(--hover); }
+
+.ct-qty-input {
+  width: 34px;
+  height: 22px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  text-align: center;
+  font-size: 11px;
+}
+
+.ct-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.ct-btn:hover:not(:disabled) { background: var(--hover); }
+.ct-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ct-buy { border-color: var(--up); color: var(--up); }
+.ct-sell { border-color: var(--down); color: var(--down); }
+
+.ct-hint {
+  font-size: 10px;
+  color: var(--muted);
+  padding-left: 4px;
+}
+
+/* --- lines ------------------------------------------------------------- */
+
+.ct-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.ct-line-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  border-top: 1px dashed currentColor;
+  opacity: 0.85;
+}
+
+.ct-position .ct-line-rule { border-top-style: solid; border-top-width: 2px; }
+
+.ct-line-tag {
+  position: absolute;
+  left: 8px;
+  top: -11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.ct-dragging .ct-line-tag { cursor: grabbing; }
+.ct-position .ct-line-tag { cursor: default; }
+
+.ct-tag-kind { font-weight: 700; letter-spacing: 0.04em; }
+
+.ct-tag-btn {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.ct-tag-btn:hover { background: var(--hover); color: var(--text); }
+
+.ct-buy-line { color: var(--up); }
+.ct-sell-line { color: var(--down); }
+.ct-stop { color: var(--down); }
+.ct-target { color: var(--up); }
+.ct-long { color: var(--up); }
+.ct-short { color: var(--down); }
+
+.ct-pnl.up { color: var(--up); }
+.ct-pnl.down { color: var(--down); }
+
+/* --- the price menu ---------------------------------------------------- */
+
+.ct-menu {
+  position: absolute;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  pointer-events: auto;
+  z-index: 6;
+}
+
+.ct-menu-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.ct-menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ct-menu button:hover:not(:disabled) { background: var(--hover); }
+.ct-menu button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ct-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}

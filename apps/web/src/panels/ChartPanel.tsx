@@ -7,6 +7,9 @@ import { PHASE_1_CHART_TYPES, type ChartType } from '../chart/ChartAdapter';
 import { marketStream } from '../market/stream';
 import { fetchBars, fetchSymbolStatus, type FreshnessInfo } from '../market/api';
 import { ChartLegend } from './ChartLegend';
+import { ChartTrading } from '../chart/ChartTrading';
+import { MarketMotion } from '../chart/motion';
+import { useMotion } from '../state/motion-store';
 import { FeedBadge } from './FeedBadge';
 import './ChartPanel.css';
 
@@ -62,6 +65,9 @@ export function ChartPanel(): JSX.Element {
   const [historyNote, setHistoryNote] = useState<string | null>(null);
   const [freshness, setFreshness] = useState<FreshnessInfo | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  /** Flipped once the chart is mounted, so the trading overlay can measure it. */
+  const [chartReady, setChartReady] = useState(false);
+  const motionSettings = useMotion((s) => s.settings);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const adapterRef = useRef<LightweightChartsAdapter | null>(null);
@@ -78,6 +84,13 @@ export function ChartPanel(): JSX.Element {
    * and the stream agree on what they are showing.
    */
   const seriesTimeframeRef = useRef<Timeframe | null>(null);
+  /**
+   * The visual motion layer.
+   *
+   * It sits between the stream and the renderer and touches nothing else: the
+   * legend, the engine and every calculation read genuine observations.
+   */
+  const motionRef = useRef<MarketMotion>(new MarketMotion());
 
   // Legend DOM targets, written to directly rather than through React.
   const priceRef = useRef<HTMLSpanElement>(null);
@@ -102,6 +115,7 @@ export function ChartPanel(): JSX.Element {
     const adapter = new LightweightChartsAdapter();
     adapter.mount({ container, pricePrecision: precision, tickSize, timeZone });
     adapterRef.current = adapter;
+    setChartReady(true);
 
     const legend = new ChartLegend(
       {
@@ -125,6 +139,7 @@ export function ChartPanel(): JSX.Element {
       offCrosshair();
       adapter.destroy();
       adapterRef.current = null;
+      setChartReady(false);
       legendRef.current = null;
     };
     // Mounted once: symbol and timeframe changes are handled by reloading data,
@@ -201,10 +216,28 @@ export function ChartPanel(): JSX.Element {
     if (!instrument) return;
     marketStream.connect();
 
+    const motion = motionRef.current;
+    motion.reset();
+    motion.setTickSize(tickSize);
+    motion.setSettings(useMotion.getState().settings);
+
     const offBar = marketStream.subscribeBars(activeSymbol, timeframe, (bar: NormalizedBar) => {
       if (seriesTimeframeRef.current !== timeframe) return;
-      adapterRef.current?.applyLiveBar(bar);
+      // The GENUINE bar goes to the legend and to the motion layer. What the
+      // chart draws between observations is a rendering decision made below;
+      // what anything reads as a price is this.
+      motion.observe(bar, performance.now());
       legendRef.current?.setLive(bar);
+    });
+
+    // One animation frame loop per mounted chart. It draws whatever the motion
+    // layer says should be on screen - in RAW mode that is exactly the bar that
+    // just arrived, and nothing more.
+    let frame = requestAnimationFrame(function draw(now: number): void {
+      frame = requestAnimationFrame(draw);
+      if (seriesTimeframeRef.current !== timeframe) return;
+      const next = motion.sample(now);
+      if (next) adapterRef.current?.applyLiveBar(next);
     });
 
     const offQuote = marketStream.subscribeQuote(activeSymbol, (quote) => {
@@ -219,10 +252,19 @@ export function ChartPanel(): JSX.Element {
     });
 
     return () => {
+      cancelAnimationFrame(frame);
       offBar();
       offQuote();
+      motion.reset();
     };
-  }, [activeSymbol, timeframe, instrument, timeZone]);
+  }, [activeSymbol, timeframe, instrument, timeZone, tickSize]);
+
+  // Settings are read live, so switching between raw and smooth - or changing
+  // how hard the smoothing is - takes effect on the next frame. The chart is
+  // never remounted and the series is never reloaded.
+  useEffect(() => {
+    motionRef.current.setSettings(motionSettings);
+  }, [motionSettings]);
 
   // -- historical pagination when the user scrolls left --------------------
   useEffect(() => {
@@ -420,6 +462,15 @@ export function ChartPanel(): JSX.Element {
         </div>
 
         <div className="chart-canvas" ref={containerRef} />
+
+        <ChartTrading
+          adapterRef={adapterRef}
+          containerRef={containerRef}
+          symbol={activeSymbol}
+          tickSize={tickSize}
+          pricePrecision={precision}
+          ready={chartReady}
+        />
 
         {loading ? <div className="chart-overlay">Loading real market history…</div> : null}
         {loadError ? <div className="chart-overlay chart-overlay-error">{loadError}</div> : null}
