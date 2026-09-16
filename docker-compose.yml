@@ -1,0 +1,27 @@
+# Optional: PostgreSQL for local development, if you would rather not install it.
+#
+#   docker compose up -d db
+#   ./scripts/setup.sh
+#
+# Redis is declared because the architecture reserves it for real-time fan-out
+# and locks, but nothing depends on it yet. Milestone 2 does not require it.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: atlas-postgres
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    ports:
+      - '5432:5432'
+    volumes:
+      - atlas-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U atlas']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  atlas-pgdata:
