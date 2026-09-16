@@ -159,3 +159,28 @@ describe('weekly close is not reported as a daily break', () => {
     expect(getMarketState(NQ, ct('2026-09-15T16:30')).state).toBe('MAINTENANCE');
   });
 });
+
+describe('the evening before a full closure', () => {
+  it('does not reopen on Christmas Eve', () => {
+    // Christmas Eve is an early close, and the evening session that would open
+    // at 17:00 belongs to Christmas Day, which does not trade at all.
+    expect(isMarketOpen(NQ, ct('2026-12-24T10:00'))).toBe(true);
+    expect(isMarketOpen(NQ, ct('2026-12-24T13:00'))).toBe(false); // after the early close
+    expect(isMarketOpen(NQ, ct('2026-12-24T18:00'))).toBe(false); // no evening session
+    expect(getMarketState(NQ, ct('2026-12-24T18:00')).reason).toBe('Christmas Day');
+  });
+
+  it('still reopens on an ordinary early-close evening', () => {
+    // The day after Thanksgiving closes early, but the next day trades, so the
+    // evening session goes ahead as normal.
+    expect(isMarketOpen(NQ, ct('2026-11-27T13:00'))).toBe(false); // after early close
+    expect(isMarketOpen(NQ, ct('2026-11-27T18:00'))).toBe(false); // Friday: weekly close
+    expect(isMarketOpen(NQ, ct('2026-11-25T18:00'))).toBe(false); // eve of Thanksgiving
+    expect(isMarketOpen(NQ, ct('2026-11-24T18:00'))).toBe(true); // ordinary Tuesday evening
+  });
+
+  it('leaves an ordinary evening session alone', () => {
+    expect(isMarketOpen(NQ, ct('2026-09-14T18:00'))).toBe(true);
+    expect(isMarketOpen(NQ, ct('2026-09-15T03:00'))).toBe(true);
+  });
+});

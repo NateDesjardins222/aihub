@@ -102,6 +102,19 @@ export function getMarketState(spec: InstrumentSpec, epochMs: number): MarketSta
   const window = findWindow(spec, local);
   if (!window) return { state: 'CLOSED', reason: 'Outside trading session', ...base };
 
+  // The evening session that opens on day D belongs to trading date D+1. If that
+  // trading date is a full closure there is no evening session to open into —
+  // which is why the market does not reopen on Christmas Eve at 17:00, even
+  // though Christmas Eve itself is only an early close.
+  const sessionDate = tradingDate(spec, epochMs);
+  if (isFullClosure(sessionDate)) {
+    return {
+      state: 'CLOSED',
+      reason: getHoliday(sessionDate)?.label ?? 'Exchange holiday',
+      ...base,
+    };
+  }
+
   // An early close truncates the evening session that began on that date.
   const holiday = getHoliday(isoDate);
   if (holiday?.kind === 'EARLY' && holiday.closeMinute != null) {

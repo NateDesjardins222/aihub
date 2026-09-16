@@ -11,7 +11,7 @@
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import type { InstrumentSpec, NormalizedBar, Timeframe } from '@atlas/contracts';
 import { priceToTicks, requireInstrument, ticksToPrice } from '@atlas/instruments';
-import { TIMEFRAME_MS, foldBars, isCalendarTimeframe } from '@atlas/core';
+import { TIMEFRAME_MS, findMarketGaps, foldBars, hasTailGap, isCalendarTimeframe } from '@atlas/core';
 import type { Database } from '../db/client.js';
 import { historicalBars } from '../db/schema.js';
 import type { MarketDataProvider } from './provider.js';
@@ -46,11 +46,20 @@ export interface BarQuery {
 }
 
 const DEFAULT_LIMIT = 1_500;
+/** How long before a failed gap repair is attempted again. */
+const REPAIR_COOLDOWN_MS = 60_000;
 const MAX_LIMIT = 20_000;
 
 export class BarService {
   /** Guards against two concurrent requests fetching the same window twice. */
   private readonly inflight = new Map<string, Promise<void>>();
+  /**
+   * Windows a gap repair has already been attempted for, with the time of the
+   * attempt. Without this, a hole the vendor genuinely cannot fill — a session
+   * beyond its history limit, a holiday the calendar does not know — would be
+   * refetched on every single request.
+   */
+  private readonly repairAttempts = new Map<string, number>();
 
   constructor(
     private readonly db: Database,
@@ -78,9 +87,11 @@ export class BarService {
     let cached = await this.readCache(spec, tf, limit, before);
     let source: BarPage['source'] = 'CACHE';
 
-    // Fetch from the vendor when the cache cannot satisfy the page. Asking for
-    // one extra bar tells us whether older data exists at all.
-    if (cached.length < limit) {
+    // Refill when the cache cannot satisfy the page, and ALSO when it can but
+    // the series it holds has holes in it. A server that was down for an hour
+    // leaves a cache with plenty of bars and a gap in the middle; counting rows
+    // alone would serve that gap forever.
+    if (cached.length < limit || this.needsRepair(spec, tf, cached, before)) {
       const fetched = await this.fill(spec, tf, limit, before);
       if (fetched) {
         source = cached.length === 0 ? 'PROVIDER' : 'MIXED';
@@ -128,6 +139,39 @@ export class BarService {
           : 'Replaying a recorded session: history is limited to what the replay has emitted.',
       source: 'PROVIDER',
     };
+  }
+
+  /**
+   * Does this cached window have a hole the vendor might be able to fill?
+   *
+   * The open/closed judgement lives in @atlas/core so it can be tested without
+   * a database; this method only supplies the clock and rate-limits retries.
+   */
+  private needsRepair(
+    spec: InstrumentSpec,
+    tf: Timeframe,
+    bars: readonly NormalizedBar[],
+    before: number,
+  ): boolean {
+    if (bars.length < 2) return false;
+
+    const barMs = nominalBarMs(tf);
+    const key = `${spec.root}:${tf}:${Math.floor(before / barMs)}`;
+    const attempted = this.repairAttempts.get(key);
+    if (attempted !== undefined && Date.now() - attempted < REPAIR_COOLDOWN_MS) return false;
+
+    // Where the FEED believes "now" is. The server clock would report every
+    // delayed feed as permanently behind.
+    const delayMs = this.provider.getConnectionStatus().delaySeconds * 1000;
+    const feedNow = Date.now() - delayMs;
+
+    const tail =
+      before === Number.MAX_SAFE_INTEGER && hasTailGap(spec, bars, feedNow, barMs);
+    const interior = !tail && findMarketGaps(spec, bars, { barMs }).length > 0;
+    if (!tail && !interior) return false;
+
+    this.repairAttempts.set(key, Date.now());
+    return true;
   }
 
   /** Newest cached bar time, or null. Used to decide what to backfill. */

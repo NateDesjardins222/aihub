@@ -29,6 +29,7 @@ export const CME_HOLIDAYS: readonly HolidayEntry[] = [
   { date: '2025-09-01', label: 'Labor Day', kind: 'EARLY', closeMinute: EARLY_1200 },
   { date: '2025-11-27', label: 'Thanksgiving', kind: 'FULL' },
   { date: '2025-11-28', label: 'Day after Thanksgiving', kind: 'EARLY', closeMinute: EARLY_1200 },
+  { date: '2025-12-24', label: 'Christmas Eve', kind: 'EARLY', closeMinute: EARLY_1200 },
   { date: '2025-12-25', label: 'Christmas Day', kind: 'FULL' },
 
   { date: '2026-01-01', label: "New Year's Day", kind: 'FULL' },
@@ -41,6 +42,7 @@ export const CME_HOLIDAYS: readonly HolidayEntry[] = [
   { date: '2026-09-07', label: 'Labor Day', kind: 'EARLY', closeMinute: EARLY_1200 },
   { date: '2026-11-26', label: 'Thanksgiving', kind: 'FULL' },
   { date: '2026-11-27', label: 'Day after Thanksgiving', kind: 'EARLY', closeMinute: EARLY_1200 },
+  { date: '2026-12-24', label: 'Christmas Eve', kind: 'EARLY', closeMinute: EARLY_1200 },
   { date: '2026-12-25', label: 'Christmas Day', kind: 'FULL' },
 
   { date: '2027-01-01', label: "New Year's Day", kind: 'FULL' },
@@ -53,6 +55,7 @@ export const CME_HOLIDAYS: readonly HolidayEntry[] = [
   { date: '2027-09-06', label: 'Labor Day', kind: 'EARLY', closeMinute: EARLY_1200 },
   { date: '2027-11-25', label: 'Thanksgiving', kind: 'FULL' },
   { date: '2027-11-26', label: 'Day after Thanksgiving', kind: 'EARLY', closeMinute: EARLY_1200 },
+  { date: '2027-12-23', label: 'Christmas Eve (observed)', kind: 'EARLY', closeMinute: EARLY_1200 },
   { date: '2027-12-24', label: 'Christmas Day (observed)', kind: 'FULL' },
 ];
 

@@ -6,6 +6,7 @@ import { bucketEnd, bucketStart, isDivisible, secondsToBucketClose } from './tim
 import { BarSeries } from './series.js';
 import { foldBars, foldBucket } from './fold.js';
 import { CandleAggregator } from './aggregator.js';
+import { findMarketGaps, hasTailGap } from './gaps.js';
 
 const NQ = requireInstrument('NQ');
 const GC = requireInstrument('GC');
@@ -428,5 +429,100 @@ describe('price prints beat republished bars inside a forming bucket', () => {
     // Next minute: no print yet, so the feed's close stands.
     agg.ingestBar(bar(T + 60_000, 101, 102, 100, 100.5, 3, false));
     expect(agg.series('1m')[1]!.close).toBe(100.5);
+  });
+});
+
+describe('missing-interval detection', () => {
+  const NQ_SPEC = requireInstrument('NQ');
+  const BAR_MS = 5 * 60_000;
+
+  function series(times: number[]): NormalizedBar[] {
+    return times.map((t) => bar(t, 100, 101, 99, 100, 1));
+  }
+
+  it('ignores the daily maintenance break', () => {
+    // Last bar opens 15:55 CT and covers to 16:00; trading resumes at 17:00.
+    // That 65-minute hole is the market being shut, not missing data.
+    const gaps = findMarketGaps(
+      NQ_SPEC,
+      series([ct('2026-09-15T15:55:00'), ct('2026-09-15T17:00:00')]),
+      { barMs: BAR_MS },
+    );
+    expect(gaps).toEqual([]);
+  });
+
+  it('ignores the weekend', () => {
+    const gaps = findMarketGaps(
+      NQ_SPEC,
+      series([ct('2026-09-18T15:55:00'), ct('2026-09-20T17:00:00')]),
+      { barMs: BAR_MS },
+    );
+    expect(gaps).toEqual([]);
+  });
+
+  it('ignores a full exchange holiday', () => {
+    const gaps = findMarketGaps(
+      NQ_SPEC,
+      series([ct('2026-12-24T15:55:00'), ct('2026-12-26T09:00:00')]),
+      { barMs: BAR_MS },
+    );
+    expect(gaps).toEqual([]);
+  });
+
+  /** The case that produced a silently wrong chart: an outage mid-session. */
+  it('reports a hole spanning an open market', () => {
+    const from = ct('2026-09-15T10:00:00');
+    const to = ct('2026-09-15T11:35:00'); // 95 minutes, market open throughout
+    const gaps = findMarketGaps(NQ_SPEC, series([from, to]), { barMs: BAR_MS });
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.from).toBe(from);
+    expect(gaps[0]!.to).toBe(to);
+    expect(gaps[0]!.durationMs).toBe(95 * 60_000);
+  });
+
+  it('tolerates a single missing bar in a quiet stretch', () => {
+    const start = ct('2026-09-15T02:00:00');
+    const gaps = findMarketGaps(
+      NQ_SPEC,
+      series([start, start + BAR_MS * 2]),
+      { barMs: BAR_MS },
+    );
+    expect(gaps).toEqual([]);
+  });
+
+  it('finds every interior hole, not just the first', () => {
+    const gaps = findMarketGaps(
+      NQ_SPEC,
+      series([
+        ct('2026-09-15T09:00:00'),
+        ct('2026-09-15T10:00:00'),
+        ct('2026-09-15T10:05:00'),
+        ct('2026-09-15T12:00:00'),
+      ]),
+      { barMs: BAR_MS },
+    );
+    expect(gaps).toHaveLength(2);
+  });
+
+  describe('tail gap', () => {
+    it('does not flag a delayed feed that is simply delayed', () => {
+      // feedNow is the feed's own view of market time, already delay-adjusted.
+      const feedNow = ct('2026-09-15T10:00:00');
+      const bars = series([feedNow - BAR_MS, feedNow]);
+      expect(hasTailGap(NQ_SPEC, bars, feedNow, BAR_MS)).toBe(false);
+    });
+
+    it('flags a series that stopped advancing while the market was open', () => {
+      const feedNow = ct('2026-09-15T11:00:00');
+      const bars = series([ct('2026-09-15T09:55:00'), ct('2026-09-15T10:00:00')]);
+      expect(hasTailGap(NQ_SPEC, bars, feedNow, BAR_MS)).toBe(true);
+    });
+
+    it('does not flag a stale tail when the market is closed', () => {
+      // Saturday: nothing new is expected, so the tail is correct.
+      const feedNow = ct('2026-09-19T10:00:00');
+      const bars = series([ct('2026-09-18T15:55:00')]);
+      expect(hasTailGap(NQ_SPEC, bars, feedNow, BAR_MS)).toBe(false);
+    });
   });
 });
