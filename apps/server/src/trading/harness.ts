@@ -160,6 +160,9 @@ export class ScriptedMarket implements MarketView {
  */
 export const OPEN_MARKET_TS = Date.UTC(2026, 8, 15, 15, 0, 0);
 
+/** The CME trading date OPEN_MARKET_TS falls on. */
+export const ACCOUNT_TRADING_DATE = '2026-09-15';
+
 /** Let queued microtasks and the engine's async work drain. */
 export function settle(ms = 0): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -178,10 +181,27 @@ export interface TestFixture {
  * Each fixture gets its own user and account, so tests can run without
  * interfering with one another and without truncating shared tables.
  */
+export interface FixtureRules {
+  readonly profitTargetMicros?: number;
+  readonly maxLossMicros?: number;
+  readonly drawdownType?: 'STATIC' | 'INTRADAY_TRAILING' | 'EOD_TRAILING';
+  readonly trailingLockAtMicros?: number | null;
+  readonly dailyLossLimitMicros?: number | null;
+  readonly dailyLossPolicy?: 'LOCK_DAY' | 'FAIL';
+  readonly consistencyThreshold?: number | null;
+  readonly minTradingDays?: number;
+  readonly minWinningDays?: number;
+  readonly maxTradingDays?: number | null;
+  readonly minDailyPnlToCountMicros?: number;
+  readonly flattenOnBreach?: boolean;
+}
+
 export async function createFixture(options?: {
   environment?: Partial<SimulationEnvironment>;
   maxContracts?: number;
   startingBalanceMicros?: number;
+  /** Programme rules. Omitted fields keep the permissive practice defaults. */
+  rules?: FixtureRules;
 }): Promise<TestFixture> {
   const url = process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
   const { db, sql } = createDb(url);
@@ -197,24 +217,28 @@ export async function createFixture(options?: {
     .returning();
 
   const size = options?.startingBalanceMicros ?? 100_000 * 1_000_000;
+  const rules = options?.rules;
   const [template] = await db
     .insert(ruleTemplates)
     .values({
       name: `Engine Test ${suffix}`,
       accountType: 'PRACTICE',
       accountSizeMicros: size,
-      profitTargetMicros: 1_000_000 * 1_000_000,
-      maxLossMicros: size,
-      drawdownType: 'STATIC',
-      trailingLockAtMicros: null,
-      dailyLossLimitMicros: null,
+      profitTargetMicros: rules?.profitTargetMicros ?? 1_000_000 * 1_000_000,
+      maxLossMicros: rules?.maxLossMicros ?? size,
+      drawdownType: rules?.drawdownType ?? 'STATIC',
+      trailingLockAtMicros: rules?.trailingLockAtMicros ?? null,
+      dailyLossLimitMicros: rules?.dailyLossLimitMicros ?? null,
+      dailyLossPolicy: rules?.dailyLossPolicy ?? 'LOCK_DAY',
       consistencyFormula: 'BEST_DAY_OVER_TOTAL',
-      consistencyThreshold: null,
+      consistencyThreshold: rules?.consistencyThreshold ?? null,
       maxContracts: options?.maxContracts ?? 50,
       microsCountAsFraction: false,
-      minTradingDays: 0,
-      maxTradingDays: null,
-      minDailyPnlToCountMicros: 0,
+      minTradingDays: rules?.minTradingDays ?? 0,
+      minWinningDays: rules?.minWinningDays ?? 0,
+      maxTradingDays: rules?.maxTradingDays ?? null,
+      minDailyPnlToCountMicros: rules?.minDailyPnlToCountMicros ?? 0,
+      flattenOnBreach: rules?.flattenOnBreach ?? true,
       payoutRules: {},
     })
     .returning();
@@ -230,9 +254,14 @@ export async function createFixture(options?: {
       startingBalanceMicros: size,
       balanceMicros: size,
       highWaterMarkMicros: size,
-      drawdownFloorMicros: 0,
+      drawdownFloorMicros:
+        rules?.maxLossMicros === undefined ? 0 : size - rules.maxLossMicros,
       dayStartBalanceMicros: size,
       dayStartEquityMicros: size,
+      // The scripted market lives on a fixed date, so the account starts on it
+      // too: a fixture that rolled its day on the first mark would reset the
+      // very limits the test is about to exercise.
+      currentTradeDate: ACCOUNT_TRADING_DATE,
       simulationEnvironment: (options?.environment ?? null) as never,
     })
     .returning();

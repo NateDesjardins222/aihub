@@ -28,7 +28,14 @@ import {
   type PositionState,
   type SimulationEnvironment,
 } from '@atlas/core';
-import { priceToTicks, requireInstrument, tradingDate, contractWeight } from '@atlas/instruments';
+import {
+  priceToTicks,
+  requireInstrument,
+  getInstrument,
+  listInstruments,
+  tradingDate,
+  contractWeight,
+} from '@atlas/instruments';
 import type { Database } from '../db/client.js';
 import {
   accountEvents,
@@ -63,6 +70,16 @@ export interface MarketView {
   baseBarMs(symbol: string): number;
 }
 import { KeyedMutex } from './mutex.js';
+import {
+  applyRules,
+  historyFor,
+  loadAccountAndTemplate,
+  persistRuleState,
+  recordClosedDay,
+  ruleConfigFor,
+  ruleStateFor,
+} from './account-rules.js';
+import { rollTradingDay, type RuleStatus } from '@atlas/core';
 import { checkOrder, increasingQty, type RiskRejection } from './risk.js';
 import {
   presentOrder,
@@ -77,6 +94,15 @@ import {
 
 /** How often open accounts are revalued and pushed, in milliseconds. */
 const VALUATION_INTERVAL_MS = 1_000;
+
+/**
+ * The instrument whose session calendar defines an account's trading day.
+ *
+ * An account trades products on different exchanges, so one calendar has to
+ * win. The equity-index one is the CME business day - 17:00 Chicago to 17:00
+ * Chicago - which is what a futures account is settled on.
+ */
+const ACCOUNT_CALENDAR_SYMBOL = 'NQ';
 
 export class OrderRejectedError extends Error {
   constructor(
@@ -97,7 +123,8 @@ export interface BracketOffsets {
 
 export interface SubmitOrderInput {
   readonly accountId: string;
-  readonly userId: string;
+  /** Null when the ENGINE placed the order, e.g. liquidating after a breach. */
+  readonly userId: string | null;
   readonly clientOrderId: string;
   readonly symbol: string;
   readonly side: Side;
@@ -108,6 +135,15 @@ export interface SubmitOrderInput {
   readonly tif?: TimeInForce;
   readonly trailTicks?: number | null;
   readonly bracket?: BracketOffsets | null;
+  /**
+   * An order the ENGINE is sending to close exposure after a rule breach.
+   *
+   * It skips the account-status gate - a failed account must still be able to
+   * be flattened, or a breach would leave the position open forever - but every
+   * market and data check still applies: a liquidation cannot fill on data that
+   * would not fill anything else.
+   */
+  readonly liquidation?: boolean;
 }
 
 /**
@@ -130,6 +166,14 @@ export interface AccountValuation {
   readonly remainingDrawdownMicros: number;
   readonly openContracts: number;
   readonly positions: ReturnType<typeof presentPosition>[];
+  /**
+   * Where the account stands against its programme's rules.
+   *
+   * Sent with the valuation rather than fetched separately, because a remaining
+   * drawdown that lags the equity it is derived from is worse than not showing
+   * it at all.
+   */
+  readonly rules: RuleStatus;
   readonly at: number;
 }
 
@@ -162,6 +206,8 @@ export class TradingEngine {
   private readonly valuationListeners = new Set<ValuationListener>();
   /** Account+symbol pairs with a market-event match already queued. */
   private readonly pendingMatches = new Set<string>();
+  /** Accounts whose rules are being enforced, so enforcement cannot recurse. */
+  private readonly enforcing = new Set<string>();
   private valuationTimer: NodeJS.Timeout | null = null;
   /** Accounts currently holding a position or working order, by symbol. */
   private readonly activeSymbols = new Map<string, Set<string>>();
@@ -220,18 +266,71 @@ export class TradingEngine {
 
   /** Revalue every account holding a position and push the result. */
   private async publishValuations(): Promise<void> {
-    if (this.valuationListeners.size === 0) return;
-
-    const rows = await this.db
-      .select({ accountId: positionsTable.accountId })
-      .from(positionsTable)
-      .where(sql`${positionsTable.qty} <> 0`);
-    const accountIds = [...new Set(rows.map((r) => r.accountId))];
+    const accountIds = await this.accountsToRevalue();
 
     for (const accountId of accountIds) {
+      // Enforce before publishing: a drawdown that has been breached should
+      // reach the client as a failed account, not as a healthy one that fails a
+      // second later.
+      await this.mutex.run(accountId, () => this.enforceLocked(accountId));
+      if (this.valuationListeners.size === 0) continue;
       const valuation = await this.valuation(accountId);
       if (valuation) for (const listener of this.valuationListeners) listener(valuation);
     }
+  }
+
+  /**
+   * Accounts the rules have something to say about right now.
+   *
+   * Exposure is the obvious case, but not the only one: an account with a
+   * resting order can breach when that order fills, and a locked-out account
+   * has to be looked at so the lock can expire when the day rolls.
+   */
+  private async accountsToRevalue(): Promise<string[]> {
+    const withPositions = await this.db
+      .select({ accountId: positionsTable.accountId })
+      .from(positionsTable)
+      .where(sql`${positionsTable.qty} <> 0`);
+    const withOrders = await this.db
+      .select({ accountId: ordersTable.accountId })
+      .from(ordersTable)
+      .where(inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']));
+    const locked = await this.db
+      .select({ accountId: accounts.id })
+      .from(accounts)
+      .where(eq(accounts.status, 'LOCKED'));
+
+    return [
+      ...new Set([
+        ...withPositions.map((r) => r.accountId),
+        ...withOrders.map((r) => r.accountId),
+        ...locked.map((r) => r.accountId),
+      ]),
+    ];
+  }
+
+  /**
+   * The account's business date, taken from the market rather than the server.
+   *
+   * An account trades several products whose sessions differ, so one of them
+   * has to define the account's day. The equity-index calendar is used: it is
+   * the CME business day that every futures account is settled on, and it rolls
+   * at 17:00 Chicago like the rest of Globex.
+   */
+  private accountTradingDate(): string {
+    const spec = requireInstrument(ACCOUNT_CALENDAR_SYMBOL);
+    // The feed's clock when there is one, so replay and delayed data roll on
+    // the day they belong to rather than on the server's calendar. The newest
+    // observation across ALL instruments is used rather than the calendar
+    // instrument's own: if that one happens to be quiet, the account's day must
+    // not silently fall back to the server's date and roll a day that has not
+    // happened.
+    let newest = 0;
+    for (const instrument of listInstruments()) {
+      const ts = this.market.getQuote(instrument.root)?.exchangeTs ?? 0;
+      if (ts > newest) newest = ts;
+    }
+    return tradingDate(spec, newest > 0 ? newest : Date.now());
   }
 
   /** Current valuation of an account, marked to the live market. */
@@ -265,6 +364,24 @@ export class TradingEngine {
     }
 
     const equityMicros = account.balanceMicros + openPnlMicros;
+
+    // Read-only: the rules are evaluated for display here, and enforced under
+    // the account lock by `enforceRules`. Reporting and enforcing are the same
+    // arithmetic, so the number on screen is the number that will fail you.
+    const loaded = await loadAccountAndTemplate(this.db, accountId);
+    const config = ruleConfigFor(account, loaded?.template);
+    const applied = applyRules(
+      config,
+      ruleStateFor(account),
+      {
+        balanceMicros: account.balanceMicros,
+        openPnlMicros,
+        equityMicros,
+        tradingDate: this.accountTradingDate(),
+      },
+      historyFor(account),
+    );
+
     return {
       accountId,
       balanceMicros: account.balanceMicros,
@@ -272,12 +389,164 @@ export class TradingEngine {
       openPnlMicros,
       realizedPnlMicros: account.realizedPnlMicros,
       feesMicros: account.feesMicros,
-      dayPnlMicros: account.balanceMicros - account.dayStartBalanceMicros + openPnlMicros,
-      remainingDrawdownMicros: equityMicros - account.drawdownFloorMicros,
+      dayPnlMicros: applied.status.dayPnlMicros,
+      remainingDrawdownMicros: applied.status.remainingDrawdownMicros,
       openContracts,
       positions: views,
+      rules: applied.status,
       at: Date.now(),
     };
+  }
+
+  /**
+   * Evaluate the programme's rules and act on them.
+   *
+   * Runs under the account lock, because acting on a breach means canceling
+   * orders and closing positions, and those must not interleave with a fill
+   * being written by the matcher.
+   */
+  async enforceRules(accountId: string): Promise<RuleStatus | null> {
+    return this.mutex.run(accountId, async () => {
+      await this.enforceLocked(accountId);
+      return this.readRules(accountId);
+    });
+  }
+
+  /** The rule status as it now stands, without acting on it. */
+  private async readRules(accountId: string): Promise<RuleStatus | null> {
+    const valuation = await this.valuation(accountId);
+    return valuation?.rules ?? null;
+  }
+
+  private async rulesLocked(accountId: string): Promise<RuleStatus | null> {
+    const loaded = await loadAccountAndTemplate(this.db, accountId);
+    if (!loaded) return null;
+    const { account, template } = loaded;
+
+    const config = ruleConfigFor(account, template);
+    const state = ruleStateFor(account);
+    const openPnlMicros = await this.openPnl(accountId);
+    const mark = {
+      balanceMicros: account.balanceMicros,
+      openPnlMicros,
+      equityMicros: account.balanceMicros + openPnlMicros,
+      tradingDate: this.accountTradingDate(),
+    };
+
+    const applied = applyRules(config, state, mark, historyFor(account));
+
+    if (applied.rolledDay) {
+      const closed = rollTradingDay(config, state, mark).closed;
+      if (closed) await recordClosedDay(this.db, accountId, closed);
+    }
+    if (applied.changed) await persistRuleState(this.db, accountId, applied.state);
+
+    if (applied.newBreach) {
+      await this.audit(
+        accountId,
+        applied.newBreach.status === 'FAILED' ? 'ACCOUNT_FAILED' : 'ACCOUNT_LOCKED',
+        null,
+        'RISK',
+        { rule: applied.newBreach.code },
+        { status: state.status },
+        { status: applied.state.status, detail: applied.newBreach.detail },
+      );
+      await this.db.insert(riskEvents).values({
+        accountId,
+        rule: applied.newBreach.code,
+        reasonCode: applied.newBreach.code,
+        detail: applied.newBreach.detail as never,
+      });
+
+    }
+
+    // Liquidation is retried while a breached account still has exposure, not
+    // only on the tick the rule broke. A market that was closed or a feed that
+    // was stale when the breach landed must not leave a failed account holding
+    // a position forever.
+    const breached = applied.state.status === 'FAILED' || applied.state.status === 'LOCKED';
+    if (breached && config.flattenOnBreach && (await this.hasExposure(accountId))) {
+      await this.liquidateLocked(accountId);
+    }
+
+    return applied.status;
+  }
+
+  /**
+   * Close everything after a breach.
+   *
+   * Working orders go first: canceling them before the market orders are sent
+   * means a resting entry cannot fill into an account that is already over.
+   *
+   * A liquidation can fail to fill - the market may be closed, or the feed
+   * stale - and that is reported rather than papered over. The account stays
+   * breached and the position stays open until it can honestly be closed.
+   */
+  private async liquidateLocked(accountId: string): Promise<void> {
+    await this.cancelAllLocked(accountId);
+
+    const rows = await this.db
+      .select()
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, accountId), sql`${positionsTable.qty} <> 0`));
+
+    for (const row of rows) {
+      const spec = getInstrument(row.symbol);
+      if (!spec) continue;
+      try {
+        await this.submitLocked({
+          accountId,
+          userId: null,
+          clientOrderId: `liquidate-${randomUUID()}`,
+          symbol: spec.root,
+          side: row.qty > 0 ? 'SELL' : 'BUY',
+          qty: Math.abs(row.qty),
+          type: 'MARKET',
+          liquidation: true,
+        });
+      } catch (err) {
+        await this.audit(accountId, 'RISK_RULE_TRIGGERED', null, 'RISK', { liquidate: spec.root }, null, {
+          failed: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  /** Anything left that a breach has to close: a position or a working order. */
+  private async hasExposure(accountId: string): Promise<boolean> {
+    const [position] = await this.db
+      .select({ id: positionsTable.id })
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, accountId), sql`${positionsTable.qty} <> 0`))
+      .limit(1);
+    if (position) return true;
+    const [order] = await this.db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(
+        and(
+          eq(ordersTable.accountId, accountId),
+          inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']),
+        ),
+      )
+      .limit(1);
+    return Boolean(order);
+  }
+
+  /** Unrealized P&L across every open position, marked to the live market. */
+  private async openPnl(accountId: string): Promise<number> {
+    const rows = await this.db
+      .select()
+      .from(positionsTable)
+      .where(eq(positionsTable.accountId, accountId));
+    let total = 0;
+    for (const row of rows) {
+      if (row.qty === 0) continue;
+      const spec = getInstrument(row.symbol);
+      if (!spec) continue;
+      total += unrealizedPnlMicros(spec, toEnginePosition(row, row.symbol), this.markTicks(spec));
+    }
+    return total;
   }
 
   stop(): void {
@@ -529,6 +798,7 @@ export class TradingEngine {
         type: input.type,
         limitTicks: input.limitTicks ?? null,
         stopTicks: input.stopTicks ?? null,
+        liquidation: input.liquidation ?? false,
       },
     );
 
@@ -551,7 +821,10 @@ export class TradingEngine {
         tif: input.tif ?? 'DAY',
         trailTicks: input.trailTicks ?? null,
         bracketRole: input.bracket ? 'ENTRY' : 'STANDALONE',
-        tradingDate: tradingDate(spec, now),
+        // The DAY in "day order" is the market's day. On a delayed feed or a
+        // replay the server's clock can already be on the next session while
+        // the market the order is going into is still on this one.
+        tradingDate: tradingDate(spec, snapshot?.exchangeTs ?? now),
         now,
         // Where the order sits in MARKET time, which is what decides which
         // bars are allowed to fill it.
@@ -718,6 +991,11 @@ export class TradingEngine {
     const position = await this.loadPosition(accountId, spec.root);
 
     if (!snapshot || openOrders.length === 0) {
+      // Nothing to match, but the mark still moved: an account holding a
+      // position can breach its drawdown without a single order being working,
+      // and waiting for the next valuation tick to notice would hand the trader
+      // a second of trading on an account that is already over.
+      if (position.qty !== 0) await this.enforceLocked(accountId);
       return this.buildChange(accountId, spec, openOrders, [], [], position);
     }
 
@@ -829,6 +1107,12 @@ export class TradingEngine {
       });
     }
 
+    // The rules see every fill before anyone else does. A drawdown breached by
+    // this fill has to close the account NOW, not on the next valuation tick,
+    // or the trader gets a second's worth of trading on an account that is
+    // already over.
+    await this.enforceLocked(accountId);
+
     const finalOrders = await this.loadOpenAndRecent(accountId, spec.root);
     const change = await this.buildChange(
       accountId,
@@ -846,6 +1130,24 @@ export class TradingEngine {
     if (valuation) for (const listener of this.valuationListeners) listener(valuation);
 
     return change;
+  }
+
+  /**
+   * Run the rules from inside a section that already holds the account lock.
+   *
+   * Re-entrant by design: enforcing a breach liquidates, liquidating fills, and
+   * a fill runs the rules again. The guard stops that becoming a loop; the
+   * outermost call is the one that matters, and the state it reads already
+   * includes everything the inner fills did.
+   */
+  private async enforceLocked(accountId: string): Promise<void> {
+    if (this.enforcing.has(accountId)) return;
+    this.enforcing.add(accountId);
+    try {
+      await this.rulesLocked(accountId);
+    } finally {
+      this.enforcing.delete(accountId);
+    }
   }
 
   private tradeRow(
@@ -1088,6 +1390,7 @@ export class TradingEngine {
       status: row.account.status,
       maxContracts: row.template.maxContracts,
       microsCountAsFraction: row.template.microsCountAsFraction,
+      failedReason: row.account.failedReason,
     };
   }
 

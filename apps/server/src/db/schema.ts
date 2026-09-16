@@ -87,6 +87,14 @@ export const ruleTemplates = pgTable('rule_templates', {
   minTradingDays: integer('min_trading_days').notNull().default(0),
   maxTradingDays: integer('max_trading_days'),
   minDailyPnlToCountMicros: micros('min_daily_pnl_to_count_micros').notNull().default(0),
+  /** Days the account must finish in profit, not merely trade. */
+  minWinningDays: integer('min_winning_days').notNull().default(0),
+  /** Net profit that makes a day a WINNING day. */
+  minWinningDayPnlMicros: micros('min_winning_day_pnl_micros').notNull().default(1),
+  /** LOCK_DAY ends the day; FAIL ends the programme. */
+  dailyLossPolicy: varchar('daily_loss_policy', { length: 12 }).notNull().default('LOCK_DAY'),
+  /** Close open positions and working orders when a rule breaches. */
+  flattenOnBreach: boolean('flatten_on_breach').notNull().default(true),
   payoutRules: jsonb('payout_rules').notNull(),
   isSystem: boolean('is_system').notNull().default(false),
   createdAt: now(),
@@ -112,6 +120,13 @@ export const accounts = pgTable(
     highWaterMarkMicros: micros('high_water_mark_micros').notNull(),
     drawdownFloorMicros: micros('drawdown_floor_micros').notNull(),
     tradingDaysCount: integer('trading_days_count').notNull().default(0),
+    winningDaysCount: integer('winning_days_count').notNull().default(0),
+    /** Best single day's net profit, which the consistency rule divides by. */
+    bestDayProfitMicros: micros('best_day_profit_micros').notNull().default(0),
+    /** Trading date a day-lockout ends on, exclusive. Null when not locked. */
+    lockedUntilDate: date('locked_until_date'),
+    /** Per-account rule overrides, merged over the programme's template. */
+    ruleOverrides: jsonb('rule_overrides'),
     currentTradeDate: date('current_trade_date'),
     dayStartBalanceMicros: micros('day_start_balance_micros').notNull(),
     dayStartEquityMicros: micros('day_start_equity_micros').notNull(),

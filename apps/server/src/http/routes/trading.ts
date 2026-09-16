@@ -25,6 +25,12 @@ import { getDb } from '../../db/client.js';
 import { accounts, executions, orders, positions, ruleTemplates, trades } from '../../db/schema.js';
 import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
 import { toEnginePosition, unscaleTicks } from '../../trading/mapping.js';
+import {
+  dailyStats,
+  loadAccountAndTemplate,
+  normalizeRuleConfig,
+  ruleConfigFor,
+} from '../../trading/account-rules.js';
 import type { MarketDataService } from '../../marketdata/service.js';
 
 const REJECTION_STATUS = 422;
@@ -405,6 +411,97 @@ export function tradingRoutes(deps: Deps) {
         maxContracts: row.template.maxContracts,
         seq: row.account.seq,
       });
+    });
+
+    // -- account rules ----------------------------------------------------
+
+    /**
+     * Where the account stands against its programme.
+     *
+     * The same evaluation the engine enforces with, so the dashboard cannot
+     * show a trader more room than they actually have.
+     */
+    app.get('/accounts/:id/rules', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertOwnership(request.user!.id, params.id);
+
+      const loaded = await loadAccountAndTemplate(db, params.id);
+      if (!loaded) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+
+      const valuation = await deps.engine.valuation(params.id);
+      const days = await dailyStats(db, params.id, 30);
+
+      return reply.send({
+        accountId: params.id,
+        config: ruleConfigFor(loaded.account, loaded.template),
+        templateName: loaded.template?.name ?? null,
+        status: valuation?.rules ?? null,
+        account: {
+          startingBalanceMicros: loaded.account.startingBalanceMicros,
+          highWaterMarkMicros: loaded.account.highWaterMarkMicros,
+          drawdownFloorMicros: loaded.account.drawdownFloorMicros,
+          currentTradeDate: loaded.account.currentTradeDate,
+          lockedUntilDate: loaded.account.lockedUntilDate,
+          failedReason: loaded.account.failedReason,
+        },
+        days: days.map((d) => ({
+          tradeDate: d.tradeDate,
+          startingBalanceMicros: d.startingBalanceMicros,
+          endingBalanceMicros: d.endingBalanceMicros,
+          realizedPnlMicros: d.realizedPnlMicros,
+          counted: d.counted,
+        })),
+      });
+    });
+
+    /**
+     * Change one account's rules.
+     *
+     * Stored as an OVERRIDE rather than by editing the programme's template:
+     * two traders on the same programme must not change each other's terms, and
+     * the template is what says what the programme is.
+     */
+    app.put('/accounts/:id/rules', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertOwnership(request.user!.id, params.id);
+
+      const patch = z
+        .object({
+          profitTargetMicros: z.number().int().min(0).optional(),
+          maxLossMicros: z.number().int().min(0).optional(),
+          drawdownType: z.enum(['STATIC', 'INTRADAY_TRAILING', 'EOD_TRAILING']).optional(),
+          trailingLockAtMicros: z.number().int().min(0).nullable().optional(),
+          dailyLossLimitMicros: z.number().int().min(1).nullable().optional(),
+          dailyLossPolicy: z.enum(['LOCK_DAY', 'FAIL']).optional(),
+          consistencyFormula: z.enum(['BEST_DAY_OVER_TOTAL', 'BEST_DAY_OVER_TARGET']).optional(),
+          consistencyThreshold: z.number().min(0.01).max(1).nullable().optional(),
+          minTradingDays: z.number().int().min(0).max(365).optional(),
+          minWinningDays: z.number().int().min(0).max(365).optional(),
+          maxTradingDays: z.number().int().min(1).max(365).nullable().optional(),
+          minDailyPnlToCountMicros: z.number().int().min(0).optional(),
+          minWinningDayPnlMicros: z.number().int().min(1).optional(),
+          maxContracts: z.number().int().min(1).max(1000).optional(),
+          flattenOnBreach: z.boolean().optional(),
+        })
+        .strict()
+        .parse(request.body);
+
+      const loaded = await loadAccountAndTemplate(db, params.id);
+      if (!loaded) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+
+      const merged = normalizeRuleConfig({
+        ...ruleConfigFor(loaded.account, loaded.template),
+        ...patch,
+      });
+      await db
+        .update(accounts)
+        .set({ ruleOverrides: merged as never, updatedAt: new Date() })
+        .where(eq(accounts.id, params.id));
+
+      // Re-evaluate at once: a tightened rule that is already broken must take
+      // effect now, not on the next tick.
+      const status = await deps.engine.enforceRules(params.id);
+      return reply.send({ config: merged, status });
     });
 
     // -- environment settings ---------------------------------------------

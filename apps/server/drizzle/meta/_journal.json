@@ -29,6 +29,13 @@
       "when": 1789593600000,
       "tag": "0003_rested_market_ts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789598000000,
+      "tag": "0004_rule_engine",
+      "breakpoints": true
     }
   ]
 }

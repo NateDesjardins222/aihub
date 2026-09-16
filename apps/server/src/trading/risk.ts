@@ -21,6 +21,7 @@ export interface RiskAccount {
   readonly status: string;
   readonly maxContracts: number;
   readonly microsCountAsFraction: boolean;
+  readonly failedReason?: string | null;
 }
 
 export interface RiskRequest {
@@ -29,6 +30,8 @@ export interface RiskRequest {
   readonly type: string;
   readonly limitTicks: number | null;
   readonly stopTicks: number | null;
+  /** The engine closing exposure after a breach. See the account-state gate. */
+  readonly liquidation?: boolean;
 }
 
 export interface RiskContext {
@@ -66,14 +69,31 @@ const ACCOUNT_STATUS_REASON: Record<string, RejectReason> = {
   SUSPENDED: 'ACCOUNT_LOCKED',
 };
 
+const ACCOUNT_STATUS_MESSAGE: Record<string, string> = {
+  FAILED: 'This account has breached its rules and can no longer trade.',
+  LOCKED: 'Trading is locked for the rest of the trading day.',
+  PASSED: 'This account has completed its programme.',
+  SUSPENDED: 'This account is suspended.',
+};
+
 export function checkOrder(ctx: RiskContext, request: RiskRequest): RiskRejection | null {
   const { account, spec } = ctx;
 
   // --- account state ------------------------------------------------------
-  if (account.status !== 'ACTIVE' && account.status !== 'GOAL_REACHED') {
+  // A liquidation is the engine closing what a breach left open. It skips this
+  // gate and nothing else: without the exemption a failed account could never
+  // be flattened, which is the opposite of what a breach should produce.
+  if (
+    !request.liquidation &&
+    account.status !== 'ACTIVE' &&
+    account.status !== 'GOAL_REACHED'
+  ) {
     return {
       reason: ACCOUNT_STATUS_REASON[account.status] ?? 'ACCOUNT_INACTIVE',
-      message: `Account is ${account.status.replace('_', ' ').toLowerCase()}.`,
+      message:
+        ACCOUNT_STATUS_MESSAGE[account.status] ??
+        `Account is ${account.status.replace('_', ' ').toLowerCase()}.`,
+      detail: { status: account.status, failedReason: account.failedReason ?? null },
     };
   }
 
