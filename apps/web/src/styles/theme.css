@@ -1,0 +1,184 @@
+/*
+ * Atlas Futures Terminal — original dark design system.
+ *
+ * Dense, low-chrome, built for long sessions in front of a chart. No third-party
+ * branding, logos, colour schemes or visual assets are reproduced here.
+ */
+
+:root {
+  /* Surfaces, from deepest to most raised. */
+  --bg-void: #07090d;
+  --bg-base: #0b0e14;
+  --bg-panel: #10141c;
+  --bg-raised: #161b26;
+  --bg-hover: #1d2431;
+  --bg-active: #232b3b;
+  --bg-input: #0d1118;
+
+  --border-subtle: #1b2230;
+  --border: #242d3e;
+  --border-strong: #32405a;
+
+  --text-primary: #e4e9f2;
+  --text-secondary: #9aa6bd;
+  --text-muted: #63708a;
+  --text-disabled: #444f66;
+
+  /* Directional colours. Long/short are deliberately not red/green alone: the
+     shapes and labels carry the meaning too, for colour-vision accessibility. */
+  --long: #2ec4a6;
+  --long-dim: #1d7a68;
+  --long-bg: rgba(46, 196, 166, 0.12);
+  --short: #f2544b;
+  --short-dim: #9c3630;
+  --short-bg: rgba(242, 84, 75, 0.12);
+
+  --accent: #4d8dff;
+  --accent-dim: #2a5199;
+  --accent-bg: rgba(77, 141, 255, 0.12);
+  --warn: #f5a524;
+  --warn-bg: rgba(245, 165, 36, 0.12);
+  --danger: #f2544b;
+  --neutral: #6b7a94;
+
+  /* Link-group colours for multi-chart symbol linking. */
+  --link-blue: #4d8dff;
+  --link-green: #2ec4a6;
+  --link-orange: #f5a524;
+  --link-purple: #a879f0;
+  --link-red: #f2544b;
+
+  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', Menlo, monospace;
+
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  --fs-md: 12px;
+  --fs-lg: 13px;
+  --fs-xl: 15px;
+
+  --row-h: 22px;
+  --header-h: 44px;
+  --tab-h: 28px;
+  --radius: 3px;
+  --radius-lg: 5px;
+
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Numeric data always uses tabular figures so columns do not jitter on update. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.pos {
+  color: var(--long);
+}
+.neg {
+  color: var(--short);
+}
+.flat {
+  color: var(--text-secondary);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+input,
+select {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent-dim);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral);
+}
+
+.label {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* A visible, honest marker for capability that is not built yet. Preferred over
+   a button that looks live and does nothing. */
+.not-built {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.boot-splash {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: var(--fs-lg);
+  letter-spacing: 0.06em;
+}

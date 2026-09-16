@@ -1,0 +1,107 @@
+.login-root {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  background:
+    radial-gradient(1100px 600px at 50% -10%, rgba(77, 141, 255, 0.08), transparent 60%),
+    var(--bg-void);
+}
+
+.login-card {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 26px 24px 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+/* Original mark: three ascending bars, evoking a price ladder. */
+.login-mark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 26px;
+}
+.login-mark span {
+  width: 5px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.login-mark span:nth-child(1) {
+  height: 40%;
+  opacity: 0.5;
+}
+.login-mark span:nth-child(2) {
+  height: 70%;
+  opacity: 0.75;
+}
+.login-mark span:nth-child(3) {
+  height: 100%;
+  background: var(--long);
+}
+
+.login-brand h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.22em;
+  font-weight: 700;
+}
+.login-brand p {
+  margin: 2px 0 0;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.login-field input {
+  padding: 7px 9px;
+  font-family: var(--font-ui);
+}
+
+.login-error {
+  padding: 7px 9px;
+  background: var(--short-bg);
+  border: 1px solid var(--short-dim);
+  border-radius: var(--radius);
+  color: var(--short);
+  font-size: var(--fs-sm);
+}
+
+.login-submit {
+  margin-top: 4px;
+  padding: 9px;
+  background: var(--accent);
+  color: #06101f;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: var(--fs-sm);
+  border-radius: var(--radius);
+}
+.login-submit:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.login-note {
+  margin: 6px 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
