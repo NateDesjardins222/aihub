@@ -9,7 +9,10 @@ import { ChartLegend } from './ChartLegend';
 import { ChartHeader } from '../chart/ChartHeader';
 import { PriceMarkers } from '../chart/PriceMarkers';
 import { DrawingCanvas, type PreviewState } from '../chart/drawings/DrawingCanvas';
-import { useDrawingInput } from '../chart/drawings/useDrawingInput';
+import { useDrawingInput, type ContextMenuRequest } from '../chart/drawings/useDrawingInput';
+import { DrawingStyleBar } from '../chart/drawings/DrawingStyleBar';
+import { DrawingContextMenu } from '../chart/drawings/DrawingContextMenu';
+import { DrawingProperties } from '../chart/drawings/DrawingProperties';
 import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
 import { useChartStore } from '../state/chart-store';
@@ -392,6 +395,22 @@ export function ChartPanel(): JSX.Element {
     return () => window.clearInterval(id);
   }, [countdown]);
 
+  // Right-click and double-click on an object. Both are owned by the input
+  // machine, which decides whether the drawings have a claim on the gesture at
+  // all; the chart keeps its own menu everywhere else.
+  const [contextMenu, setContextMenu] = useState<ContextMenuRequest | null>(null);
+  const propertiesFor = useChartStore((s) => s.propertiesFor);
+  const closeProperties = useChartStore((s) => s.closeProperties);
+  const openPropertiesFor = useChartStore((s) => s.openProperties);
+
+  const openProperties = useCallback(
+    (drawingId: string) => {
+      setContextMenu(null);
+      openPropertiesFor(drawingId);
+    },
+    [openPropertiesFor],
+  );
+
   // Pointer ownership for drawings. Attached to the chart CONTAINER, not to
   // the canvas: see useDrawingInput for why the canvas never takes events.
   useDrawingInput({
@@ -401,7 +420,19 @@ export function ChartPanel(): JSX.Element {
     tickSize,
     ready: chartReady,
     previewRef,
+    onContextMenu: setContextMenu,
+    onOpenProperties: openProperties,
   });
+
+  // A drawing deleted from under the open context menu closes it rather than
+  // leaving a menu pointed at nothing. The settings dialog is cleared by the
+  // store itself, since a delete can come from anywhere.
+  const drawings = useChartStore((s) => s.drawings);
+  useEffect(() => {
+    if (contextMenu?.drawingId && !drawings.some((drawing) => drawing.id === contextMenu.drawingId)) {
+      setContextMenu(null);
+    }
+  }, [contextMenu, drawings]);
 
   const onScreenshot = useCallback(() => {
     void (async () => {
@@ -516,6 +547,14 @@ export function ChartPanel(): JSX.Element {
           previewRef={previewRef}
         />
 
+        <DrawingStyleBar
+          adapterRef={adapterRef}
+          containerRef={containerRef}
+          symbol={activeSymbol}
+          ready={chartReady}
+          onOpenProperties={openProperties}
+        />
+
         <PriceMarkers
           adapterRef={adapterRef}
           containerRef={containerRef}
@@ -538,6 +577,20 @@ export function ChartPanel(): JSX.Element {
         {loading ? <div className="chart-overlay">Loading real market history…</div> : null}
         {loadError ? <div className="chart-overlay chart-overlay-error">{loadError}</div> : null}
         {historyNote ? <div className="chart-history-note">{historyNote}</div> : null}
+
+        {contextMenu?.drawingId ? (
+          <DrawingContextMenu
+            drawingId={contextMenu.drawingId}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            onOpenProperties={openProperties}
+          />
+        ) : null}
+
+        {propertiesFor ? (
+          <DrawingProperties drawingId={propertiesFor} onClose={closeProperties} />
+        ) : null}
       </div>
     </section>
   );

@@ -4,7 +4,7 @@
  * The drawing checks read the canvas rather than the DOM, because a drawing
  * that is in the store but not painted is not a drawing.
  */
-import { createReport, launch, litPixels, shot, signIn } from './harness.mjs';
+import { clearDrawings, createReport, launch, litPixels, shot, signIn } from './harness.mjs';
 
 const { say, finish } = createReport('tools');
 const { browser, page, errors } = await launch();
@@ -15,11 +15,7 @@ try {
   const canvas = await page.locator('.chart-canvas').boundingBox();
   const at = (fx, fy) => ({ x: canvas.x + canvas.width * fx, y: canvas.y + canvas.height * fy });
 
-  const clear = page.locator('.rail .rail-btn[aria-label="Remove all drawings"]');
-  if (await clear.count()) {
-    await clear.click();
-    await page.waitForTimeout(600);
-  }
+  await clearDrawings(page);
 
   // Indicators persist, so a previous run's are removed first.
   await page.click('.chdr-btn:has-text("Indicators")');
@@ -35,7 +31,7 @@ try {
 
   // --- drawings ------------------------------------------------------------
   const railButtons = await page.locator('.rail .rail-btn').count();
-  say(railButtons <= 10, 'the rail shows a handful of tools, not a wall', `${railButtons} buttons`);
+  say(railButtons <= 11, 'the rail shows a handful of tools, not a wall', `${railButtons} buttons`);
 
   await page.click('.rail .rail-btn[aria-label="Trend line"]');
   say(
@@ -51,7 +47,12 @@ try {
   await page.waitForTimeout(700);
   const drawn = await litPixels(page);
   say(drawn > 200, 'a trend line is painted', `${drawn} lit pixels`);
-  say((await page.locator('.rail .rail-btn[aria-label="Lock"]').count()) === 1, 'the new object is selected');
+  say((await page.locator('[data-testid=drawing-style-bar]:not([hidden])').count()) === 1, 'the new object is selected');
+  // The rail is a TOOL bar: selecting an object must not grow it.
+  say(
+    (await page.locator('.rail .rail-btn').count()) === railButtons,
+    'the rail stays the same size with an object selected',
+  );
 
   const middle = at(0.425, 0.485);
   await page.mouse.move(middle.x, middle.y);
@@ -61,16 +62,25 @@ try {
   await page.waitForTimeout(600);
   say((await litPixels(page)) > 200, 'it survives being dragged');
 
-  await page.click('.rail .rail-btn[aria-label="Hide"]');
+  await page.click('.rail .rail-btn[aria-label="Object tree"]');
+  await page.waitForTimeout(350);
+  await page.locator('[data-testid=object-tree-row] .ot-btn').first().click();
   await page.waitForTimeout(500);
   say((await litPixels(page)) === 0, 'hiding removes it from the canvas');
-  await page.click('.rail .rail-btn[aria-label="Hide"]');
+  await page.locator('[data-testid=object-tree-row] .ot-btn').first().click();
   await page.waitForTimeout(400);
+  // Closed by the same button rather than by Escape, which would also clear
+  // the selection the next step needs.
+  await page.click('.rail .rail-btn[aria-label="Object tree"]');
+  await page.waitForTimeout(300);
 
-  await page.click('.rail .rail-btn[aria-label="Lock"]');
+  await page.click('[data-testid=drawing-style-bar] button[aria-label="Lock object"]');
   await page.waitForTimeout(400);
-  say(await page.locator('.rail .rail-btn[aria-label="Delete"]').isDisabled(), 'a locked object cannot be deleted');
-  await page.click('.rail .rail-btn[aria-label="Lock"]');
+  say(
+    await page.locator('[data-testid=drawing-style-bar] button[aria-label="Delete object"]').isDisabled(),
+    'a locked object cannot be deleted',
+  );
+  await page.click('[data-testid=drawing-style-bar] button[aria-label="Lock object"]');
   await page.waitForTimeout(400);
 
   say(
@@ -88,7 +98,7 @@ try {
 
   await page.keyboard.press('Delete');
   await page.waitForTimeout(500);
-  say((await page.locator('.rail .rail-btn[aria-label="Lock"]').count()) === 0, 'Delete removes the selection');
+  say((await page.locator('[data-testid=drawing-style-bar]:not([hidden])').count()) === 0, 'Delete removes the selection');
 
   // --- indicators ----------------------------------------------------------
   await page.click('.chdr-btn:has-text("Indicators")');

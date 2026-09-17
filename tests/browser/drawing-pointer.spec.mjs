@@ -9,7 +9,7 @@
  * test hook: hover a fixed x, read the bar the status line reports, pan, and
  * read it again. If the chart moved, a different bar is under that pixel.
  */
-import { createReport, launch, litPixels, paintedBounds, shot, signIn } from './harness.mjs';
+import { clearDrawings, createReport, launch, litPixels, paintedBounds, shot, signIn } from './harness.mjs';
 
 const { say, finish } = createReport('drawing-pointer');
 const { browser, page, errors } = await launch();
@@ -28,11 +28,7 @@ try {
   const at = (fx, fy) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy });
   const probe = at(0.35, 0.4);
 
-  const clear = page.locator('.rail .rail-btn[aria-label="Remove all drawings"]');
-  if (await clear.count()) {
-    await clear.click();
-    await page.waitForTimeout(600);
-  }
+  await clearDrawings(page);
 
   // A baseline: panning works before anything is drawn.
   const before = await barUnder(probe.x, probe.y);
@@ -92,18 +88,14 @@ try {
   // Cleared first so the measurement below can only be the horizontal line.
   // Drawing with several objects present is covered by the pan and zoom checks
   // above; this part is about selection.
-  const clearForSelect = page.locator('.rail .rail-btn[aria-label="Remove all drawings"]');
-  if (await clearForSelect.count()) {
-    await clearForSelect.click();
-    await page.waitForTimeout(600);
-  }
+  await clearDrawings(page);
   await page.click('.rail .rail-btn[aria-label="Horizontal line"]');
   await page.mouse.click(at(0.4, 0.45).x, at(0.4, 0.45).y);
   await page.waitForTimeout(800);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
   say(
-    (await page.locator('.rail .rail-btn[aria-label="Lock"]').count()) === 0,
+    (await page.locator('[data-testid=drawing-style-bar]:not([hidden])').count()) === 0,
     'Escape deselects',
   );
 
@@ -120,7 +112,7 @@ try {
     if (!line) break;
     await page.mouse.click(at(0.5, 0).x, line.top);
     await page.waitForTimeout(400);
-    selected = (await page.locator('.rail .rail-btn[aria-label="Lock"]').count()) === 1;
+    selected = (await page.locator('[data-testid=drawing-style-bar]:not([hidden])').count()) === 1;
   }
   say(selected, 'clicking a drawing selects it');
 
@@ -165,10 +157,8 @@ try {
   await page.waitForTimeout(300);
   let litAfterClear = await litPixels(page, '.draw-canvas');
   for (let attempt = 0; attempt < 4 && litAfterClear > 0; attempt += 1) {
-    const clearForUndo = page.locator('.rail .rail-btn[aria-label="Remove all drawings"]');
-    if (!(await clearForUndo.count())) break;
-    await clearForUndo.click();
-    await page.waitForTimeout(800);
+    if (!(await clearDrawings(page))) break;
+    await page.waitForTimeout(400);
     litAfterClear = await litPixels(page, '.draw-canvas');
   }
   if (litAfterClear > 0) await shot(page, 'drawing-pointer-stuck');
@@ -197,9 +187,7 @@ try {
   say(errors.length === 0, 'no page errors', errors.join(' | '));
 } finally {
   try {
-    const clearAll = page.locator('.rail .rail-btn[aria-label="Remove all drawings"]');
-    if (await clearAll.count()) await clearAll.click();
-    await page.waitForTimeout(600);
+    await clearDrawings(page);
   } catch {
     /* the browser may already be gone */
   }

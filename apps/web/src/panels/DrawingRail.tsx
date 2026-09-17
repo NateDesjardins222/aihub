@@ -1,16 +1,22 @@
 /**
  * The drawing toolbar.
  *
- * Favourites at the top, then expandable categories, then the object controls.
+ * Favourites at the top, then expandable categories, then the workspace
+ * controls: magnet, the style for new objects, undo, redo and the object tree.
  * The previous version showed twenty-seven disabled buttons at once; this one
  * shows the four or five tools a trader actually reaches for and puts the rest
  * one click away, and every tool in it works.
+ *
+ * What can be done to the SELECTED object is not here. It is on the floating
+ * style bar and in the object's context menu, next to the object itself, so the
+ * rail keeps a constant size whatever is selected and nothing is offered twice.
  */
 import { useRef, useState, type JSX } from 'react';
 import { useChartStore, type DrawingTool } from '../state/chart-store';
 import { KIND_LABEL, type DrawingKind } from '../chart/drawings/model';
 import { Icon, type IconName } from '../ui/Icon';
 import { Popover, usePopover } from '../ui/Popover';
+import { ObjectTree } from '../chart/drawings/ObjectTree';
 import './DrawingRail.css';
 
 const TOOL_ICON: Record<DrawingKind, IconName> = {
@@ -59,14 +65,19 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
   const drawings = useChartStore((s) => s.drawings);
   const selectedId = useChartStore((s) => s.selectedDrawingId);
   const updateDrawing = useChartStore((s) => s.updateDrawing);
-  const removeDrawing = useChartStore((s) => s.removeDrawing);
-  const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
+  const commitHistory = useChartStore((s) => s.commitHistory);
   const clearDrawings = useChartStore((s) => s.clearDrawings);
   const defaultStyle = useChartStore((s) => s.defaultStyle);
+  const undo = useChartStore((s) => s.undo);
+  const redo = useChartStore((s) => s.redo);
+  const history = useChartStore((s) => s.history);
+  const historyIndex = useChartStore((s) => s.historyIndex);
   const setDefaultStyle = useChartStore((s) => s.setDefaultStyle);
+  const setDrawingStyle = useChartStore((s) => s.setDrawingStyle);
 
   const more = usePopover();
   const style = usePopover();
+  const objects = usePopover();
   const [expanded, setExpanded] = useState<string | null>(null);
   const railRef = useRef<HTMLElement>(null);
 
@@ -180,7 +191,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
               style={{ background: colour }}
               onClick={() =>
                 selected
-                  ? updateDrawing(selected.id, { style: { ...selected.style, color: colour } })
+                  ? setDrawingStyle(selected.id, { color: colour })
                   : setDefaultStyle({ color: colour })
               }
               aria-label={colour}
@@ -194,7 +205,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
             className={`pop-item ${activeStyle.dash === dash.id ? 'pop-item-on' : ''}`}
             onClick={() =>
               selected
-                ? updateDrawing(selected.id, { style: { ...selected.style, dash: dash.id } })
+                ? setDrawingStyle(selected.id, { dash: dash.id })
                 : setDefaultStyle({ dash: dash.id })
             }
           >
@@ -209,7 +220,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
               className={`pop-item ${activeStyle.width === width ? 'pop-item-on' : ''}`}
               onClick={() =>
                 selected
-                  ? updateDrawing(selected.id, { style: { ...selected.style, width } })
+                  ? setDrawingStyle(selected.id, { width })
                   : setDefaultStyle({ width })
               }
             >
@@ -219,57 +230,63 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         </div>
       </Popover>
 
-      {selected ? (
-        <>
-          <div className="rail-sep" />
-          <button
-            className="rail-btn"
-            onClick={() => updateDrawing(selected.id, { locked: !selected.locked })}
-            title={selected.locked ? 'Unlock' : 'Lock'}
-            aria-label="Lock"
-          >
-            <Icon name={selected.locked ? 'lock' : 'unlock'} />
-          </button>
-          <button
-            className="rail-btn"
-            onClick={() => updateDrawing(selected.id, { hidden: !selected.hidden })}
-            title={selected.hidden ? 'Show' : 'Hide'}
-            aria-label="Hide"
-          >
-            <Icon name={selected.hidden ? 'eye-off' : 'eye'} />
-          </button>
-          <button
-            className="rail-btn"
-            onClick={() => duplicateDrawing(selected.id)}
-            title="Duplicate"
-            aria-label="Duplicate"
-          >
-            <Icon name="copy" />
-          </button>
-          <button
-            className="rail-btn rail-btn-danger"
-            onClick={() => removeDrawing(selected.id)}
-            disabled={selected.locked}
-            title={selected.locked ? 'Unlock it first' : 'Delete'}
-            aria-label="Delete"
-          >
-            <Icon name="trash" />
-          </button>
-        </>
-      ) : null}
+      <div className="rail-sep" />
+
+      <button
+        className="rail-btn"
+        onClick={undo}
+        disabled={historyIndex <= 0}
+        title="Undo"
+        aria-label="Undo"
+      >
+        <Icon name="undo" />
+      </button>
+      <button
+        className="rail-btn"
+        onClick={redo}
+        disabled={historyIndex >= history.length - 1}
+        title="Redo"
+        aria-label="Redo"
+      >
+        <Icon name="redo" />
+      </button>
 
       <div className="rail-grow" />
 
-      {mine.length > 0 ? (
-        <button
-          className="rail-btn rail-btn-danger"
-          onClick={() => clearDrawings(symbol)}
-          title={`Remove all ${mine.length} drawings on ${symbol}`}
-          aria-label="Remove all drawings"
-        >
-          <span className="rail-count">{mine.length}</span>
-        </button>
-      ) : null}
+      <button
+        className="rail-btn"
+        onClick={objects.toggle}
+        title={`Objects on ${symbol}`}
+        aria-label="Object tree"
+      >
+        <Icon name="layers" />
+        {mine.length > 0 ? <span className="rail-count">{mine.length}</span> : null}
+      </button>
+      <Popover
+        open={objects.open}
+        onClose={objects.close}
+        anchor={objects.anchor}
+        width={280}
+        label="Objects"
+      >
+        <div className="pop-head">Objects on {symbol}</div>
+        <ObjectTree symbol={symbol} />
+        {mine.length > 0 ? (
+          <>
+            <div className="pop-sep" />
+            <button
+              className="pop-item rail-clear"
+              onClick={() => {
+                clearDrawings(symbol);
+                objects.close();
+              }}
+            >
+              <Icon name="trash" size={12} />
+              Remove all {mine.length}
+            </button>
+          </>
+        ) : null}
+      </Popover>
     </nav>
   );
 }

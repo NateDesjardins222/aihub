@@ -1,0 +1,88 @@
+/* The object tree, shown in the drawing rail's popover. */
+.ot {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ot-empty {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.ot-row {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 26px;
+  padding: 0 2px 0 0;
+  border-radius: var(--radius);
+}
+
+.ot-row:hover {
+  background: var(--bg-hover);
+}
+
+.ot-row-on {
+  background: var(--accent-bg);
+}
+
+.ot-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 100%;
+  padding: 0 6px;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.ot-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.ot-label {
+  flex: 0 0 auto;
+}
+
+.ot-detail {
+  margin-left: auto;
+  padding-left: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ot-btn {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.ot-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.ot-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ot-btn-danger:hover:not(:disabled) {
+  color: var(--short-bright);
+}

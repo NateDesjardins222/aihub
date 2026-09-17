@@ -42,6 +42,17 @@ export interface DrawingInputOptions {
   readonly ready: boolean;
   /** Written every frame for the canvas to paint. */
   readonly previewRef: React.RefObject<PreviewState | null>;
+  /** Right-click on a drawing, or on empty chart with nothing under it. */
+  readonly onContextMenu?: (event: ContextMenuRequest) => void;
+  /** Double-click on a drawing: the trader wants its settings. */
+  readonly onOpenProperties?: (drawingId: string) => void;
+}
+
+export interface ContextMenuRequest {
+  readonly drawingId: string | null;
+  /** Viewport coordinates, for placing the menu. */
+  readonly x: number;
+  readonly y: number;
 }
 
 interface Gesture {
@@ -62,9 +73,16 @@ export function useDrawingInput(options: DrawingInputOptions): void {
   // Everything the listeners need, in a ref: the listeners are attached once
   // and must never be rebound on a store change, or a gesture in flight would
   // lose its handlers mid-drag.
-  const live = useRef({ symbol, tickSize });
+  const live = useRef({
+    symbol,
+    tickSize,
+    onContextMenu: options.onContextMenu,
+    onOpenProperties: options.onOpenProperties,
+  });
   live.current.symbol = symbol;
   live.current.tickSize = tickSize;
+  live.current.onContextMenu = options.onContextMenu;
+  live.current.onOpenProperties = options.onOpenProperties;
 
   const stateRef = useRef<InputState>('IDLE');
   const pendingRef = useRef<Anchor[]>([]);
@@ -146,15 +164,18 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         const kind = store.tool as DrawingKind;
         const anchors = [...pendingRef.current, anchor];
         if (anchors.length >= ANCHOR_COUNT[kind]) {
+          const defaults = store.newDrawingDefaults(kind);
           store.addDrawing({
             id: newId(),
             kind,
             symbol: live.current.symbol,
             anchors,
-            style: store.defaultStyle,
+            style: defaults.style,
+            options: defaults.options,
             text: kind === 'TEXT' ? 'Text' : '',
             locked: false,
             hidden: false,
+            timeframes: [],
             createdAt: Date.now(),
           });
           finishPlacement();
@@ -210,16 +231,19 @@ export function useDrawingInput(options: DrawingInputOptions): void {
           const price = view.yToPrice(point.y);
           const anchors = [...pendingRef.current];
           if (time !== null && price !== null) anchors.push({ time, price });
+          const defaults = store.newDrawingDefaults(kind);
           setPreview({
             drawing: {
               id: 'preview',
               kind,
               symbol: live.current.symbol,
               anchors,
-              style: store.defaultStyle,
+              style: defaults.style,
+              options: defaults.options,
               text: '',
               locked: false,
               hidden: false,
+              timeframes: [],
               createdAt: 0,
             },
           });
@@ -256,6 +280,36 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       container.style.cursor = hoverId ? 'pointer' : '';
     };
 
+    /**
+     * Right-click.
+     *
+     * The menu is the one place a locked or hidden object can be reached, so
+     * the press selects whatever is under it even when a drag would not.
+     * With nothing under the cursor the chart keeps its own menu.
+     */
+    const onContextMenu = (event: MouseEvent): void => {
+      const handler = live.current.onContextMenu;
+      if (!handler) return;
+      const found = pick(pointAt(event));
+      if (!found) return;
+      useChartStore.getState().select(found.drawing.id);
+      event.preventDefault();
+      event.stopPropagation();
+      handler({ drawingId: found.drawing.id, x: event.clientX, y: event.clientY });
+    };
+
+    const onDoubleClick = (event: MouseEvent): void => {
+      const handler = live.current.onOpenProperties;
+      if (!handler) return;
+      if (useChartStore.getState().tool !== 'CURSOR') return;
+      const found = pick(pointAt(event));
+      if (!found) return;
+      useChartStore.getState().select(found.drawing.id);
+      event.preventDefault();
+      event.stopPropagation();
+      handler(found.drawing.id);
+    };
+
     const endGesture = (): void => {
       if (!gestureRef.current) return;
       gestureRef.current = null;
@@ -268,9 +322,15 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       const target = event.target as HTMLElement | null;
       // Never steal a key from an input: the settings dialog is full of them.
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      // Nor from an open dialog. Delete with the object settings open means
+      // "delete the text in front of me", not "delete the object I am editing".
+      if (document.querySelector('.dp-scrim, .st-scrim')) return;
       const store = useChartStore.getState();
 
       if (event.key === 'Escape') {
+        // A menu or a popover owns Escape while it is open: one press closes
+        // it, and the selection it was opened against stays.
+        if (document.querySelector('.dm-menu, .popover')) return;
         if (stateRef.current === 'PLACING') cancelPlacement();
         else if (store.tool !== 'CURSOR') store.setTool('CURSOR');
         else if (store.selectedDrawingId) store.select(null);
@@ -298,6 +358,8 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     // Capture phase: seen before the renderer, released when not claimed.
     container.addEventListener('pointerdown', onPointerDown, true);
     container.addEventListener('pointermove', onPointerMove, true);
+    container.addEventListener('contextmenu', onContextMenu, true);
+    container.addEventListener('dblclick', onDoubleClick, true);
     // The end of a drag can happen anywhere, including outside the chart.
     window.addEventListener('pointerup', endGesture);
     window.addEventListener('pointercancel', endGesture);
@@ -306,6 +368,8 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     return () => {
       container.removeEventListener('pointerdown', onPointerDown, true);
       container.removeEventListener('pointermove', onPointerMove, true);
+      container.removeEventListener('contextmenu', onContextMenu, true);
+      container.removeEventListener('dblclick', onDoubleClick, true);
       window.removeEventListener('pointerup', endGesture);
       window.removeEventListener('pointercancel', endGesture);
       window.removeEventListener('keydown', onKeyDown);

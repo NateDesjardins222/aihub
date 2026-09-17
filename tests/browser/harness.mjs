@@ -161,6 +161,29 @@ export async function paintedBounds(page, selector = '.draw-canvas', region = nu
   return box;
 }
 
+/**
+ * Remove every drawing on the instrument.
+ *
+ * The clear-all control lives in the object tree rather than on the rail, so
+ * that the rail stays a TOOL bar. Suites clear through this helper so the
+ * control can move again without rewriting five of them.
+ */
+export async function clearDrawings(page) {
+  const tree = page.locator('.rail .rail-btn[aria-label="Object tree"]');
+  if ((await tree.count()) === 0) return false;
+  await tree.click();
+  await page.waitForTimeout(350);
+  const clear = page.locator('.popover .rail-clear');
+  if ((await clear.count()) === 0) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    return false;
+  }
+  await clear.click();
+  await page.waitForTimeout(600);
+  return true;
+}
+
 export async function shot(page, name) {
   await page.screenshot({ path: `${SHOTS}/${name}.png` }).catch(() => undefined);
 }

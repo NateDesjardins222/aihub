@@ -45,15 +45,41 @@ export const DEFAULT_STYLE: DrawingStyle = {
   showPrice: false,
 };
 
+/**
+ * Tool-specific settings.
+ *
+ * A bag rather than a union, because the alternative is a `Drawing` type that
+ * grows a field for every tool ever added and a paint function that branches on
+ * which ones are meaningful. Each tool declares the options it understands in
+ * the registry, which is also what generates its property editor, so the two
+ * cannot drift apart.
+ */
+export type ToolOptions = Record<string, unknown>;
+
+/** One level of a Fibonacci tool. Shared by every fib family. */
+export interface FibLevel {
+  readonly value: number;
+  readonly color: string;
+  readonly visible: boolean;
+}
+
 export interface Drawing {
   readonly id: string;
   readonly kind: DrawingKind;
   readonly symbol: string;
   readonly anchors: readonly Anchor[];
   readonly style: DrawingStyle;
+  readonly options: ToolOptions;
   readonly text: string;
   readonly locked: boolean;
   readonly hidden: boolean;
+  /**
+   * Intervals this drawing is shown on. Empty means every interval.
+   *
+   * A level marked on the daily is often noise on the one-minute, and a
+   * scalping trend line is meaningless on the daily.
+   */
+  readonly timeframes: readonly string[];
   readonly createdAt: number;
 }
 
@@ -293,10 +319,79 @@ export function moveAnchor(drawing: Drawing, index: number, anchor: Anchor): Dra
   return { ...drawing, anchors };
 }
 
-/** The levels a fib retracement draws, as {fraction, price} pairs. */
-export function fibLevels(drawing: Drawing): Array<{ fraction: number; price: number }> {
+/**
+ * The levels a Fibonacci tool draws.
+ *
+ * Reads the drawing's own levels when it has them, so a trader who added 0.705
+ * or removed 0.236 gets what they asked for, and falls back to the classic set
+ * for a drawing made before levels were editable. `reverse` swaps which anchor
+ * counts as zero, which is the difference between measuring a pullback and
+ * measuring an extension.
+ */
+export function fibLevels(
+  drawing: Drawing,
+): Array<{ fraction: number; price: number; color: string; visible: boolean }> {
   const [a, b] = drawing.anchors;
   if (!a || !b) return [];
-  const span = b.price - a.price;
-  return FIB_LEVELS.map((fraction) => ({ fraction, price: a.price + span * (1 - fraction) }));
+  const levels = readLevels(drawing);
+  const reverse = drawing.options['reverse'] === true;
+  const from = reverse ? b : a;
+  const to = reverse ? a : b;
+  const span = to.price - from.price;
+  return levels.map((level) => ({
+    fraction: level.value,
+    price: from.price + span * (1 - level.value),
+    color: level.color,
+    visible: level.visible,
+  }));
+}
+
+/** A drawing's levels, or the classic set when it has none of its own. */
+export function readLevels(drawing: Drawing): readonly FibLevel[] {
+  const raw = drawing.options['levels'];
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw
+      .filter(
+        (level): level is FibLevel =>
+          typeof level === 'object' && level !== null && Number.isFinite((level as FibLevel).value),
+      )
+      .map((level) => ({
+        value: level.value,
+        color: typeof level.color === 'string' ? level.color : drawing.style.color,
+        visible: level.visible !== false,
+      }));
+  }
+  return FIB_LEVELS.map((value) => ({ value, color: drawing.style.color, visible: true }));
+}
+
+export interface Bounds {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/**
+ * The screen box a drawing occupies, used to place the floating style bar.
+ *
+ * Kept here rather than in the toolbar because it is geometry, and geometry in
+ * this file is testable without a canvas. A drawing whose anchors are entirely
+ * off-screen has no bounds, and the toolbar then hides rather than floating
+ * over nothing.
+ */
+export function drawingBounds(drawing: Drawing, projection: Projection): Bounds | null {
+  const points = handlePoints(drawing, projection);
+  if (points.length === 0) return null;
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const point of points) {
+    left = Math.min(left, point.x);
+    right = Math.max(right, point.x);
+    top = Math.min(top, point.y);
+    bottom = Math.max(bottom, point.y);
+  }
+  if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+  return { left, right, top, bottom };
 }

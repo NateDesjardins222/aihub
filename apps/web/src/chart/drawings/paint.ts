@@ -6,7 +6,6 @@
  * a repaint and the frame that performs it.
  */
 import {
-  FIB_LEVELS,
   HANDLE_RADIUS,
   fibLevels,
   handlePoints,
@@ -15,6 +14,7 @@ import {
   type Point,
   type Projection,
 } from './model';
+import { option } from './registry';
 
 export type PaintState = 'NORMAL' | 'HOVER' | 'SELECTED' | 'PENDING';
 
@@ -98,25 +98,61 @@ export function drawDrawing(
     }
     case 'FIB_RETRACEMENT': {
       if (!a || !b) break;
-      const left = Math.min(a.x, b.x);
-      const right = Math.max(a.x, b.x);
-      const levels = fibLevels(drawing);
-      ctx.setLineDash([]);
+      const extendLeft = option(drawing, 'extendLeft', false);
+      const extendRight = option(drawing, 'extendRight', false);
+      const left = extendLeft ? 0 : Math.min(a.x, b.x);
+      const right = extendRight ? projection.width : Math.max(a.x, b.x);
+      const levels = fibLevels(drawing).filter((level) => level.visible);
+      const showPercents = option(drawing, 'showPercents', true);
+      const showPrices = option(drawing, 'showPrices', true);
+      const shade = option(drawing, 'background', false);
+      const trendLine = option(drawing, 'trendLine', true);
+
+      if (trendLine) {
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.setLineDash([4, 4]);
+        line(ctx, a, b);
+        ctx.restore();
+      }
+
+      ctx.setLineDash(dashPattern(drawing.style.dash));
+      const ys = levels.map((level) => projection.priceToY(level.price));
+
+      // Shading goes behind the lines, band by band, so a level's own colour
+      // still reads on top of it.
+      if (shade) {
+        ctx.save();
+        for (let i = 0; i < levels.length - 1; i += 1) {
+          const top = ys[i];
+          const bottom = ys[i + 1];
+          if (top === null || bottom === null || top === undefined || bottom === undefined) continue;
+          ctx.globalAlpha = 0.07;
+          ctx.fillStyle = levels[i]!.color;
+          ctx.fillRect(left, Math.min(top, bottom), right - left, Math.abs(bottom - top));
+        }
+        ctx.restore();
+      }
+
       for (let i = 0; i < levels.length; i += 1) {
         const level = levels[i]!;
-        const y = projection.priceToY(level.price);
-        if (y === null) continue;
-        ctx.globalAlpha = state === 'PENDING' ? 0.5 : 0.85;
+        const y = ys[i];
+        if (y === null || y === undefined) continue;
+        ctx.strokeStyle = level.color;
+        ctx.fillStyle = level.color;
+        ctx.globalAlpha = state === 'PENDING' ? 0.5 : 0.9;
         line(ctx, { x: left, y }, { x: right, y });
         ctx.globalAlpha = 1;
+        if (!showPercents && !showPrices) continue;
         ctx.font = `${drawing.style.fontSize}px ui-monospace, monospace`;
         ctx.textBaseline = 'bottom';
-        ctx.fillText(
-          `${(FIB_LEVELS[i]! * 100).toFixed(1)}%  ${level.price.toFixed(pricePrecision)}`,
-          left + 4,
-          y - 2,
-        );
+        const parts: string[] = [];
+        if (showPercents) parts.push(`${(level.fraction * 100).toFixed(1)}%`);
+        if (showPrices) parts.push(level.price.toFixed(pricePrecision));
+        ctx.fillText(parts.join('  '), left + 4, y - 2);
       }
+      ctx.strokeStyle = drawing.style.color;
+      ctx.fillStyle = drawing.style.color;
       break;
     }
     case 'TEXT': {

@@ -53,9 +53,34 @@
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
+.rail-btn:disabled {
+  color: var(--text-muted);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The object count rides on the layers button as a badge. */
+.rail-btn {
+  position: relative;
+}
+
 .rail-count {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  min-width: 13px;
+  padding: 0 2px;
+  border-radius: 7px;
+  background: var(--accent-bg);
+  color: var(--accent);
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+}
+
+.rail-clear:hover {
+  color: var(--short-bright);
 }
 
 .rail-tool-row {

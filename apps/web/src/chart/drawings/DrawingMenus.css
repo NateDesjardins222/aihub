@@ -1,0 +1,196 @@
+/*
+ * The object context menu and the floating style bar.
+ *
+ * Both sit above the chart canvas and the drawing canvas (layer order: chart 1,
+ * drawings 4, markers 6) and both are input surfaces, so they are the only
+ * drawing-related elements with pointer events on.
+ */
+
+/* --- context menu ------------------------------------------------------- */
+
+.dm-menu {
+  position: fixed;
+  z-index: 70;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-md);
+  animation: atlas-pop-in var(--fast) var(--ease);
+}
+
+.dm-head {
+  padding: 6px 10px 4px;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dm-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  text-align: left;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dm-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.dm-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.dm-danger:hover:not(:disabled) {
+  color: var(--short-bright);
+}
+
+.dm-key {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.dm-sep {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--border);
+}
+
+.dm-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* --- floating style bar ------------------------------------------------- */
+
+.dsb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  /* Placed by the frame loop; hidden until it has a position. */
+  visibility: hidden;
+  will-change: transform;
+}
+
+.dsb[hidden] {
+  display: none;
+}
+
+.dsb-group {
+  position: relative;
+}
+
+.dsb-btn {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+
+.dsb-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dsb-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.dsb-text {
+  width: auto;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.dsb-danger:hover:not(:disabled) {
+  color: var(--short-bright);
+}
+
+.dsb-swatch {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dsb-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.dsb-pop {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 8;
+  display: flex;
+  gap: 3px;
+  padding: 5px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.dsb-pop-list {
+  flex-direction: column;
+  min-width: 92px;
+}
+
+.dsb-swatch-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dsb-swatch-btn:hover {
+  transform: scale(1.12);
+}
+
+.dsb-item {
+  min-height: 24px;
+  padding: 3px 8px;
+  text-align: left;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  white-space: nowrap;
+}
+
+.dsb-item:hover {
+  background: var(--bg-hover);
+}
+
+.dsb-item-on {
+  background: var(--accent-bg);
+}

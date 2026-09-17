@@ -149,16 +149,48 @@ React, and a hidden pane's loop is not scheduled.
 Each checkpoint ends green — unit suite, browser suite, typecheck — and is a
 commit, so a partial rebuild cannot destabilise the execution engine (§25).
 
-| # | Checkpoint | Brief sections |
-|---|-----------|----------------|
-| A | Pointer ownership, position marker, drag-to-protect, SL/TP visuals | §1 §2 §3 §10 |
-| B | Typography and visual system, order ticket, timeframe bar, navigation, bottom panel, ladder removal | §4 §5 §6 §7 §8 §17 §19 §22 |
-| C | Drawing Engine foundation: registry, document, undo/redo, property editor, context menu, templates, object tree | §9 §11 §23 |
-| D | High-priority tools + serious Fibonacci | §12 §13 (subset D) |
-| E | Multi-chart | §16 |
-| F | Journal page | §18 |
-| G | Remaining drawing families | §13 |
-| H | Gamification, performance, acceptance screenshots | §20 §21 §26 |
+| # | Checkpoint | Brief sections | State |
+|---|-----------|----------------|-------|
+| A | Pointer ownership, position marker, drag-to-protect, SL/TP visuals | §1 §2 §3 §10 | done |
+| B | Typography and visual system, order ticket, timeframe bar, navigation, bottom panel, ladder removal | §4 §5 §6 §7 §8 §17 §19 §22 | done |
+| C | Drawing Engine foundation: registry, document, undo/redo, property editor, context menu, templates, object tree | §9 §11 §23 | done |
+| D | High-priority tools + serious Fibonacci | §12 §13 (subset D) | next |
+| E | Multi-chart | §16 | |
+| F | Journal page | §18 | |
+| G | Remaining drawing families | §13 | |
+| H | Gamification, performance, acceptance screenshots | §20 §21 §26 | |
+
+### What checkpoint C delivered
+
+* **A tool catalogue as data** (`chart/drawings/registry.ts`): each tool states
+  its family, anchor count, default style and options, and the properties it
+  understands. The settings dialog, the context menu and the templates are all
+  generated from it, so a tool cannot offer a control it ignores. Guarded by
+  `registry.test.ts`, which fails if a tool declares an options property with no
+  default or a style property that is not on a style.
+* **A document model with per-tool options** (`options`, `timeframes` on
+  `Drawing`), sanitised on restore: stored preferences are untrusted input.
+* **One undo step per edit.** Dragging commits on release; a property edit,
+  a re-order, a lock and a template application each commit once.
+* **The object settings dialog** (double-click, the context menu, the rail
+  gear), including the level editor.
+* **The floating style bar**, placed from the projection in an animation frame
+  so it follows the object through a pan without a render per frame.
+* **The context menu**: settings, duplicate, order, lock, hide, templates,
+  default-for-this-tool, delete.
+* **The object tree**, in the rail: select, hide, lock, bring to front, delete,
+  and the clear-all that used to be a rail button.
+* **Templates and per-tool defaults**, persisted with the workspace.
+* **Serious Fibonacci levels ahead of checkpoint D** (§12): editable values,
+  colours and visibility per level, a reverse flag, four presets including OTE
+  (0.62 / 0.705 / 0.79), and paint that honours every one of them.
+
+One bug was found and fixed while testing it: a popover's Escape handler was
+being lost mid-dispatch. The chart's own Escape handler runs first, clears the
+selection, and React flushes that update synchronously; the popover's effect
+re-registered its listener on the new `onClose` identity, and a listener added
+during a dispatch never receives that event. Both the popover and the context
+menu now register once and read the callback through a ref.
 
 ## 6. What will not be faked
 

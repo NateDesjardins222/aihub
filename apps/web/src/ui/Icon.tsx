@@ -45,6 +45,7 @@ export type IconName =
   | 'ladder'
   | 'close'
   | 'chevron-down'
+  | 'chevron-up'
   | 'chevron-right'
   | 'plus'
   | 'minus'
@@ -52,7 +53,10 @@ export type IconName =
   | 'pause'
   | 'indicators'
   | 'reset'
-  | 'now';
+  | 'now'
+  | 'undo'
+  | 'redo'
+  | 'layers';
 
 const PATHS: Record<IconName, string> = {
   candles: 'M4 5v6M4 2v1M4 13v1M8 4v8M8 2v2M8 12v2M12 6v4M12 3v3M12 10v3',
@@ -93,6 +97,10 @@ const PATHS: Record<IconName, string> = {
   ladder: 'M2.5 2.5h11v11h-11zM2.5 6.2h11M2.5 9.8h11M8 2.5v11',
   close: 'M3.5 3.5l9 9M12.5 3.5l-9 9',
   'chevron-down': 'M4 6.2L8 10l4-3.8',
+  'chevron-up': 'M4 9.8L8 6l4 3.8',
+  undo: 'M3 7.5h6.5a3.2 3.2 0 110 6.4H6M3 7.5l3-3M3 7.5l3 3',
+  redo: 'M13 7.5H6.5a3.2 3.2 0 100 6.4H10M13 7.5l-3-3M13 7.5l-3 3',
+  layers: 'M8 2L2 5.2 8 8.4l6-3.2L8 2zM2.6 8.4L8 11.3l5.4-2.9M2.6 11.2L8 14.1l5.4-2.9',
   'chevron-right': 'M6.2 4L10 8l-3.8 4',
   plus: 'M8 3.5v9M3.5 8h9',
   minus: 'M3.5 8h9',

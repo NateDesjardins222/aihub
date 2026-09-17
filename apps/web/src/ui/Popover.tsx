@@ -6,7 +6,16 @@
  * behave the same - click outside to dismiss, Escape to dismiss, and never
  * taller than the viewport.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from 'react';
 import './Popover.css';
 
 export interface PopoverProps {
@@ -44,16 +53,31 @@ export function Popover({
     setStyle({ top, left, maxHeight: Math.max(160, window.innerHeight - top - 10) });
   }, [open, anchor, align, width]);
 
+  /*
+   * The dismiss handlers are registered ONCE per opening and read the current
+   * onClose through a ref.
+   *
+   * Re-registering them on every render looks harmless and is not: a keydown
+   * handler that runs earlier in the same dispatch can cause a synchronous
+   * React update, and a listener removed and re-added during a dispatch never
+   * receives that event. That is exactly how Escape stopped closing this
+   * popover once the chart's own Escape handler started clearing a selection.
+   */
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const anchorRef = useRef(anchor);
+  anchorRef.current = anchor;
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent): void => {
       const target = event.target as Node;
       if (ref.current?.contains(target)) return;
-      if (anchor?.contains(target)) return;
-      onClose();
+      if (anchorRef.current?.contains(target)) return;
+      closeRef.current();
     };
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') closeRef.current();
     };
     // Capture, so a click that also opens another menu still closes this one.
     window.addEventListener('pointerdown', onPointerDown, true);
@@ -62,7 +86,7 @@ export function Popover({
       window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [open, onClose, anchor]);
+  }, [open]);
 
   if (!open || !style) return null;
 
@@ -93,13 +117,11 @@ export function usePopover(): {
 } {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
-  return {
-    open,
-    anchor,
-    toggle: (event) => {
-      setAnchor(event.currentTarget as HTMLElement);
-      setOpen((value) => !value);
-    },
-    close: () => setOpen(false),
-  };
+  // Stable identities: see the note on the dismiss handlers above.
+  const toggle = useCallback((event: React.MouseEvent) => {
+    setAnchor(event.currentTarget as HTMLElement);
+    setOpen((value) => !value);
+  }, []);
+  const close = useCallback(() => setOpen(false), []);
+  return useMemo(() => ({ open, anchor, toggle, close }), [open, anchor, toggle, close]);
 }

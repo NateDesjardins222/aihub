@@ -1,0 +1,218 @@
+/*
+ * The object settings dialog.
+ *
+ * Narrower and shorter than the terminal settings dialog: it edits one object,
+ * so it should not take the whole screen away from the chart it is editing.
+ */
+.dp-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  background: rgba(4, 6, 10, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.dp-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100%);
+  max-height: min(640px, 100%);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: atlas-pop-in var(--fast) var(--ease);
+}
+
+.dp-body {
+  overflow: auto;
+  padding: 10px 14px 16px;
+}
+
+.dp-text,
+.dp-save-name {
+  width: 100%;
+  height: var(--h-control);
+  padding: 0 8px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dp-fill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- levels ------------------------------------------------------------- */
+
+.dp-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+
+.dp-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.dp-preset {
+  height: var(--h-dense);
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dp-preset:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.dp-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-control);
+}
+
+.dp-level-value {
+  width: 62px;
+  height: var(--h-dense);
+  padding: 0 6px;
+  text-align: right;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dp-level-pct {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.dp-level input[type='color'] {
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dp-level-del {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+
+.dp-level-del:hover {
+  color: var(--short-bright);
+  background: var(--bg-hover);
+}
+
+.dp-level-add {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* --- templates ---------------------------------------------------------- */
+
+.dp-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.dp-template {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dp-template-apply {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--h-control);
+  padding: 0 8px;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+}
+
+.dp-template-apply:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.dp-template-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.dp-template-del {
+  width: 24px;
+  height: var(--h-control);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+
+.dp-template-del:hover {
+  color: var(--short-bright);
+  background: var(--bg-hover);
+}
+
+.dp-save {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.dp-btn {
+  height: var(--h-control);
+  padding: 0 10px;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dp-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.dp-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}

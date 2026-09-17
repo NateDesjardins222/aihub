@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_STYLE,
+  FIB_LEVELS,
   distanceToLine,
+  drawingBounds,
   distanceToRay,
   distanceToSegment,
   fibLevels,
@@ -43,9 +45,11 @@ function drawing(kind: DrawingKind, anchors: Array<[number, number]>, patch: Par
     symbol: 'NQ',
     anchors: anchors.map(([time, price]) => ({ time, price })),
     style: DEFAULT_STYLE,
+    options: {},
     text: '',
     locked: false,
     hidden: false,
+    timeframes: [],
     createdAt: 0,
     ...patch,
   };
@@ -223,13 +227,89 @@ describe('fib levels', () => {
       [60_000, 200],
     ]);
     const levels = fibLevels(fib);
-    expect(levels[0]).toEqual({ fraction: 0, price: 200 });
-    expect(levels[levels.length - 1]).toEqual({ fraction: 1, price: 100 });
+    expect(levels[0]!.fraction).toBe(0);
+    expect(levels[0]!.price).toBe(200);
+    expect(levels[levels.length - 1]!.fraction).toBe(1);
+    expect(levels[levels.length - 1]!.price).toBe(100);
     expect(levels.find((l) => l.fraction === 0.5)!.price).toBeCloseTo(150, 10);
     expect(levels.find((l) => l.fraction === 0.618)!.price).toBeCloseTo(138.2, 10);
   });
 
   it('gives nothing for an unfinished drawing', () => {
     expect(fibLevels(drawing('FIB_RETRACEMENT', [[0, 100]]))).toEqual([]);
+  });
+
+  it('uses the levels the drawing carries, not the classic set', () => {
+    const fib = drawing(
+      'FIB_RETRACEMENT',
+      [
+        [0, 100],
+        [60_000, 200],
+      ],
+      {
+        options: {
+          levels: [
+            { value: 0, color: '#111111', visible: true },
+            { value: 0.705, color: '#222222', visible: false },
+            { value: 1, color: '#333333', visible: true },
+          ],
+        },
+      },
+    );
+    const levels = fibLevels(fib);
+    expect(levels.map((level) => level.fraction)).toEqual([0, 0.705, 1]);
+    expect(levels[1]!.color).toBe('#222222');
+    // A hidden level is still REPORTED - the paint routine decides what to
+    // draw, so a level can be toggled back on without losing its colour.
+    expect(levels[1]!.visible).toBe(false);
+    expect(levels[1]!.price).toBeCloseTo(129.5, 10);
+  });
+
+  it('reverses which anchor counts as zero', () => {
+    const anchors: Array<[number, number]> = [
+      [0, 100],
+      [60_000, 200],
+    ];
+    const forward = fibLevels(drawing('FIB_RETRACEMENT', anchors));
+    const reversed = fibLevels(drawing('FIB_RETRACEMENT', anchors, { options: { reverse: true } }));
+    expect(forward[0]!.price).toBe(200);
+    expect(reversed[0]!.price).toBe(100);
+    expect(reversed[reversed.length - 1]!.price).toBe(200);
+  });
+
+  it('falls back to the classic set when the levels are junk', () => {
+    const fib = drawing(
+      'FIB_RETRACEMENT',
+      [
+        [0, 100],
+        [60_000, 200],
+      ],
+      { options: { levels: 'not an array' } },
+    );
+    expect(fibLevels(fib).map((level) => level.fraction)).toEqual(FIB_LEVELS);
+  });
+});
+
+describe('drawing bounds', () => {
+  it('covers every handle of a rectangle', () => {
+    const rect = drawing('RECTANGLE', [
+      [10_000, 90],
+      [40_000, 60],
+    ]);
+    // timeToX is time/1000 and priceToY is 100 - price.
+    expect(drawingBounds(rect, projection)).toEqual({ left: 10, right: 40, top: 10, bottom: 40 });
+  });
+
+  it('spans the plot for a horizontal line, whose handle sits at the middle', () => {
+    const level = drawing('HORIZONTAL_LINE', [[0, 95]]);
+    const bounds = drawingBounds(level, projection)!;
+    expect(bounds.top).toBe(5);
+    expect(bounds.bottom).toBe(5);
+    expect(bounds.left).toBe(projection.width / 2);
+  });
+
+  it('has no bounds when nothing projects', () => {
+    const nowhere: Projection = { ...projection, timeToX: () => null, priceToY: () => null };
+    expect(drawingBounds(drawing('TREND_LINE', [[0, 100], [1000, 90]]), nowhere)).toBeNull();
   });
 });

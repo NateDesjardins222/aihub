@@ -22,7 +22,15 @@ import {
   type Drawing,
   type DrawingKind,
   type DrawingStyle,
+  type ToolOptions,
 } from '../chart/drawings/model';
+import {
+  optionsFor,
+  styleFor,
+  templateFrom,
+  toolDef,
+  type DrawingTemplate,
+} from '../chart/drawings/registry';
 
 export type DrawingTool = DrawingKind | 'CURSOR';
 
@@ -65,12 +73,42 @@ interface ChartState {
   /** Record the current state as an undo step, if it differs from the last. */
   commitHistory: () => void;
 
+  /** Saved settings a trader can re-apply to any drawing of the same kind. */
+  templates: readonly DrawingTemplate[];
+  /** Per-tool overrides for what a NEW drawing of that kind starts as. */
+  toolDefaults: Readonly<Record<string, ToolDefault>>;
+
   addDrawing: (drawing: Drawing) => void;
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
+  /** Patch one drawing's style, as one undo step. */
+  setDrawingStyle: (id: string, patch: Partial<DrawingStyle>) => void;
+  /** Patch one drawing's tool options, as one undo step. */
+  setDrawingOptions: (id: string, patch: ToolOptions) => void;
+  /** Move a drawing to the top or the bottom of the paint order. */
+  reorderDrawing: (id: string, to: 'FRONT' | 'BACK') => void;
+
+  saveTemplate: (drawingId: string, name: string) => void;
+  removeTemplate: (templateId: string) => void;
+  applyTemplate: (templateId: string, drawingId: string) => void;
+  /** Make this drawing's settings the starting point for its tool. */
+  setToolDefault: (drawingId: string) => void;
+  resetToolDefault: (kind: DrawingKind) => void;
+  /** What a new drawing of this kind starts as. */
+  newDrawingDefaults: (kind: DrawingKind) => ToolDefault;
   removeDrawing: (id: string) => void;
   duplicateDrawing: (id: string) => void;
   clearDrawings: (symbol: string) => void;
   select: (id: string | null) => void;
+  /**
+   * The object whose settings dialog is open, if any.
+   *
+   * In the store rather than in the chart panel because three different places
+   * open it - a double-click, the context menu and the object tree - and they
+   * should not have to thread a callback to each other.
+   */
+  propertiesFor: string | null;
+  openProperties: (id: string) => void;
+  closeProperties: () => void;
   setDefaultStyle: (patch: Partial<DrawingStyle>) => void;
 
   restore: (stored: StoredChart) => void;
@@ -87,6 +125,14 @@ export interface StoredChart {
   favouriteTools?: readonly DrawingKind[];
   defaultStyle?: Partial<DrawingStyle>;
   magnet?: boolean;
+  templates?: unknown;
+  toolDefaults?: unknown;
+}
+
+/** A style and option pair: what a tool draws with until told otherwise. */
+export interface ToolDefault {
+  readonly style: DrawingStyle;
+  readonly options: ToolOptions;
 }
 
 const CHART_TYPES: readonly ChartType[] = [
@@ -146,6 +192,9 @@ export const useChartStore = create<ChartState>((set, get) => ({
   selectedDrawingId: null,
   favouriteTools: DEFAULT_FAVOURITE_TOOLS,
   defaultStyle: DEFAULT_STYLE,
+  templates: [],
+  toolDefaults: {},
+  propertiesFor: null,
   history: [[]],
   historyIndex: 0,
 
@@ -232,14 +281,14 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const { history, historyIndex } = get();
     if (historyIndex <= 0) return;
     const index = historyIndex - 1;
-    set({ historyIndex: index, drawings: history[index] ?? [], selectedDrawingId: null });
+    set({ historyIndex: index, drawings: history[index] ?? [], selectedDrawingId: null, propertiesFor: null });
   },
 
   redo() {
     const { history, historyIndex } = get();
     if (historyIndex >= history.length - 1) return;
     const index = historyIndex + 1;
-    set({ historyIndex: index, drawings: history[index] ?? [], selectedDrawingId: null });
+    set({ historyIndex: index, drawings: history[index] ?? [], selectedDrawingId: null, propertiesFor: null });
   },
 
   canUndo() {
@@ -268,10 +317,94 @@ export const useChartStore = create<ChartState>((set, get) => ({
     });
   },
 
+  /**
+   * Style and options are patched through their own actions rather than
+   * `updateDrawing` so that each edit is ONE undo step. Dragging commits on
+   * release; a property edit commits on the edit.
+   */
+  setDrawingStyle(drawingId, patch) {
+    const drawing = get().drawings.find((d) => d.id === drawingId);
+    if (!drawing) return;
+    get().updateDrawing(drawingId, { style: { ...drawing.style, ...patch } });
+    get().commitHistory();
+  },
+
+  setDrawingOptions(drawingId, patch) {
+    const drawing = get().drawings.find((d) => d.id === drawingId);
+    if (!drawing) return;
+    get().updateDrawing(drawingId, { options: { ...drawing.options, ...patch } });
+    get().commitHistory();
+  },
+
+  /**
+   * Paint order is array order, so "bring to front" is a move to the end.
+   * It also decides what a click picks, since hit-testing walks the array
+   * backwards: the thing drawn on top is the thing you grab.
+   */
+  reorderDrawing(drawingId, to) {
+    const drawings = get().drawings;
+    const index = drawings.findIndex((d) => d.id === drawingId);
+    if (index < 0) return;
+    const drawing = drawings[index]!;
+    const rest = [...drawings.slice(0, index), ...drawings.slice(index + 1)];
+    set({ drawings: to === 'FRONT' ? [...rest, drawing] : [drawing, ...rest] });
+    get().commitHistory();
+  },
+
+  saveTemplate(drawingId, name) {
+    const drawing = get().drawings.find((d) => d.id === drawingId);
+    const trimmed = name.trim();
+    if (!drawing || trimmed.length === 0) return;
+    set({ templates: [...get().templates, templateFrom(drawing, trimmed, id('tpl'))] });
+  },
+
+  removeTemplate(templateId) {
+    set({ templates: get().templates.filter((template) => template.id !== templateId) });
+  },
+
+  /**
+   * Applying a template changes only how a drawing LOOKS. Its anchors are
+   * where the trader put them and a template must never move them.
+   */
+  applyTemplate(templateId, drawingId) {
+    const template = get().templates.find((item) => item.id === templateId);
+    const drawing = get().drawings.find((d) => d.id === drawingId);
+    if (!template || !drawing || template.kind !== drawing.kind) return;
+    get().updateDrawing(drawingId, {
+      style: { ...template.style },
+      options: copyOptions(template.options),
+    });
+    get().commitHistory();
+  },
+
+  setToolDefault(drawingId) {
+    const drawing = get().drawings.find((d) => d.id === drawingId);
+    if (!drawing) return;
+    set({
+      toolDefaults: {
+        ...get().toolDefaults,
+        [drawing.kind]: { style: { ...drawing.style }, options: copyOptions(drawing.options) },
+      },
+    });
+  },
+
+  resetToolDefault(kind) {
+    const next = { ...get().toolDefaults };
+    delete next[kind];
+    set({ toolDefaults: next });
+  },
+
+  newDrawingDefaults(kind) {
+    const saved = get().toolDefaults[kind];
+    if (saved) return { style: { ...saved.style }, options: copyOptions(saved.options) };
+    return { style: styleFor(kind, get().defaultStyle), options: optionsFor(kind) };
+  },
+
   removeDrawing(drawingId) {
     set({
       drawings: get().drawings.filter((drawing) => drawing.id !== drawingId),
       selectedDrawingId: get().selectedDrawingId === drawingId ? null : get().selectedDrawingId,
+      propertiesFor: get().propertiesFor === drawingId ? null : get().propertiesFor,
     });
     get().commitHistory();
   },
@@ -294,15 +427,27 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   clearDrawings(symbol) {
+    const removed = get().drawings.filter((drawing) => drawing.symbol === symbol);
     set({
       drawings: get().drawings.filter((drawing) => drawing.symbol !== symbol),
       selectedDrawingId: null,
+      propertiesFor: removed.some((drawing) => drawing.id === get().propertiesFor)
+        ? null
+        : get().propertiesFor,
     });
     get().commitHistory();
   },
 
   select(drawingId) {
     set({ selectedDrawingId: drawingId });
+  },
+
+  openProperties(drawingId) {
+    set({ propertiesFor: drawingId, selectedDrawingId: drawingId });
+  },
+
+  closeProperties() {
+    set({ propertiesFor: null });
   },
 
   setDefaultStyle(patch) {
@@ -330,9 +475,13 @@ export const useChartStore = create<ChartState>((set, get) => ({
           : DEFAULT_FAVOURITE_TOOLS,
       defaultStyle: { ...DEFAULT_STYLE, ...(stored.defaultStyle ?? {}) },
       magnet: typeof stored.magnet === 'boolean' ? stored.magnet : true,
+      templates: sanitizeTemplates(stored.templates),
+      toolDefaults: sanitizeToolDefaults(stored.toolDefaults),
       // A restored workspace is the first undo step, not something to undo to.
       history: [sanitizeDrawings(stored.drawings)],
       historyIndex: 0,
+      selectedDrawingId: null,
+      propertiesFor: null,
     });
   },
 
@@ -346,9 +495,48 @@ export const useChartStore = create<ChartState>((set, get) => ({
       favouriteTools: state.favouriteTools,
       defaultStyle: state.defaultStyle,
       magnet: state.magnet,
+      templates: state.templates,
+      toolDefaults: state.toolDefaults,
     };
   },
 }));
+
+/** Options are copied on every hand-off, so two drawings never share an array. */
+function copyOptions(options: ToolOptions): ToolOptions {
+  return JSON.parse(JSON.stringify(options)) as ToolOptions;
+}
+
+function sanitizeTemplates(raw: unknown): readonly DrawingTemplate[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DrawingTemplate[] = [];
+  for (const item of raw) {
+    const candidate = item as Partial<DrawingTemplate>;
+    if (typeof candidate.kind !== 'string' || !toolDef(candidate.kind as DrawingKind)) continue;
+    if (typeof candidate.name !== 'string' || candidate.name.trim().length === 0) continue;
+    out.push({
+      id: typeof candidate.id === 'string' ? candidate.id : id('tpl'),
+      kind: candidate.kind as DrawingKind,
+      name: candidate.name,
+      style: { ...DEFAULT_STYLE, ...(candidate.style ?? {}) },
+      options: sanitizeOptions(candidate.options),
+    });
+  }
+  return out;
+}
+
+function sanitizeToolDefaults(raw: unknown): Record<string, ToolDefault> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const out: Record<string, ToolDefault> = {};
+  for (const [kind, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!toolDef(kind as DrawingKind)) continue;
+    const candidate = value as Partial<ToolDefault>;
+    out[kind] = {
+      style: { ...DEFAULT_STYLE, ...(candidate?.style ?? {}) },
+      options: sanitizeOptions(candidate?.options),
+    };
+  }
+  return out;
+}
 
 /** Stored preferences are untrusted input: an unknown indicator is dropped. */
 function sanitizeIndicators(raw: unknown): readonly IndicatorInstance[] {
@@ -365,6 +553,16 @@ function sanitizeIndicators(raw: unknown): readonly IndicatorInstance[] {
     });
   }
   return out;
+}
+
+/**
+ * Options come back from storage as whatever was written there, which on a
+ * tampered or half-migrated workspace could be anything at all. Keeping only a
+ * plain object means a bad value can never reach a paint routine.
+ */
+function sanitizeOptions(raw: unknown): ToolOptions {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  return { ...(raw as ToolOptions) };
 }
 
 function sanitizeDrawings(raw: unknown): readonly Drawing[] {
@@ -385,9 +583,13 @@ function sanitizeDrawings(raw: unknown): readonly Drawing[] {
       symbol: candidate.symbol,
       anchors,
       style: { ...DEFAULT_STYLE, ...(candidate.style ?? {}) },
+      options: sanitizeOptions(candidate.options),
       text: typeof candidate.text === 'string' ? candidate.text : '',
       locked: candidate.locked === true,
       hidden: candidate.hidden === true,
+      timeframes: Array.isArray(candidate.timeframes)
+        ? candidate.timeframes.filter((interval): interval is string => typeof interval === 'string')
+        : [],
       createdAt: Number.isFinite(candidate.createdAt) ? candidate.createdAt! : Date.now(),
     });
   }
