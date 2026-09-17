@@ -55,6 +55,16 @@ interface ChartState {
   setTool: (tool: DrawingTool, sticky?: boolean) => void;
   toggleMagnet: () => void;
   toggleFavouriteTool: (kind: DrawingKind) => void;
+  /** Undo history, as whole drawing sets. See the note on pushHistory. */
+  history: readonly (readonly Drawing[])[];
+  historyIndex: number;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  /** Record the current state as an undo step, if it differs from the last. */
+  commitHistory: () => void;
+
   addDrawing: (drawing: Drawing) => void;
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
   removeDrawing: (id: string) => void;
@@ -116,6 +126,8 @@ function merge<T>(base: T, patch: DeepPartial<T>): T {
   return out as T;
 }
 
+export const HISTORY_DEPTH = 100;
+
 export const DEFAULT_FAVOURITE_TOOLS: readonly DrawingKind[] = [
   'TREND_LINE',
   'HORIZONTAL_LINE',
@@ -134,6 +146,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   selectedDrawingId: null,
   favouriteTools: DEFAULT_FAVOURITE_TOOLS,
   defaultStyle: DEFAULT_STYLE,
+  history: [[]],
+  historyIndex: 0,
 
   setAppearance(patch) {
     set({ appearance: normalizeAppearance(merge(get().appearance, patch)) });
@@ -195,6 +209,47 @@ export const useChartStore = create<ChartState>((set, get) => ({
     });
   },
 
+  /**
+   * Record an undo step.
+   *
+   * History holds whole drawing SETS rather than per-tool diffs. The sets share
+   * structure - an unchanged drawing is the same object in both - so a hundred
+   * steps of a hundred drawings is a hundred arrays of pointers, not a hundred
+   * copies. It is also the one shape that cannot be got wrong per tool.
+   *
+   * Dragging is deliberately NOT recorded per frame: a drag commits one step
+   * when the pointer is released, which is what a trader means by "undo that".
+   */
+  commitHistory() {
+    const { drawings, history, historyIndex } = get();
+    if (history[historyIndex] === drawings) return;
+    const truncated = history.slice(0, historyIndex + 1);
+    const next = [...truncated, drawings].slice(-HISTORY_DEPTH);
+    set({ history: next, historyIndex: next.length - 1 });
+  },
+
+  undo() {
+    const { history, historyIndex } = get();
+    if (historyIndex <= 0) return;
+    const index = historyIndex - 1;
+    set({ historyIndex: index, drawings: history[index] ?? [], selectedDrawingId: null });
+  },
+
+  redo() {
+    const { history, historyIndex } = get();
+    if (historyIndex >= history.length - 1) return;
+    const index = historyIndex + 1;
+    set({ historyIndex: index, drawings: history[index] ?? [], selectedDrawingId: null });
+  },
+
+  canUndo() {
+    return get().historyIndex > 0;
+  },
+
+  canRedo() {
+    return get().historyIndex < get().history.length - 1;
+  },
+
   addDrawing(drawing) {
     set({
       drawings: [...get().drawings, drawing],
@@ -202,6 +257,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       selectedDrawingId: drawing.id,
       tool: get().toolSticky ? get().tool : 'CURSOR',
     });
+    get().commitHistory();
   },
 
   updateDrawing(drawingId, patch) {
@@ -217,6 +273,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       drawings: get().drawings.filter((drawing) => drawing.id !== drawingId),
       selectedDrawingId: get().selectedDrawingId === drawingId ? null : get().selectedDrawingId,
     });
+    get().commitHistory();
   },
 
   duplicateDrawing(drawingId) {
@@ -233,6 +290,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       createdAt: Date.now(),
     };
     set({ drawings: [...get().drawings, copy], selectedDrawingId: copy.id });
+    get().commitHistory();
   },
 
   clearDrawings(symbol) {
@@ -240,6 +298,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       drawings: get().drawings.filter((drawing) => drawing.symbol !== symbol),
       selectedDrawingId: null,
     });
+    get().commitHistory();
   },
 
   select(drawingId) {
@@ -271,6 +330,9 @@ export const useChartStore = create<ChartState>((set, get) => ({
           : DEFAULT_FAVOURITE_TOOLS,
       defaultStyle: { ...DEFAULT_STYLE, ...(stored.defaultStyle ?? {}) },
       magnet: typeof stored.magnet === 'boolean' ? stored.magnet : true,
+      // A restored workspace is the first undo step, not something to undo to.
+      history: [sanitizeDrawings(stored.drawings)],
+      historyIndex: 0,
     });
   },
 

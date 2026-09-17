@@ -221,17 +221,28 @@ export class LightweightChartsAdapter implements ChartAdapter {
           labelBackgroundColor: a.scales.crosshairLabelBackground,
         },
       },
+      /*
+       * Auto-scaling is always on.
+       *
+       * "Hold the range I am looking at" is what turning it off should mean,
+       * and this renderer cannot do it: clearing autoScale drops the scale to
+       * a default range that flattens the candles into a band at the top of
+       * the pane, and holding a range through the series' range provider
+       * fights the renderer's own scaling and does the same. Rather than ship
+       * a control that visibly breaks the chart, the control is not offered -
+       * see docs/rebuild-plan.md. Reset scale remains.
+       */
       rightPriceScale: {
         visible: a.scales.priceScaleVisible && a.scales.priceScaleSide === 'RIGHT',
         borderColor: a.scales.scaleLineColor,
         scaleMargins: { top: a.scales.scaleMarginTop, bottom: a.scales.scaleMarginBottom },
-        autoScale: a.scales.autoScale,
+        autoScale: true,
       },
       leftPriceScale: {
         visible: a.scales.priceScaleVisible && a.scales.priceScaleSide === 'LEFT',
         borderColor: a.scales.scaleLineColor,
         scaleMargins: { top: a.scales.scaleMarginTop, bottom: a.scales.scaleMarginBottom },
-        autoScale: a.scales.autoScale,
+        autoScale: true,
       },
       timeScale: {
         visible: a.scales.timeScaleVisible,
@@ -394,7 +405,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     }
 
     this.priceSeries.priceScale().applyOptions({
-      autoScale: this.autoScale && this.appearance.scales.autoScale,
+      autoScale: true,
       scaleMargins: {
         top: this.appearance.scales.scaleMarginTop,
         bottom: this.appearance.scales.scaleMarginBottom,
@@ -513,6 +524,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
     this.chart.applyOptions(this.layoutOptions() as never);
 
+    // Freeze, or release, before anything is applied.
     const structural =
       JSON.stringify(previous.symbol) !== JSON.stringify(appearance.symbol) ||
       previous.scales.priceScaleSide !== appearance.scales.priceScaleSide;
@@ -524,7 +536,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     } else {
       this.applyScaleMode();
       this.priceSeries?.priceScale().applyOptions({
-        autoScale: appearance.scales.autoScale,
+        autoScale: true,
         scaleMargins: {
           top: appearance.scales.scaleMarginTop,
           bottom: appearance.scales.scaleMarginBottom,
@@ -900,13 +912,15 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
   resetScale(): void {
     this.chart?.timeScale().resetTimeScale();
+    // Resetting the scales releases a pinned range: "reset" that left the axis
+    // frozen would not be a reset.
     this.priceSeries?.priceScale().applyOptions({ autoScale: true });
     this.autoScale = true;
   }
 
   setAutoScale(enabled: boolean): void {
+    // Kept for the adapter interface; see the note on rightPriceScale.
     this.autoScale = enabled;
-    this.priceSeries?.priceScale().applyOptions({ autoScale: enabled });
   }
 
   goToTime(time: number): void {
@@ -1021,13 +1035,34 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (!chart || !series || !container) return null;
     const timeScale = chart.timeScale();
     return {
-      timeToX: (timeMs) => timeScale.timeToCoordinate(toTime(timeMs)),
+      /**
+       * A time to a pixel, INCLUDING times outside the loaded series.
+       *
+       * The renderer maps only times it has bars for, so anything to the right
+       * of the last bar - the empty space traders draw projections and target
+       * lines into - came back null, and the drawing silently never painted.
+       * Outside the series the position is computed from the logical index
+       * instead, at the series' own spacing. No bar is invented: the anchor is
+       * a time, and this is where that time would sit.
+       */
+      timeToX: (timeMs) => {
+        const direct = timeScale.timeToCoordinate(toTime(timeMs));
+        if (direct !== null) return direct;
+        const spacing = this.typicalSpacing();
+        if (spacing === 0 || this.bars.length === 0) return null;
+        const first = this.bars[0]!;
+        const last = this.bars[this.bars.length - 1]!;
+        const logical =
+          timeMs > last.time
+            ? this.bars.length - 1 + (timeMs - last.time) / spacing
+            : (timeMs - first.time) / spacing;
+        return timeScale.logicalToCoordinate(logical as never);
+      },
       xToTime: (x) => {
         const time = timeScale.coordinateToTime(x);
         if (time !== null) return fromTime(time);
-        // Past the last bar there is no time on the scale yet. Extrapolating by
-        // the logical index keeps a drawing anchored where the cursor is,
-        // without inventing a bar: the anchor is a time, not an observation.
+        // The same arithmetic in reverse, so a drawing placed in the empty
+        // space lands exactly where the cursor was.
         const logical = timeScale.coordinateToLogical(x);
         const spacing = this.typicalSpacing();
         const last = this.bars[this.bars.length - 1];

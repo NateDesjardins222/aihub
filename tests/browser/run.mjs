@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SUITES = ['terminal', 'tools', 'replay-brackets', 'layout'];
+const SUITES = ['terminal', 'drawing-pointer', 'tools', 'replay-brackets', 'layout'];
 const only = process.argv.slice(2);
 const chosen = only.length > 0 ? SUITES.filter((s) => only.includes(s)) : SUITES;
 

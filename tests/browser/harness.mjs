@@ -95,6 +95,53 @@ export function litPixels(page, selector = '.draw-layer') {
   }, selector);
 }
 
+/**
+ * The bounding box of what the drawing canvas has actually painted, in page
+ * coordinates.
+ *
+ * Drawings are anchored to a PRICE, so they move on screen whenever the scale
+ * changes - which it does by itself, because the market moves. A test that
+ * clicks a fixed fraction of the chart is testing where a drawing used to be.
+ * This reads where it is.
+ */
+export async function paintedBounds(page, selector = '.draw-canvas', region = null) {
+  const box = await page.evaluate(({ sel, region }) => {
+    const canvas = document.querySelector(sel);
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const { width, height } = canvas;
+    const data = ctx.getImageData(0, 0, width, height).data;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    // A region isolates one drawing from another when several are on screen.
+    const fromX = region ? Math.floor(width * region.x0) : 0;
+    const toX = region ? Math.ceil(width * region.x1) : width;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = fromX; x < toX; x += 1) {
+        if (data[(y * width + x) * 4 + 3] > 40) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (minX === Infinity) return null;
+    const ratio = canvas.width / canvas.clientWidth;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      left: rect.left + minX / ratio,
+      right: rect.left + maxX / ratio,
+      top: rect.top + minY / ratio,
+      bottom: rect.top + maxY / ratio,
+    };
+  }, { sel: selector, region });
+  return box;
+}
+
 export async function shot(page, name) {
   await page.screenshot({ path: `${SHOTS}/${name}.png` }).catch(() => undefined);
 }

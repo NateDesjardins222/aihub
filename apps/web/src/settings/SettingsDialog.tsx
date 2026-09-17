@@ -342,12 +342,6 @@ export function SettingsDialog(): JSX.Element | null {
                       onChange={(priceScaleSide) => set({ scales: { priceScaleSide } })}
                     />
                   </Row>
-                  <Row label="Auto scale">
-                    <Check
-                      checked={appearance.scales.autoScale}
-                      onChange={(autoScale) => set({ scales: { autoScale } })}
-                    />
-                  </Row>
                   <Row label="Logarithmic">
                     <Check
                       checked={appearance.scales.logScale}

@@ -168,3 +168,8 @@ commit, so a partial rebuild cannot destabilise the execution engine (§25).
 * No DOM/ladder (§6 — removed this pass).
 * No drawing alert until an authoritative alert API exists (§13, §24).
 * Volume-based tools only where genuine volume exists (§13).
+* **No "Auto scale" checkbox.** Turning it off should hold the range on screen.
+  The renderer drops to a default range instead, which flattens the candles
+  into a band at the top of the pane, and holding a range through the series'
+  range provider fights its own scaling and does the same. Auto-scaling is
+  always on and Reset scale remains. Revisit when the chart engine is replaced.

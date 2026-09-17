@@ -8,7 +8,8 @@ import { fetchBars, fetchSymbolStatus, type FreshnessInfo } from '../market/api'
 import { ChartLegend } from './ChartLegend';
 import { ChartHeader } from '../chart/ChartHeader';
 import { PriceMarkers, type BracketMode } from '../chart/PriceMarkers';
-import { DrawingLayer } from '../chart/drawings/DrawingLayer';
+import { DrawingCanvas, type PreviewState } from '../chart/drawings/DrawingCanvas';
+import { useDrawingInput } from '../chart/drawings/useDrawingInput';
 import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
 import { useChartStore } from '../state/chart-store';
@@ -83,6 +84,8 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
    * legend, the engine and every calculation read genuine observations.
    */
   const motionRef = useRef<MarketMotion>(new MarketMotion());
+  /** Live drawing gesture state, shared between the input machine and the canvas. */
+  const previewRef = useRef<PreviewState | null>(null);
   /**
    * Whether a live bar has arrived since the last history load.
    *
@@ -368,6 +371,17 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
     return () => window.clearInterval(id);
   }, [countdown]);
 
+  // Pointer ownership for drawings. Attached to the chart CONTAINER, not to
+  // the canvas: see useDrawingInput for why the canvas never takes events.
+  useDrawingInput({
+    adapterRef,
+    containerRef,
+    symbol: activeSymbol,
+    tickSize,
+    ready: chartReady,
+    previewRef,
+  });
+
   const onScreenshot = useCallback(() => {
     void (async () => {
       const blob = await adapterRef.current?.screenshot();
@@ -473,12 +487,12 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
 
         <div className="chart-canvas" ref={containerRef} />
 
-        <DrawingLayer
+        <DrawingCanvas
           adapterRef={adapterRef}
           symbol={activeSymbol}
           pricePrecision={precision}
-          tickSize={tickSize}
           ready={chartReady}
+          previewRef={previewRef}
         />
 
         <PriceMarkers

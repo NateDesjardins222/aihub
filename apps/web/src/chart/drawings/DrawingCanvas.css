@@ -1,0 +1,11 @@
+/*
+ * Paint only. `pointer-events: none` is unconditional and is the fix for the
+ * chart freezing after a drawing was made - see useDrawingInput for who
+ * actually receives the gesture.
+ */
+.draw-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
