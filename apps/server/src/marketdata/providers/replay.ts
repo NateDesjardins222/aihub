@@ -19,8 +19,17 @@ import type { DescribableProvider, ProviderCapabilities, ProviderEvent, Provider
 import { readEvents, readHeader } from '../recorder.js';
 import type { RecordedEvent, RecordingHeader } from '../recording.js';
 
-export const REPLAY_SPEEDS = [1, 2, 5, 10, 25, 50] as const;
+export const REPLAY_SPEEDS = [0.5, 1, 2, 5, 10, 25, 50, 100] as const;
 export type ReplaySpeed = (typeof REPLAY_SPEEDS)[number];
+
+/**
+ * How long one wall-clock second may cover, however fast the replay is set.
+ *
+ * At 100x a quiet stretch of market would otherwise be replayed faster than the
+ * chart can draw it. The events are never skipped or merged - they are emitted
+ * in order, at a rate the rest of the platform can actually consume.
+ */
+const MIN_STEP_MS = 4;
 
 export interface ReplayState {
   readonly loaded: boolean;
@@ -36,6 +45,12 @@ export interface ReplayState {
   readonly endTs: number | null;
   readonly header: RecordingHeader | null;
   readonly progress: number;
+  /**
+   * True when the session was chosen at random and its identity is being kept
+   * from the trader. The provider still knows what it is playing; the API is
+   * what withholds it.
+   */
+  readonly blind: boolean;
 }
 
 export class ReplayProvider implements DescribableProvider {
@@ -57,6 +72,7 @@ export class ReplayProvider implements DescribableProvider {
   private timer: NodeJS.Timeout | null = null;
   private state: ConnectionStatus['state'] = 'DISCONNECTED';
   private lastEventAt: number | null = null;
+  private blind = false;
 
   capabilities(): ProviderCapabilities {
     return {
@@ -138,8 +154,9 @@ export class ReplayProvider implements DescribableProvider {
 
   // -- controls ------------------------------------------------------------
 
-  load(path: string, id: string): ReplayState {
+  load(path: string, id: string, options?: { blind?: boolean }): ReplayState {
     this.pause();
+    this.blind = options?.blind ?? false;
     this.header = readHeader(path);
     this.events = readEvents(path);
     this.recordingId = id;
@@ -216,7 +233,81 @@ export class ReplayProvider implements DescribableProvider {
       endTs: this.header?.endTs ?? null,
       header: this.header,
       progress: this.events.length === 0 ? 0 : this.cursor / this.events.length,
+      blind: this.blind,
     };
+  }
+
+  /** The instant the replay is currently standing at, in exchange time. */
+  get clockTs(): number | null {
+    return this.lastEventAt;
+  }
+
+  /** Reveal a blind session. Called when it ends, never while it is running. */
+  reveal(): ReplayState {
+    this.blind = false;
+    return this.getState();
+  }
+
+  /**
+   * Emit exactly one more event.
+   *
+   * Stepping is how a trader studies a session rather than watches it: one
+   * print at a time, with the platform behaving exactly as it would at speed.
+   */
+  step(count = 1): ReplayState {
+    if (!this.header || this.events.length === 0) throw new Error('NO_RECORDING_LOADED');
+    this.pause();
+    for (let i = 0; i < count && this.cursor < this.events.length; i += 1) {
+      this.applyEvent(this.events[this.cursor]!, true);
+      this.cursor += 1;
+    }
+    return this.getState();
+  }
+
+  /** Back to the first event, ready to play again. */
+  restart(): ReplayState {
+    this.reset();
+    return this.play();
+  }
+
+  /**
+   * Jump to an instant in the recording.
+   *
+   * Everything up to it is applied, so prices, bars and the clock are exactly
+   * what they would have been had it been watched - the difference is that the
+   * chart receives them in one burst rather than over half an hour. Events are
+   * never skipped: a replay that quietly dropped prints would be a different
+   * session from the one that was recorded.
+   */
+  seekToTime(ts: number, emit = true): ReplayState {
+    if (this.events.length === 0) return this.getState();
+    const wasPlaying = this.playing;
+    this.pause();
+
+    let index = this.events.findIndex((event) => event.ts >= ts);
+    if (index < 0) index = this.events.length;
+
+    // Backwards means starting over and replaying up to the point, because a
+    // market cannot be un-traded.
+    if (index < this.cursor) {
+      this.cursor = 0;
+      this.quotes.clear();
+      this.tradeBuffer.clear();
+      for (let i = 0; i < index; i += 1) this.applyEvent(this.events[i]!, false);
+      this.cursor = index;
+    } else {
+      for (let i = this.cursor; i < index; i += 1) this.applyEvent(this.events[i]!, emit);
+      this.cursor = index;
+    }
+
+    if (wasPlaying) this.play();
+    return this.getState();
+  }
+
+  /** Move forward by a span of MARKET time, emitting what happened in it. */
+  skipForward(ms: number): ReplayState {
+    const from = this.lastEventAt ?? this.events[this.cursor]?.ts ?? this.header?.startTs ?? 0;
+    return this.seekToTime(from + Math.max(0, ms), true);
   }
 
   // -- engine --------------------------------------------------------------
@@ -238,7 +329,7 @@ export class ReplayProvider implements DescribableProvider {
     const previous = this.cursor > 0 ? this.events[this.cursor - 1] : undefined;
     const gapMs = previous ? Math.max(0, current.ts - previous.ts) : 0;
     const MAX_GAP_MS = 5 * 60_000;
-    const scaled = Math.min(gapMs, MAX_GAP_MS) / this.speed;
+    const scaled = Math.max(MIN_STEP_MS, Math.min(gapMs, MAX_GAP_MS) / this.speed);
 
     this.timer = setTimeout(
       () => {

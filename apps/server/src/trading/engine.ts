@@ -9,7 +9,7 @@
  * (filled, position, P&L). Every number the client sees originates here.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { InstrumentSpec, RejectReason, Side, TimeInForce } from '@atlas/contracts';
 import {
   applyFill,
@@ -43,6 +43,7 @@ import {
   executions,
   orders as ordersTable,
   positions as positionsTable,
+  practiceSessions,
   riskEvents,
   ruleTemplates,
   trades,
@@ -68,6 +69,13 @@ export interface MarketView {
   lastClosedBar(symbol: string): NormalizedBar | null;
   /** Length of the bars `lastClosedBar` returns, in ms. */
   baseBarMs(symbol: string): number;
+  /**
+   * True when the feed is a replay rather than a live market.
+   *
+   * The engine uses it for one thing only: which clock measures simulated
+   * latency. Nothing about HOW an order fills changes.
+   */
+  isReplay(): boolean;
 }
 import { KeyedMutex } from './mutex.js';
 import {
@@ -103,6 +111,19 @@ const VALUATION_INTERVAL_MS = 1_000;
  * Chicago - which is what a futures account is settled on.
  */
 const ACCOUNT_CALENDAR_SYMBOL = 'NQ';
+
+/**
+ * How far the per-account queue may grow before observations are coalesced
+ * even for an account with working orders.
+ *
+ * The exemption above is what keeps a fill from being skipped, and it is worth
+ * a queue: at a hundred times speed a replay can deliver events faster than
+ * they can be matched. But an unbounded queue is worse than a missed
+ * intermediate price - it delays the trader's OWN next order behind every
+ * event in it. Past this depth the engine falls back to coalescing, which
+ * costs fidelity on intermediate prices but keeps the terminal responsive.
+ */
+const MAX_QUEUED_MATCHES = 16;
 
 export class OrderRejectedError extends Error {
   constructor(
@@ -206,8 +227,33 @@ export class TradingEngine {
   private readonly valuationListeners = new Set<ValuationListener>();
   /** Account+symbol pairs with a market-event match already queued. */
   private readonly pendingMatches = new Set<string>();
+  /**
+   * Account+symbol pairs that have something working.
+   *
+   * It decides whether a market event may be coalesced away. An observation
+   * that could FILL an order is never skipped - skipping one would mean a price
+   * the market traded was never offered to a resting order, which is both
+   * wrong and unrepeatable. An observation that can only move a number may be
+   * coalesced, because the next match reads the latest number anyway.
+   */
+  private readonly working = new Set<string>();
   /** Accounts whose rules are being enforced, so enforcement cannot recurse. */
   private readonly enforcing = new Set<string>();
+  /**
+   * The price range each open position has lived through, in ticks.
+   *
+   * Market events are COALESCED - two quotes arriving while a match is running
+   * produce one match, which is what keeps the account lock short. Excursions
+   * must not be coalesced with them: MAE and MFE describe the PATH, and a path
+   * that skips whichever prints arrived during a busy moment is neither
+   * accurate nor reproducible.
+   *
+   * So every observation is folded in here, synchronously, as it arrives -
+   * before any queueing, matching or awaiting can reorder anything. The
+   * database write still happens on the match, but it writes a range that has
+   * already seen every print.
+   */
+  private readonly livePath = new Map<string, { minTicks: number; maxTicks: number }>();
   private valuationTimer: NodeJS.Timeout | null = null;
   /** Accounts currently holding a position or working order, by symbol. */
   private readonly activeSymbols = new Map<string, Set<string>>();
@@ -244,10 +290,13 @@ export class TradingEngine {
     await this.refreshActiveSymbols();
 
     const offQuote = this.market.bus.onAnyQuote((quote) => {
+      if (quote.last !== null) this.observePrice(quote.symbol, quote.last);
       void this.onMarketEvent(quote.symbol).catch(() => undefined);
     });
     const offBar = this.market.bus.onAnyBar((bar) => {
       if (!bar.closed) return; // a forming bar's extremes are not final
+      this.observePrice(bar.symbol, bar.high);
+      this.observePrice(bar.symbol, bar.low);
       void this.onMarketEvent(bar.symbol).catch(() => undefined);
     });
     this.marketUnsubscribe = () => {
@@ -300,11 +349,32 @@ export class TradingEngine {
       .from(accounts)
       .where(eq(accounts.status, 'LOCKED'));
 
+    // An account that traded yesterday and has been idle since still has a day
+    // to close: its trading-day count, its daily limit and an end-of-day
+    // trailing drawdown all depend on the roll happening. Selecting on the date
+    // itself means each stale account is picked up once and then stops
+    // matching, so an idle account costs one evaluation per day rather than
+    // one per second.
+    const stale = await this.db
+      .select({ accountId: accounts.id })
+      .from(accounts)
+      .where(
+        and(
+          inArray(accounts.status, ['ACTIVE', 'GOAL_REACHED', 'PASSED', 'LOCKED']),
+          or(
+            isNull(accounts.currentTradeDate),
+            sql`${accounts.currentTradeDate} <> ${this.accountTradingDate()}`,
+          ),
+        ),
+      )
+      .limit(200);
+
     return [
       ...new Set([
         ...withPositions.map((r) => r.accountId),
         ...withOrders.map((r) => r.accountId),
         ...locked.map((r) => r.accountId),
+        ...stale.map((r) => r.accountId),
       ]),
     ];
   }
@@ -512,6 +582,33 @@ export class TradingEngine {
     }
   }
 
+  /**
+   * The practice session a fill belongs to, if one is open.
+   *
+   * Journalling is a READ of trading state, never a condition on it: a session
+   * that fails to resolve leaves the trade unattached rather than blocking it.
+   */
+  private async currentSessionId(accountId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ id: practiceSessions.id })
+      .from(practiceSessions)
+      .where(and(eq(practiceSessions.accountId, accountId), isNull(practiceSessions.endedAt)))
+      .orderBy(desc(practiceSessions.startedAt))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
+  /**
+   * Is there anything open on this account?
+   *
+   * Asked by the replay controls before skipping forward: skipping with a
+   * position or a working order would move the market while the trader could
+   * not react to it.
+   */
+  async openExposure(accountId: string): Promise<boolean> {
+    return this.hasExposure(accountId);
+  }
+
   /** Anything left that a breach has to close: a position or a working order. */
   private async hasExposure(accountId: string): Promise<boolean> {
     const [position] = await this.db
@@ -569,6 +666,10 @@ export class TradingEngine {
    * it just stops the engine sleeping through its own latency window.
    */
   private scheduleEligibilityWake(accountId: string, symbol: string, eligibleAt: number): void {
+    // Only live: in a replay the clock is the recording's, and it advances when
+    // the next event does. A wall-clock timer there would fire against a market
+    // that has not moved, and at 100x it would fire far too late anyway.
+    if (this.market.isReplay()) return;
     const delay = eligibleAt - Date.now();
     if (delay <= 0) return;
     const timer = setTimeout(() => {
@@ -603,6 +704,44 @@ export class TradingEngine {
     set.add(accountId);
   }
 
+  private pathKey(accountId: string, symbol: string): string {
+    return `${accountId}|${symbol}`;
+  }
+
+  /**
+   * Fold one genuine observation into every exposed account's path.
+   *
+   * Synchronous and allocation-light: it runs on the market thread for every
+   * print, so it does no I/O and touches nothing that can await.
+   */
+  private observePrice(symbol: string, price: number): void {
+    const spec = getInstrument(symbol);
+    if (!spec) return;
+    const accountIds = this.activeSymbols.get(spec.root);
+    if (!accountIds || accountIds.size === 0) return;
+
+    const ticks = priceToTicks(spec, price);
+    for (const accountId of accountIds) {
+      const key = this.pathKey(accountId, spec.root);
+      const path = this.livePath.get(key);
+      if (!path) {
+        this.livePath.set(key, { minTicks: ticks, maxTicks: ticks });
+        continue;
+      }
+      if (ticks < path.minTicks) path.minTicks = ticks;
+      if (ticks > path.maxTicks) path.maxTicks = ticks;
+    }
+  }
+
+  /** Begin a new path for a position that has just opened. */
+  private startPath(accountId: string, symbol: string, ticks: number | null): void {
+    if (ticks === null) {
+      this.livePath.delete(this.pathKey(accountId, symbol));
+      return;
+    }
+    this.livePath.set(this.pathKey(accountId, symbol), { minTicks: ticks, maxTicks: ticks });
+  }
+
   private async onMarketEvent(symbol: string): Promise<void> {
     const accountIds = this.activeSymbols.get(symbol);
     if (!accountIds || accountIds.size === 0) return;
@@ -614,7 +753,12 @@ export class TradingEngine {
       // cancel or flatten has to wait behind. The flag is cleared as the task
       // starts, not when it finishes, so an event arriving mid-match still
       // earns a fresh pass over the new data.
-      if (this.pendingMatches.has(key)) continue;
+      //
+      // An account with a WORKING order is exempt: for it, each observation is
+      // a chance to fill, and collapsing two of them would silently skip a
+      // price the market actually traded.
+      const exempt = this.working.has(key) && this.mutex.depthOf(accountId) < MAX_QUEUED_MATCHES;
+      if (!exempt && this.pendingMatches.has(key)) continue;
       this.pendingMatches.add(key);
       await this.mutex.run(accountId, () => {
         this.pendingMatches.delete(key);
@@ -712,6 +856,21 @@ export class TradingEngine {
         type: 'MARKET',
       });
     });
+  }
+
+  /**
+   * The clock the matcher measures latency against.
+   *
+   * Live, it is the wall clock: the feed's own sampling is the dominant delay
+   * and an order must not wait for a poll that may be seconds away. In a
+   * REPLAY it is the market's clock, which makes a replayed session
+   * reproducible - the same data, settings and actions produce the same fills,
+   * however fast it was played - and makes a latency setting mean the same
+   * thing at 1x and at 100x.
+   */
+  private eligibilityClock(snapshot: MarketSnapshot | null): number {
+    if (!this.market.isReplay()) return Date.now();
+    return snapshot?.exchangeTs ?? Date.now();
   }
 
   /** Serialized work queued or running for one account. Diagnostics only. */
@@ -829,6 +988,7 @@ export class TradingEngine {
         // Where the order sits in MARKET time, which is what decides which
         // bars are allowed to fill it.
         marketTs: snapshot?.exchangeTs ?? null,
+        eligibleAt: this.eligibilityClock(snapshot) + env.latencyMs,
       },
       env,
     );
@@ -837,6 +997,9 @@ export class TradingEngine {
       .insert(ordersTable)
       .values({ ...toOrderValues(entry), bracketConfig: (input.bracket ?? null) as never });
     this.track(input.accountId, spec.root);
+    // Optimistic: the order exists from this moment, so the next observation
+    // must not be coalesced away before the matcher has seen it.
+    this.working.add(`${input.accountId}|${spec.root}`);
     await this.audit(input.accountId, 'ORDER_SUBMITTED', input.userId, 'USER', input, null, entry);
 
     // Evaluate immediately: a market order should not wait for the next tick.
@@ -988,6 +1151,7 @@ export class TradingEngine {
         ),
       );
     const openOrders = openRows.map(toEngineOrder);
+    const key = `${accountId}|${spec.root}`;
     const position = await this.loadPosition(accountId, spec.root);
 
     if (!snapshot || openOrders.length === 0) {
@@ -995,12 +1159,18 @@ export class TradingEngine {
       // position can breach its drawdown without a single order being working,
       // and waiting for the next valuation tick to notice would hand the trader
       // a second of trading on an account that is already over.
-      if (position.qty !== 0) await this.enforceLocked(accountId);
+      this.working.delete(key);
+      if (position.qty !== 0) {
+        // The excursions are a record of the PATH, so they are updated on every
+        // mark - including the ones that fill nothing, which is most of them.
+        await this.trackExcursion(accountId, spec);
+        await this.enforceLocked(accountId);
+      }
       return this.buildChange(accountId, spec, openOrders, [], [], position);
     }
 
     const result = matchOrders(
-      { spec, env, market: snapshot, now: Date.now() },
+      { spec, env, market: snapshot, now: this.eligibilityClock(snapshot) },
       openOrders,
       position,
     );
@@ -1013,6 +1183,12 @@ export class TradingEngine {
     const executionRows: EngineChange['fills'] = [];
     const tradeRows: Array<Record<string, unknown>> = [];
 
+    // The excursions belong to the position as it was BEFORE this fill closed
+    // part of it, including whatever this very observation did to it: a trade
+    // stopped out at its low took that excursion on its way there.
+    const excursion = await this.excursionContext(accountId, spec, position, result.position);
+    const sessionId = await this.currentSessionId(accountId);
+
     if (result.fills.length > 0 || changedOrders.length > 0) {
       await this.db.transaction(async (tx) => {
         for (const order of changedOrders) {
@@ -1022,7 +1198,17 @@ export class TradingEngine {
         // Position
         await tx
           .insert(positionsTable)
-          .values(toPositionValues(accountId, result.position))
+          .values({
+            ...toPositionValues(accountId, result.position),
+            // A position that has just gone flat, or flipped, starts its
+            // excursions again: they describe ONE holding, not an account.
+            maeMicros: result.position.qty === 0 ? 0 : Math.round(excursion.maePerContract),
+            mfeMicros: result.position.qty === 0 ? 0 : Math.round(excursion.mfePerContract),
+            initialRiskMicros:
+              result.position.qty === 0 || excursion.riskPerContract === null
+                ? null
+                : Math.round(excursion.riskPerContract),
+          })
           .onConflictDoUpdate({
             target: [positionsTable.accountId, positionsTable.symbol],
             set: {
@@ -1031,6 +1217,9 @@ export class TradingEngine {
               costBasisMicros: sql`excluded.cost_basis_micros`,
               realizedPnlMicros: sql`excluded.realized_pnl_micros`,
               feesMicros: sql`excluded.fees_micros`,
+              maeMicros: sql`excluded.mae_micros`,
+              mfeMicros: sql`excluded.mfe_micros`,
+              initialRiskMicros: sql`excluded.initial_risk_micros`,
               openedAt: sql`excluded.opened_at`,
               updatedAt: sql`excluded.updated_at`,
               version: sql`${positionsTable.version} + 1`,
@@ -1072,7 +1261,7 @@ export class TradingEngine {
 
         // Closed round-trips
         for (const lot of result.closedLots) {
-          const row = this.tradeRow(accountId, spec, lot, result.feesMicros);
+          const row = this.tradeRow(accountId, spec, lot, result.feesMicros, excursion, sessionId);
           await tx.insert(trades).values(row as never);
           tradeRows.push(row as Record<string, unknown>);
         }
@@ -1106,6 +1295,15 @@ export class TradingEngine {
         message: err instanceof Error ? err.message : String(err),
       });
     }
+
+    // What is STILL working after this pass decides whether the next
+    // observation may be coalesced. Reading it from the result rather than from
+    // what was loaded means an order that just filled stops exempting the
+    // account immediately.
+    if (result.orders.some((order) => isOpen(order))) this.working.add(key);
+    else this.working.delete(key);
+
+    if (result.position.qty !== 0) await this.trackExcursion(accountId, spec);
 
     // The rules see every fill before anyone else does. A drawdown breached by
     // this fill has to close the account NOW, not on the next valuation tick,
@@ -1150,11 +1348,22 @@ export class TradingEngine {
     }
   }
 
+  /**
+   * One closed trade, as the journal records it.
+   *
+   * The excursions and the risk are carried PER CONTRACT on the position and
+   * multiplied by the quantity closed here. Measured that way they are a
+   * property of the price path rather than of the size, so closing three lots
+   * in three pieces produces three trades whose figures add up to the one a
+   * single exit would have produced.
+   */
   private tradeRow(
     accountId: string,
     spec: InstrumentSpec,
     lot: ClosedLot,
     feesMicros: number,
+    excursion: { maePerContract: number; mfePerContract: number; riskPerContract: number | null },
+    sessionId: string | null,
   ): Record<string, unknown> {
     return {
       accountId,
@@ -1168,8 +1377,178 @@ export class TradingEngine {
       grossPnlMicros: lot.grossPnlMicros,
       feesMicros,
       netPnlMicros: lot.grossPnlMicros - feesMicros,
+      maeMicros: Math.round(excursion.maePerContract * lot.qty),
+      mfeMicros: Math.round(excursion.mfePerContract * lot.qty),
+      initialRiskMicros:
+        excursion.riskPerContract === null
+          ? null
+          : Math.round(excursion.riskPerContract * lot.qty),
+      sessionId,
       tradeDate: tradingDate(spec, lot.closedAt),
     };
+  }
+
+  /**
+   * The excursion figures a fill should be recorded with.
+   *
+   * It takes the position as it stood before the fill, marks it against this
+   * observation, and folds that into the stored running extremes - so a trade
+   * that was stopped out at the low of its move records that low, rather than
+   * the last mark before it.
+   */
+  private async excursionContext(
+    accountId: string,
+    spec: InstrumentSpec,
+    before: PositionState,
+    after: PositionState,
+  ): Promise<{ maePerContract: number; mfePerContract: number; riskPerContract: number | null }> {
+    const [row] = await this.db
+      .select()
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, accountId), eq(positionsTable.symbol, spec.root)));
+
+    // A position opening from flat starts clean, whatever the old row holds -
+    // and so does its path, which begins at the price it opened at.
+    const opening = before.qty === 0 && after.qty !== 0;
+    if (opening) this.startPath(accountId, spec.root, this.markTicks(spec));
+    if (after.qty === 0) this.livePath.delete(this.pathKey(accountId, spec.root));
+    let mae = opening ? 0 : (row?.maeMicros ?? 0);
+    let mfe = opening ? 0 : (row?.mfeMicros ?? 0);
+
+    const reach = this.reachSinceMark(accountId, spec, before);
+    if (reach !== null) {
+      mae = Math.round(Math.min(mae, reach.worst));
+      mfe = Math.round(Math.max(mfe, reach.best));
+    }
+
+    const rawRisk = opening
+      ? await this.protectiveRisk(accountId, spec, after)
+      : (row?.initialRiskMicros ?? (await this.protectiveRisk(accountId, spec, before)));
+
+    return {
+      maePerContract: mae,
+      mfePerContract: mfe,
+      riskPerContract: rawRisk === null ? null : Math.round(rawRisk),
+    };
+  }
+
+  /**
+   * How far the open position has travelled, per contract.
+   *
+   * Excursion is a price fact: the distance between the average entry and the
+   * furthest the market went while the position was held. Recording it per
+   * contract keeps it a property of the path rather than of the size, and keeps
+   * it exact when a position is closed in pieces.
+   */
+  /**
+   * The best and worst this position has been since it was last marked.
+   *
+   * Taken from every price observed in between rather than only the newest, so
+   * the figure does not depend on which observations happened to arrive while
+   * the engine was busy.
+   */
+  private reachSinceMark(
+    accountId: string,
+    spec: InstrumentSpec,
+    position: PositionState,
+  ): { worst: number; best: number } | null {
+    if (position.qty === 0) return null;
+    const path = this.livePath.get(this.pathKey(accountId, spec.root));
+    const mark = this.markTicks(spec);
+
+    const candidates: number[] = [];
+    if (path) candidates.push(path.minTicks, path.maxTicks);
+    if (mark !== null) candidates.push(mark);
+    if (candidates.length === 0) return null;
+
+    const excursions = candidates
+      .map((ticks) => this.excursionFor(spec, position, ticks))
+      .filter((value): value is number => value !== null);
+    if (excursions.length === 0) return null;
+
+    return { worst: Math.min(...excursions), best: Math.max(...excursions) };
+  }
+
+  private excursionFor(
+    spec: InstrumentSpec,
+    position: PositionState,
+    markTicks: number | null,
+  ): number | null {
+    if (position.qty === 0 || markTicks === null) return null;
+    const avgEntryTicks = position.costBasisMicros / (position.qty * spec.tickValueMicros);
+    const direction = position.qty > 0 ? 1 : -1;
+    return (markTicks - avgEntryTicks) * direction * spec.tickValueMicros;
+  }
+
+  /**
+   * Update the running excursions, and freeze the risk the position was taken
+   * with the first time a protective stop is seen behind it.
+   *
+   * Called on every mark, so the figures come from genuine observations and not
+   * from a reconstruction after the fact.
+   */
+  private async trackExcursion(accountId: string, spec: InstrumentSpec): Promise<void> {
+    const [row] = await this.db
+      .select()
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, accountId), eq(positionsTable.symbol, spec.root)));
+    if (!row || row.qty === 0) return;
+
+    const position = toEnginePosition(row, spec.root);
+    const reach = this.reachSinceMark(accountId, spec, position);
+    if (reach === null) return;
+
+    // Rounded: the average entry is fractional by nature, so an excursion
+    // derived from it is too, and micro-dollars are integers.
+    const mae = Math.round(Math.min(row.maeMicros, reach.worst));
+    const mfe = Math.round(Math.max(row.mfeMicros, reach.best));
+    const rawRisk = row.initialRiskMicros ?? (await this.protectiveRisk(accountId, spec, position));
+    const risk = rawRisk === null ? null : Math.round(rawRisk);
+
+    if (mae === row.maeMicros && mfe === row.mfeMicros && risk === row.initialRiskMicros) return;
+    await this.db
+      .update(positionsTable)
+      .set({ maeMicros: mae, mfeMicros: mfe, initialRiskMicros: risk })
+      .where(eq(positionsTable.id, row.id));
+  }
+
+  /**
+   * What the position risks, per contract, from its protective stop.
+   *
+   * Any working stop on the other side of the position counts: a bracket leg
+   * and a stop the trader placed by hand protect the position equally, and a
+   * journal that only recognised the first would under-report how many trades
+   * were actually taken with a defined risk.
+   */
+  private async protectiveRisk(
+    accountId: string,
+    spec: InstrumentSpec,
+    position: PositionState,
+  ): Promise<number | null> {
+    if (position.qty === 0) return null;
+    const exitSide = position.qty > 0 ? 'SELL' : 'BUY';
+    const rows = await this.db
+      .select()
+      .from(ordersTable)
+      .where(
+        and(
+          eq(ordersTable.accountId, accountId),
+          eq(ordersTable.symbol, spec.root),
+          eq(ordersTable.side, exitSide),
+          inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']),
+        ),
+      );
+
+    const avgEntryTicks = position.costBasisMicros / (position.qty * spec.tickValueMicros);
+    let worst: number | null = null;
+    for (const row of rows) {
+      if (row.stopTicks === null) continue;
+      const distance = Math.abs(avgEntryTicks - row.stopTicks) * spec.tickValueMicros;
+      // The furthest stop is the one that decides the risk: it is the one that
+      // will still be there when the nearer ones have been moved or canceled.
+      worst = worst === null ? distance : Math.max(worst, distance);
+    }
+    return worst;
   }
 
   /**

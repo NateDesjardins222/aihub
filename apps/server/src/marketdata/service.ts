@@ -285,6 +285,11 @@ export class MarketDataService {
    * extremes are not final, and filling against a high that later turns out not
    * to have been the high would be filling on data that did not exist.
    */
+  /** True while the platform is routed through a replay rather than a feed. */
+  isReplay(): boolean {
+    return this.provider.mode === 'REPLAY';
+  }
+
   /** Length of the fine bars `lastClosedBar` returns, in ms. */
   baseBarMs(symbol: string): number {
     const agg = this.aggregators.get(symbol.toUpperCase());

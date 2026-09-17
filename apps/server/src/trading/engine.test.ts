@@ -871,20 +871,46 @@ describe('market event pressure', () => {
    * lock would build a backlog that every later order, cancel or flatten has to
    * wait behind - which is how a flatten ends up taking minutes to answer.
    */
-  it('collapses a burst of market events into one queued match', async () => {
+  it('collapses a burst of market events for an account with nothing working', async () => {
     await market.quote('NQ', 20_000);
-    await submit({ qty: 1, side: 'BUY', type: 'LIMIT', limitTicks: 19_000 * 4 });
-    await settle(20);
+    await submit({ qty: 1, side: 'BUY' });
+    await settle(30);
+    expect((await positionRow())!.qty).toBe(1);
 
     let peak = 0;
     for (let i = 0; i < 100; i += 1) {
       void market.quote('NQ', 20_000 + i);
       peak = Math.max(peak, engine.queueDepth(fixture.accountId));
     }
-    await settle(50);
+    await settle(80);
 
     // One running, at most one queued behind it - not a hundred.
     expect(peak).toBeLessThanOrEqual(2);
+    expect(engine.queueDepth(fixture.accountId)).toBe(0);
+  });
+
+  /**
+   * The exemption that makes fills faithful, and the bound that keeps it safe.
+   *
+   * An account with a working order sees every observation, because each one is
+   * a chance to fill and skipping one would hide a price the market traded. The
+   * queue that allows is bounded, so a fast replay cannot leave the trader's
+   * own next order waiting behind a thousand events.
+   */
+  it('does not skip observations while an order is working, but bounds the queue', async () => {
+    await market.quote('NQ', 20_000);
+    await submit({ qty: 1, side: 'BUY', type: 'LIMIT', limitTicks: 19_000 * 4 });
+    await settle(20);
+
+    let peak = 0;
+    for (let i = 0; i < 200; i += 1) {
+      void market.quote('NQ', 20_000 + i);
+      peak = Math.max(peak, engine.queueDepth(fixture.accountId));
+    }
+    await settle(400);
+
+    expect(peak).toBeGreaterThan(2);
+    expect(peak).toBeLessThanOrEqual(20);
     expect(engine.queueDepth(fixture.accountId)).toBe(0);
   });
 
@@ -1020,5 +1046,126 @@ describe('protective orders track the position', () => {
     await market.quote('NQ', 19_900);
     await settle(40);
     expect((await positionRow())!.qty).toBe(0);
+  });
+});
+
+describe('what a trade felt like', () => {
+  beforeEach(async () => {
+    await setup();
+  });
+
+  /**
+   * MAE and MFE are the difference between "a winner" and "a winner you should
+   * not have taken". They have to come from genuine marks as the trade runs,
+   * not from a reconstruction afterwards.
+   */
+  it('records how far a trade went against and for the trader', async () => {
+    await market.quote('NQ', 20_000);
+    await submit({ qty: 1, side: 'BUY' });
+    await settle(30);
+
+    // Down 10 points, then up 30, then out at up 12.
+    await market.quote('NQ', 19_990);
+    await settle(30);
+    await market.quote('NQ', 20_030);
+    await settle(30);
+    await market.quote('NQ', 20_012);
+    await settle(30);
+    await engine.flatten(fixture.accountId, fixture.userId, 'NQ');
+    await settle(60);
+
+    const [trade] = await fixture.db
+      .select()
+      .from(trades)
+      .where(eq(trades.accountId, fixture.accountId));
+    // NQ is $20 a point on one contract.
+    expect(trade!.maeMicros).toBe(-10 * 20 * MICROS);
+    expect(trade!.mfeMicros).toBe(30 * 20 * MICROS);
+    expect(trade!.netPnlMicros).toBe(12 * 20 * MICROS);
+  });
+
+  it('scales the excursions to the quantity actually closed', async () => {
+    await market.quote('NQ', 20_000);
+    await submit({ qty: 3, side: 'BUY' });
+    await settle(30);
+    await market.quote('NQ', 20_020);
+    await settle(30);
+
+    // Close one of the three.
+    await submit({ qty: 1, side: 'SELL' });
+    await settle(40);
+    // Then the other two.
+    await submit({ qty: 2, side: 'SELL' });
+    await settle(40);
+
+    const rows = await fixture.db
+      .select()
+      .from(trades)
+      .where(eq(trades.accountId, fixture.accountId));
+    const byQty = new Map(rows.map((r) => [r.qty, r]));
+    expect(byQty.get(1)!.mfeMicros).toBe(20 * 20 * MICROS);
+    // The same price path, three times the size.
+    expect(byQty.get(2)!.mfeMicros).toBe(2 * 20 * 20 * MICROS);
+  });
+
+  it('records what the trade risked when it had a stop', async () => {
+    await market.quote('NQ', 20_000);
+    // A 40-tick stop: 10 points, $200 on one NQ contract.
+    await submit({ qty: 1, side: 'BUY', bracket: { stopLossTicks: 40, takeProfitTicks: 400 } });
+    await settle(40);
+    await market.quote('NQ', 20_020);
+    await settle(30);
+    await engine.flatten(fixture.accountId, fixture.userId, 'NQ');
+    await settle(60);
+
+    const [trade] = await fixture.db
+      .select()
+      .from(trades)
+      .where(eq(trades.accountId, fixture.accountId));
+    expect(trade!.initialRiskMicros).toBe(200 * MICROS);
+    // R is then the result over that risk: +400 on 200 risked is +2R.
+    expect(trade!.netPnlMicros / trade!.initialRiskMicros!).toBe(2);
+  });
+
+  it('leaves the risk undefined when the trade was taken without a stop', async () => {
+    await market.quote('NQ', 20_000);
+    await submit({ qty: 1, side: 'BUY' });
+    await settle(30);
+    await engine.flatten(fixture.accountId, fixture.userId, 'NQ');
+    await settle(60);
+
+    const [trade] = await fixture.db
+      .select()
+      .from(trades)
+      .where(eq(trades.accountId, fixture.accountId));
+    expect(trade!.initialRiskMicros).toBeNull();
+  });
+
+  it('starts the excursions again for the next position', async () => {
+    await market.quote('NQ', 20_000);
+    await submit({ qty: 1, side: 'BUY' });
+    await settle(30);
+    await market.quote('NQ', 19_950);
+    await settle(30);
+    await engine.flatten(fixture.accountId, fixture.userId, 'NQ');
+    await settle(60);
+
+    // A fresh position, which never went against the trader at all.
+    await market.quote('NQ', 20_000);
+    await submit({ qty: 1, side: 'BUY' });
+    await settle(30);
+    await market.quote('NQ', 20_010);
+    await settle(30);
+    await engine.flatten(fixture.accountId, fixture.userId, 'NQ');
+    await settle(60);
+
+    const rows = await fixture.db
+      .select()
+      .from(trades)
+      .where(eq(trades.accountId, fixture.accountId))
+      .orderBy(trades.exitTime);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.maeMicros).toBe(0);
+    expect(rows[1]!.mfeMicros).toBe(10 * 20 * MICROS);
   });
 });

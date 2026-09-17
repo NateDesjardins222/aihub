@@ -34,6 +34,15 @@ export interface CreateOrderInput {
    * sent traded prices the order was never live for.
    */
   readonly marketTs?: number | null;
+  /**
+   * When the order becomes eligible to fill, on the clock the matcher uses.
+   *
+   * Left out, it is `now + latency` on the server clock. A replay passes the
+   * market's own clock instead, so simulated latency is measured in MARKET
+   * time: at 10x speed a 250ms latency covers 250ms of market, not 25ms of it,
+   * and replaying the same session twice produces the same fills.
+   */
+  readonly eligibleAt?: number;
 }
 
 export function createOrder(input: CreateOrderInput, env: SimulationEnvironment): EngineOrder {
@@ -59,7 +68,7 @@ export function createOrder(input: CreateOrderInput, env: SimulationEnvironment)
     bracketRole: input.bracketRole ?? 'STANDALONE',
     trailTicks: input.trailTicks ?? null,
     trailAnchorTicks: null,
-    eligibleAt: input.now + env.latencyMs,
+    eligibleAt: input.eligibleAt ?? input.now + env.latencyMs,
     tradingDate: input.tradingDate ?? null,
     rejectReason: null,
     version: 0,

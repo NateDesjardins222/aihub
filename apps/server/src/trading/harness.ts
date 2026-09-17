@@ -33,6 +33,7 @@ export class ScriptedMarket implements MarketView {
   private seq = 0;
   private stale = false;
   private frozenAgeMs: number | null = null;
+  private replay = false;
 
   readonly bus = {
     onAnyQuote: (listener: QuoteListener): (() => void) => {
@@ -117,6 +118,20 @@ export class ScriptedMarket implements MarketView {
   /** The scripted bars are one-minute bars, like the live fine series. */
   baseBarMs(): number {
     return 60_000;
+  }
+
+  /**
+   * Scripted markets behave like a live feed by default.
+   *
+   * A test that is about replay determinism turns this on, which switches the
+   * engine's latency clock from the wall to the scripted market's own.
+   */
+  isReplay(): boolean {
+    return this.replay;
+  }
+
+  setReplay(replay: boolean): void {
+    this.replay = replay;
   }
 
   freshness(symbol: string): Freshness {

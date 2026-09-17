@@ -30,6 +30,7 @@ import {
   positions,
   ruleTemplates,
   trades,
+  userPreferences,
 } from '../../db/schema.js';
 import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
 import { toEnginePosition, unscaleTicks } from '../../trading/mapping.js';
@@ -523,13 +524,26 @@ export function tradingRoutes(deps: Deps) {
      */
     app.post('/accounts/:id/reset', async (request, reply) => {
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      const body = z
+        .object({
+          // Practice at the size you are actually going to trade. Omitted, the
+          // account starts again at the size it was created with.
+          startingBalanceMicros: z
+            .number()
+            .int()
+            .min(1_000 * 1_000_000)
+            .max(10_000_000 * 1_000_000)
+            .optional(),
+        })
+        .strict()
+        .parse(request.body ?? {});
       await assertOwnership(request.user!.id, params.id);
 
       const loaded = await loadAccountAndTemplate(db, params.id);
       if (!loaded) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
       const { account } = loaded;
       const config = ruleConfigFor(account, loaded.template);
-      const size = account.startingBalanceMicros;
+      const size = body.startingBalanceMicros ?? account.startingBalanceMicros;
 
       await db.transaction(async (tx) => {
         // Working orders and open positions belong to the account that had
@@ -543,6 +557,7 @@ export function tradingRoutes(deps: Deps) {
           .update(accounts)
           .set({
             status: 'ACTIVE',
+            startingBalanceMicros: size,
             balanceMicros: size,
             realizedPnlMicros: 0,
             feesMicros: 0,
@@ -563,6 +578,43 @@ export function tradingRoutes(deps: Deps) {
 
       const status = await deps.engine.enforceRules(params.id);
       return reply.send({ accountId: params.id, status });
+    });
+
+    // -- preferences -------------------------------------------------------
+
+    /**
+     * Where a trader's display choices live between sessions.
+     *
+     * Deliberately opaque to the server: chart motion, which panels are open,
+     * which training mode was last used. None of it can affect execution, so
+     * none of it is validated beyond a size limit - the client owns its own
+     * shape, and a preference the server does not understand is one it cannot
+     * break.
+     */
+    app.get('/preferences', async (request, reply) => {
+      const [row] = await db
+        .select()
+        .from(userPreferences)
+        .where(eq(userPreferences.userId, request.user!.id));
+      return reply.send({ preferences: row?.preferences ?? {} });
+    });
+
+    app.put('/preferences', async (request, reply) => {
+      const body = z.record(z.string(), z.unknown()).parse(request.body);
+      const encoded = JSON.stringify(body);
+      if (encoded.length > 64_000) {
+        throw ApiError.badRequest('PREFERENCES_TOO_LARGE', 'Preferences are limited to 64 KB.');
+      }
+
+      const [row] = await db
+        .insert(userPreferences)
+        .values({ userId: request.user!.id, preferences: body as never })
+        .onConflictDoUpdate({
+          target: userPreferences.userId,
+          set: { preferences: body as never, updatedAt: new Date() },
+        })
+        .returning();
+      return reply.send({ preferences: row!.preferences });
     });
 
     // -- environment settings ---------------------------------------------

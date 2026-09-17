@@ -13,6 +13,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -264,6 +265,15 @@ export const positions = pgTable(
     costBasisMicros: micros('cost_basis_micros').notNull().default(0),
     realizedPnlMicros: micros('realized_pnl_micros').notNull().default(0),
     feesMicros: micros('fees_micros').notNull().default(0),
+    /**
+     * How far the OPEN position has gone against and for the trader, in
+     * micro-dollars, since it was opened. Updated from genuine marks only; the
+     * lots closed out of this position inherit them.
+     */
+    maeMicros: micros('mae_micros').notNull().default(0),
+    mfeMicros: micros('mfe_micros').notNull().default(0),
+    /** Distance to the protective stop when the position opened. Null if none. */
+    initialRiskMicros: micros('initial_risk_micros'),
     openedAt: timestamp('opened_at', { withTimezone: true }),
     version: integer('version').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -290,14 +300,118 @@ export const trades = pgTable(
     grossPnlMicros: micros('gross_pnl_micros').notNull(),
     feesMicros: micros('fees_micros').notNull(),
     netPnlMicros: micros('net_pnl_micros').notNull(),
+    /** Worst and best unrealized P&L this trade saw while it was open. */
+    maeMicros: micros('mae_micros').notNull().default(0),
+    mfeMicros: micros('mfe_micros').notNull().default(0),
+    /** What it risked at entry. Null when taken without a stop, so R is undefined. */
+    initialRiskMicros: micros('initial_risk_micros'),
+    /** The practice session it belongs to, when it was taken inside one. */
+    sessionId: uuid('session_id'),
+    notes: text('notes'),
     tradeDate: date('trade_date').notNull(),
     createdAt: now(),
   },
   (t) => [
     index('trades_account_idx').on(t.accountId, t.exitTime),
     index('trades_date_idx').on(t.accountId, t.tradeDate),
+    index('trades_session_idx').on(t.sessionId),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Practice, journal and preferences
+// ---------------------------------------------------------------------------
+
+/**
+ * One sitting at the terminal.
+ *
+ * A session is what a review is written about: which market was traded, under
+ * which training mode, with what visible, and what came of it. The summary is
+ * written once when the session ends so the record cannot drift as later trades
+ * arrive - and it is shaped so an analysis layer can be added on top of it
+ * later without the trading engine knowing anything about it.
+ */
+export const practiceSessions = pgTable(
+  'practice_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    source: varchar('source', { length: 12 }).notNull().default('REPLAY'),
+    mode: varchar('mode', { length: 24 }).notNull().default('STANDARD'),
+    config: jsonb('config'),
+    recordingId: varchar('recording_id', { length: 120 }),
+    symbol: varchar('symbol', { length: 12 }),
+    tradingDate: date('trading_date'),
+    dateHidden: boolean('date_hidden').notNull().default(false),
+    startingBalanceMicros: micros('starting_balance_micros').notNull(),
+    endingBalanceMicros: micros('ending_balance_micros'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    summary: jsonb('summary'),
+    notes: text('notes'),
+    createdAt: now(),
+  },
+  (t) => [index('practice_sessions_account_idx').on(t.accountId, t.startedAt)],
+);
+
+/** The trader's own vocabulary. Nothing here is hardcoded by the platform. */
+export const tradeTags = pgTable(
+  'trade_tags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 40 }).notNull(),
+    color: varchar('color', { length: 16 }).notNull().default('slate'),
+    kind: varchar('kind', { length: 12 }).notNull().default('NEUTRAL'),
+    sort: integer('sort').notNull().default(0),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('trade_tags_user_name_key').on(t.userId, t.name)],
+);
+
+export const tradeTagLinks = pgTable(
+  'trade_tag_links',
+  {
+    tradeId: uuid('trade_id')
+      .notNull()
+      .references(() => trades.id, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id')
+      .notNull()
+      .references(() => tradeTags.id, { onDelete: 'cascade' }),
+    createdAt: now(),
+  },
+  (t) => [primaryKey({ columns: [t.tradeId, t.tagId] })],
+);
+
+export const sessionTagLinks = pgTable(
+  'session_tag_links',
+  {
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => practiceSessions.id, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id')
+      .notNull()
+      .references(() => tradeTags.id, { onDelete: 'cascade' }),
+    createdAt: now(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.tagId] })],
+);
+
+/** Where preferences live between sessions. Display only; never trading state. */
+export const userPreferences = pgTable('user_preferences', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  preferences: jsonb('preferences').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const dailyAccountStats = pgTable(
   'daily_account_stats',

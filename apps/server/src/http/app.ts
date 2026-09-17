@@ -11,6 +11,7 @@ import { instrumentRoutes } from './routes/instruments.js';
 import { accountRoutes, ruleTemplateRoutes } from './routes/accounts.js';
 import { marketDataRoutes } from './routes/marketdata.js';
 import { tradingRoutes } from './routes/trading.js';
+import { journalRoutes } from './routes/journal.js';
 import { TradingEngine } from '../trading/engine.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb } from '../db/client.js';
@@ -126,8 +127,9 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(instrumentRoutes, { prefix: '/api/v1/instruments' });
   await app.register(accountRoutes, { prefix: '/api/v1/accounts' });
   await app.register(ruleTemplateRoutes, { prefix: '/api/v1/rule-templates' });
-  await app.register(marketDataRoutes(stack), { prefix: '/api/v1/marketdata' });
+  await app.register(marketDataRoutes({ ...stack, engine }), { prefix: '/api/v1/marketdata' });
   await app.register(tradingRoutes({ engine, market: stack.market }), { prefix: '/api/v1' });
+  await app.register(journalRoutes({ engine }), { prefix: '/api/v1/journal' });
 
   return { app, stack, gateway, engine };
 }

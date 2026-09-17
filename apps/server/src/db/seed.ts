@@ -7,7 +7,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { createDb } from './client.js';
-import { accounts, ruleTemplates, users } from './schema.js';
+import { accounts, ruleTemplates, tradeTags, users } from './schema.js';
 import { hashPassword } from '../auth/password.js';
 
 const M = 1_000_000;
@@ -173,6 +173,40 @@ async function main(): Promise<void> {
         })
         .returning();
       console.log('demo user created: demo@atlasfutures.local / atlas-demo-2026');
+    }
+
+    // A starting vocabulary for the journal. Every one of these is an ordinary
+    // row the trader can rename or delete: the platform has no opinion about
+    // what a mistake is called, and hardcoding these would make it have one.
+    const STARTER_TAGS = [
+      { name: 'A+ setup', color: 'green', kind: 'GOOD', sort: 10 },
+      { name: 'Good execution', color: 'green', kind: 'GOOD', sort: 20 },
+      { name: 'Managed well', color: 'teal', kind: 'GOOD', sort: 30 },
+      { name: 'Early entry', color: 'amber', kind: 'BAD', sort: 40 },
+      { name: 'Chased', color: 'amber', kind: 'BAD', sort: 50 },
+      { name: 'FOMO', color: 'red', kind: 'BAD', sort: 60 },
+      { name: 'Revenge', color: 'red', kind: 'BAD', sort: 70 },
+      { name: 'Overtrade', color: 'red', kind: 'BAD', sort: 80 },
+      { name: 'Rule break', color: 'red', kind: 'BAD', sort: 90 },
+      { name: 'Counter-trend', color: 'slate', kind: 'NEUTRAL', sort: 100 },
+      { name: 'News', color: 'slate', kind: 'NEUTRAL', sort: 110 },
+    ] as const;
+
+    const haveTags = await db
+      .select({ id: tradeTags.id })
+      .from(tradeTags)
+      .where(eq(tradeTags.userId, demo!.id));
+    if (haveTags.length === 0) {
+      await db.insert(tradeTags).values(
+        STARTER_TAGS.map((tag) => ({
+          userId: demo!.id,
+          name: tag.name,
+          color: tag.color,
+          kind: tag.kind,
+          sort: tag.sort,
+        })),
+      );
+      console.log(`journal tags seeded: ${STARTER_TAGS.length}`);
     }
 
     const existingAccounts = await db
