@@ -12,6 +12,8 @@ import { accountRoutes, ruleTemplateRoutes } from './routes/accounts.js';
 import { marketDataRoutes } from './routes/marketdata.js';
 import { tradingRoutes } from './routes/trading.js';
 import { journalRoutes } from './routes/journal.js';
+import { adminRoutes } from './routes/admin.js';
+import { provisioningRoutes } from './routes/provisioning.js';
 import { TradingEngine } from '../trading/engine.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb } from '../db/client.js';
@@ -140,6 +142,10 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(marketDataRoutes({ ...stack, engine }), { prefix: '/api/v1/marketdata' });
   await app.register(tradingRoutes({ engine, market: stack.market }), { prefix: '/api/v1' });
   await app.register(journalRoutes({ engine, replay: stack.replay }), { prefix: '/api/v1/journal' });
+  // The operator console and the machine-to-machine seam. Both are authorised
+  // server-side; neither is reachable from the trading terminal's session.
+  await app.register(adminRoutes({ engine }), { prefix: '/api/v1/admin' });
+  await app.register(provisioningRoutes, { prefix: '/api/v1/provisioning' });
 
   return { app, stack, gateway, engine };
 }
