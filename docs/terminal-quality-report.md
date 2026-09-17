@@ -41,7 +41,7 @@ held to the same checks.
 | Item | Status | Evidence |
 |---|---|---|
 | Rectangle, all twenty points | VERIFIED | `rectangle.spec.mjs`, 43/43 |
-| Trend line | VERIFIED | `line-tools.spec.mjs`, part 1 — create, preview, select by the line itself, move, reshape one end, extend left/right, text, price label, zero drift, delete |
+| Trend line | VERIFIED | `line-tools.spec.mjs` (68/68), part 1 — create, preview, select by the line itself, move, reshape one end, extend left/right, text, price label, zero drift, delete |
 | Horizontal line | VERIFIED | `line-tools.spec.mjs`, part 2 — one-click placement, full-width rule, a 13px price chip 1px from the axis, drag by price, a pan that does not move it, label toggle |
 | Fib retracement | VERIFIED | `line-tools.spec.mjs`, part 3 — levels add/remove/hide/recolour/fade/name, reverse against an asymmetric set, shading, extensions, save as default and as a template |
 | Clean unselected drawings; small professional anchors when selected | VERIFIED | `visual.spec.mjs` — a selected object paints more than the same object unselected, and only then; handles are painted for `SELECTED` alone (`paint.ts`) |
@@ -49,10 +49,10 @@ held to the same checks.
 | Double-click opens settings | VERIFIED | all four tools, in the two suites above |
 | Right-click opens a context menu | VERIFIED | `rectangle.spec.mjs` (lock/unlock through the menu) |
 | Anchors attached to TIME + PRICE with zero drift | VERIFIED | every tool: anchor prices read from the object tree before and after a pan, compared exactly |
-| Magnet OFF / WEAK / STRONG | TESTED | `model.test.ts` "magnet"; `chart-store` `cycleMagnet`; the anchor is returned untouched outside tolerance |
+| Magnet OFF / WEAK / STRONG | VERIFIED | `tools.spec.mjs` — the rail control cycles through all three, and the modes are checked by behaviour: with it OFF two clicks four pixels apart give two prices (29,483.94 and 29,479.64), with it STRONG both give 29,537.50, and that price is then found among the 2,939 prices the served bars actually printed |
 | Compact settings dialog | VERIFIED | row labels asserted per tool; the level editor fits five controls on one row |
 | Per-level colour, opacity, visibility and label | VERIFIED | `line-tools.spec.mjs` — fading one level fades that line alone (231→38 mean alpha, its neighbours unchanged) |
-| Ray, extended line, vertical line, text, measure | TESTED | `tools.spec.mjs` 20/20 and `drawing-engine.spec.mjs` 34/34 cover placement, editing and persistence — but they have NOT been driven through the full twenty-point checklist one by one |
+| Ray, extended line, vertical line, text, measure | VERIFIED for the shared interaction, INCOMPLETE per tool | `remaining-tools.spec.mjs` (56/56) puts each of the five through the shared architecture: placement, the tool returning to the cursor, selection from its own body, a body drag that follows the pointer to within six pixels, the settings its registry entry declares and no others, anchors unchanged through a pan, and Delete. Also `tools.spec.mjs` 26/26 and `drawing-engine.spec.mjs` 34/34. What is still owed is the per-tool detail - each one's own extensions, styling and readout - not the interaction |
 
 ## Phase 4 — execution
 
@@ -65,6 +65,7 @@ held to the same checks.
 | Working order: drag = modify | VERIFIED | `execution-interaction.spec.mjs` — 29420.75 → 29380.00, and the server holds the new price |
 | Working order: X = cancel | VERIFIED | `drag-protect.spec.mjs` (protective legs) and `execution-interaction.spec.mjs` (entry order) |
 | Working order: right click = options | VERIFIED | `execution-interaction.spec.mjs` — quantity up/down and cancel, each a real engine request; quantity 1 → 2 confirmed in the orders table |
+| Right click on a stop, a target or the position | VERIFIED | `execution-interaction.spec.mjs` — a stop offers break-even and removal (the break-even item moved the real order to the entry price, 29460.75); the position offers close, reverse and removing its protection, and Escape closes the menu having done nothing |
 | No unnecessary confirmation modal | VERIFIED | `execution-interaction.spec.mjs` — nothing modal on screen during or after a drag |
 | ENTRY / STOP / TARGET / WORKING ORDER / FILLED POSITION told apart | VERIFIED | `execution-interaction.spec.mjs` reads each level's painted rule: the filled position at its entry is solid blue, a stop dashed red, a target dashed green, a working entry order dotted and coloured by side, and each carries its own label (`LONG`, `SL`, `TP`, `BUY LMT`). The position, stop and target are compared while all three are on screen together; the working order's rule is compared against those three values |
 | Minimal order entry: no TIF, no DAY/GTC prominence, no tick-value essay | VERIFIED | `execution-interaction.spec.mjs` — the ticket's own text asserted to contain none of it |
@@ -111,11 +112,19 @@ a human to look at, which is what a screenshot is good for.
 
 ## Known gaps
 
-* **The remaining tools have not been through the twenty-point checklist
-  individually.** Ray, extended line, vertical line, text and measure are
-  implemented, painted through the same style system and covered for
-  placement, editing and persistence - but the tool-by-tool behavioural pass
-  the rectangle, trend line, horizontal line and fib have had is still owed.
+* **The remaining five tools have the shared interaction but not the per-tool
+  pass.** `remaining-tools.spec.mjs` proves that ray, extended line, vertical
+  line, text and measure place, select, move with the pointer, keep their
+  anchors through a pan, offer exactly the settings they declare and delete.
+  What none of them has had is the detail work the rectangle, trend line,
+  horizontal line and fib got: the measure's readout, text styling, and
+  whatever each tool's own settings should grow to.
+* **Two behaviours worth writing down, found while checking the five.** A
+  drawing anchored to a price the current view does not cover is legitimately
+  off screen after a pan - it still exists and its anchors are unchanged - and
+  the chart stops scrolling forward once the newest bar plus its right margin
+  is in view, so a forward pan is not always a pan. Both were mistaken for
+  defects by a first draft of the suite.
 * **`docs/drawing-tools.md` is a specification I wrote** because the brief's
   own tool specification was never supplied. It is the list the work is
   measured against and it has not been reviewed.

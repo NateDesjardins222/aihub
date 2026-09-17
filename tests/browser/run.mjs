@@ -16,6 +16,7 @@ const SUITES = [
   'drawing-engine',
   'rectangle',
   'line-tools',
+  'remaining-tools',
   'drag-protect',
   'execution-interaction',
   'stress',

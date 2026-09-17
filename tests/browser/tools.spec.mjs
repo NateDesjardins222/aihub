@@ -166,7 +166,10 @@ try {
     window.localStorage.setItem('atlas.refreshToken', session.refreshToken);
     const timeframe = window.localStorage.getItem('atlas.chart.timeframe') ?? '1m';
     const bars = await fetch(
-      `/api/v1/marketdata/bars?symbol=NQ&timeframe=${timeframe}&limit=400`,
+      // Deep enough to include whatever bar the click landed on: earlier steps
+      // in this suite pan and zoom, so the middle of the plot is not
+      // necessarily inside the most recent few hundred bars.
+      `/api/v1/marketdata/bars?symbol=NQ&timeframe=${timeframe}&limit=5000`,
       { headers: { authorization: `Bearer ${session.accessToken}` } },
     ).then((r) => r.json());
     const values = new Set();
