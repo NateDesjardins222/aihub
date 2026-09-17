@@ -149,7 +149,16 @@ try {
     const status = (await page.locator('[data-pane=p1] [data-testid=status-line]').innerText())
       .replace(/\s+/g, ' ')
       .trim();
-    say(status.length > 0, 'which leaves the chart on the trade', status.slice(0, 60));
+    // The chart being worked in takes the TRADE's instrument, not whatever it
+    // happened to be showing: a reconstruction on the wrong symbol is a lie.
+    const symbol = (await page.locator('.journal-trades > li.expanded .journal-trade-head').innerText())
+      .replace(/\s+/g, ' ')
+      .match(/\b(NQ|MNQ|ES|MES|GC|MGC|CL|MCL|YM|RTY)\b/)?.[1];
+    say(
+      symbol !== undefined && status.startsWith(symbol),
+      'which puts the chart on the instrument that trade was taken on',
+      `trade in ${symbol ?? '?'}, chart shows ${status.slice(0, 30)}`,
+    );
   }
   await shot(page, 'journal-day-trades');
 

@@ -19,10 +19,10 @@ import './TerminalShell.css';
  *
  *   ACCOUNT BAR   account, money, rule headroom, session, navigation
  *   LEFT          drawing rail
- *   CENTRE        the chart, which is the application
+ *   CENTRE        the charts, one to four of them, which are the application
  *   RIGHT         the order ticket
  *   BOTTOM        positions, orders, trades - collapsible
- *   OVER          one drawer (practice, journal, ladder) or the settings dialog
+ *   OVER          one drawer (practice or journal) or the settings dialog
  *
  * Everything that is not the chart, the ticket or the blotter is secondary and
  * lives behind navigation. That is the whole layout rule: at 1440px the chart

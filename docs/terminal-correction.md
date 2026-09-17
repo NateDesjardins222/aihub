@@ -142,3 +142,88 @@ width and round caps are dropped whenever a pattern is in use.
 | Shading between levels, with its own opacity | AUTOMATED TESTED | same — mean alpha rises with shading on, stays faint at the default, and trebles at 0.5 |
 | Presets, templates, save as default, reset | AUTOMATED TESTED | `drawing-engine.spec.mjs` (36) |
 | Reverse, extend left/right, show prices, show levels | AUTOMATED TESTED | `line-tools.spec.mjs` |
+
+---
+
+## P4 — multi-chart layouts
+
+| Item | Status | Evidence |
+|---|---|---|
+| An obvious chart layout control | AUTOMATED TESTED + MANUALLY BROWSER VERIFIED | `multi-chart.spec.mjs` — in the terminal's own top bar, its icon showing the layout in use; screenshot `grid-menu.png` |
+| 1 / 2 vertical / 2 horizontal / 3 / 4 | AUTOMATED TESTED | same — each layout checked for its pane COUNT and its SHAPE (two side by side are 706px wide and the same height; two stacked are 1413px wide and the same height) |
+| Each chart its own instrument | AUTOMATED TESTED | same |
+| Each chart its own interval | AUTOMATED TESTED | same — 1m beside 15m |
+| Each chart its own indicators | AUTOMATED TESTED | same — an RSI added to one chart appears on that chart alone |
+| The active chart is obvious, and is what the ticket trades | AUTOMATED TESTED + MANUALLY BROWSER VERIFIED | same — an inset outline, and the order ticket's contract follows it |
+| A chart can fill the layout and come back | AUTOMATED TESTED | same |
+| A sync menu: crosshair, time, symbol, interval | AUTOMATED TESTED | same — the crosshair and the range are checked by what the OTHER pane applied, and the range is checked for not running away |
+| The layout survives a reload | AUTOMATED TESTED | same |
+| Four charts at once, on four intervals | MANUALLY BROWSER VERIFIED | screenshot `grid-four.png` — 1m, 5m, 15m and 1h of NQ, the active one outlined |
+
+Two notes on how it is built, because both were deliberate:
+
+* **Every pane is the same `ChartPanel`.** There is no separate multi-chart
+  code path to drift out of step with the single-chart one; one chart is a
+  layout with one pane.
+* **Crosshair and range sync never go through React.** A crosshair move is a
+  pointer-rate event; four panes re-rendering to move a vertical line is
+  exactly the cost the performance work removed, multiplied by four. They go
+  through a publish/subscribe with no state, and each pane applies what it
+  receives inside its own animation frame.
+
+And one defect the sync produced, twice, worth writing down: two panes
+following each other's range **zoomed themselves into a five-minute window in
+about a second**. A renderer reports a range change on its own next frame
+rather than inside the call that caused it, so an in-call suppression flag
+caught nothing. Only the pane being worked in now publishes, and an applied
+range is quiet for 350ms. `multi-chart.spec.mjs` checks the range after a pan
+is still more than twenty minutes wide.
+
+---
+
+## P5 — the journal
+
+| Item | Status | Evidence |
+|---|---|---|
+| A real monthly calendar, Sunday to Saturday | AUTOMATED TESTED + MANUALLY BROWSER VERIFIED | `journal-calendar.spec.mjs` (18) — 40 cells in whole weeks; screenshot `journal-calendar.png` |
+| Daily net P&L and trade count in each cell | AUTOMATED TESTED | same — "15 +$3,632.12 2 trades" |
+| Green and red days | AUTOMATED TESTED | same — a wash plus an edge, so a green week is scannable |
+| Weekly totals and a monthly total | AUTOMATED TESTED | same — five weekly totals, and "+$3,435.22 · 2 days · 7 trades · 1 green" |
+| Month navigation | AUTOMATED TESTED | same — limited to months with something in them, opening on the most recent |
+| Click a day to see its trades | AUTOMATED TESTED | same — "Showing 2026-09-15 · 2 trades", and a way back to all of them |
+| Click a trade for its full detail, with MAE and MFE | AUTOMATED TESTED | same — "SHORT ES 1 7689.5 → 7659.5 +$1,497.31 2.99R held 5h 00m MAE -$200.00 MFE $2,300.00" |
+| Put a trade back on the chart | AUTOMATED TESTED | same — and it now takes the TRADE's instrument: recalling an ES trade while the chart was on NQ used to do nothing at all, because the pane owns its instrument and changed it straight back |
+
+---
+
+## P6 — visual pass
+
+### The typeface was chosen, not assumed
+
+The brief asked for Geist, Inter and IBM Plex Sans to be **tested**. All three
+were installed, the terminal was rendered in each at the sizes it actually
+uses, and the results were measured in the browser rather than eyeballed:
+
+| | account-bar metric group | header button | line box for `x` |
+|---|---|---|---|
+| Inter | 463px | 116px | 16px |
+| Geist | 461px | 114px | 17px |
+| IBM Plex Sans | 457px | 115px | 17px |
+
+Screenshots: `docs/milestones/terminal-correction/font-inter-crop.png`,
+`font-geist-crop.png`, `font-plex-crop.png` - the same account bar and chart
+header in each.
+
+The three are within 1.3% of each other for width, so horizontal space - the
+thing that matters in a terminal, because it is width the chart wants - does
+not separate them. What does: Atlas's small uppercase labels (`BAL`, `EQ`, `DD
+LEFT`, `MAE`) live at 11px with letter-spacing, and every figure in the
+platform is JetBrains Mono. Inter's caps hold their counters at that size and
+its lowercase sits closest to JetBrains Mono's proportions; Plex is the most
+characterful of the three and the least neutral beside it.
+
+**Kept Inter.** The trial imports and both trial packages were removed again, so
+nothing is shipped for a font that is not used. This is a decision recorded
+rather than a change made: churning the typeface for its own sake is not a
+quality improvement, and the measurement is what makes that a judgement rather
+than an excuse.

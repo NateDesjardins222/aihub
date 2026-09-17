@@ -125,6 +125,11 @@ try {
   await setSync('interval', false);
   await setSync('symbol', false);
 
+  // Start from a known state: a previous run leaves its panes where it left
+  // them, and "each chart keeps its own instrument" proves nothing if both
+  // charts were already on the same one.
+  await setPaneSymbol('p1', 'NQ');
+  await setPaneSymbol('p2', 'NQ');
   await setPaneTimeframe('p1', '1m');
   await setPaneTimeframe('p2', '15m');
   const p1 = await statusOf('p1');
@@ -184,13 +189,20 @@ try {
   await setSync('crosshair', true);
   await setSync('time range', true);
   const box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
-  await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.5);
-  await page.waitForTimeout(700);
-  const synced = await page.evaluate(() => window.__atlasPaneSync?.() ?? null);
+  // Sweep rather than jump: a single move can land between two bars, where
+  // there is no bar time to follow.
+  let synced = null;
+  for (const fx of [0.3, 0.35, 0.4, 0.45]) {
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * 0.5, { steps: 4 });
+    await page.waitForTimeout(500);
+    synced = await page.evaluate(() => window.__atlasPaneSync?.() ?? null);
+    if (synced && typeof synced.crosshair?.p2 === 'number') break;
+  }
+  const followed = synced && typeof synced.crosshair?.p2 === 'number';
   say(
-    synced !== null && typeof synced.crosshair.p2 === 'number',
+    followed,
     'with the crosshair synced, pointing at one chart moves the other',
-    synced ? `p2 followed to ${new Date(synced.crosshair.p2).toISOString()}` : 'no diagnostics',
+    followed ? `p2 followed to ${new Date(synced.crosshair.p2).toISOString()}` : 'p2 did not follow',
   );
 
   await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.3);
@@ -255,6 +267,13 @@ try {
     'and so does what each chart was showing',
     `${reloaded[0].slice(0, 24)} || ${reloaded[1].slice(0, 24)}`,
   );
+
+  // Take the indicator back off, so repeated runs do not stack a row each time.
+  const remove = page.locator('[data-pane=p1] [data-testid=indicator-row] .ind-btn-danger');
+  for (let i = 0; i < 6 && (await remove.count()) > 0; i += 1) {
+    await remove.first().click();
+    await page.waitForTimeout(350);
+  }
 
   // Put the terminal back to one chart on NQ for the suites that follow.
   await setPaneSymbol('p2', 'NQ');

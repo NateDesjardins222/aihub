@@ -1,7 +1,7 @@
 /**
  * The secondary surface.
  *
- * Practice, the journal and the ladder open here rather than beside the chart,
+ * Practice and the journal open here rather than beside the chart,
  * because the chart is the application. A drawer slides over the right of the
  * workspace, dismisses on Escape, and leaves the chart mounted behind it - so
  * closing it does not cost a reload of the history.

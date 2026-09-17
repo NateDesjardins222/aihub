@@ -5,6 +5,12 @@
  * is reproduced; the typefaces are Inter and JetBrains Mono, both SIL OFL, and
  * both self-hosted rather than fetched from a font CDN.
  *
+ * Inter was CHOSEN, not assumed: the terminal was rendered in Inter, Geist and
+ * IBM Plex Sans at the sizes it actually uses and measured in the browser (see
+ * docs/terminal-correction.md). The three are within 1.3% of each other for
+ * width, so the decision came down to how the 11px uppercase labels hold up
+ * and how the sans sits beside JetBrains Mono's figures.
+ *
  * The scale below is the readable one: 11/12/13/15/18/22 with 28px standard
  * controls. The platform used to run on 10/11/12/13 with 20-24px controls,
  * which is why it read as an engineering tool rather than as a terminal.

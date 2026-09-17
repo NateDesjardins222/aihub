@@ -90,6 +90,7 @@ export function ChartPanel({
 
   const timeframe = (pane?.timeframe ?? '1m') as Timeframe;
   const setPaneTimeframe = useLayout((s) => s.setPaneTimeframe);
+  const setPaneSymbol = useLayout((s) => s.setPaneSymbol);
   const setTimeframe = useCallback(
     (next: Timeframe) => setPaneTimeframe(paneId, next),
     [paneId, setPaneTimeframe],
@@ -466,9 +467,22 @@ export function ChartPanel({
    */
   useEffect(() => {
     if (!chartFocus || !chartReady) return;
-    if (chartFocus.symbol !== activeSymbol) return;
+    /*
+     * A trade recalled from the journal brings its own instrument.
+     *
+     * The chart being worked in takes it; the others are left alone. Without
+     * this, recalling an ES trade while the chart was on NQ quietly did
+     * nothing - the terminal changed instrument and the pane, which now owns
+     * its own, changed it straight back.
+     */
+    if (chartFocus.symbol !== activeSymbol) {
+      if (active) setPaneSymbol(paneId, chartFocus.symbol);
+      return;
+    }
+    // Only once the series being shown is the one the trade was taken on.
+    if (loading) return;
     adapterRef.current?.goToTime(chartFocus.entryTime);
-  }, [chartFocus, chartReady, activeSymbol]);
+  }, [chartFocus, chartReady, activeSymbol, active, loading, paneId, setPaneSymbol]);
 
   // Blind practice hides which DAY this is. The bars, their timestamps and
   // everything computed from them are untouched: only the labels change.
