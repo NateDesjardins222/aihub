@@ -97,9 +97,17 @@ export class ChartLegend {
     }
   }
 
-  /** Blind practice hides the calendar here too, for the same reason. */
+  /**
+   * Blind practice hides the calendar here too, for the same reason.
+   *
+   * It redraws at once rather than waiting for the next bar: with a replay
+   * paused, the next bar may never come, and a legend still showing the date
+   * would defeat the whole mode.
+   */
   setDatesHidden(hidden: boolean): void {
+    if (this.datesHidden === hidden) return;
     this.datesHidden = hidden;
+    this.render();
   }
 
   private formatBarTime(ms: number): string {

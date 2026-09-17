@@ -81,6 +81,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private pricePrecision = 2;
   /** Blind practice: the clock is shown, the calendar is not. */
   private datesHidden = false;
+  private timeZone = 'America/Chicago';
   private tickSize = 0.25;
   private volumeVisible = true;
   private autoScale = true;
@@ -96,6 +97,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private historyRequestPending = false;
 
   mount(init: ChartInit): void {
+    this.timeZone = init.timeZone;
     this.container = init.container;
     this.pricePrecision = init.pricePrecision;
     this.tickSize = init.tickSize;
@@ -126,15 +128,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
         borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
-        tickMarkFormatter: (time: Time) =>
-          this.datesHidden
-            ? new Intl.DateTimeFormat('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-                timeZone: init.timeZone,
-              }).format(fromTime(time))
-            : undefined,
         rightOffset: 6,
         barSpacing: 7,
         // Session gaps are real and must stay visible as gaps.
@@ -606,9 +599,23 @@ export class LightweightChartsAdapter implements ChartAdapter {
   setDatesHidden(hidden: boolean): void {
     if (this.datesHidden === hidden) return;
     this.datesHidden = hidden;
-    // Re-applying the option makes the chart re-render its labels through the
-    // formatters above.
-    this.chart?.applyOptions({ timeScale: { timeVisible: true } });
+    // The axis formatter is INSTALLED to hide dates and REMOVED to show them.
+    // A formatter that returns undefined for the normal case does not fall back
+    // to the library's own labels - it renders the string "undefined" across
+    // the whole axis.
+    this.chart?.applyOptions({
+      timeScale: {
+        tickMarkFormatter: hidden
+          ? (time: Time): string =>
+              new Intl.DateTimeFormat('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZone: this.timeZone,
+              }).format(fromTime(time))
+          : undefined,
+      },
+    });
   }
 
   priceToY(price: number): number | null {

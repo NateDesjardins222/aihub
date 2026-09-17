@@ -135,6 +135,10 @@ export function ChartPanel(): JSX.Element {
       { precision, timeZone },
     );
     legendRef.current = legend;
+    // The legend is built once, after the mask may already have been chosen, so
+    // it is told immediately rather than waiting for the mask to change again.
+    legend.setDatesHidden(!useTraining.getState().visibility.dateTime);
+    adapter.setDatesHidden(!useTraining.getState().visibility.dateTime);
 
     const offCrosshair = adapter.onCrosshairMove((info) => legend.setHovered(info.bar));
 
