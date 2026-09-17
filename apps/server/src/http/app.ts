@@ -129,7 +129,7 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(ruleTemplateRoutes, { prefix: '/api/v1/rule-templates' });
   await app.register(marketDataRoutes({ ...stack, engine }), { prefix: '/api/v1/marketdata' });
   await app.register(tradingRoutes({ engine, market: stack.market }), { prefix: '/api/v1' });
-  await app.register(journalRoutes({ engine }), { prefix: '/api/v1/journal' });
+  await app.register(journalRoutes({ engine, replay: stack.replay }), { prefix: '/api/v1/journal' });
 
   return { app, stack, gateway, engine };
 }

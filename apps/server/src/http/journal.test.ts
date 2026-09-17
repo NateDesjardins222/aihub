@@ -282,6 +282,7 @@ describe('analytics', () => {
     expect(result.json.days.length).toBe(20);
     // Reading and analysing four thousand trades, over HTTP, in well under a
     // second: a journal a trader has actually used has to stay usable.
+    console.log(`[perf] 4,000 trades read and analysed over HTTP in ${elapsed}ms`);
     expect(elapsed).toBeLessThan(3_000);
   }, 60_000);
 });

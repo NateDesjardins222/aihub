@@ -187,3 +187,70 @@ describe('settings', () => {
     expect(motion.sample(10)?.close).toBe(140);
   });
 });
+
+describe('keeping up with the replay', () => {
+  /**
+   * The same animation has to read well at half speed and at a hundred times
+   * it. It does that by measuring how often prints are actually arriving and
+   * sizing each move to land before the next one.
+   */
+  it('shortens its moves when prints arrive faster', () => {
+    const motion = new MarketMotion({ ...DEFAULT_MOTION, maxCatchUpMs: 10_000 }, 0.25);
+
+    // A slow feed: one print every two seconds.
+    let now = 0;
+    for (let i = 0; i < 6; i += 1) {
+      now += 2_000;
+      motion.observe(bar(100 + i, { time: 1_000 }), now);
+      motion.sample(now);
+    }
+    const slowMove = motion.moveDurationMs();
+
+    // The same feed, replayed a hundred times faster.
+    for (let i = 0; i < 12; i += 1) {
+      now += 20;
+      motion.observe(bar(200 + i, { time: 1_000 }), now);
+      motion.sample(now);
+    }
+    const fastMove = motion.moveDurationMs();
+
+    expect(slowMove).toBeGreaterThan(fastMove * 4);
+    expect(motion.observedCadenceMs()).toBeLessThan(500);
+  });
+
+  it('still lands exactly on the genuine price, whatever the cadence', () => {
+    const motion = new MarketMotion({ ...DEFAULT_MOTION, maxCatchUpMs: 5_000 }, 0.25);
+    let now = 0;
+    for (let i = 0; i < 5; i += 1) {
+      now += 40;
+      motion.observe(bar(100, { time: 1_000 }), now);
+      motion.sample(now);
+    }
+
+    motion.observe(bar(160, { time: 1_000 }), now);
+    const move = motion.moveDurationMs();
+    // Sampling past the end of the move gives the truth, never an approximation.
+    motion.sample(now + move + 1);
+    expect(motion.visualPrice()).toBe(160);
+  });
+
+  it('is time-based, so a faster screen does not animate faster', () => {
+    const slow = new MarketMotion(DEFAULT_MOTION, 0.25);
+    const fast = new MarketMotion(DEFAULT_MOTION, 0.25);
+    slow.observe(bar(100, { time: 1_000 }), 0);
+    fast.observe(bar(100, { time: 1_000 }), 0);
+    slow.sample(0);
+    fast.sample(0);
+    slow.observe(bar(140, { time: 1_000 }), 100);
+    fast.observe(bar(140, { time: 1_000 }), 100);
+
+    // 60Hz: sampled every 16ms. 144Hz: every 7ms. Then both are asked where
+    // they are at the SAME instant, and they must agree: the animation is a
+    // function of elapsed time, not of how often it was asked.
+    for (let t = 100; t < 200; t += 16) slow.sample(t);
+    for (let t = 100; t < 200; t += 7) fast.sample(t);
+    slow.sample(200);
+    fast.sample(200);
+    expect(Math.abs(slow.visualPrice()! - fast.visualPrice()!)).toBeLessThan(0.01);
+  });
+});

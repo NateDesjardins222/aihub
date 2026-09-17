@@ -81,3 +81,19 @@
 .env-presets {
   flex-wrap: wrap;
 }
+
+.env-visibility {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.env-toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+}

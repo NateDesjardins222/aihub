@@ -99,6 +99,19 @@ export class MarketMotion {
   private targetAt = 0;
   private tickSize: number;
   /**
+   * How often observations have been arriving, in milliseconds.
+   *
+   * This is what makes the animation feel the same at every replay speed. At
+   * 100x a print lands every few hundred milliseconds and the easing has to be
+   * quick; at half speed they are minutes apart and it can be languid. A fixed
+   * rate would either stutter at speed or crawl at rest, so the duration of
+   * each move is derived from the cadence actually being observed.
+   */
+  private cadenceMs = 1_000;
+  private lastObservedAt: number | null = null;
+  /** The duration of the move currently in flight. */
+  private moveMs = 250;
+  /**
    * Something has changed that the chart has not drawn yet.
    *
    * Without this the class cannot tell "converged, nothing to do" from "just
@@ -141,6 +154,8 @@ export class MarketMotion {
     this.origin = null;
     this.targetAt = 0;
     this.dirty = false;
+    this.lastObservedAt = null;
+    this.cadenceMs = 1_000;
   }
 
   /**
@@ -153,10 +168,26 @@ export class MarketMotion {
     const previous = this.target;
     const sameBucket = previous !== null && previous.time === bar.time;
 
+    // Cadence is measured, not assumed, and smoothed so one late print does not
+    // stretch the next animation.
+    if (this.lastObservedAt !== null) {
+      const gap = Math.max(16, now - this.lastObservedAt);
+      this.cadenceMs = this.cadenceMs * 0.7 + Math.min(gap, 30_000) * 0.3;
+    }
+    this.lastObservedAt = now;
+
     this.origin = this.visual !== null && sameBucket ? this.visual : bar.open;
     this.target = bar;
     this.targetAt = now;
     this.dirty = true;
+    // Arrive before the next print is due, and never later than the deadline.
+    this.moveMs = Math.max(
+      16,
+      Math.min(
+        this.settings.maxCatchUpMs,
+        (this.cadenceMs * this.settings.smoothing) / this.settings.animationSpeed,
+      ),
+    );
 
     // A settled bar is history. Animating toward a close that is already final
     // would leave the chart showing a candle that differs from the data behind
@@ -188,40 +219,58 @@ export class MarketMotion {
     const target = this.target;
     if (!target) return null;
 
-    if (this.settings.mode === 'RAW' || this.settings.smoothing <= 0) {
+    // RAW, no smoothing, or a bar that has already settled: draw the truth.
+    // A closed bar is history, and history is not animated.
+    if (this.settings.mode === 'RAW' || this.settings.smoothing <= 0 || target.closed) {
       if (this.visual === target.close && !this.dirty) return null;
       this.visual = target.close;
       this.dirty = false;
       return target;
     }
 
-    const from = this.visual ?? target.close;
-    const gap = target.close - from;
+    const origin = this.origin ?? this.visual ?? target.close;
+    const gap = target.close - origin;
+    const elapsed = now - this.targetAt;
 
     // Converged, or past the deadline: show the truth and stop animating.
-    const elapsed = now - this.targetAt;
-    if (Math.abs(gap) < this.tickSize / 8 || elapsed >= this.settings.maxCatchUpMs) {
+    if (Math.abs(gap) < this.tickSize / 8 || elapsed >= this.moveMs) {
       if (this.visual === target.close && !this.dirty) return null;
       this.visual = target.close;
       this.dirty = false;
       return target;
     }
 
-    // Exponential approach, framed as "fraction of the gap per 16ms frame" so
-    // the feel is independent of how often the caller samples.
-    const rate = this.settings.smoothing * 0.5 * this.settings.animationSpeed;
-    const step = gap * Math.min(1, rate);
-    let next = from + step;
+    // Eased interpolation over a measured duration. Time-based rather than
+    // frame-based, so the motion is identical on a 60Hz screen and a 144Hz one,
+    // and it lands exactly on the genuine price at the end of the move rather
+    // than approaching it forever.
+    const progress = Math.min(1, Math.max(0, elapsed / this.moveMs));
+    const eased = 1 - (1 - progress) ** 3;
+    let next = origin + gap * eased;
 
-    // Never overshoot the genuine price, in either direction. This is the
-    // guarantee that keeps the animation inside the data.
+    // Never past the genuine price, in either direction. This is the guarantee
+    // that keeps every drawn value inside the data.
     if ((gap > 0 && next > target.close) || (gap < 0 && next < target.close)) {
       next = target.close;
+    }
+
+    if (this.visual !== null && Math.abs(next - this.visual) < this.tickSize / 64 && !this.dirty) {
+      return null;
     }
 
     this.visual = next;
     this.dirty = false;
     return { ...target, close: next };
+  }
+
+  /** How often prints have been arriving. Diagnostics and tests only. */
+  observedCadenceMs(): number {
+    return this.cadenceMs;
+  }
+
+  /** How long the move in flight will take. Diagnostics and tests only. */
+  moveDurationMs(): number {
+    return this.moveMs;
   }
 
   /** The value currently drawn. Diagnostics and tests only. */

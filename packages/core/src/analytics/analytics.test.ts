@@ -321,6 +321,7 @@ describe('at scale', () => {
     expect(result.days.length).toBeGreaterThan(20);
     expect(result.breakdowns.bySymbol).toHaveLength(2);
     // The whole journal, analysed, well inside a frame budget.
+    console.log(`[perf] 10,000 trades analysed in ${elapsed.toFixed(1)}ms`);
     expect(elapsed).toBeLessThan(1_500);
 
     // And the arithmetic still reconciles: the curve ends where the sum says.

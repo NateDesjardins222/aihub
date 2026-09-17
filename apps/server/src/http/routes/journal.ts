@@ -30,9 +30,19 @@ import {
 } from '../../db/schema.js';
 import { unscaleTicks } from '../../trading/mapping.js';
 import type { TradingEngine } from '../../trading/engine.js';
+import type { ReplayProvider } from '../../marketdata/providers/replay.js';
 
 interface Deps {
   readonly engine: TradingEngine;
+  /**
+   * The replay, for one purpose: recording WHICH session was practised.
+   *
+   * A blind session is masked in the API, so the client genuinely does not
+   * know what it is trading and cannot tell the journal. The server does know,
+   * and has to write it down - otherwise the reveal at the end has nothing to
+   * reveal, and the session history is a list of unknowns.
+   */
+  readonly replay: ReplayProvider;
 }
 
 /** A trade as the journal serves it: prices decoded, tags attached. */
@@ -378,6 +388,18 @@ export function journalRoutes(deps: Deps) {
         );
       for (const previous of open) await endSession(previous.id);
 
+      // What is actually loaded wins over what the client thinks: a blind
+      // session's client has been told nothing, on purpose.
+      const replayState = deps.replay.getState();
+      const fromReplay =
+        body.source === 'REPLAY' && replayState.loaded
+          ? {
+              recordingId: replayState.recordingId,
+              symbol: replayState.symbol,
+              tradingDate: replayState.header?.tradingDate ?? null,
+            }
+          : { recordingId: null, symbol: null, tradingDate: null };
+
       const [row] = await db
         .insert(practiceSessions)
         .values({
@@ -386,10 +408,12 @@ export function journalRoutes(deps: Deps) {
           source: body.source,
           mode: body.mode,
           config: (body.config ?? {}) as never,
-          recordingId: body.recordingId ?? null,
-          symbol: body.symbol ?? null,
-          tradingDate: body.tradingDate ?? null,
-          dateHidden: body.dateHidden,
+          recordingId: body.recordingId ?? fromReplay.recordingId,
+          symbol: body.symbol ?? fromReplay.symbol,
+          tradingDate: body.tradingDate ?? fromReplay.tradingDate,
+          // A session the trader cannot identify is hidden until it ends,
+          // whether they asked for that or the replay imposed it.
+          dateHidden: body.dateHidden || replayState.blind,
           startingBalanceMicros: account.balanceMicros,
         })
         .returning();
@@ -406,6 +430,9 @@ export function journalRoutes(deps: Deps) {
       await assertOwnership(request.user!.id, row.accountId);
 
       const session = await endSession(params.id);
+      // The replay stops withholding too: the trader has finished, and the
+      // whole point of the reveal is to compare what they did with what it was.
+      deps.replay.reveal();
       return reply.send({ session: presentSession(session!) });
     });
 
@@ -585,7 +612,8 @@ export function journalRoutes(deps: Deps) {
           endedAt: new Date(),
           endingBalanceMicros: account?.balanceMicros ?? session.startingBalanceMicros,
           summary: summary as never,
-          // A blind session is only revealed once it is over.
+          // A blind session is only revealed once it is over - and now there is
+          // something to reveal, because the server wrote down what it was.
           dateHidden: false,
         })
         .where(eq(practiceSessions.id, id))
