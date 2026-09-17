@@ -5,6 +5,7 @@ import { useClock } from './usePersistentSize';
 import { FeedBadge } from '../panels/FeedBadge';
 import { useFreshness } from '../market/useFreshness';
 import { useTrading } from '../trading/store';
+import { MASK, useTraining } from '../state/training';
 import type { JSX } from 'react';
 
 /**
@@ -32,6 +33,11 @@ export function TerminalHeader(): JSX.Element {
   const rules = useTrading((s) => s.rules);
   const ruleBook = useTrading((s) => s.ruleBook);
   const attach = useTrading((s) => s.attach);
+  // Training modes hide information; they never change it. Every figure below
+  // is still computed, recorded and enforced exactly as it would be.
+  const visibility = useTraining((s) => s.visibility);
+  const money = (render: () => string): string => (visibility.balance ? render() : MASK);
+  const result = (render: () => string): string => (visibility.pnl ? render() : MASK);
 
   useEffect(() => {
     if (account) attach(account.id);
@@ -72,28 +78,34 @@ export function TerminalHeader(): JSX.Element {
 
       <Metric
         label="Balance"
-        value={pnl ? formatMicros(pnl.balanceMicros) : account ? formatMicros(account.balanceMicros) : '—'}
+        value={money(() =>
+          pnl ? formatMicros(pnl.balanceMicros) : account ? formatMicros(account.balanceMicros) : '—',
+        )}
         title="Settled cash: starting balance plus realized P&L, less fees"
       />
       <Metric
         label="Equity"
-        value={rules ? formatMicros(rules.equityMicros) : pnl ? formatMicros(pnl.equityMicros) : '—'}
+        value={money(() =>
+          rules ? formatMicros(rules.equityMicros) : pnl ? formatMicros(pnl.equityMicros) : '—',
+        )}
         title="Balance plus open P&L"
       />
       <Metric
         label="Day P&L"
-        value={rules ? formatMicros(rules.dayPnlMicros, { sign: true }) : '—'}
-        tone={rules ? pnlClass(rules.dayPnlMicros) : 'flat'}
+        value={result(() => (rules ? formatMicros(rules.dayPnlMicros, { sign: true }) : '—'))}
+        tone={rules && visibility.pnl ? pnlClass(rules.dayPnlMicros) : 'flat'}
         title="Equity change since this trading day opened"
       />
       <Metric
         label="Open P&L"
-        value={rules ? formatMicros(rules.openPnlMicros, { sign: true }) : '—'}
-        tone={rules ? pnlClass(rules.openPnlMicros) : 'flat'}
+        value={result(() => (rules ? formatMicros(rules.openPnlMicros, { sign: true }) : '—'))}
+        tone={rules && visibility.pnl ? pnlClass(rules.openPnlMicros) : 'flat'}
       />
       <Metric
         label="Drawdown left"
-        value={rules ? formatMicros(Math.max(0, rules.remainingDrawdownMicros)) : '—'}
+        value={
+          visibility.rules && rules ? formatMicros(Math.max(0, rules.remainingDrawdownMicros)) : MASK
+        }
         tone={
           rules && maxLoss(ruleBook) > 0 && rules.remainingDrawdownMicros < maxLoss(ruleBook) * 0.25
             ? 'neg'
@@ -105,7 +117,7 @@ export function TerminalHeader(): JSX.Element {
             : undefined
         }
       />
-      {rules?.remainingDailyLossMicros !== null && rules !== null ? (
+      {visibility.rules && rules?.remainingDailyLossMicros !== null && rules !== null ? (
         <Metric
           label="Daily loss left"
           value={formatMicros(Math.max(0, rules.remainingDailyLossMicros ?? 0))}
@@ -117,7 +129,7 @@ export function TerminalHeader(): JSX.Element {
           title="Loss allowed before trading stops for the day"
         />
       ) : null}
-      {rules && rules.profitTargetMicros > 0 ? (
+      {visibility.rules && rules && rules.profitTargetMicros > 0 ? (
         <Metric
           label="Target"
           value={`${formatMicros(rules.profitProgressMicros, { sign: true })} / ${formatMicros(rules.profitTargetMicros)}`}
@@ -129,7 +141,9 @@ export function TerminalHeader(): JSX.Element {
 
       <div className="hdr-group hdr-session">
         <span className="label">{instrument?.exchange ?? 'CME'}</span>
-        <span className="num hdr-clock">{formatClock(now, tz)}</span>
+        <span className="num hdr-clock">
+          {visibility.dateTime ? formatClock(now, tz) : MASK}
+        </span>
         <MarketPill state={marketState} reason={instrument?.marketState.reason ?? null} />
       </div>
 

@@ -10,6 +10,7 @@
 import { useMemo, useState, type JSX } from 'react';
 import { useTrading } from '../trading/store';
 import { tradingApi, type ApiRuleConfig, type ApiRuleStatus } from '../trading/api';
+import { MASK, useTraining } from '../state/training';
 import './RiskPanel.css';
 
 const DOLLARS = 1_000_000;
@@ -87,6 +88,7 @@ export function RiskPanel(): JSX.Element {
   };
 
   const config: ApiRuleConfig | null = ruleBook?.config ?? null;
+  const visibility = useTraining((s) => s.visibility);
 
   const openContracts = useMemo(
     () => positions.reduce((sum, p) => sum + Math.abs(p.qty), 0),
@@ -95,6 +97,20 @@ export function RiskPanel(): JSX.Element {
 
   if (!rules || !config) {
     return <div className="risk-panel risk-empty">Loading account rules…</div>;
+  }
+
+  // In a mode that hides the money, the dashboard says so rather than showing
+  // a masked wall of numbers. The rules are still being enforced behind it.
+  if (!visibility.rules && !visibility.balance) {
+    return (
+      <div className="risk-panel risk-empty">
+        <p>
+          This training mode hides account figures while you trade. The rules are still being
+          enforced: a breach will still stop you, and everything is recorded for the review.
+        </p>
+        <p className="risk-note">Status {visibility.execution ? rules.status : MASK}</p>
+      </div>
+    );
   }
 
   const tone = toneFor(rules.status);

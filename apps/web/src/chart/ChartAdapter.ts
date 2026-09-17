@@ -113,6 +113,9 @@ export interface ChartAdapter {
 
   screenshot(): Promise<Blob | null>;
 
+  /** Hide the calendar (not the clock) on the axis, for blind practice. */
+  setDatesHidden(hidden: boolean): void;
+
   priceToY(price: number): number | null;
   yToPrice(y: number): number | null;
 }

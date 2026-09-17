@@ -78,6 +78,10 @@ export interface ReplayState {
   endTs: number | null;
   progress: number;
   header: { tradingDate: string; captureMethod: string; eventCount: number; notes: string } | null;
+  /** A random session keeps its identity to itself until it ends. */
+  blind: boolean;
+  /** How far into the recording the replay has run. Safe to show when blind. */
+  elapsedMs: number | null;
 }
 
 export interface RecordingSummary {
@@ -138,6 +142,38 @@ export const replayApi = {
   reset: () => api.post<ReplayState>('/api/v1/marketdata/replay/reset'),
   speed: (speed: number) => api.post<ReplayState>('/api/v1/marketdata/replay/speed', { speed }),
   seek: (progress: number) => api.post<ReplayState>('/api/v1/marketdata/replay/seek', { progress }),
+  step: (count = 1) => api.post<ReplayState>('/api/v1/marketdata/replay/step', { count }),
+  restart: () => api.post<ReplayState>('/api/v1/marketdata/replay/restart', {}),
+  skip: (accountId: string, minutes?: number, toTs?: number) =>
+    api.post<ReplayState>('/api/v1/marketdata/replay/skip', { accountId, minutes, toTs }),
+  seekTime: (ts: number) => api.post<ReplayState>('/api/v1/marketdata/replay/seek-time', { ts }),
+  anchors: () =>
+    api.get<{
+      anchors: Array<{
+        id: string;
+        label: string;
+        description: string;
+        at: number | null;
+        offsetMs: number;
+      }>;
+    }>('/api/v1/marketdata/replay/anchors'),
+  random: (symbol?: string, blind = true) =>
+    api.post<ReplayState>('/api/v1/marketdata/replay/random', { symbol, blind }),
+  availableSessions: (symbol: string, days = 10) =>
+    api.get<{
+      symbol: string;
+      recordings: Array<{
+        id: string;
+        symbol: string;
+        tradingDate: string;
+        events: number;
+        captureMethod: string;
+        startTs: number;
+        endTs: number;
+      }>;
+      dates: Array<{ date: string; captured: boolean; weekday: number }>;
+      historyNote: string;
+    }>(`/api/v1/marketdata/sessions?symbol=${symbol}&days=${days}`),
   useProvider: (provider: 'live' | 'replay') =>
     api.post<{ provider: string; mode: string }>('/api/v1/marketdata/provider', { provider }),
 };

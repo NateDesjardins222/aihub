@@ -27,6 +27,7 @@ export class ChartLegend {
   private hovered: NormalizedBar | null = null;
   private live: NormalizedBar | null = null;
   private previousClose: number | null = null;
+  private datesHidden = false;
 
   constructor(
     private readonly fields: LegendFields,
@@ -96,10 +97,14 @@ export class ChartLegend {
     }
   }
 
+  /** Blind practice hides the calendar here too, for the same reason. */
+  setDatesHidden(hidden: boolean): void {
+    this.datesHidden = hidden;
+  }
+
   private formatBarTime(ms: number): string {
     return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: '2-digit',
+      ...(this.datesHidden ? {} : { month: 'short' as const, day: '2-digit' as const }),
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,

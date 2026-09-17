@@ -236,10 +236,10 @@ export const tradingApi = {
       patch,
     ),
   rules: (accountId: string) => api.get<ApiRules>(`/api/v1/accounts/${accountId}/rules`),
-  resetAccount: (accountId: string) =>
+  resetAccount: (accountId: string, startingBalanceMicros?: number) =>
     api.post<{ accountId: string; status: ApiRuleStatus | null }>(
       `/api/v1/accounts/${accountId}/reset`,
-      {},
+      startingBalanceMicros === undefined ? {} : { startingBalanceMicros },
     ),
   setRules: (accountId: string, patch: Partial<ApiRuleConfig>) =>
     api.put<{ config: ApiRuleConfig; status: ApiRuleStatus | null }>(

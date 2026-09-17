@@ -79,6 +79,8 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private chartType: ChartType = 'CANDLES';
   private timeframe: Timeframe = '1m';
   private pricePrecision = 2;
+  /** Blind practice: the clock is shown, the calendar is not. */
+  private datesHidden = false;
   private tickSize = 0.25;
   private volumeVisible = true;
   private autoScale = true;
@@ -124,6 +126,15 @@ export class LightweightChartsAdapter implements ChartAdapter {
         borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: (time: Time) =>
+          this.datesHidden
+            ? new Intl.DateTimeFormat('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZone: init.timeZone,
+              }).format(fromTime(time))
+            : undefined,
         rightOffset: 6,
         barSpacing: 7,
         // Session gaps are real and must stay visible as gaps.
@@ -133,10 +144,13 @@ export class LightweightChartsAdapter implements ChartAdapter {
       localization: {
         locale: 'en-US',
         priceFormatter: (price: number) => price.toFixed(this.pricePrecision),
+        // Blind practice hides WHICH day this is, never what happened in it:
+        // the clock stays, the calendar goes. A trader who can read the date off
+        // the axis can remember what the session did next, and the point of a
+        // blind session is that they cannot.
         timeFormatter: (time: Time) =>
           new Intl.DateTimeFormat('en-US', {
-            month: 'short',
-            day: '2-digit',
+            ...(this.datesHidden ? {} : { month: 'short', day: '2-digit' }),
             hour: '2-digit',
             minute: '2-digit',
             hour12: false,
@@ -581,6 +595,20 @@ export class LightweightChartsAdapter implements ChartAdapter {
     const canvas = this.chart?.takeScreenshot();
     if (!canvas) return null;
     return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+  }
+
+  /**
+   * Hide or show the calendar on the time axis and in the crosshair.
+   *
+   * Only the LABELS change. The bars, their timestamps and everything computed
+   * from them are untouched - this is a mask, not a different chart.
+   */
+  setDatesHidden(hidden: boolean): void {
+    if (this.datesHidden === hidden) return;
+    this.datesHidden = hidden;
+    // Re-applying the option makes the chart re-render its labels through the
+    // formatters above.
+    this.chart?.applyOptions({ timeScale: { timeVisible: true } });
   }
 
   priceToY(price: number): number | null {

@@ -15,6 +15,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import type { ChartAdapter } from './ChartAdapter';
 import { newClientOrderId, tradingApi, type ApiOrder } from '../trading/api';
 import { useTrading } from '../trading/store';
+import { MASK, useTraining } from '../state/training';
+import { useSession } from '../state/session';
+import { useReplayStatus } from '../state/replay-status';
 import './ChartTrading.css';
 
 export interface ChartTradingProps {
@@ -79,6 +82,10 @@ export function ChartTrading({
   const positions = useTrading((s) => s.positions);
   const canTrade = useTrading((s) => s.rules?.canTrade ?? true);
   const rejection = useTrading((s) => s.lastRejection);
+  const showPnl = useTraining((s) => s.visibility.pnl);
+  const focus = useSession((s) => s.chartFocus);
+  const replayPaused = useReplayStatus((s) => s.isReplay && s.replayPaused);
+  const clearFocus = useSession((s) => s.focusTrade);
   const setRejection = useTrading((s) => s.setRejection);
   const refresh = useTrading((s) => s.refresh);
 
@@ -370,7 +377,13 @@ export function ChartTrading({
         >
           CANCEL ALL
         </button>
-        <span className="ct-hint">right-click the chart to place an order at a price</span>
+        {replayPaused ? (
+          <span className="ct-paused" title="The replay is paused: nothing can fill until it moves">
+            REPLAY PAUSED
+          </span>
+        ) : (
+          <span className="ct-hint">right-click the chart to place an order at a price</span>
+        )}
       </div>
 
       {position ? (
@@ -387,10 +400,10 @@ export function ChartTrading({
               {position.avgEntryPrice?.toFixed(pricePrecision) ?? '—'}
             </span>
             <span
-              className={`num ct-pnl ${position.unrealizedPnlMicros >= 0 ? 'up' : 'down'}`}
+              className={`num ct-pnl ${showPnl && position.unrealizedPnlMicros >= 0 ? 'up' : showPnl ? 'down' : ''}`}
               title="Open profit and loss, computed by the server"
             >
-              {money(position.unrealizedPnlMicros)}
+              {showPnl ? money(position.unrealizedPnlMicros) : MASK}
             </span>
             <button
               className="ct-tag-btn"
@@ -441,6 +454,44 @@ export function ChartTrading({
           </div>
         );
       })}
+
+      {focus && focus.symbol === symbol ? (
+        <>
+          <div
+            className="ct-line ct-review ct-entry"
+            data-price={focus.entryPrice}
+            ref={(node) => register('focus-entry', node)}
+          >
+            <div className="ct-line-rule" />
+            <div className="ct-line-tag">
+              <span className="ct-tag-kind">{focus.side} ENTRY</span>
+              <span className="num" data-price-label>
+                {focus.entryPrice.toFixed(pricePrecision)}
+              </span>
+            </div>
+          </div>
+          <div
+            className="ct-line ct-review ct-exit"
+            data-price={focus.exitPrice}
+            ref={(node) => register('focus-exit', node)}
+          >
+            <div className="ct-line-rule" />
+            <div className="ct-line-tag">
+              <span className="ct-tag-kind">EXIT</span>
+              <span className="num" data-price-label>
+                {focus.exitPrice.toFixed(pricePrecision)}
+              </span>
+              <button
+                className="ct-tag-btn"
+                onClick={() => clearFocus(null)}
+                title="Stop showing this trade"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {rejection ? (
         <div className="ct-reject" role="alert">

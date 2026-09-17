@@ -2,14 +2,16 @@ import { useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import { useSession, selectedAccount } from '../state/session';
 import { formatMicros, pnlClass } from '../state/format';
+import { MASK, useTraining } from '../state/training';
+import { JournalPanel } from './JournalPanel';
 import { useTrading } from '../trading/store';
 import { tradingApi } from '../trading/api';
 import type { ApiInstrument } from '../api/types';
 import { Pending } from './Pending';
 
-type ActivityTab = 'POSITIONS' | 'ORDERS' | 'TRADES' | 'ACCOUNTS' | 'QUOTES';
+type ActivityTab = 'POSITIONS' | 'ORDERS' | 'TRADES' | 'JOURNAL' | 'ACCOUNTS' | 'QUOTES';
 
-const TABS: ActivityTab[] = ['POSITIONS', 'ORDERS', 'TRADES', 'ACCOUNTS', 'QUOTES'];
+const TABS: ActivityTab[] = ['POSITIONS', 'ORDERS', 'TRADES', 'JOURNAL', 'ACCOUNTS', 'QUOTES'];
 
 /**
  * Bottom activity panel.
@@ -81,6 +83,7 @@ export function ActivityPanel({
           {tab === 'POSITIONS' ? <PositionsTable /> : null}
           {tab === 'ORDERS' ? <OrdersTable /> : null}
           {tab === 'TRADES' ? <TradesTable /> : null}
+          {tab === 'JOURNAL' ? <JournalPanel /> : null}
           {tab === 'ACCOUNTS' ? <AccountsTable /> : null}
           {tab === 'QUOTES' ? (
             <Pending title="Quotes" milestone="Milestone 9">
@@ -95,6 +98,8 @@ export function ActivityPanel({
 }
 
 function PositionsTable(): JSX.Element {
+  // Hidden, never absent: the figure is still computed and recorded.
+  const showPnl = useTraining((s) => s.visibility.pnl);
   const account = useSession(selectedAccount);
   const allPositions = useTrading((s) => s.positions);
   const positions = useMemo(() => allPositions.filter((p) => p.qty !== 0), [allPositions]);
@@ -142,13 +147,13 @@ function PositionsTable(): JSX.Element {
                 <td className="right num">{p.qty}</td>
                 <td className="right num">{p.avgEntryPrice?.toFixed(precision) ?? '—'}</td>
                 <td className="right num">{p.markPrice?.toFixed(precision) ?? '—'}</td>
-                <td className={`right num ${pnlClass(p.unrealizedPnlMicros)}`}>
-                  {formatMicros(p.unrealizedPnlMicros, { sign: true })}
+                <td className={`right num ${showPnl ? pnlClass(p.unrealizedPnlMicros) : ''}`}>
+                  {showPnl ? formatMicros(p.unrealizedPnlMicros, { sign: true }) : MASK}
                 </td>
-                <td className={`right num ${pnlClass(p.realizedPnlMicros)}`}>
-                  {formatMicros(p.realizedPnlMicros, { sign: true })}
+                <td className={`right num ${showPnl ? pnlClass(p.realizedPnlMicros) : ''}`}>
+                  {showPnl ? formatMicros(p.realizedPnlMicros, { sign: true }) : MASK}
                 </td>
-                <td className="right num">{formatMicros(p.feesMicros)}</td>
+                <td className="right num">{showPnl ? formatMicros(p.feesMicros) : MASK}</td>
                 <td className="num">{p.stopOrderId ? '●' : '—'}</td>
                 <td className="num">{p.targetOrderId ? '●' : '—'}</td>
                 <td>
@@ -240,6 +245,7 @@ function OrdersTable(): JSX.Element {
 }
 
 function TradesTable(): JSX.Element {
+  const showResults = useTraining((s) => s.visibility.tradeResults);
   const trades = useTrading((s) => s.trades);
   const instruments = useSession((s) => s.instruments);
   const precisionOf = (symbol: string): number =>
@@ -280,12 +286,12 @@ function TradesTable(): JSX.Element {
                 <td className="right num">{t.qty}</td>
                 <td className="right num">{t.entryPrice.toFixed(precision)}</td>
                 <td className="right num">{t.exitPrice.toFixed(precision)}</td>
-                <td className={`right num ${pnlClass(t.grossPnlMicros)}`}>
-                  {formatMicros(t.grossPnlMicros, { sign: true })}
+                <td className={`right num ${showResults ? pnlClass(t.grossPnlMicros) : ''}`}>
+                  {showResults ? formatMicros(t.grossPnlMicros, { sign: true }) : MASK}
                 </td>
-                <td className="right num">{formatMicros(t.feesMicros)}</td>
-                <td className={`right num ${pnlClass(t.netPnlMicros)}`}>
-                  {formatMicros(t.netPnlMicros, { sign: true })}
+                <td className="right num">{showResults ? formatMicros(t.feesMicros) : MASK}</td>
+                <td className={`right num ${showResults ? pnlClass(t.netPnlMicros) : ''}`}>
+                  {showResults ? formatMicros(t.netPnlMicros, { sign: true }) : MASK}
                 </td>
               </tr>
             );
@@ -297,6 +303,7 @@ function TradesTable(): JSX.Element {
 }
 
 function AccountsTable(): JSX.Element {
+  const showPnl = useTraining((s) => s.visibility.balance);
   const accounts = useSession((s) => s.accounts);
   const selectedId = useSession((s) => s.selectedAccountId);
   const selectAccount = useSession((s) => s.selectAccount);
@@ -335,7 +342,7 @@ function AccountsTable(): JSX.Element {
               <td>{a.name}</td>
               <td>{a.accountType}</td>
               <td>{live?.status ?? a.status}</td>
-              <td className="right num">{formatMicros(balance)}</td>
+              <td className="right num">{showPnl ? formatMicros(balance) : MASK}</td>
               <td className="right num">{formatMicros(equity)}</td>
               <td className={`right num ${pnlClass(dayPnl)}`}>
                 {formatMicros(dayPnl, { sign: true })}

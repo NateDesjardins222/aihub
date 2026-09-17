@@ -5,8 +5,26 @@
 import { create } from 'zustand';
 import { api, setAccessToken, setRefreshToken, getRefreshToken } from '../api/client';
 import type { ApiAccount, ApiInstrument, ApiUser, AuthResponse } from '../api/types';
+import { attachPreferences } from './preferences';
 
 export type SessionPhase = 'BOOTING' | 'SIGNED_OUT' | 'SIGNED_IN';
+
+/**
+ * A trade the trader asked to see on the chart.
+ *
+ * Set from the journal, consumed by the chart panel: the chart switches to the
+ * instrument, scrolls to the entry and marks where the trade was opened and
+ * closed. It is a VIEW instruction and carries no authority - the prices in it
+ * came from the server's own record of the trade.
+ */
+export interface ChartFocus {
+  readonly symbol: string;
+  readonly entryTime: number;
+  readonly exitTime: number;
+  readonly entryPrice: number;
+  readonly exitPrice: number;
+  readonly side: 'LONG' | 'SHORT';
+}
 
 interface SessionState {
   phase: SessionPhase;
@@ -17,6 +35,8 @@ interface SessionState {
   activeSymbol: string;
   error: string | null;
   busy: boolean;
+  /** The trade the chart is being asked to show, if any. */
+  chartFocus: ChartFocus | null;
 
   boot: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -24,6 +44,7 @@ interface SessionState {
   selectAccount: (id: string) => void;
   setActiveSymbol: (symbol: string) => void;
   refreshAccounts: () => Promise<void>;
+  focusTrade: (focus: ChartFocus | null) => void;
 }
 
 const SELECTED_ACCOUNT_KEY = 'atlas.selectedAccountId';
@@ -38,6 +59,7 @@ export const useSession = create<SessionState>((set, get) => ({
   activeSymbol: localStorage.getItem(ACTIVE_SYMBOL_KEY) ?? 'NQ',
   error: null,
   busy: false,
+  chartFocus: null,
 
   /** Restore a session from the persisted refresh token, if there is one. */
   async boot() {
@@ -49,6 +71,9 @@ export const useSession = create<SessionState>((set, get) => ({
       const { user } = await api.get<{ user: ApiUser }>('/api/v1/auth/me');
       set({ user, phase: 'SIGNED_IN' });
       await get().refreshAccounts();
+      // Display preferences, restored before the terminal draws so a trader
+      // does not watch their chosen mode arrive a second late.
+      await attachPreferences();
     } catch {
       setRefreshToken(null);
       setAccessToken(null);
@@ -62,6 +87,7 @@ export const useSession = create<SessionState>((set, get) => ({
       const result = await api.post<AuthResponse>('/api/v1/auth/login', { email, password });
       setAccessToken(result.accessToken);
       setRefreshToken(result.refreshToken);
+      void attachPreferences();
       set({ user: result.user, phase: 'SIGNED_IN' });
       await get().refreshAccounts();
     } catch (err) {
@@ -88,6 +114,14 @@ export const useSession = create<SessionState>((set, get) => ({
   setActiveSymbol(symbol) {
     localStorage.setItem(ACTIVE_SYMBOL_KEY, symbol);
     set({ activeSymbol: symbol });
+  },
+
+  focusTrade(focus) {
+    if (focus && focus.symbol !== get().activeSymbol) {
+      localStorage.setItem(ACTIVE_SYMBOL_KEY, focus.symbol);
+      set({ activeSymbol: focus.symbol });
+    }
+    set({ chartFocus: focus });
   },
 
   async refreshAccounts() {

@@ -224,3 +224,20 @@
 }
 
 .ct-reject-message { color: var(--muted); }
+
+/* A trade recalled from the journal: where it was opened and where it ended. */
+.ct-review { color: var(--accent, #4a90d9); }
+.ct-review .ct-line-rule { border-top-style: dotted; border-top-width: 2px; }
+.ct-review .ct-line-tag { cursor: default; }
+.ct-entry { color: #7aa2f7; }
+.ct-exit { color: #bb9af7; }
+
+.ct-paused {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--warn, #e0a030);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 1px 5px;
+}

@@ -139,6 +139,7 @@ export class TradingViewAdvancedChartsAdapter implements ChartAdapter {
   async screenshot(): Promise<Blob | null> {
     return null;
   }
+  setDatesHidden(_hidden: boolean): void {}
   priceToY(_price: number): number | null {
     return null;
   }

@@ -10,6 +10,7 @@ import { ChartLegend } from './ChartLegend';
 import { ChartTrading } from '../chart/ChartTrading';
 import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
+import { useTraining } from '../state/training';
 import { FeedBadge } from './FeedBadge';
 import './ChartPanel.css';
 
@@ -68,6 +69,8 @@ export function ChartPanel(): JSX.Element {
   /** Flipped once the chart is mounted, so the trading overlay can measure it. */
   const [chartReady, setChartReady] = useState(false);
   const motionSettings = useMotion((s) => s.settings);
+  const showDates = useTraining((s) => s.visibility.dateTime);
+  const chartFocus = useSession((s) => s.chartFocus);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const adapterRef = useRef<LightweightChartsAdapter | null>(null);
@@ -265,6 +268,26 @@ export function ChartPanel(): JSX.Element {
   useEffect(() => {
     motionRef.current.setSettings(motionSettings);
   }, [motionSettings]);
+
+  /**
+   * Show a trade from the journal.
+   *
+   * The chart scrolls to the entry and the overlay draws where it was opened
+   * and closed. Nothing is re-simulated: the prices are the ones the server
+   * recorded when the trade happened.
+   */
+  useEffect(() => {
+    if (!chartFocus || !chartReady) return;
+    if (chartFocus.symbol !== activeSymbol) return;
+    adapterRef.current?.goToTime(chartFocus.entryTime);
+  }, [chartFocus, chartReady, activeSymbol]);
+
+  // Blind practice hides which DAY this is. The bars, their timestamps and
+  // everything computed from them are untouched: only the labels change.
+  useEffect(() => {
+    adapterRef.current?.setDatesHidden(!showDates);
+    legendRef.current?.setDatesHidden(!showDates);
+  }, [showDates, chartReady]);
 
   // -- historical pagination when the user scrolls left --------------------
   useEffect(() => {
