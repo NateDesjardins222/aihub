@@ -665,6 +665,27 @@ export class LightweightChartsAdapter implements ChartAdapter {
     }
 
     this.renderIndicators();
+    this.balancePanes();
+  }
+
+  /**
+   * Give the price pane most of the height.
+   *
+   * The renderer splits panes evenly by default, so one oscillator takes half
+   * the chart. The price pane is what is being traded, so it keeps four times
+   * the share of any indicator pane.
+   */
+  private balancePanes(): void {
+    if (!this.chart) return;
+    try {
+      const panes = this.chart.panes();
+      for (let i = 0; i < panes.length; i += 1) {
+        panes[i]?.setStretchFactor(i === 0 ? 4 : 1);
+      }
+    } catch {
+      // A renderer without pane stretching still draws correctly, just with
+      // the default split.
+    }
   }
 
   /**

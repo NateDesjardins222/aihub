@@ -174,3 +174,9 @@
   display: flex;
   align-items: center;
 }
+
+/* An indicator already on the chart: the gear says that clicking it edits
+   rather than adds another one. */
+.chdr-ind-item {
+  color: var(--text-secondary);
+}

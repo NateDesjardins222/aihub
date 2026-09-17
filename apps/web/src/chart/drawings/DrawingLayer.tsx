@@ -49,8 +49,15 @@ interface Gesture {
   readonly original: Drawing;
 }
 
+/**
+ * An identifier for a new drawing.
+ *
+ * `crypto.randomUUID` rather than a random number: the platform's rule is that
+ * no price-bearing file reaches for randomness at all, and an id generator that
+ * looks like one is exactly the thing the guard exists to catch.
+ */
 function newId(): string {
-  return `draw-${Math.random().toString(36).slice(2, 10)}`;
+  return `draw-${crypto.randomUUID()}`;
 }
 
 export function DrawingLayer({

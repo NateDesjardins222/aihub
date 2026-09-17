@@ -83,6 +83,14 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
    * legend, the engine and every calculation read genuine observations.
    */
   const motionRef = useRef<MarketMotion>(new MarketMotion());
+  /**
+   * Whether a live bar has arrived since the last history load.
+   *
+   * The history note can say things that stop being true - "the replay has not
+   * emitted any bars yet" is the obvious one - so the first genuine bar clears
+   * it rather than leaving a stale sentence on the chart.
+   */
+  const sawLiveBarRef = useRef(false);
 
   // Legend DOM targets, written to directly rather than through React.
   const priceRef = useRef<HTMLSpanElement>(null);
@@ -184,6 +192,7 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
     setHistoryNote(null);
     legendRef.current?.clear();
     seriesTimeframeRef.current = null;
+    sawLiveBarRef.current = false;
 
     void (async () => {
       try {
@@ -232,6 +241,10 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
       // what anything reads as a price is this.
       motion.observe(bar, performance.now());
       legendRef.current?.setLive(bar);
+      if (!sawLiveBarRef.current) {
+        sawLiveBarRef.current = true;
+        setHistoryNote(null);
+      }
     });
 
     let frame = requestAnimationFrame(function draw(now: number): void {

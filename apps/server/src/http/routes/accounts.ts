@@ -87,13 +87,17 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
       .from(accounts)
       .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
       .where(eq(accounts.userId, request.user!.id))
-      // Practice accounts first, largest first within each group. The terminal
-      // opens on the first account it is handed, so this lands it on the
-      // largest practice account - which is the $150,000 one - and it can be
-      // traded straight away with no setup.
+      // Practice accounts first, largest programme first within each group, so
+      // the terminal opens on the $150,000 practice account and can be traded
+      // straight away with no setup.
+      //
+      // Sorted by the TEMPLATE's size rather than the account's current
+      // starting balance: a practice session can reset an account to a
+      // different balance, and the account it opens on should not change
+      // because of something a session did last week.
       .orderBy(
         sql`case when ${accounts.accountType} = 'PRACTICE' then 0 else 1 end`,
-        desc(accounts.startingBalanceMicros),
+        desc(ruleTemplates.accountSizeMicros),
         accounts.createdAt,
       );
     return reply.send({

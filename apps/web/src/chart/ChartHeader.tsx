@@ -264,7 +264,12 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
           value={indicatorQuery}
           onChange={(event) => setIndicatorQuery(event.target.value)}
         />
-        {indicators.length > 0 ? (
+        {/*
+          The added list is hidden while searching: a query is a search of the
+          CATALOGUE, and leaving the instances in it made "rsi" match both the
+          indicator and the one already on the chart.
+        */}
+        {indicators.length > 0 && indicatorQuery.trim().length === 0 ? (
           <>
             <div className="pop-head">On this chart</div>
             {indicators.map((instance) => {
@@ -272,10 +277,14 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
               return (
                 <div className="chdr-ind-row" key={instance.id}>
                   <button
-                    className="pop-item"
-                    onClick={() => openSettings('SYMBOL')}
-                    title="Edit in Settings"
+                    className="pop-item chdr-ind-item"
+                    onClick={() => {
+                      openSettings('SYMBOL');
+                      indicatorMenu.close();
+                    }}
+                    title="Edit this indicator's settings"
                   >
+                    <Icon name="gear" size={11} />
                     {def?.name ?? instance.kind}
                     <span className="pop-item-sub">
                       {def?.params
@@ -306,7 +315,7 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
         ) : null}
         {indicatorMatches.length === 0 ? <div className="pop-empty">Nothing matches.</div> : null}
         {categories.map((category) => (
-          <div key={category}>
+          <div key={category} data-testid="indicator-catalogue">
             <div className="pop-head">{category}</div>
             {indicatorMatches
               .filter((def) => def.category === category)

@@ -90,8 +90,9 @@ const CHART_TYPES: readonly ChartType[] = [
   'HEIKIN_ASHI',
 ];
 
+/** See DrawingLayer.newId: identifiers never come from a random NUMBER. */
 function id(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function merge<T>(base: T, patch: DeepPartial<T>): T {

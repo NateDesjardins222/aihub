@@ -188,6 +188,11 @@ export function PracticePanel(): JSX.Element {
     try {
       await replayApi.pause().catch(() => undefined);
       await journalApi.endSession(active.id);
+      // Back to the live feed. Leaving the server on the replay provider means
+      // the terminal keeps showing a finished session's prices, and the next
+      // history load reports that the replay has emitted no bars - which is
+      // true, and useless.
+      await replayApi.useProvider('live').catch(() => undefined);
       // The mode's promise: whatever it hid while trading comes back now.
       reveal();
       setActive(null);

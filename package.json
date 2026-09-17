@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build && pnpm --filter @atlas/server build",
     "typecheck": "pnpm -r typecheck",
@@ -12,12 +14,14 @@
     "dev": "pnpm --parallel --filter @atlas/server --filter @atlas/web dev",
     "db:generate": "pnpm --filter @atlas/server db:generate",
     "db:migrate": "pnpm --filter @atlas/server db:migrate",
-    "db:seed": "pnpm --filter @atlas/server db:seed"
+    "db:seed": "pnpm --filter @atlas/server db:seed",
+    "test:browser": "node tests/browser/run.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "playwright": "1.56.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.9.2",
-    "vitest": "^5.0.1",
-    "tsx": "^4.19.2"
+    "vitest": "^5.0.1"
   }
 }
