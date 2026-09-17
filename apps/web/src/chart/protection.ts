@@ -34,13 +34,29 @@ export function estimatePnlMicros(
 /**
  * Which protective leg a level represents.
  *
- * For a long, above the entry is a target and below it is a stop; for a short
- * it is the other way round. A level exactly at the entry is neither.
+ * Measured against the MARKET, not the entry, because that is the rule the
+ * engine enforces: a stop for a long has to sit below the price it would exit
+ * at, or it is an instant market exit rather than protection - and the server
+ * refuses it as `PROTECTION_ON_WRONG_SIDE`.
+ *
+ * Deciding it against the entry instead made the chart promise something the
+ * server would then refuse: on a long that had moved against the trader,
+ * dragging just under the ENTRY - still above the market - previewed a stop,
+ * and the drop came back rejected with no stop on the chart.
+ *
+ * The entry is the fallback when there is no mark, which is the only case
+ * where the server also lets the level through unchecked.
  */
-export function legFor(position: ApiPosition, level: number): 'STOP' | 'TARGET' | null {
-  if (position.avgEntryPrice === null) return null;
-  if (level === position.avgEntryPrice) return null;
-  const above = level > position.avgEntryPrice;
+export function legFor(
+  position: ApiPosition,
+  level: number,
+  marketPrice?: number | null,
+): 'STOP' | 'TARGET' | null {
+  const reference =
+    marketPrice !== undefined && marketPrice !== null ? marketPrice : position.avgEntryPrice;
+  if (reference === null) return null;
+  if (level === reference) return null;
+  const above = level > reference;
   const long = position.signedQty > 0;
   return above === long ? 'TARGET' : 'STOP';
 }

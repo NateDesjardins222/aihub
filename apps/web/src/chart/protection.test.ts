@@ -51,6 +51,31 @@ describe('legFor', () => {
   it('has nothing to say about a position with no average price', () => {
     expect(legFor({ ...position(1), avgEntryPrice: null }, 20_010)).toBeNull();
   });
+
+  it('measures against the MARKET when it is given one', () => {
+    /*
+     * A long that has moved against the trader: entry 20,000, market 19,980.
+     *
+     * A level at 19,990 is below the entry - which used to make it a "stop" -
+     * but it is ABOVE the market, so as a stop it would exit immediately and
+     * the engine refuses it. Against the market it is what it actually is: a
+     * target, ten points above where the position would exit now.
+     */
+    const long = position(1);
+    expect(legFor(long, 19_990, 19_980)).toBe('TARGET');
+    expect(legFor(long, 19_970, 19_980)).toBe('STOP');
+
+    // And the mirror, on a short that has moved against the trader.
+    const short = position(-1);
+    expect(legFor(short, 20_010, 20_020)).toBe('TARGET');
+    expect(legFor(short, 20_030, 20_020)).toBe('STOP');
+  });
+
+  it('falls back to the entry when there is no mark, as the engine does', () => {
+    const long = position(1);
+    expect(legFor(long, 20_010, null)).toBe('TARGET');
+    expect(legFor(long, 19_990, null)).toBe('STOP');
+  });
 });
 
 describe('estimatePnlMicros', () => {

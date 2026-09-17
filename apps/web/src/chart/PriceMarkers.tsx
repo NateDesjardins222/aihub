@@ -584,7 +584,9 @@ export function PriceMarkers({
       const raw = adapter.yToPrice(event.clientY - rect.top);
       if (raw === null) return;
       const price = snap(raw, tickSize);
-      const leg = legFor(position, price);
+      // Against the market the position would exit at, which is the side the
+      // engine checks: see legFor.
+      const leg = legFor(position, price, position.markPrice);
       if (!leg) return;
 
       create.price = price;
