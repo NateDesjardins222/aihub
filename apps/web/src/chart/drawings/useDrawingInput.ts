@@ -1,19 +1,24 @@
 /**
- * Who owns the pointer.
+ * Pointer ownership, and what a gesture costs.
  *
- * This is the whole of the chart-freeze fix, stated as a rule:
+ * Two rules decide everything in this file.
  *
- *   The chart owns every gesture unless the drawings can prove a claim to it.
- *
+ * **The chart owns every gesture unless the drawings can prove a claim to it.**
  * Listeners are attached to the chart container in the CAPTURE phase, so this
  * machine sees a pointerdown before the renderer does and can decide. It calls
  * stopPropagation ONLY when the drawings are taking the gesture - arming a
  * tool, hitting an existing drawing, or continuing a drag. Every other press
- * falls straight through to the chart, so panning and zooming behave exactly as
- * they do with no drawings on screen.
+ * falls straight through, so panning and zooming behave exactly as they do
+ * with no drawings on screen.
  *
- * After a placement finishes the machine returns to IDLE unless the trader has
- * asked to stay in drawing mode, so the very next click pans.
+ * **A pointer move records a position; the FRAME does the work.** Pointer
+ * events arrive faster than the display refreshes, and the old machine did a
+ * full hit-test, a store write and a React render on each one: eighty moves of
+ * a drag produced ninety-two React commits that re-rendered the order ticket
+ * and the chart header (docs/chart-performance-audit.md). Now a move writes a
+ * coordinate into the live interaction record, one animation frame turns the
+ * latest coordinate into hover or geometry, and the store is written once, on
+ * release - which is also why a drag never touches the network.
  */
 import { useEffect, useRef } from 'react';
 import type { ChartAdapter } from '../ChartAdapter';
@@ -30,7 +35,20 @@ import {
   type Point,
   type Projection,
 } from './model';
-import type { PreviewState } from './DrawingCanvas';
+import { BoundsCache } from './bounds';
+import {
+  beginGesture,
+  endGesture,
+  invalidate,
+  liveState,
+  resetInteraction,
+  setHover,
+  setPending,
+  setPointer,
+  setPreview,
+  updateDraft,
+  type Gesture,
+} from './interaction';
 
 export type InputState = 'IDLE' | 'PLACING' | 'DRAGGING';
 
@@ -40,9 +58,9 @@ export interface DrawingInputOptions {
   readonly symbol: string;
   readonly tickSize: number;
   readonly ready: boolean;
-  /** Written every frame for the canvas to paint. */
-  readonly previewRef: React.RefObject<PreviewState | null>;
-  /** Right-click on a drawing, or on empty chart with nothing under it. */
+  /** Shared with the canvas, so both agree what is under the pointer. */
+  readonly boundsRef: React.RefObject<BoundsCache>;
+  /** Right-click on a drawing. */
   readonly onContextMenu?: (event: ContextMenuRequest) => void;
   /** Double-click on a drawing: the trader wants its settings. */
   readonly onOpenProperties?: (drawingId: string) => void;
@@ -55,49 +73,61 @@ export interface ContextMenuRequest {
   readonly y: number;
 }
 
-interface Gesture {
-  readonly mode: 'MOVE' | 'RESHAPE';
-  readonly drawingId: string;
-  readonly anchorIndex: number;
-  readonly from: Anchor;
-  readonly original: Drawing;
-}
-
 function newId(): string {
   return `draw-${crypto.randomUUID()}`;
 }
 
 export function useDrawingInput(options: DrawingInputOptions): void {
-  const { adapterRef, containerRef, symbol, tickSize, ready, previewRef } = options;
+  const { adapterRef, containerRef, symbol, tickSize, ready, boundsRef } = options;
 
-  // Everything the listeners need, in a ref: the listeners are attached once
-  // and must never be rebound on a store change, or a gesture in flight would
-  // lose its handlers mid-drag.
-  const live = useRef({
+  // Everything the listeners need, in a ref: they are attached once and must
+  // never be rebound on a store change, or a gesture in flight would lose its
+  // handlers mid-drag.
+  const env = useRef({
     symbol,
     tickSize,
     onContextMenu: options.onContextMenu,
     onOpenProperties: options.onOpenProperties,
   });
-  live.current.symbol = symbol;
-  live.current.tickSize = tickSize;
-  live.current.onContextMenu = options.onContextMenu;
-  live.current.onOpenProperties = options.onOpenProperties;
+  env.current.symbol = symbol;
+  env.current.tickSize = tickSize;
+  env.current.onContextMenu = options.onContextMenu;
+  env.current.onOpenProperties = options.onOpenProperties;
 
   const stateRef = useRef<InputState>('IDLE');
-  const pendingRef = useRef<Anchor[]>([]);
-  const gestureRef = useRef<Gesture | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !ready) return;
 
+    const live = liveState();
     const projection = (): Projection | null => adapterRef.current?.projection() ?? null;
 
-    const pointAt = (event: PointerEvent | MouseEvent): Point => {
-      const rect = container.getBoundingClientRect();
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    let frame = 0;
+    let cursor = '';
+
+    /*
+     * The container's position, cached.
+     *
+     * getBoundingClientRect forces layout, and calling it on every pointer
+     * event meant the browser re-laid out the page several times per painted
+     * frame while the mouse moved - visible in the profile as tens of
+     * milliseconds of layout during a crosshair sweep. The rectangle only
+     * changes when the window or the panels do, so it is measured then.
+     */
+    let rect = container.getBoundingClientRect();
+    const remeasure = (): void => {
+      rect = container.getBoundingClientRect();
     };
+    const observer = new ResizeObserver(remeasure);
+    observer.observe(container);
+    window.addEventListener('resize', remeasure);
+    window.addEventListener('scroll', remeasure, true);
+
+    const pointAt = (event: PointerEvent | MouseEvent): Point => ({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
 
     const anchorAt = (point: Point): Anchor | null => {
       const adapter = adapterRef.current;
@@ -107,37 +137,52 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       const price = view.yToPrice(point.y);
       if (time === null || price === null) return null;
       const raw: Anchor = { time, price };
-      if (!useChartStore.getState().magnet) return raw;
+      const store = useChartStore.getState();
+      if (store.magnet === 'OFF') return raw;
       // The magnet snaps to a price the bar actually printed, never between.
-      return magnetAnchor(raw, adapter.barNear(time), live.current.tickSize * 8);
+      // A weak magnet only reaches as far as a trader would expect it to; a
+      // strong one takes the nearest of the four whatever the distance.
+      const reach = store.magnet === 'STRONG' ? Number.POSITIVE_INFINITY : env.current.tickSize * 6;
+      return magnetAnchor(raw, adapter.barNear(time), reach);
     };
 
     const mine = (): Drawing[] =>
-      useChartStore.getState().drawings.filter((d) => d.symbol === live.current.symbol);
+      useChartStore.getState().drawings.filter((d) => d.symbol === env.current.symbol);
 
-    /** The topmost drawing under the cursor, most recent first. */
+    /**
+     * The topmost drawing under the cursor, most recent first.
+     *
+     * The cached screen box rejects everything the pointer is nowhere near
+     * before any geometry runs, which is what keeps this affordable with a
+     * chart full of objects.
+     */
     const pick = (point: Point) => {
       const view = projection();
       if (!view) return null;
+      const bounds = boundsRef.current;
+      bounds.sync(view);
       const selectedId = useChartStore.getState().selectedDrawingId;
-      for (const drawing of [...mine()].reverse()) {
+      const candidates = mine();
+      for (let i = candidates.length - 1; i >= 0; i -= 1) {
+        const drawing = candidates[i]!;
+        if (drawing.hidden) continue;
+        if (!bounds.mayHit(drawing, view, point.x, point.y)) continue;
         const hit = hitTest(drawing, view, point, drawing.id === selectedId);
         if (hit) return { drawing, hit };
       }
       return null;
     };
 
-    const setPreview = (patch: Partial<PreviewState>): void => {
-      previewRef.current = {
-        drawing: patch.drawing ?? previewRef.current?.drawing ?? null,
-        hoverId: patch.hoverId !== undefined ? patch.hoverId : (previewRef.current?.hoverId ?? null),
-      };
+    const setCursor = (next: string): void => {
+      if (cursor === next) return;
+      cursor = next;
+      container.style.cursor = next;
     };
 
     const finishPlacement = (): void => {
       stateRef.current = 'IDLE';
-      pendingRef.current = [];
-      setPreview({ drawing: null });
+      setPending([]);
+      setPreview(null);
       const store = useChartStore.getState();
       // Back to the cursor unless the trader asked to stay armed, so the next
       // press pans the chart rather than starting another object.
@@ -146,29 +191,92 @@ export function useDrawingInput(options: DrawingInputOptions): void {
 
     const cancelPlacement = (): void => {
       stateRef.current = 'IDLE';
-      pendingRef.current = [];
-      setPreview({ drawing: null });
+      resetInteraction();
     };
 
+    // --- the frame: all the work a pointer move implies ---------------------
+    const onFrame = (): void => {
+      frame = requestAnimationFrame(onFrame);
+      if (!live.pointerMoved || !live.pointer) return;
+      live.pointerMoved = false;
+
+      const point = live.pointer;
+      const store = useChartStore.getState();
+
+      // Mid-placement: preview to the cursor.
+      if (stateRef.current === 'PLACING' && store.tool !== 'CURSOR') {
+        const view = projection();
+        if (!view) return;
+        const kind = store.tool as DrawingKind;
+        const time = view.xToTime(point.x);
+        const price = view.yToPrice(point.y);
+        const anchors = [...live.pending];
+        if (time !== null && price !== null) anchors.push({ time, price });
+        const defaults = store.newDrawingDefaults(kind);
+        setPreview({
+          id: 'preview',
+          kind,
+          symbol: env.current.symbol,
+          anchors,
+          style: defaults.style,
+          options: defaults.options,
+          text: '',
+          locked: false,
+          hidden: false,
+          timeframes: [],
+          createdAt: 0,
+        });
+        return;
+      }
+
+      // Mid-drag: the working copy moves, the store does not.
+      const gesture = live.gesture;
+      if (gesture) {
+        const anchor = anchorAt(point);
+        if (!anchor) return;
+        const next =
+          gesture.kind === 'MOVE'
+            ? translate(
+                gesture.original,
+                anchor.time - gesture.from.time,
+                anchor.price - gesture.from.price,
+              )
+            : moveAnchor(gesture.original, gesture.anchorIndex, anchor);
+        updateDraft(next);
+        return;
+      }
+
+      // Idle: hover only, and only with the cursor tool armed.
+      if (store.tool !== 'CURSOR') {
+        setCursor('crosshair');
+        return;
+      }
+      const found = pick(point);
+      setHover(found?.drawing.id ?? null);
+      setCursor(found ? (found.hit.kind === 'HANDLE' ? 'grab' : 'pointer') : '');
+    };
+
+    // --- pointer events: record, decide ownership, never compute ------------
     const onPointerDown = (event: PointerEvent): void => {
       if (event.button !== 0) return;
       const store = useChartStore.getState();
       const view = projection();
       if (!view) return;
       const point = pointAt(event);
+      setPointer(point);
 
-      // --- a tool is armed: the drawings take it ---------------------------
+      // A tool is armed: the drawings take it.
       if (store.tool !== 'CURSOR') {
         const anchor = anchorAt(point);
         if (!anchor) return;
         const kind = store.tool as DrawingKind;
-        const anchors = [...pendingRef.current, anchor];
+        const anchors = [...live.pending, anchor];
         if (anchors.length >= ANCHOR_COUNT[kind]) {
           const defaults = store.newDrawingDefaults(kind);
           store.addDrawing({
             id: newId(),
             kind,
-            symbol: live.current.symbol,
+            symbol: env.current.symbol,
             anchors,
             style: defaults.style,
             options: defaults.options,
@@ -180,7 +288,7 @@ export function useDrawingInput(options: DrawingInputOptions): void {
           });
           finishPlacement();
         } else {
-          pendingRef.current = anchors;
+          setPending(anchors);
           stateRef.current = 'PLACING';
         }
         event.preventDefault();
@@ -188,7 +296,7 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         return;
       }
 
-      // --- the cursor: only take it if something is actually under it ------
+      // The cursor: only take the gesture if something is actually under it.
       const found = pick(point);
       if (!found) {
         // Nothing hit. Clear the selection and LET THE CHART HAVE IT: no
@@ -206,89 +314,39 @@ export function useDrawingInput(options: DrawingInputOptions): void {
 
       const anchor = anchorAt(point);
       if (!anchor) return;
-      gestureRef.current = {
-        mode: found.hit.kind === 'HANDLE' ? 'RESHAPE' : 'MOVE',
+      const gesture: Gesture = {
+        kind: found.hit.kind === 'HANDLE' ? 'RESHAPE' : 'MOVE',
         drawingId: found.drawing.id,
         anchorIndex: found.hit.kind === 'HANDLE' ? found.hit.index : 0,
         from: anchor,
         original: found.drawing,
       };
+      beginGesture(gesture, found.drawing);
       stateRef.current = 'DRAGGING';
+      setCursor('grabbing');
       event.preventDefault();
       event.stopPropagation();
     };
 
     const onPointerMove = (event: PointerEvent): void => {
-      const store = useChartStore.getState();
-      const point = pointAt(event);
-
-      // Mid-placement: preview to the cursor.
-      if (stateRef.current === 'PLACING' && store.tool !== 'CURSOR') {
-        const view = projection();
-        const kind = store.tool as DrawingKind;
-        if (view) {
-          const time = view.xToTime(point.x);
-          const price = view.yToPrice(point.y);
-          const anchors = [...pendingRef.current];
-          if (time !== null && price !== null) anchors.push({ time, price });
-          const defaults = store.newDrawingDefaults(kind);
-          setPreview({
-            drawing: {
-              id: 'preview',
-              kind,
-              symbol: live.current.symbol,
-              anchors,
-              style: defaults.style,
-              options: defaults.options,
-              text: '',
-              locked: false,
-              hidden: false,
-              timeframes: [],
-              createdAt: 0,
-            },
-          });
-        }
-        return;
-      }
-
-      // Mid-drag: move or reshape. The store update is cheap; the repaint is
-      // the animation frame's job.
-      const gesture = gestureRef.current;
-      if (gesture) {
-        const anchor = anchorAt(point);
-        if (!anchor) return;
-        const next =
-          gesture.mode === 'MOVE'
-            ? translate(
-                gesture.original,
-                anchor.time - gesture.from.time,
-                anchor.price - gesture.from.price,
-              )
-            : moveAnchor(gesture.original, gesture.anchorIndex, anchor);
-        store.updateDrawing(gesture.drawingId, next);
+      setPointer(pointAt(event));
+      // A gesture in flight belongs to the drawings; the chart must not also
+      // pan under it.
+      if (live.gesture) {
         event.preventDefault();
         event.stopPropagation();
-        return;
       }
-
-      // Idle: hover highlight only. Never swallowed, so the chart's own
-      // crosshair keeps tracking.
-      if (store.tool !== 'CURSOR') return;
-      const found = pick(point);
-      const hoverId = found?.drawing.id ?? null;
-      if (hoverId !== (previewRef.current?.hoverId ?? null)) setPreview({ hoverId });
-      container.style.cursor = hoverId ? 'pointer' : '';
     };
 
     /**
      * Right-click.
      *
      * The menu is the one place a locked or hidden object can be reached, so
-     * the press selects whatever is under it even when a drag would not.
-     * With nothing under the cursor the chart keeps its own menu.
+     * the press selects whatever is under it even when a drag would not. With
+     * nothing under the cursor the chart keeps its own menu.
      */
     const onContextMenu = (event: MouseEvent): void => {
-      const handler = live.current.onContextMenu;
+      const handler = env.current.onContextMenu;
       if (!handler) return;
       const found = pick(pointAt(event));
       if (!found) return;
@@ -299,7 +357,7 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     };
 
     const onDoubleClick = (event: MouseEvent): void => {
-      const handler = live.current.onOpenProperties;
+      const handler = env.current.onOpenProperties;
       if (!handler) return;
       if (useChartStore.getState().tool !== 'CURSOR') return;
       const found = pick(pointAt(event));
@@ -310,12 +368,31 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       handler(found.drawing.id);
     };
 
-    const endGesture = (): void => {
-      if (!gestureRef.current) return;
-      gestureRef.current = null;
+    /**
+     * The end of a drag: ONE store write, ONE undo step, one save.
+     *
+     * Everything between pointerdown and here happened in the live record, so
+     * this is the first moment anything outside the canvas hears about it.
+     */
+    const onPointerUp = (): void => {
+      if (!live.gesture) return;
+      const draft = live.draft;
+      const gesture = endGesture();
       stateRef.current = 'IDLE';
-      // The drawing moved, so what is under the cursor may have changed.
-      useChartStore.getState().commitHistory();
+      setCursor('');
+      if (!gesture || !draft) return;
+
+      const store = useChartStore.getState();
+      const moved = draft.anchors.some(
+        (anchor, index) =>
+          anchor.time !== gesture.original.anchors[index]?.time ||
+          anchor.price !== gesture.original.anchors[index]?.price,
+      );
+      if (!moved) return;
+
+      store.updateDrawing(gesture.drawingId, { anchors: draft.anchors });
+      store.commitHistory();
+      boundsRef.current.forget(gesture.drawingId);
     };
 
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -332,7 +409,11 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         // it, and the selection it was opened against stays.
         if (document.querySelector('.dm-menu, .popover')) return;
         if (stateRef.current === 'PLACING') cancelPlacement();
-        else if (store.tool !== 'CURSOR') store.setTool('CURSOR');
+        else if (live.gesture) {
+          // Abandon a drag in flight: the object snaps back to where it was.
+          endGesture();
+          stateRef.current = 'IDLE';
+        } else if (store.tool !== 'CURSOR') store.setTool('CURSOR');
         else if (store.selectedDrawingId) store.select(null);
         return;
       }
@@ -343,6 +424,16 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         return;
       }
       const meta = event.ctrlKey || event.metaKey;
+      if (meta && event.key.toLowerCase() === 'c' && store.selectedDrawingId) {
+        store.copyDrawing(store.selectedDrawingId);
+        event.preventDefault();
+        return;
+      }
+      if (meta && event.key.toLowerCase() === 'v') {
+        store.pasteDrawing(env.current.symbol);
+        event.preventDefault();
+        return;
+      }
       if (meta && event.key.toLowerCase() === 'd' && store.selectedDrawingId) {
         store.duplicateDrawing(store.selectedDrawingId);
         event.preventDefault();
@@ -361,21 +452,26 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     container.addEventListener('contextmenu', onContextMenu, true);
     container.addEventListener('dblclick', onDoubleClick, true);
     // The end of a drag can happen anywhere, including outside the chart.
-    window.addEventListener('pointerup', endGesture);
-    window.addEventListener('pointercancel', endGesture);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     window.addEventListener('keydown', onKeyDown);
+    frame = requestAnimationFrame(onFrame);
 
     return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('resize', remeasure);
+      window.removeEventListener('scroll', remeasure, true);
       container.removeEventListener('pointerdown', onPointerDown, true);
       container.removeEventListener('pointermove', onPointerMove, true);
       container.removeEventListener('contextmenu', onContextMenu, true);
       container.removeEventListener('dblclick', onDoubleClick, true);
-      window.removeEventListener('pointerup', endGesture);
-      window.removeEventListener('pointercancel', endGesture);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
       window.removeEventListener('keydown', onKeyDown);
       container.style.cursor = '';
     };
-  }, [adapterRef, containerRef, previewRef, ready]);
+  }, [adapterRef, boundsRef, containerRef, ready]);
 
   // The armed cursor is a class on the container rather than a style write, so
   // it cannot fight the hover cursor above.
@@ -395,8 +491,7 @@ export function useDrawingInput(options: DrawingInputOptions): void {
    * nothing else ever cleared it. Changing the tool is an abandonment.
    */
   useEffect(() => {
-    stateRef.current = 'IDLE';
-    pendingRef.current = [];
-    if (previewRef.current) previewRef.current = { ...previewRef.current, drawing: null };
-  }, [previewRef, tool]);
+    resetInteraction();
+    invalidate();
+  }, [tool]);
 }

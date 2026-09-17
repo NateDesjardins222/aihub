@@ -302,6 +302,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.chart = null;
     this.priceSeries = null;
     this.volumeSeries = null;
+    // The cached projection closes over the chart, so it goes with it.
+    this.projectionCache = null;
+    this.spacingCache = null;
     this.bars = [];
     this.byTime.clear();
   }
@@ -831,8 +834,15 @@ export class LightweightChartsAdapter implements ChartAdapter {
     return spacing > 0 && current.time - previous.time > spacing * 4;
   }
 
+  /** Median bar gap, recomputed only when the series changes. */
+  private spacingCache: { count: number; first: number; value: number } | null = null;
+
   private typicalSpacing(): number {
     if (this.bars.length < 3) return 0;
+    const cached = this.spacingCache;
+    if (cached && cached.count === this.bars.length && cached.first === this.bars[0]!.time) {
+      return cached.value;
+    }
     // The median of the first few gaps: robust to the one big gap we are
     // looking for, unlike the mean.
     const gaps: number[] = [];
@@ -840,7 +850,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
       gaps.push(this.bars[i]!.time - this.bars[i - 1]!.time);
     }
     gaps.sort((a, b) => a - b);
-    return gaps[Math.floor(gaps.length / 2)] ?? 0;
+    const value = gaps[Math.floor(gaps.length / 2)] ?? 0;
+    this.spacingCache = { count: this.bars.length, first: this.bars[0]!.time, value };
+    return value;
   }
 
   indicatorLegend(): ReadonlyArray<{ id: string; label: string; color: string; value: string }> {
@@ -1028,13 +1040,33 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * the user pans, and a stale projection puts a drawing somewhere the market
    * never was.
    */
+  /**
+   * The projection object, built once.
+   *
+   * Four separate animation-frame loops ask for a projection, so building a
+   * fresh object with six closures on every call meant a few hundred
+   * allocations a second and showed up as real time in a CPU profile. The
+   * closures only read the adapter, so one object serves for the life of the
+   * chart; the two values that are not closures are refreshed on each call.
+   */
+  private projectionCache: ChartProjection | null = null;
+
   projection(): ChartProjection | null {
     const chart = this.chart;
     const series = this.priceSeries;
     const container = this.container;
     if (!chart || !series || !container) return null;
+
+    const cached = this.projectionCache;
+    if (cached) {
+      const mutable = cached as { width: number; height: number };
+      mutable.width = Math.max(0, container.clientWidth - this.priceScaleWidth());
+      mutable.height = container.clientHeight;
+      return cached;
+    }
+
     const timeScale = chart.timeScale();
-    return {
+    this.projectionCache = {
       /**
        * A time to a pixel, INCLUDING times outside the loaded series.
        *
@@ -1076,6 +1108,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
       width: Math.max(0, container.clientWidth - this.priceScaleWidth()),
       height: container.clientHeight,
     };
+    return this.projectionCache;
   }
 
   /**

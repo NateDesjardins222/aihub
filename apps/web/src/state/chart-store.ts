@@ -34,6 +34,8 @@ import {
 
 export type DrawingTool = DrawingKind | 'CURSOR';
 
+export type MagnetMode = 'OFF' | 'WEAK' | 'STRONG';
+
 interface ChartState {
   appearance: ChartAppearance;
   chartType: ChartType;
@@ -44,7 +46,15 @@ interface ChartState {
   tool: DrawingTool;
   /** Keep the chosen tool armed for repeated use. */
   toolSticky: boolean;
-  magnet: boolean;
+  /**
+   * How hard an anchor is pulled to a price the bar printed.
+   *
+   * OFF leaves it exactly where the pointer is. WEAK only snaps when the
+   * pointer is already close to an open, high, low or close, which is what
+   * makes it feel like help rather than interference. STRONG always takes the
+   * nearest of the four.
+   */
+  magnet: MagnetMode;
   selectedDrawingId: string | null;
   /** Tools the trader pinned to the top of the rail. */
   favouriteTools: readonly DrawingKind[];
@@ -61,7 +71,14 @@ interface ChartState {
   toggleIndicator: (id: string) => void;
 
   setTool: (tool: DrawingTool, sticky?: boolean) => void;
-  toggleMagnet: () => void;
+  setMagnet: (mode: MagnetMode) => void;
+  /** Cycles OFF -> WEAK -> STRONG -> OFF, for the toolbar button. */
+  cycleMagnet: () => void;
+  /** The drawing on the clipboard, if any. Copy keeps style and geometry. */
+  clipboard: Drawing | null;
+  copyDrawing: (id: string) => void;
+  /** Paste onto an instrument, offset so the copy is visible as a copy. */
+  pasteDrawing: (symbol: string) => void;
   toggleFavouriteTool: (kind: DrawingKind) => void;
   /** Undo history, as whole drawing sets. See the note on pushHistory. */
   history: readonly (readonly Drawing[])[];
@@ -124,7 +141,7 @@ export interface StoredChart {
   drawings?: readonly Drawing[];
   favouriteTools?: readonly DrawingKind[];
   defaultStyle?: Partial<DrawingStyle>;
-  magnet?: boolean;
+  magnet?: unknown;
   templates?: unknown;
   toolDefaults?: unknown;
 }
@@ -188,7 +205,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   drawings: [],
   tool: 'CURSOR',
   toolSticky: false,
-  magnet: true,
+  magnet: 'WEAK',
+  clipboard: null,
   selectedDrawingId: null,
   favouriteTools: DEFAULT_FAVOURITE_TOOLS,
   defaultStyle: DEFAULT_STYLE,
@@ -245,8 +263,43 @@ export const useChartStore = create<ChartState>((set, get) => ({
     set({ tool, toolSticky: sticky, selectedDrawingId: tool === 'CURSOR' ? get().selectedDrawingId : null });
   },
 
-  toggleMagnet() {
-    set({ magnet: !get().magnet });
+  setMagnet(mode) {
+    set({ magnet: mode });
+  },
+
+  cycleMagnet() {
+    const order: MagnetMode[] = ['OFF', 'WEAK', 'STRONG'];
+    const index = order.indexOf(get().magnet);
+    set({ magnet: order[(index + 1) % order.length]! });
+  },
+
+  copyDrawing(drawingId) {
+    const drawing = get().drawings.find((item) => item.id === drawingId);
+    if (!drawing) return;
+    set({ clipboard: { ...drawing, anchors: drawing.anchors.map((anchor) => ({ ...anchor })) } });
+  },
+
+  /**
+   * Paste.
+   *
+   * Onto whichever instrument is in front of the trader, offset slightly in
+   * price so the copy is visibly a copy rather than sitting invisibly on top
+   * of the original.
+   */
+  pasteDrawing(symbol) {
+    const source = get().clipboard;
+    if (!source) return;
+    const span = source.anchors.reduce((max, anchor) => Math.max(max, Math.abs(anchor.price)), 0);
+    const nudge = span * 0.004;
+    const copy: Drawing = {
+      ...source,
+      id: id('draw'),
+      symbol,
+      anchors: source.anchors.map((anchor) => ({ ...anchor, price: anchor.price - nudge })),
+      createdAt: Date.now(),
+    };
+    set({ drawings: [...get().drawings, copy], selectedDrawingId: copy.id });
+    get().commitHistory();
   },
 
   toggleFavouriteTool(kind) {
@@ -474,7 +527,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
           ? stored.favouriteTools.filter((kind) => kind in ANCHOR_COUNT)
           : DEFAULT_FAVOURITE_TOOLS,
       defaultStyle: { ...DEFAULT_STYLE, ...(stored.defaultStyle ?? {}) },
-      magnet: typeof stored.magnet === 'boolean' ? stored.magnet : true,
+      magnet: readMagnet(stored.magnet),
       templates: sanitizeTemplates(stored.templates),
       toolDefaults: sanitizeToolDefaults(stored.toolDefaults),
       // A restored workspace is the first undo step, not something to undo to.
@@ -536,6 +589,13 @@ function sanitizeToolDefaults(raw: unknown): Record<string, ToolDefault> {
     };
   }
   return out;
+}
+
+/** A workspace saved before magnet modes existed carries a boolean. */
+function readMagnet(raw: unknown): MagnetMode {
+  if (raw === 'OFF' || raw === 'WEAK' || raw === 'STRONG') return raw;
+  if (raw === false) return 'OFF';
+  return 'WEAK';
 }
 
 /** Stored preferences are untrusted input: an unknown indicator is dropped. */

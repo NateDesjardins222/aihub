@@ -45,6 +45,12 @@ const DASHES: ReadonlyArray<{ id: 'SOLID' | 'DASHED' | 'DOTTED'; label: string }
   { id: 'DOTTED', label: 'Dotted' },
 ];
 
+const MAGNET_HINT: Record<'OFF' | 'WEAK' | 'STRONG', string> = {
+  OFF: 'Magnet off: anchors go exactly where you click',
+  WEAK: 'Weak magnet: snaps to an open, high, low or close when you are close to one',
+  STRONG: 'Strong magnet: always snaps to the nearest open, high, low or close',
+};
+
 const SWATCHES = [
   '#4d8dff',
   '#2ec4a6',
@@ -59,7 +65,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
   const tool = useChartStore((s) => s.tool);
   const setTool = useChartStore((s) => s.setTool);
   const magnet = useChartStore((s) => s.magnet);
-  const toggleMagnet = useChartStore((s) => s.toggleMagnet);
+  const cycleMagnet = useChartStore((s) => s.cycleMagnet);
   const favourites = useChartStore((s) => s.favouriteTools);
   const toggleFavouriteTool = useChartStore((s) => s.toggleFavouriteTool);
   const drawings = useChartStore((s) => s.drawings);
@@ -161,14 +167,13 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
       <div className="rail-sep" />
 
       <button
-        className={`rail-btn ${magnet ? 'rail-btn-on' : ''}`}
-        onClick={toggleMagnet}
-        title={
-          magnet
-            ? 'Magnet on: anchors snap to a price the bar printed'
-            : 'Magnet off: anchors go exactly where you click'
-        }
+        className={`rail-btn ${magnet === 'OFF' ? '' : 'rail-btn-on'} ${
+          magnet === 'STRONG' ? 'rail-btn-strong' : ''
+        }`}
+        onClick={cycleMagnet}
+        title={MAGNET_HINT[magnet]}
         aria-label="Magnet"
+        data-magnet={magnet}
       >
         <Icon name="magnet" />
       </button>

@@ -2,20 +2,26 @@
  * The drawing surface.
  *
  * A painting surface and NEVER an input surface: `pointer-events: none` is not
- * conditional. The previous version turned pointer events on as soon as any
+ * conditional. An earlier version turned pointer events on as soon as any
  * drawing existed, which meant the canvas swallowed every pan and zoom - the
- * chart appeared to freeze the moment a trend line was drawn. Input is owned by
- * useDrawingInput, which decides per gesture whether the chart or the drawings
- * should have it.
+ * chart appeared to freeze the moment a trend line was drawn. Input is owned
+ * by useDrawingInput, which decides per gesture whether the chart or the
+ * drawings should have it.
  *
- * It repaints in an animation frame, like the rest of the terminal: panning the
- * chart moves a hundred drawings without a single React render.
+ * It repaints on CHANGE, not on the clock. The old loop cleared and redrew
+ * every frame whether or not anything had moved, which cost a fifth of the
+ * main thread while the terminal sat still (docs/chart-performance-audit.md).
+ * Now each frame compares a cheap signature - the drawings, the selection, the
+ * live gesture, the hover, and two reference conversions that change whenever
+ * the view does - and returns immediately when it matches.
  */
 import { useEffect, useRef, type JSX } from 'react';
 import type { ChartAdapter } from '../ChartAdapter';
 import { useChartStore } from '../../state/chart-store';
 import { drawDrawing, type PaintState } from './paint';
-import type { Drawing, Projection } from './model';
+import { projectionSignature, type BoundsCache } from './bounds';
+import { liveState, paintedVersion } from './interaction';
+import type { Projection } from './model';
 import './DrawingCanvas.css';
 
 export interface DrawingCanvasProps {
@@ -23,15 +29,8 @@ export interface DrawingCanvasProps {
   readonly symbol: string;
   readonly pricePrecision: number;
   readonly ready: boolean;
-  /** Live gesture state, written by the input machine, read every frame. */
-  readonly previewRef: React.RefObject<PreviewState | null>;
-}
-
-/** What the input machine wants drawn on top of the committed drawings. */
-export interface PreviewState {
-  /** A drawing being placed, or the ghost of one being dragged. */
-  readonly drawing: Drawing | null;
-  readonly hoverId: string | null;
+  /** Shared with the input machine, so both agree where things are. */
+  readonly boundsRef: React.RefObject<BoundsCache>;
 }
 
 export function DrawingCanvas({
@@ -39,29 +38,72 @@ export function DrawingCanvas({
   symbol,
   pricePrecision,
   ready,
-  previewRef,
+  boundsRef,
 }: DrawingCanvasProps): JSX.Element | null {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawings = useChartStore((s) => s.drawings);
-  const selectedId = useChartStore((s) => s.selectedDrawingId);
-  const tool = useChartStore((s) => s.tool);
 
   // Read by the frame loop, which must not wait for a render to be current.
-  const liveRef = useRef({ drawings, selectedId, symbol, tool });
-  liveRef.current.drawings = drawings;
-  liveRef.current.selectedId = selectedId;
+  // Subscribing transiently rather than with a hook keeps a drawing edit from
+  // re-rendering this component at all: the canvas is painted, not rendered.
+  const liveRef = useRef({
+    drawings: useChartStore.getState().drawings,
+    selectedId: useChartStore.getState().selectedDrawingId,
+    tool: useChartStore.getState().tool,
+    symbol,
+    pricePrecision,
+  });
   liveRef.current.symbol = symbol;
-  liveRef.current.tool = tool;
+  liveRef.current.pricePrecision = pricePrecision;
+
+  useEffect(() => {
+    const apply = (state: ReturnType<typeof useChartStore.getState>): void => {
+      liveRef.current.drawings = state.drawings;
+      liveRef.current.selectedId = state.selectedDrawingId;
+      liveRef.current.tool = state.tool;
+    };
+    apply(useChartStore.getState());
+    return useChartStore.subscribe(apply);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
     let frame = 0;
+    let lastSignature = '';
+    // Identity of the drawing array last painted. Zustand replaces the array
+    // on every edit, so comparing references is a complete change check.
+    let lastDrawings = liveRef.current.drawings;
+    let drawingsEpoch = 0;
 
     const render = (): void => {
       frame = requestAnimationFrame(render);
       const canvas = canvasRef.current;
       const projection = adapterRef.current?.projection() ?? null;
       if (!canvas || !projection) return;
+
+      const live = liveState();
+      const state = liveRef.current;
+
+      /*
+       * Everything that can change what is on screen, in one string. The two
+       * conversions inside projectionSignature catch a pan, a zoom, a price
+       * scale change and a resize; the rest catch an edit, a selection, a
+       * gesture and a hover.
+       */
+      if (state.drawings !== lastDrawings) {
+        lastDrawings = state.drawings;
+        drawingsEpoch += 1;
+      }
+      const signature = [
+        projectionSignature(projection),
+        drawingsEpoch,
+        state.selectedId ?? '-',
+        state.tool,
+        state.symbol,
+        live.version,
+        live.hoverId ?? '-',
+      ].join('|');
+      if (signature === lastSignature) return;
+      lastSignature = signature;
 
       const ratio = window.devicePixelRatio || 1;
       const width = projection.width;
@@ -81,30 +123,32 @@ export function DrawingCanvas({
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
-      const live = liveRef.current;
-      const preview = previewRef.current;
+      boundsRef.current.sync(projection);
 
-      for (const drawing of live.drawings) {
-        if (drawing.symbol !== live.symbol || drawing.hidden) continue;
-        const state: PaintState =
-          drawing.id === live.selectedId
+      for (const stored of state.drawings) {
+        if (stored.symbol !== state.symbol || stored.hidden) continue;
+        // The gesture's working copy while one is in flight, so a drag paints
+        // at pointer rate without the store hearing about it.
+        const drawing = paintedVersion(stored);
+        const paintState: PaintState =
+          drawing.id === state.selectedId
             ? 'SELECTED'
-            : drawing.id === preview?.hoverId
+            : drawing.id === live.hoverId
               ? 'HOVER'
               : 'NORMAL';
-        drawDrawing(ctx, drawing, projection as Projection, state, pricePrecision);
+        drawDrawing(ctx, drawing, projection as Projection, paintState, state.pricePrecision);
       }
 
       // The preview belongs to a placement in progress. With no tool armed
       // there is no placement, so a stale one is never painted.
-      if (preview?.drawing && live.tool !== 'CURSOR') {
-        drawDrawing(ctx, preview.drawing, projection as Projection, 'PENDING', pricePrecision);
+      if (live.preview && state.tool !== 'CURSOR') {
+        drawDrawing(ctx, live.preview, projection as Projection, 'PENDING', state.pricePrecision);
       }
     };
 
     frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
-  }, [adapterRef, pricePrecision, previewRef, ready]);
+  }, [adapterRef, boundsRef, ready]);
 
   if (!ready) return null;
   return <canvas ref={canvasRef} className="draw-canvas" data-testid="drawing-layer" />;

@@ -8,7 +8,8 @@ import { fetchBars, fetchSymbolStatus, type FreshnessInfo } from '../market/api'
 import { ChartLegend } from './ChartLegend';
 import { ChartHeader } from '../chart/ChartHeader';
 import { PriceMarkers } from '../chart/PriceMarkers';
-import { DrawingCanvas, type PreviewState } from '../chart/drawings/DrawingCanvas';
+import { DrawingCanvas } from '../chart/drawings/DrawingCanvas';
+import { BoundsCache } from '../chart/drawings/bounds';
 import { useDrawingInput, type ContextMenuRequest } from '../chart/drawings/useDrawingInput';
 import { DrawingStyleBar } from '../chart/drawings/DrawingStyleBar';
 import { DrawingContextMenu } from '../chart/drawings/DrawingContextMenu';
@@ -94,7 +95,12 @@ export function ChartPanel(): JSX.Element {
    */
   const motionRef = useRef<MarketMotion>(new MarketMotion());
   /** Live drawing gesture state, shared between the input machine and the canvas. */
-  const previewRef = useRef<PreviewState | null>(null);
+  /*
+   * One bounds cache, shared by the canvas that paints the drawings and the
+   * input machine that hit-tests them, so a pointer move never re-projects
+   * geometry the frame has already projected.
+   */
+  const boundsRef = useRef<BoundsCache>(new BoundsCache());
   /**
    * Whether a live bar has arrived since the last history load.
    *
@@ -159,9 +165,31 @@ export function ChartPanel(): JSX.Element {
     adapter.setChartType(useChartStore.getState().chartType);
     adapter.setIndicators(useChartStore.getState().indicators);
 
-    const offCrosshair = adapter.onCrosshairMove((info) => legend.setHovered(info.bar));
+    /*
+     * The legend follows the crosshair, but at FRAME rate.
+     *
+     * Crosshair callbacks arrive per pointer event, and each one rewrote nine
+     * text nodes - which is style recalculation and layout, several times per
+     * painted frame, for a reading nobody can take that fast. The latest bar
+     * is remembered and written once a frame instead.
+     */
+    let hoverBar: NormalizedBar | null = null;
+    let hoverPending = false;
+    let hoverFrame = 0;
+    const flushHover = (): void => {
+      hoverFrame = requestAnimationFrame(flushHover);
+      if (!hoverPending) return;
+      hoverPending = false;
+      legend.setHovered(hoverBar);
+    };
+    hoverFrame = requestAnimationFrame(flushHover);
+    const offCrosshair = adapter.onCrosshairMove((info) => {
+      hoverBar = info.bar;
+      hoverPending = true;
+    });
 
     return () => {
+      cancelAnimationFrame(hoverFrame);
       offCrosshair();
       adapter.destroy();
       adapterRef.current = null;
@@ -419,20 +447,27 @@ export function ChartPanel(): JSX.Element {
     symbol: activeSymbol,
     tickSize,
     ready: chartReady,
-    previewRef,
+    boundsRef,
     onContextMenu: setContextMenu,
     onOpenProperties: openProperties,
   });
 
-  // A drawing deleted from under the open context menu closes it rather than
-  // leaving a menu pointed at nothing. The settings dialog is cleared by the
-  // store itself, since a delete can come from anywhere.
-  const drawings = useChartStore((s) => s.drawings);
+  /*
+   * A drawing deleted from under the open context menu closes it rather than
+   * leaving a menu pointed at nothing.
+   *
+   * Subscribed TRANSIENTLY, and only while a menu is open. Reading `drawings`
+   * with a hook would re-render this panel - and the chart header inside it,
+   * the most expensive component in the terminal - on every drawing edit,
+   * which is most of a drag.
+   */
   useEffect(() => {
-    if (contextMenu?.drawingId && !drawings.some((drawing) => drawing.id === contextMenu.drawingId)) {
-      setContextMenu(null);
-    }
-  }, [contextMenu, drawings]);
+    const openOn = contextMenu?.drawingId;
+    if (!openOn) return;
+    return useChartStore.subscribe((state) => {
+      if (!state.drawings.some((drawing) => drawing.id === openOn)) setContextMenu(null);
+    });
+  }, [contextMenu?.drawingId]);
 
   const onScreenshot = useCallback(() => {
     void (async () => {
@@ -544,7 +579,7 @@ export function ChartPanel(): JSX.Element {
           symbol={activeSymbol}
           pricePrecision={precision}
           ready={chartReady}
-          previewRef={previewRef}
+          boundsRef={boundsRef}
         />
 
         <DrawingStyleBar

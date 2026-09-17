@@ -282,17 +282,34 @@ export function resolveZone(appearance: ChartAppearance, exchangeZone: string): 
  * 12-hour with AM/PM by default, because that is how the instruments we trade
  * are talked about in their home session, and because it is what was asked for.
  */
+/**
+ * Formatters are CACHED.
+ *
+ * Constructing an Intl.DateTimeFormat is expensive - it was the single largest
+ * piece of application JavaScript during a crosshair sweep, because the legend
+ * built a new one for every bar it displayed. The settings that decide the
+ * format change when a trader changes them, which is roughly never, so one
+ * formatter per combination is kept.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 export function timeFormatter(
   appearance: ChartAppearance,
   exchangeZone: string,
   opts?: { seconds?: boolean; date?: boolean },
 ): Intl.DateTimeFormat {
-  return new Intl.DateTimeFormat('en-US', {
+  const zone = resolveZone(appearance, exchangeZone);
+  const key = `${zone}|${appearance.timeFormat}|${opts?.seconds ? 's' : ''}|${opts?.date ? 'd' : ''}`;
+  const cached = formatters.get(key);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat('en-US', {
     ...(opts?.date ? { month: 'short', day: '2-digit' } : {}),
     hour: 'numeric',
     minute: '2-digit',
     ...(opts?.seconds ? { second: '2-digit' } : {}),
     hour12: appearance.timeFormat === '12H',
-    timeZone: resolveZone(appearance, exchangeZone),
+    timeZone: zone,
   });
+  formatters.set(key, formatter);
+  return formatter;
 }

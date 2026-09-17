@@ -58,8 +58,11 @@ export function DrawingStyleBar({
   liveRef.current.id = drawing && drawing.symbol === symbol ? drawing.id : null;
 
   useEffect(() => {
-    if (!ready) return;
+    // Only while something is selected: with nothing selected the bar is not
+    // on screen, and a loop that runs anyway is main thread spent on nothing.
+    if (!ready || !selectedId) return;
     let frame = 0;
+    let lastTransform = '';
     const place = (): void => {
       frame = requestAnimationFrame(place);
       const bar = barRef.current;
@@ -86,12 +89,15 @@ export function DrawingStyleBar({
       // Above the object, or below it when there is no room above.
       const above = bounds.top - BAR_HEIGHT - GAP;
       const top = above >= 4 ? above : Math.min(bounds.bottom + GAP, projection.height - BAR_HEIGHT - 4);
+      const transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+      if (transform === lastTransform) return;
+      lastTransform = transform;
       bar.style.visibility = 'visible';
-      bar.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+      bar.style.transform = transform;
     };
     frame = requestAnimationFrame(place);
     return () => cancelAnimationFrame(frame);
-  }, [adapterRef, ready]);
+  }, [adapterRef, ready, selectedId]);
 
   // Collapse an open sub-menu when the selection changes or clears.
   useEffect(() => setExpanded(null), [selectedId]);
