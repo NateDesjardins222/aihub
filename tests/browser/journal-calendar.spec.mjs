@@ -170,6 +170,21 @@ try {
     'and the whole list comes back',
   );
 
+  /*
+   * Put the chart back on NQ.
+   *
+   * Recalling a trade changes the chart's instrument - that is the feature -
+   * and the suites that follow draw on whatever the terminal is showing. A
+   * suite that leaves the terminal somewhere else is a suite that makes the
+   * next one's screenshots confusing.
+   */
+  await page.click('[data-testid=drawer-journal] .drawer-close').catch(() => {});
+  await page.waitForTimeout(600);
+  await page.click('[data-pane=p1] .chdr-symbol');
+  await page.waitForTimeout(500);
+  await page.click('.popover .pop-item:has(.chdr-pop-root:text-is("NQ"))');
+  await page.waitForTimeout(3_000);
+
   say(errors.length === 0, 'no page errors', errors.join(' | '));
 } finally {
   await browser.close();

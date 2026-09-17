@@ -94,15 +94,34 @@
 }
 
 /*
- * The quantity row, at any panel width.
+ * The quantity, then its presets.
  *
- * It used to be one flex line with `flex: 1 1 0` and `min-width: 0`, which
- * means "shrink these as far as you like". Dragged to the panel's minimum of
- * 196px, the two-digit presets needed 22px inside a 16px box and their numbers
- * spilled out over the neighbouring button. A control that cannot fit its own
- * label has to WRAP, not shrink: nothing is hidden, nothing overlaps, and the
- * row simply takes a second line when it needs one.
+ * Two rows on purpose. The steppers belong beside the number they step - that
+ * is the control a trader reaches for - and the presets are a separate row of
+ * equal chips.
+ *
+ * The presets are a GRID that fits its own columns rather than a flex line
+ * with `flex: 1 1 0`, which means "shrink these as far as you like": dragged to
+ * the panel's minimum of 196px, the two-digit presets needed 22px inside a 16px
+ * box and their numbers spilled over the neighbouring button. A control that
+ * cannot fit its own label wraps; nothing is hidden and nothing overlaps.
  */
+.tk-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tk-qty-row .tk-qty {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tk-qty-row .tk-step {
+  flex: 0 0 auto;
+  height: 44px;
+}
+
 .tk-presets {
   /*
    * A grid rather than a wrapping flex line: a lone item on a second row fills

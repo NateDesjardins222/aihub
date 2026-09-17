@@ -171,12 +171,24 @@ try {
     .locator('[data-testid=drawing-properties] .st-row:has(.st-row-label:text-is("Entry")) input[type=number]')
     .first()
     .inputValue();
-  await setNumber('Stop', Number(entryValue) - 10);
+  /*
+   * A stop far enough below the entry to be a separate HANDLE.
+   *
+   * Measured as a share of the visible price range rather than as a number of
+   * points: a previous suite can leave the chart zoomed out to thirteen
+   * hundred points, where ten points is five pixels and the entry and stop
+   * handles are the same handle. This is the drag test, so the thing being
+   * dragged has to be reachable.
+   */
+  const view0 = await page.evaluate(() => window.__atlasChartView?.() ?? null);
+  const drop = Math.max(10, Math.round(((view0?.priceRange ?? 60) * 0.15) / 0.25) * 0.25);
+  await setNumber('Stop', Number(entryValue) - drop);
   const typed = await riskLine();
+  const wantTicks = Math.round(drop / 0.25);
   say(
-    /Risk 40 ticks/.test(typed) && /R:R 1\.00/.test(typed),
+    new RegExp(`Risk ${wantTicks} ticks`).test(typed),
     'a stop can be typed instead of dragged',
-    typed,
+    `asked for ${drop} points below the entry: ${typed}`,
   );
   await closeSettings();
 
@@ -185,9 +197,9 @@ try {
   say(
     afterTyping !== null &&
       Math.abs(afterTyping.entry - Number(entryValue)) < 0.01 &&
-      Math.abs(afterTyping.stop - (Number(entryValue) - 10)) < 0.01,
+      Math.abs(afterTyping.stop - (Number(entryValue) - drop)) < 0.01,
     'and only the stop moved',
-    `${rows[0] ?? ''} against a typed ${Number(entryValue) - 10}`,
+    `${rows[0] ?? ''} against a typed ${Number(entryValue) - drop}`,
   );
 
   // --- dragging one level, not the others ---------------------------------

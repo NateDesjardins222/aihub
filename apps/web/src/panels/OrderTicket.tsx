@@ -176,16 +176,13 @@ export function OrderTicket(): JSX.Element {
 
       <div className="tk-field">
         <span className="tk-label"># of contracts</span>
-        <input
-          id="tk-qty"
-          className="num tk-qty"
-          type="number"
-          min={instrument.minOrderQty}
-          max={instrument.maxOrderQty}
-          value={qty}
-          onChange={(event) => setQty(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
-        />
-        <div className="tk-presets">
+        {/*
+          The steppers sit BESIDE the number, not among the presets.
+          Wrapping them into the preset row - which is what a grid that fits its
+          own columns does at this width - cost the ticket a whole extra line
+          and pushed it past the height it is allowed.
+        */}
+        <div className="tk-qty-row">
           <button
             className="tk-step"
             onClick={() => setQty((value) => Math.max(1, value - 1))}
@@ -194,6 +191,25 @@ export function OrderTicket(): JSX.Element {
           >
             <Icon name="minus" size={13} />
           </button>
+          <input
+            id="tk-qty"
+            className="num tk-qty"
+            type="number"
+            min={instrument.minOrderQty}
+            max={instrument.maxOrderQty}
+            value={qty}
+            onChange={(event) => setQty(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+          />
+          <button
+            className="tk-step"
+            onClick={() => setQty((value) => Math.min(999, value + 1))}
+            title="One more"
+            aria-label="More contracts"
+          >
+            <Icon name="plus" size={13} />
+          </button>
+        </div>
+        <div className="tk-presets">
           {PRESETS.map((preset) => (
             <button
               key={preset}
@@ -203,14 +219,6 @@ export function OrderTicket(): JSX.Element {
               {preset}
             </button>
           ))}
-          <button
-            className="tk-step"
-            onClick={() => setQty((value) => Math.min(999, value + 1))}
-            title="One more"
-            aria-label="More contracts"
-          >
-            <Icon name="plus" size={13} />
-          </button>
         </div>
       </div>
 

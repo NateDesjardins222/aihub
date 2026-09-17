@@ -807,18 +807,22 @@ export class LightweightChartsAdapter implements ChartAdapter {
   }
 
   /**
-   * Give the price pane most of the height.
+   * Give the price pane most of the height, whatever is below it.
    *
    * The renderer splits panes evenly by default, so one oscillator takes half
-   * the chart. The price pane is what is being traded, so it keeps four times
-   * the share of any indicator pane.
+   * the chart. A fixed factor of four was better but still not enough: with
+   * four oscillators the price pane was down to half the height, and the price
+   * is what is being traded. The share now GROWS with the number of indicator
+   * panes, so the price keeps about three quarters of the chart whether there
+   * is one oscillator under it or four.
    */
   private balancePanes(): void {
     if (!this.chart) return;
     try {
       const panes = this.chart.panes();
+      const below = Math.max(1, panes.length - 1);
       for (let i = 0; i < panes.length; i += 1) {
-        panes[i]?.setStretchFactor(i === 0 ? 4 : 1);
+        panes[i]?.setStretchFactor(i === 0 ? below * 3 : 1);
       }
     } catch {
       // A renderer without pane stretching still draws correctly, just with

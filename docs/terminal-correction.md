@@ -227,3 +227,16 @@ nothing is shipped for a font that is not used. This is a decision recorded
 rather than a change made: churning the typeface for its own sake is not a
 quality improvement, and the measurement is what makes that a judgement rather
 than an excuse.
+
+### Indicator panes keep the price in view
+
+With four oscillators on the chart the price pane was down to about 40% of the
+height. The price is what is being traded, so the price pane's share now grows
+with the number of indicator panes rather than being a fixed multiple of one.
+
+---
+
+## P7 — performance and the manual pass
+
+(Filled in as the pass runs; the numbers below are from this machine, against
+the real server and the real market data.)
