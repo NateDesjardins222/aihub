@@ -33,6 +33,7 @@ import { useReplayStatus } from '../state/replay-status';
 import { layoutMarkers, type MarkerInput } from './marker-layout';
 import { estimatePnlMicros, legFor, snapPrice as snap } from './protection';
 import { Icon } from '../ui/Icon';
+import { ChartMenu, type ChartMenuItem } from './ChartMenu';
 import './PriceMarkers.css';
 
 /** How the position's protective orders come into existence. */
@@ -58,7 +59,15 @@ interface Marker {
   readonly label: string;
   readonly qty: number | null;
   readonly drag:
-    | { kind: 'ORDER'; orderId: string; field: 'limitPrice' | 'stopPrice'; version: number }
+    | {
+        kind: 'ORDER';
+        orderId: string;
+        field: 'limitPrice' | 'stopPrice';
+        version: number;
+        /** The order's TOTAL and filled quantities: a modify sets the total. */
+        qty: number;
+        filledQty: number;
+      }
     | { kind: 'PROTECT'; leg: 'STOP' | 'TARGET' }
     | null;
   readonly cancel:
@@ -130,6 +139,8 @@ export function PriceMarkers({
    * heavy, and the numbers a trader reads while dragging have to be immediate.
    */
   const [creating, setCreating] = useState<{ leg: 'STOP' | 'TARGET' } | null>(null);
+  /** The right-click menu for one marker, at the cursor. */
+  const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null);
 
   const dragRef = useRef<{ key: string; startPrice: number; price: number } | null>(null);
   /** The live pull-off-the-marker gesture. Written per pointer move. */
@@ -163,6 +174,19 @@ export function PriceMarkers({
     [positions, symbol],
   );
 
+  /**
+   * What the placement loop needs about the account, without restarting it.
+   *
+   * The loop is attached once; reading these through the closure would rebind
+   * it on every position update, and a loop that restarts mid-drag drops the
+   * gesture.
+   */
+  const liveRef = useRef({ position, tickSize, tickValueMicros, showPnl });
+  liveRef.current.position = position;
+  liveRef.current.tickSize = tickSize;
+  liveRef.current.tickValueMicros = tickValueMicros;
+  liveRef.current.showPnl = showPnl;
+
   const act = useCallback(
     async (run: () => Promise<unknown>): Promise<void> => {
       setBusy(true);
@@ -182,6 +206,150 @@ export function PriceMarkers({
     },
     [refresh, setRejection],
   );
+
+  // --- the right-click menu -----------------------------------------------
+
+  /**
+   * What can be done to the marker under the cursor.
+   *
+   * Every entry here ends in a request to the execution engine: a cancel
+   * cancels the working order, a quantity change modifies it with the version
+   * it was read at, a break-even stop moves the real protective order. None of
+   * it is graphical, and none of it asks for confirmation - an ordinary
+   * modification a trader asked for twice (right-click, then the item) does
+   * not need a third click.
+   */
+  const menuItems = useCallback(
+    (marker: Marker): ChartMenuItem[] => {
+      const out: ChartMenuItem[] = [];
+      const cancelAll: ChartMenuItem = {
+        id: 'cancel-all',
+        label: `Cancel all ${symbol} orders`,
+        disabled: busy || workingOrders.length === 0,
+        run: () => void act(() => tradingApi.cancelAll(accountId!, symbol)),
+      };
+
+      if (marker.role === 'POSITION') {
+        out.push(
+          {
+            id: 'flatten',
+            label: 'Close position at market',
+            icon: 'close',
+            disabled: busy,
+            run: () => void act(() => tradingApi.flatten(accountId!, symbol)),
+          },
+          {
+            id: 'reverse',
+            label: 'Reverse position',
+            icon: 'reset',
+            disabled: busy,
+            run: () => void act(() => tradingApi.reverse(accountId!, symbol)),
+          },
+          { id: 's1', separator: true },
+          {
+            id: 'unprotect',
+            label: 'Remove stop and target',
+            disabled: busy || !workingOrders.some((order) => order.bracketRole !== null),
+            run: () =>
+              void act(() =>
+                tradingApi.protect(accountId!, symbol, { stopPrice: null, targetPrice: null }),
+              ),
+          },
+          cancelAll,
+        );
+        return out;
+      }
+
+      if (marker.role === 'STOP' || marker.role === 'TARGET') {
+        const leg = marker.role === 'STOP' ? 'stopPrice' : 'targetPrice';
+        const entry = position?.avgEntryPrice ?? null;
+        if (marker.role === 'STOP') {
+          out.push({
+            id: 'breakeven',
+            label: 'Move stop to break even',
+            disabled: busy || entry === null,
+            title:
+              entry === null ? 'There is no open position to break even on' : undefined,
+            run: () =>
+              void act(() =>
+                tradingApi.protect(accountId!, symbol, { stopPrice: entry ?? undefined }),
+              ),
+          });
+        }
+        out.push(
+          {
+            id: 'remove-leg',
+            label: marker.role === 'STOP' ? 'Remove stop loss' : 'Remove take profit',
+            icon: 'trash',
+            danger: true,
+            disabled: busy,
+            run: () => void act(() => tradingApi.protect(accountId!, symbol, { [leg]: null })),
+          },
+          { id: 's1', separator: true },
+          cancelAll,
+        );
+        return out;
+      }
+
+      const target = marker.drag?.kind === 'ORDER' ? marker.drag : null;
+      if (target) {
+        // A modify sets the order's TOTAL quantity, so a partially filled
+        // order steps from its total and can never be cut below what has
+        // already filled.
+        const qty = target.qty;
+        out.push(
+          {
+            id: 'qty-up',
+            label: 'Add one contract',
+            icon: 'plus',
+            disabled: busy,
+            run: () =>
+              void act(() =>
+                tradingApi.modify(accountId!, target.orderId, {
+                  qty: qty + 1,
+                  expectedVersion: target.version,
+                }),
+              ),
+          },
+          {
+            id: 'qty-down',
+            label: 'Remove one contract',
+            icon: 'minus',
+            disabled: busy || qty - 1 < Math.max(target.filledQty, 1),
+            title:
+              qty - 1 < Math.max(target.filledQty, 1)
+                ? 'Cancel the order instead'
+                : undefined,
+            run: () =>
+              void act(() =>
+                tradingApi.modify(accountId!, target.orderId, {
+                  qty: qty - 1,
+                  expectedVersion: target.version,
+                }),
+              ),
+          },
+          { id: 's1', separator: true },
+          {
+            id: 'cancel',
+            label: 'Cancel order',
+            icon: 'trash',
+            danger: true,
+            disabled: busy,
+            run: () => void act(() => tradingApi.cancel(accountId!, target.orderId)),
+          },
+        );
+      }
+      out.push({ id: 's2', separator: true }, cancelAll);
+      return out;
+    },
+    [accountId, act, busy, position, symbol, workingOrders],
+  );
+
+  const openMenu = useCallback((event: React.MouseEvent, marker: Marker): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu({ key: marker.key, x: event.clientX, y: event.clientY });
+  }, []);
 
   // --- the marker set -----------------------------------------------------
 
@@ -223,7 +391,14 @@ export function PriceMarkers({
         side: order.side,
         label: role === 'STOP' ? 'SL' : role === 'TARGET' ? 'TP' : entryLabel(order),
         qty: order.remainingQty,
-        drag: { kind: 'ORDER', orderId: order.id, field: level.field, version: order.version },
+        drag: {
+          kind: 'ORDER',
+          orderId: order.id,
+          field: level.field,
+          version: order.version,
+          qty: order.qty,
+          filledQty: order.filledQty,
+        },
         cancel: { kind: 'ORDER', orderId: order.id },
         pnlMicros: estimated,
         priority: role === 'ORDER' ? 1 : 2,
@@ -260,10 +435,18 @@ export function PriceMarkers({
     return out;
   }, [position, workingOrders, focus, symbol, tickSize, tickValueMicros]);
 
+  /*
+   * The menu closes by itself when its marker goes away - a cancelled order
+   * has no options, and a menu left hanging over an empty line would apply to
+   * nothing.
+   */
+  const menuMarker = menu ? markers.find((m) => m.key === menu.key) ?? null : null;
+
   // --- dragging an existing level -----------------------------------------
 
   const beginDrag = useCallback((event: React.PointerEvent, marker: Marker): void => {
-    if (!marker.drag) return;
+    // A right-click opens the menu; it must not also start a drag.
+    if (!marker.drag || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     dragRef.current = { key: marker.key, startPrice: marker.price, price: marker.price };
@@ -328,7 +511,7 @@ export function PriceMarkers({
 
   const beginCreate = useCallback(
     (event: React.PointerEvent): void => {
-      if (!position || position.avgEntryPrice === null) return;
+      if (!position || position.avgEntryPrice === null || event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
       createRef.current = {
@@ -371,7 +554,7 @@ export function PriceMarkers({
       }
       const pnl = node.querySelector<HTMLElement>('[data-preview-pnl]');
       if (pnl) {
-        pnl.textContent = create.pnl === null ? '—' : money(create.pnl);
+        pnl.textContent = create.pnl === null ? '—' : formatMoney(create.pnl);
         pnl.classList.toggle('pos', (create.pnl ?? 0) >= 0);
         pnl.classList.toggle('neg', (create.pnl ?? 0) < 0);
       }
@@ -527,6 +710,39 @@ export function PriceMarkers({
         node.dataset['offset'] = Math.abs(placement.leader) > 0.5 ? 'yes' : 'no';
         const label = node.querySelector<HTMLElement>('[data-price-label]');
         if (label) label.textContent = info.price.toFixed(pricePrecision);
+
+        /*
+         * The three numbers a trader reads while moving a level: where it is,
+         * how far that is in ticks, and what it is worth.
+         *
+         * Written here rather than rendered, so they follow the pointer
+         * instead of arriving a render behind it. Off a drag they are written
+         * once too, which keeps them true after a fill moves the average.
+         */
+        const live = liveRef.current;
+        const entry = live.position?.avgEntryPrice ?? null;
+        const ticksLabel = node.querySelector<HTMLElement>('[data-ticks-label]');
+        const pnlLabel = node.querySelector<HTMLElement>('[data-pnl-label]');
+        if ((ticksLabel || pnlLabel) && entry !== null && live.position) {
+          const ticks = Math.round(Math.abs(info.price - entry) / live.tickSize);
+          const money = estimatePnlMicros(
+            live.position,
+            info.price,
+            live.tickSize,
+            live.tickValueMicros,
+          );
+          // Null means the position has no average entry yet, so the level is
+          // not worth anything definite. Blank beats a confident zero.
+          if (ticksLabel) {
+            ticksLabel.textContent = money === null ? '' : `${money >= 0 ? '+' : '-'}${ticks}t`;
+          }
+          if (pnlLabel) {
+            pnlLabel.textContent =
+              money === null ? '' : live.showPnl ? formatMoney(money) : MASK;
+            pnlLabel.classList.toggle('pos', money !== null && money >= 0);
+            pnlLabel.classList.toggle('neg', money !== null && money < 0);
+          }
+        }
       }
 
       // The preview follows the cursor directly rather than through the layout:
@@ -619,6 +835,7 @@ export function PriceMarkers({
                 className="pm-tag pm-pos-tag"
                 data-testid="marker-position"
                 onPointerDown={beginCreate}
+                onContextMenu={(event) => openMenu(event, marker)}
                 title="Drag up or down to place a target or a stop"
               >
                 <span
@@ -626,7 +843,7 @@ export function PriceMarkers({
                     showPnl ? ((marker.pnlMicros ?? 0) >= 0 ? 'up' : 'down') : ''
                   }`}
                 >
-                  {showPnl ? money(marker.pnlMicros ?? 0) : MASK}
+                  {showPnl ? formatMoney(marker.pnlMicros ?? 0) : MASK}
                 </span>
                 <span className="pm-pos-side">{marker.label[0]}</span>
                 <span className="num pm-pos-qty">{marker.qty}</span>
@@ -645,13 +862,15 @@ export function PriceMarkers({
                 className={`pm-tag ${marker.drag ? 'pm-tag-drag' : ''}`}
                 data-testid={`marker-${marker.role.toLowerCase()}`}
                 onPointerDown={(event) => beginDrag(event, marker)}
+                onContextMenu={(event) => openMenu(event, marker)}
                 title={marker.drag ? 'Drag to move this level' : undefined}
               >
                 <span className="pm-kind">{marker.label}</span>
-                {isProtective && marker.pnlMicros !== null ? (
-                  <span className={`num pm-pnl ${marker.pnlMicros >= 0 ? 'pos' : 'neg'}`}>
-                    {showPnl ? `~ ${money(marker.pnlMicros)}` : MASK}
-                  </span>
+                {isProtective ? (
+                  <>
+                    <span className="num pm-ticks" data-ticks-label />
+                    <span className="num pm-pnl" data-pnl-label />
+                  </>
                 ) : null}
                 <span className="num pm-price" data-price-label>
                   {marker.price.toFixed(pricePrecision)}
@@ -698,11 +917,36 @@ export function PriceMarkers({
           </div>
         );
       })}
+
+      {/* Right-clicking a level offers what can be done to it. */}
+      {menuMarker ? (
+        <ChartMenu
+          head={menuHead(menuMarker, pricePrecision)}
+          x={menu!.x}
+          y={menu!.y}
+          testId="order-context-menu"
+          items={menuItems(menuMarker)}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function money(micros: number): string {
+/** The menu's title: what was right-clicked, and where it sits. */
+function menuHead(marker: Marker, pricePrecision: number): string {
+  const what =
+    marker.role === 'POSITION'
+      ? `${marker.label} ${marker.qty ?? ''}`.trim()
+      : marker.role === 'STOP'
+        ? 'Stop loss'
+        : marker.role === 'TARGET'
+          ? 'Take profit'
+          : marker.label;
+  return `${what} \u00b7 ${marker.price.toFixed(pricePrecision)}`;
+}
+
+function formatMoney(micros: number): string {
   const dollars = micros / 1_000_000;
   const sign = dollars > 0 ? '+' : dollars < 0 ? '−' : '';
   return `${sign}$${Math.abs(dollars).toLocaleString('en-US', {

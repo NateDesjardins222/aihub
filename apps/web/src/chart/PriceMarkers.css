@@ -266,3 +266,12 @@
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * The order menu is rendered inside this layer but is not part of it: the
+ * layer ignores the pointer, and a menu that ignored the pointer could not be
+ * clicked.
+ */
+.pm .dm-menu {
+  pointer-events: auto;
+}
