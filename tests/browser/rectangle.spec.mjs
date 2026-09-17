@@ -129,13 +129,45 @@ try {
 
   // -------------------------------------------------------- 4. moving ------
   const before = await paintedBounds(page, '.draw-canvas');
+
+  /*
+   * Every API request the page makes, with when it was made.
+   *
+   * The brief is explicit: LOCAL STATE ONLY during the interaction, persist
+   * afterwards. So the drag is watched rather than assumed - a request sent
+   * between pointerdown and pointerup would be the defect.
+   */
+  const calls = [];
+  const watch = (request) => {
+    if (request.url().includes('/api/')) calls.push({ url: request.url(), at: Date.now() });
+  };
+  page.on('request', watch);
+
   await page.mouse.move(centre.x, centre.y);
   await page.mouse.down();
+  const dragStarted = Date.now();
   for (let i = 1; i <= 20; i += 1) {
     await page.mouse.move(centre.x + i * 3, centre.y + i * 2);
   }
+  const dragEnded = Date.now();
   await page.mouse.up();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(2_000);
+  page.off('request', watch);
+
+  const during = calls.filter((call) => call.at >= dragStarted && call.at <= dragEnded);
+  const persisted = calls.filter(
+    (call) => call.at > dragEnded && /\/api\/v1\/(drawings|preferences)/.test(call.url),
+  );
+  say(
+    during.length === 0,
+    'nothing is sent to the server while the drawing is being dragged',
+    during.length === 0 ? 'no requests' : during.map((c) => c.url).join(' '),
+  );
+  say(
+    persisted.length > 0,
+    'and the move is persisted once the gesture ends',
+    `${persisted.length} request(s) after release`,
+  );
   const afterMove = await paintedBounds(page, '.draw-canvas');
   const movedX = afterMove.left - before.left;
   const movedY = afterMove.top - before.top;
@@ -356,9 +388,17 @@ try {
   await page.waitForTimeout(600);
   say((await treeCount()) === one, 'undo takes the pasted copy away');
 
+  await page.keyboard.press('Control+Shift+z');
+  await page.waitForTimeout(600);
+  say((await treeCount()) === one + 1, 'and Ctrl Shift Z brings it back');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(600);
+
   // ------------------------------------------------- 10. persistence -------
   const pricesBeforeReload = await anchorPrices();
-  await page.waitForTimeout(1_200);
+  // Long enough for the debounced save AND its round trip: reloading while the
+  // write is still in flight tests the race, not the persistence.
+  await page.waitForTimeout(3_000);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(6_000);

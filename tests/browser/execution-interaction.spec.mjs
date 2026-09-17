@@ -211,6 +211,30 @@ try {
   await page.waitForTimeout(3_500);
   say((await page.locator('[data-marker=stop]').count()) === 0, 'and the menu can remove the stop');
 
+  // ===== 2b. the menu on the position itself ==============================
+  await page.click('[data-testid=marker-position]', { button: 'right' });
+  await page.waitForSelector('[data-testid=order-context-menu]', { timeout: 4_000 });
+  const positionMenu = ((await page.textContent('[data-testid=order-context-menu]')) ?? '').replace(
+    /\s+/g,
+    ' ',
+  );
+  say(
+    /Close position at market/.test(positionMenu) &&
+      /Reverse position/.test(positionMenu) &&
+      /Remove stop and target/.test(positionMenu),
+    'right-clicking the position offers what can be done to it',
+    positionMenu.slice(0, 150),
+  );
+  // Dismissed rather than used: the rest of the suite needs this position.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  say(
+    (await page.locator('[data-testid=order-context-menu]').count()) === 0,
+    'and Escape closes the menu without doing anything',
+    await positionText(),
+  );
+  say(/LONG/.test(await positionText()), 'the position is untouched by opening its menu');
+
   // ===== 3. the five things, told apart ====================================
   await dragOffMarker(-120); // a target above a long
   await dragOffMarker(120); // and a stop below it

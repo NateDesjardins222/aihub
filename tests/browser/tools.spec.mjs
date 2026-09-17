@@ -88,6 +88,104 @@ try {
     'the magnet is on by default',
   );
 
+  /*
+   * The three magnet modes, by behaviour.
+   *
+   * With the magnet OFF an anchor goes exactly where it was clicked, so two
+   * clicks three pixels apart are two different prices. With it STRONG the
+   * anchor is pulled to a price the bar actually printed, so the same two
+   * clicks land on the same price. That is the difference a trader feels, and
+   * it is checked rather than the button's label.
+   */
+  const magnetButton = page.locator('.rail .rail-btn[aria-label=Magnet]');
+  const mode = () => magnetButton.getAttribute('data-magnet');
+  const setMagnet = async (wanted) => {
+    for (let i = 0; i < 4; i += 1) {
+      if ((await mode()) === wanted) return true;
+      await magnetButton.click();
+      await page.waitForTimeout(250);
+    }
+    return (await mode()) === wanted;
+  };
+
+  const seen = [await mode()];
+  for (let i = 0; i < 2; i += 1) {
+    await magnetButton.click();
+    await page.waitForTimeout(250);
+    seen.push(await mode());
+  }
+  say(
+    new Set(seen).size === 3 && seen.every((m) => ['OFF', 'WEAK', 'STRONG'].includes(m)),
+    'the magnet cycles through off, weak and strong',
+    seen.join(' -> '),
+  );
+
+  /** Place one horizontal line at a pixel and read the price it anchored to. */
+  const priceAt = async (fy) => {
+    await clearDrawings(page);
+    await page.keyboard.press('Escape');
+    await page.click('.rail .rail-btn[aria-label="Horizontal line"]');
+    await page.mouse.click(at(0.5, fy).x, at(0.5, fy).y);
+    await page.waitForTimeout(500);
+    await page.click('.rail .rail-btn[aria-label="Object tree"]');
+    await page.waitForTimeout(350);
+    const detail = await page.locator('[data-testid=object-tree-row] .ot-detail').first().innerText();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    return detail.trim();
+  };
+
+  const plotHeight = canvas.height;
+  const nudge = 4 / plotHeight;
+  say(await setMagnet('OFF'), 'the magnet can be turned off', await mode());
+  const looseA = await priceAt(0.44);
+  const looseB = await priceAt(0.44 + nudge);
+  say(
+    looseA !== looseB,
+    'with the magnet off an anchor goes exactly where it was clicked',
+    `${looseA} vs ${looseB}`,
+  );
+
+  say(await setMagnet('STRONG'), 'the magnet can be set to strong', await mode());
+  const snappedA = await priceAt(0.44);
+  const snappedB = await priceAt(0.44 + nudge);
+  say(
+    snappedA === snappedB,
+    'with it strong both clicks snap to the same printed price',
+    `${snappedA} vs ${snappedB}`,
+  );
+  // And it is a price the market actually printed - checked against the bars
+  // the server served, not against the anchor the click produced.
+  const printed = await page.evaluate(async () => {
+    const refreshToken = window.localStorage.getItem('atlas.refreshToken');
+    const session = await fetch('/api/v1/auth/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    }).then((r) => r.json());
+    window.localStorage.setItem('atlas.refreshToken', session.refreshToken);
+    const timeframe = window.localStorage.getItem('atlas.chart.timeframe') ?? '1m';
+    const bars = await fetch(
+      `/api/v1/marketdata/bars?symbol=NQ&timeframe=${timeframe}&limit=400`,
+      { headers: { authorization: `Bearer ${session.accessToken}` } },
+    ).then((r) => r.json());
+    const values = new Set();
+    for (const bar of bars.bars ?? []) {
+      for (const value of [bar.open, bar.high, bar.low, bar.close]) values.add(value);
+    }
+    return [...values];
+  });
+  const snapped = Number(snappedA.replace(/[^0-9.]/g, ''));
+  say(
+    printed.some((value) => Math.abs(value - snapped) < 0.005),
+    'and that price is one the bars printed, not an interpolation',
+    `${snappedA} found among ${printed.length} printed prices`,
+  );
+
+  await setMagnet('WEAK');
+  await clearDrawings(page);
+  await page.keyboard.press('Escape');
+
   const withLine = await litPixels(page);
   await page.click('.rail .rail-btn[aria-label="Fib retracement"]');
   await page.mouse.click(at(0.62, 0.3).x, at(0.62, 0.3).y);

@@ -18,6 +18,8 @@ const SUITES = [
   'line-tools',
   'drag-protect',
   'execution-interaction',
+  'stress',
+  'visual',
   'tools',
   'replay-brackets',
   'layout',

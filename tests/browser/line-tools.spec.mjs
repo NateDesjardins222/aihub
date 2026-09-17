@@ -545,7 +545,8 @@ try {
 
   // Persistence, by anchor price rather than by pixel.
   const beforeReload = await anchorPrices();
-  await page.waitForTimeout(1_200);
+  // The debounced save plus its round trip, for the same reason as above.
+  await page.waitForTimeout(3_000);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(6_000);
@@ -555,17 +556,30 @@ try {
     (await anchorPrices()).join(' / '),
   );
   /*
-   * A reload scrolls the view back to the newest bars, so the fib is not where
-   * it was on screen. The rows are read across the middle of wherever it IS.
+   * A reload scrolls the view back to the newest bars, so the fib is off to
+   * the left and may be only a sliver wide. Zooming out brings it back into
+   * the plot; then the rows are read across the middle of wherever it is.
    */
-  const reloadedFib = await paintedBounds(page, '.draw-canvas');
   const canvasBox = await page.locator('.draw-canvas').boundingBox();
   const fx = (x) => Math.min(1, Math.max(0, (x - canvasBox.x) / canvasBox.width));
-  const rowsAfterReload = await paintedRows(
-    fx(reloadedFib.left) + 0.02,
-    Math.max(fx(reloadedFib.left) + 0.05, fx(reloadedFib.right) - 0.02),
+  await page.mouse.move(at(0.6, 0.5).x, at(0.6, 0.5).y);
+  let reloadedFib = await paintedBounds(page, '.draw-canvas');
+  for (let i = 0; i < 12 && (!reloadedFib || reloadedFib.right - reloadedFib.left < 80); i += 1) {
+    await page.mouse.wheel(0, 240);
+    await page.waitForTimeout(250);
+    reloadedFib = await paintedBounds(page, '.draw-canvas');
+  }
+  const rowsAfterReload =
+    reloadedFib && reloadedFib.right - reloadedFib.left >= 80
+      ? await paintedRows(fx(reloadedFib.left) + 0.015, fx(reloadedFib.right) - 0.015)
+      : [];
+  say(
+    rowsAfterReload.length >= 6,
+    'with its levels',
+    `${rowsAfterReload.length} level lines across ${
+      reloadedFib ? Math.round(reloadedFib.right - reloadedFib.left) : 0
+    }px`,
   );
-  say(rowsAfterReload.length >= 6, 'with its levels', `${rowsAfterReload.length} level lines`);
 
   await clearDrawings(page);
   say((await litPixels(page, '.draw-canvas')) === 0, 'and the chart can be cleared');
