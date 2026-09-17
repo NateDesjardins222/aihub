@@ -8,8 +8,8 @@
  */
 import { useMemo, useRef, useState, type JSX } from 'react';
 import type { Timeframe } from '@atlas/contracts';
-import { useSession, activeInstrument } from '../state/session';
-import { useChartStore } from '../state/chart-store';
+import { useSession } from '../state/session';
+import { useLayout } from '../state/layout-store';
 import { useWorkspace, ALL_TIMEFRAMES } from '../state/workspace';
 import { PHASE_1_CHART_TYPES, type ChartType } from './ChartAdapter';
 import { INDICATORS, indicatorDef, indicatorTitle, searchIndicators } from './indicators/registry';
@@ -60,24 +60,49 @@ const STYLE_LABEL: Record<ChartType, string> = {
 const NEEDS_TICK_DATA: readonly ChartType[] = ['RENKO', 'KAGI', 'LINE_BREAK', 'POINT_AND_FIGURE'];
 
 export interface ChartHeaderProps {
+  /** The pane this header belongs to. Every control acts on that pane alone. */
+  readonly paneId: string;
+  readonly symbol: string;
   readonly timeframe: Timeframe;
   readonly onTimeframe: (tf: Timeframe) => void;
   readonly onScreenshot: () => void;
+  /** Shown only when more than one chart is open. */
+  readonly onMaximize?: (() => void) | undefined;
+  readonly maximized?: boolean;
 }
 
-export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeaderProps): JSX.Element {
+export function ChartHeader({
+  paneId,
+  symbol,
+  timeframe,
+  onTimeframe,
+  onScreenshot,
+  onMaximize,
+  maximized = false,
+}: ChartHeaderProps): JSX.Element {
   const instruments = useSession((s) => s.instruments);
-  const activeSymbol = useSession((s) => s.activeSymbol);
-  const setActiveSymbol = useSession((s) => s.setActiveSymbol);
-  const instrument = useSession(activeInstrument);
+  const activeSymbol = symbol;
+  const instrument = useSession((s) => s.instruments.find((i) => i.root === symbol) ?? null);
 
-  const chartType = useChartStore((s) => s.chartType);
-  const setChartType = useChartStore((s) => s.setChartType);
-  const indicators = useChartStore((s) => s.indicators);
-  const addIndicator = useChartStore((s) => s.addIndicator);
-  const openIndicatorSettings = useChartStore((s) => s.openIndicatorSettings);
-  const removeIndicator = useChartStore((s) => s.removeIndicator);
-  const toggleIndicator = useChartStore((s) => s.toggleIndicator);
+  const pane = useLayout((s) => s.panes.find((item) => item.id === paneId) ?? null);
+  const chartType = pane?.chartType ?? 'CANDLES';
+  const setPaneChartType = useLayout((s) => s.setPaneChartType);
+  const setChartType = (type: ChartType): void => setPaneChartType(paneId, type);
+  const indicators = pane?.indicators ?? [];
+  const addPaneIndicator = useLayout((s) => s.addIndicator);
+  const addIndicator = (kind: string): string => addPaneIndicator(paneId, kind);
+  const openIndicatorSettings = useLayout((s) => s.openIndicatorSettings);
+  const removeIndicator = useLayout((s) => s.removeIndicator);
+  const toggleIndicator = useLayout((s) => s.toggleIndicator);
+  const setPaneSymbol = useLayout((s) => s.setPaneSymbol);
+  /*
+   * A symbol change belongs to THIS pane.
+   *
+   * The order ticket follows the ACTIVE pane (see ChartGrid), so choosing an
+   * instrument on the chart being worked in re-points the ticket, and choosing
+   * one on another chart does not touch it.
+   */
+  const setSymbolFor = (root: string): void => setPaneSymbol(paneId, root);
 
   const favourites = useWorkspace((s) => s.favouriteTimeframes);
   const toggleFavourite = useWorkspace((s) => s.toggleFavourite);
@@ -141,7 +166,7 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
             key={i.root}
             className={`pop-item ${i.root === activeSymbol ? 'pop-item-on' : ''}`}
             onClick={() => {
-              setActiveSymbol(i.root);
+              setSymbolFor(i.root);
               symbolMenu.close();
             }}
           >
@@ -355,6 +380,16 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
 
       <div className="chdr-spacer" />
 
+      {onMaximize ? (
+        <button
+          className={`chdr-icon ${maximized ? 'chdr-icon-on' : ''}`}
+          onClick={onMaximize}
+          title={maximized ? 'Back to the layout' : 'Fill the layout with this chart'}
+          aria-label={maximized ? 'Restore the layout' : 'Maximize this chart'}
+        >
+          <Icon name={maximized ? 'minimize' : 'maximize'} size={12} />
+        </button>
+      ) : null}
       <button className="chdr-icon" onClick={() => openSettings('SYMBOL')} title="Chart settings">
         <Icon name="gear" />
       </button>

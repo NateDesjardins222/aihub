@@ -268,3 +268,29 @@
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
+
+/* A price and the time it is pinned to, on one row. */
+.dp-coord {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dp-coord-time {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* A level's own thickness and line style, kept narrow: the row already
+   carries six decisions and it has to stay one row. */
+.dp-level-width {
+  width: 34px;
+  min-width: 0;
+}
+
+.dp-level-dash {
+  width: 58px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+}

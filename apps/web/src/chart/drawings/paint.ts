@@ -6,10 +6,15 @@
  * a repaint and the frame that performs it.
  */
 import {
+  ENTRY,
   HANDLE_RADIUS,
+  STOP,
+  TARGET,
   withAlpha,
   fibLevels,
   handlePoints,
+  isPositionTool,
+  positionMetrics,
   project,
   type Drawing,
   type Point,
@@ -19,10 +24,25 @@ import { option } from './registry';
 
 export type PaintState = 'NORMAL' | 'HOVER' | 'SELECTED' | 'PENDING';
 
-function dashPattern(dash: Drawing['style']['dash']): number[] {
-  if (dash === 'DASHED') return [6, 4];
-  if (dash === 'DOTTED') return [1, 3];
+/**
+ * A dash pattern, scaled to the line it is drawn with.
+ *
+ * A fixed pattern stops being a pattern on a thick line: with round caps and a
+ * five-pixel line, [1, 3] paints a solid line, because each round cap is wider
+ * than the gap after it. A dotted level set to five pixels looked exactly like
+ * a solid one. So the pattern grows with the width, and `dashCap` turns the
+ * round caps off whenever a pattern is in use.
+ */
+function dashPattern(dash: Drawing['style']['dash'], width = 1): number[] {
+  const w = Math.max(1, width);
+  if (dash === 'DASHED') return [Math.max(4, w * 3), Math.max(3, w * 2)];
+  if (dash === 'DOTTED') return [Math.max(1, w), Math.max(2, w * 2)];
   return [];
+}
+
+/** Round caps are for solid lines; on a dashed one they close the gaps. */
+function dashCap(dash: Drawing['style']['dash']): CanvasLineCap {
+  return dash === 'SOLID' ? 'round' : 'butt';
 }
 
 /**
@@ -31,12 +51,25 @@ function dashPattern(dash: Drawing['style']['dash']): number[] {
  * Separated from the component so it is a plain function of (drawing,
  * projection, state) - no closures over React state, nothing to go stale.
  */
+/**
+ * What the position tools need to turn ticks into money.
+ *
+ * `tickValue` is dollars per tick for ONE contract. Zero is a legitimate value
+ * - the instrument is not known yet - and simply leaves the money out rather
+ * than printing a zero that looks like a real number.
+ */
+export interface PaintMarket {
+  readonly tickSize: number;
+  readonly tickValue: number;
+}
+
 export function drawDrawing(
   ctx: CanvasRenderingContext2D,
   drawing: Drawing,
   projection: Projection,
   state: PaintState,
   pricePrecision: number,
+  market: PaintMarket = { tickSize: 0.25, tickValue: 0 },
 ): void {
   const points = drawing.anchors.map((anchor) => project(projection, anchor));
   if (points.some((point) => point === null)) {
@@ -60,8 +93,10 @@ export function drawDrawing(
   ctx.fillStyle = border;
   ctx.lineWidth = drawing.style.width + (state === 'HOVER' ? 1 : 0);
   ctx.globalAlpha = state === 'PENDING' ? 0.7 : 1;
-  ctx.setLineDash(state === 'PENDING' ? [4, 3] : dashPattern(drawing.style.dash));
-  ctx.lineCap = 'round';
+  ctx.setLineDash(
+    state === 'PENDING' ? [4, 3] : dashPattern(drawing.style.dash, drawing.style.width),
+  );
+  ctx.lineCap = state === 'PENDING' ? 'butt' : dashCap(drawing.style.dash);
   ctx.lineJoin = 'round';
 
   const a = points[0];
@@ -164,6 +199,8 @@ export function drawDrawing(
       const showPercents = option(drawing, 'showPercents', true);
       const showPrices = option(drawing, 'showPrices', true);
       const shade = option(drawing, 'background', false);
+      const shadeOpacity = option(drawing, 'shadeOpacity', 0.07);
+      const labelSide = option<string>(drawing, 'labelSide', 'LEFT');
       const trendLine = option(drawing, 'trendLine', true);
 
       if (trendLine) {
@@ -174,7 +211,7 @@ export function drawDrawing(
         ctx.restore();
       }
 
-      ctx.setLineDash(dashPattern(drawing.style.dash));
+      ctx.setLineDash(dashPattern(drawing.style.dash, drawing.style.width));
       const ys = levels.map((level) => projection.priceToY(level.price));
 
       // Shading goes behind the lines, band by band, so a level's own colour
@@ -185,7 +222,7 @@ export function drawDrawing(
           const top = ys[i];
           const bottom = ys[i + 1];
           if (top === null || bottom === null || top === undefined || bottom === undefined) continue;
-          ctx.globalAlpha = 0.07;
+          ctx.globalAlpha = shadeOpacity;
           ctx.fillStyle = levels[i]!.color;
           ctx.fillRect(left, Math.min(top, bottom), right - left, Math.abs(bottom - top));
         }
@@ -201,6 +238,12 @@ export function drawDrawing(
         ctx.strokeStyle = withAlpha(level.color, level.opacity);
         ctx.fillStyle = withAlpha(level.color, level.opacity);
         ctx.globalAlpha = state === 'PENDING' ? 0.5 : 1;
+        // A level's own thickness and line style, when it has been given one:
+        // zero and undefined both mean "whatever the object uses".
+        ctx.lineWidth = level.width > 0 ? level.width : drawing.style.width;
+        const levelDash = level.dash ?? drawing.style.dash;
+        ctx.setLineDash(dashPattern(levelDash, ctx.lineWidth));
+        ctx.lineCap = dashCap(levelDash);
         line(ctx, { x: left, y }, { x: right, y });
         ctx.globalAlpha = 1;
         if (!showPercents && !showPrices) continue;
@@ -211,7 +254,13 @@ export function drawDrawing(
         // than 70.5% to whoever wrote it.
         if (showPercents) parts.push(level.label || `${(level.fraction * 100).toFixed(1)}%`);
         if (showPrices) parts.push(level.price.toFixed(pricePrecision));
-        ctx.fillText(parts.join('  '), left + 4, y - 2);
+        const text = parts.join('  ');
+        // Labels on whichever side the trader asked for: on the left they sit
+        // over the bars the retracement came from, on the right they sit in
+        // the space it is projecting into.
+        const textX =
+          labelSide === 'RIGHT' ? right - 4 - ctx.measureText(text).width : left + 4;
+        ctx.fillText(text, textX, y - 2);
       }
       ctx.strokeStyle = drawing.style.color;
       ctx.fillStyle = drawing.style.color;
@@ -245,6 +294,11 @@ export function drawDrawing(
         Math.min(a.x, b.x) + 4,
         Math.min(a.y, b.y) - 3,
       );
+      break;
+    }
+    case 'LONG_POSITION':
+    case 'SHORT_POSITION': {
+      drawPosition(ctx, drawing, projection, points, pricePrecision, market);
       break;
     }
     default: {
@@ -327,5 +381,146 @@ function priceTag(
   ctx.fillStyle = '#07090d';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, projection.width - width + 2.5, Math.round(y));
+  ctx.restore();
+}
+
+/**
+ * A planned trade: the target zone, the stop zone and what they are worth.
+ *
+ * It draws a trade; it never places one. The numbers are arithmetic on the
+ * three anchors and the instrument's tick value - no account, no order, no
+ * engine - which is why the tool can be dragged around freely while an actual
+ * position sits untouched in the panel below.
+ */
+function drawPosition(
+  ctx: CanvasRenderingContext2D,
+  drawing: Drawing,
+  projection: Projection,
+  points: ReadonlyArray<Point | null>,
+  pricePrecision: number,
+  market: PaintMarket,
+): void {
+  const entry = points[ENTRY];
+  const target = points[TARGET];
+  const stop = points[STOP];
+  if (!entry || !target || !stop) return;
+
+  const metrics = positionMetrics(drawing, market.tickSize, market.tickValue);
+  if (!metrics) return;
+
+  const left = Math.min(entry.x, target.x);
+  const right = Math.max(entry.x, target.x);
+  const width = Math.max(4, right - left);
+  const profitColor = option(drawing, 'profitColor', '#2ec4a6');
+  const lossColor = option(drawing, 'lossColor', '#f2544b');
+  const zoneOpacity = option(drawing, 'zoneOpacity', 0.14);
+
+  ctx.save();
+  ctx.setLineDash([]);
+
+  // The two zones. Drawn from the entry outwards, so a target dragged through
+  // the entry simply makes the profit zone zero-height rather than inverting.
+  const zone = (from: number, to: number, color: string): void => {
+    const top = Math.min(from, to);
+    const height = Math.abs(to - from);
+    ctx.fillStyle = withAlpha(color, zoneOpacity);
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeStyle = withAlpha(color, 0.85);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left, Math.round(to) + 0.5);
+    ctx.lineTo(right, Math.round(to) + 0.5);
+    ctx.stroke();
+  };
+  zone(entry.y, target.y, profitColor);
+  zone(entry.y, stop.y, lossColor);
+
+  // The entry, which is the one line the trader measures everything from.
+  ctx.strokeStyle = withAlpha(drawing.style.color, drawing.style.opacity);
+  ctx.lineWidth = Math.max(1, drawing.style.width);
+  ctx.beginPath();
+  ctx.moveTo(left, Math.round(entry.y) + 0.5);
+  ctx.lineTo(right, Math.round(entry.y) + 0.5);
+  ctx.stroke();
+
+  // --- the readout ---------------------------------------------------------
+  const showTicks = option(drawing, 'showTicks', true);
+  const showMoney = option(drawing, 'showMoney', true);
+  const showRatio = option(drawing, 'showRatio', true);
+  const fontSize = drawing.style.fontSize;
+  ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, monospace`;
+  ctx.textBaseline = 'middle';
+
+  const money = (value: number): string =>
+    `$${Math.round(Math.abs(value)).toLocaleString('en-US')}`;
+
+  const row = (label: string, price: number, ticks: number, cash: number | null): string => {
+    const out = [`${label} ${price.toFixed(pricePrecision)}`];
+    if (showTicks) out.push(`${ticks}t`);
+    if (cash !== null && showMoney) out.push(money(cash));
+    return out.join('   ');
+  };
+
+  const cash = metrics.qty > 0 && market.tickValue > 0;
+  const labels: Array<{ y: number; text: string; color: string }> = [
+    {
+      y: target.y,
+      text: row('Target', metrics.target, metrics.rewardTicks, cash ? metrics.rewardMoney : null),
+      color: profitColor,
+    },
+    {
+      y: stop.y,
+      text: row('Stop', metrics.stop, metrics.riskTicks, cash ? -metrics.riskMoney : null),
+      color: lossColor,
+    },
+  ];
+  /*
+   * Each label at the middle of its OWN zone, and nothing where there is no
+   * room for it.
+   *
+   * Drawn beside their lines, the three readouts collided the moment the
+   * zones were a few candles tall - a 40-tick target on a one-minute chart is
+   * about twenty-five pixels - and three overlapping rows of numbers is worse
+   * than none.
+   */
+  /*
+   * Behind every row, a little of the chart's own background.
+   *
+   * Numbers read over a candle wick are not numbers. The backing is the
+   * workspace colour at 62%, sized to the text, so the price action is still
+   * visible through it.
+   */
+  const textRow = (text: string, x: number, y: number, color: string): void => {
+    const width = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(7, 9, 13, 0.62)';
+    ctx.fillRect(x - 3, y - fontSize * 0.72, width + 6, fontSize * 1.45);
+    ctx.fillStyle = withAlpha(color, 1);
+    ctx.fillText(text, x, y);
+  };
+
+  for (const label of labels) {
+    const height = Math.abs(label.y - entry.y);
+    if (height < fontSize + 2) continue;
+    textRow(label.text, left + 6, (label.y + entry.y) / 2, label.color);
+  }
+
+  // The summary sits ABOVE the box, clear of both zones.
+  const summary: string[] = [`Entry ${metrics.entry.toFixed(pricePrecision)}`];
+  if (showRatio && metrics.ratio !== null) summary.push(`R:R ${metrics.ratio.toFixed(2)}`);
+  if (metrics.qty > 0) summary.push(`${metrics.qty}x`);
+  if (metrics.riskPercent !== null) summary.push(`${metrics.riskPercent.toFixed(2)}% of account`);
+  textRow(
+    summary.join('   '),
+    left + 6,
+    Math.min(target.y, stop.y, entry.y) - fontSize * 0.8,
+    drawing.style.color,
+  );
+
+  if (drawing.style.showPrice) {
+    priceTag(ctx, projection, entry.y, metrics.entry, drawing.style.color, pricePrecision);
+    priceTag(ctx, projection, target.y, metrics.target, profitColor, pricePrecision);
+    priceTag(ctx, projection, stop.y, metrics.stop, lossColor, pricePrecision);
+  }
+
   ctx.restore();
 }

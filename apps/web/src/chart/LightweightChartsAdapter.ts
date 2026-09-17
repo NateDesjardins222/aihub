@@ -1203,6 +1203,47 @@ export class LightweightChartsAdapter implements ChartAdapter {
     timeScale.setVisibleLogicalRange({ from: index - 60, to: index + 60 });
   }
 
+  /**
+   * Show the same window of TIME as another chart.
+   *
+   * Time, not bar index: two panes on different intervals have different bars,
+   * and a logical range copied between them means nothing. `setVisibleRange`
+   * on a time the series has no bar for is refused by the renderer, so the
+   * nearest bars are found and the logical range is set instead.
+   */
+  setVisibleTimeRange(fromMs: number, toMs: number): void {
+    const timeScale = this.chart?.timeScale();
+    if (!timeScale || this.bars.length === 0) return;
+    const from = this.timeToIndexInternal(fromMs);
+    const to = this.timeToIndexInternal(toMs);
+    if (from === null || to === null || to <= from) return;
+    try {
+      timeScale.setVisibleLogicalRange({ from, to });
+    } catch {
+      // A range the renderer will not accept is simply not applied; the pane
+      // keeps the view it had rather than throwing during a pan.
+    }
+  }
+
+  /**
+   * Put the crosshair on a given time, as if the pointer were there.
+   *
+   * Used to follow another pane's crosshair. Null clears it, so a pointer
+   * leaving one chart does not leave a phantom crosshair on the others.
+   */
+  showCrosshairAt(timeMs: number | null): void {
+    const chart = this.chart;
+    const series = this.priceSeries;
+    if (!chart || !series) return;
+    if (timeMs === null) {
+      chart.clearCrosshairPosition();
+      return;
+    }
+    const bar = this.barNear(timeMs);
+    if (!bar) return;
+    chart.setCrosshairPosition(bar.close, toTime(bar.time), series);
+  }
+
   getVisibleRange(): VisibleRange | null {
     const range = this.chart?.timeScale().getVisibleRange();
     return range ? { from: fromTime(range.from), to: fromTime(range.to) } : null;
@@ -1496,13 +1537,18 @@ export class LightweightChartsAdapter implements ChartAdapter {
     }
   }
 
-  viewDiagnostics(xPixels?: number): {
+  viewDiagnostics(
+    xPixels?: number,
+    price?: number,
+  ): {
     from: number;
     to: number;
     span: number;
     barSpacing: number;
     logicalAtX: number | null;
     priceRange: number | null;
+    /** Where a given price sits, in pixels from the top of the plot. */
+    yAtPrice: number | null;
   } | null {
     const chart = this.chart;
     const container = this.container;
@@ -1522,6 +1568,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
           ? null
           : ((timeScale.coordinateToLogical(xPixels) as number | null) ?? null),
       priceRange: top === null || bottom === null ? null : Math.abs(top - bottom),
+      yAtPrice: price === undefined ? null : this.priceToY(price),
     };
   }
 

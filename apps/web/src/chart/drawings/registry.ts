@@ -56,7 +56,8 @@ export type ToolFamily =
   | 'FIBONACCI'
   | 'SHAPES'
   | 'ANNOTATION'
-  | 'MEASURE';
+  | 'MEASURE'
+  | 'POSITION';
 
 export interface ToolDef {
   readonly kind: DrawingKind;
@@ -136,6 +137,72 @@ const EXTEND_RIGHT: PropDef = {
 export function defaultFibLevels(color = '#6b7a94'): FibLevel[] {
   return FIB_LEVELS.map((value) => ({ value, color, visible: true }));
 }
+
+/**
+ * What a position tool carries beyond its three anchors.
+ *
+ * `qty` and `accountSize` are what turn ticks into money and money into a
+ * percentage of the account. Zero means "do not tell me": the tool then shows
+ * the trade in prices and ticks alone rather than inventing a number.
+ */
+const POSITION_OPTIONS: ToolOptions = {
+  qty: 1,
+  accountSize: 0,
+  profitColor: '#2ec4a6',
+  lossColor: '#f2544b',
+  zoneOpacity: 0.14,
+  showTicks: true,
+  showMoney: true,
+  showRatio: true,
+};
+
+const POSITION_PROPS: readonly PropDef[] = [
+  {
+    key: 'qty',
+    label: 'Contracts',
+    type: 'NUMBER',
+    on: 'OPTIONS',
+    group: 'Appearance',
+    min: 0,
+    max: 999,
+    step: 1,
+    hint: 'Used to price the risk and the reward. It never places an order',
+  },
+  {
+    key: 'accountSize',
+    label: 'Account size',
+    type: 'NUMBER',
+    on: 'OPTIONS',
+    group: 'Appearance',
+    min: 0,
+    max: 100_000_000,
+    step: 1_000,
+    hint: 'Shows the risk as a percentage of this. Zero leaves it out',
+  },
+  {
+    key: 'profitColor',
+    label: 'Target zone',
+    type: 'COLOR',
+    on: 'OPTIONS',
+    group: 'Appearance',
+  },
+  { key: 'lossColor', label: 'Stop zone', type: 'COLOR', on: 'OPTIONS', group: 'Appearance' },
+  {
+    key: 'zoneOpacity',
+    label: 'Zone opacity',
+    type: 'NUMBER',
+    on: 'OPTIONS',
+    group: 'Appearance',
+    min: 0,
+    max: 1,
+    step: 0.02,
+  },
+  FONT_SIZE,
+  { key: 'showRatio', label: 'Risk/reward', type: 'BOOLEAN', on: 'OPTIONS', group: 'Labels' },
+  { key: 'showTicks', label: 'Ticks', type: 'BOOLEAN', on: 'OPTIONS', group: 'Labels' },
+  { key: 'showMoney', label: 'Money', type: 'BOOLEAN', on: 'OPTIONS', group: 'Labels' },
+  SHOW_PRICE,
+];
 
 export const TOOLS: readonly ToolDef[] = [
   {
@@ -224,7 +291,9 @@ export const TOOLS: readonly ToolDef[] = [
       extendRight: false,
       showPrices: true,
       showPercents: true,
+      labelSide: 'LEFT',
       background: false,
+      shadeOpacity: 0.07,
       trendLine: true,
     },
     props: [
@@ -256,11 +325,33 @@ export const TOOLS: readonly ToolDef[] = [
       },
       { key: 'showPrices', label: 'Show prices', type: 'BOOLEAN', on: 'OPTIONS', group: 'Labels' },
       {
+        key: 'labelSide',
+        label: 'Labels',
+        type: 'SELECT',
+        on: 'OPTIONS',
+        group: 'Labels',
+        options: [
+          { id: 'LEFT', label: 'Left' },
+          { id: 'RIGHT', label: 'Right' },
+        ],
+      },
+      {
         key: 'background',
         label: 'Shade between levels',
         type: 'BOOLEAN',
         on: 'OPTIONS',
         group: 'Appearance',
+      },
+      {
+        key: 'shadeOpacity',
+        label: 'Shade opacity',
+        type: 'NUMBER',
+        on: 'OPTIONS',
+        group: 'Appearance',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        hint: 'Keep it low: the candles inside the bands have to stay readable',
       },
       {
         key: 'trendLine',
@@ -295,6 +386,31 @@ export const TOOLS: readonly ToolDef[] = [
     style: {},
     options: {},
     props: [COLOR, WIDTH, FONT_SIZE],
+  },
+  /*
+   * The position tools.
+   *
+   * They plan a trade; they never place one. Nothing here reaches the order
+   * router, the account or the engine - a drawing is a drawing, and the only
+   * way to get a fill in Atlas is to submit an order, server-side, on purpose.
+   */
+  {
+    kind: 'LONG_POSITION',
+    name: KIND_LABEL.LONG_POSITION,
+    family: 'POSITION',
+    anchors: ANCHOR_COUNT.LONG_POSITION,
+    style: { color: '#8a97ad', fontSize: 11 },
+    options: { ...POSITION_OPTIONS },
+    props: POSITION_PROPS,
+  },
+  {
+    kind: 'SHORT_POSITION',
+    name: KIND_LABEL.SHORT_POSITION,
+    family: 'POSITION',
+    anchors: ANCHOR_COUNT.SHORT_POSITION,
+    style: { color: '#8a97ad', fontSize: 11 },
+    options: { ...POSITION_OPTIONS },
+    props: POSITION_PROPS,
   },
 ];
 
@@ -334,10 +450,18 @@ export const FAMILY_LABEL: Record<ToolFamily, string> = {
   SHAPES: 'Shapes',
   ANNOTATION: 'Annotation',
   MEASURE: 'Measure',
+  POSITION: 'Risk and reward',
 };
 
 export function toolsByFamily(): Array<{ family: ToolFamily; tools: readonly ToolDef[] }> {
-  const order: ToolFamily[] = ['LINES', 'SHAPES', 'FIBONACCI', 'ANNOTATION', 'MEASURE'];
+  const order: ToolFamily[] = [
+    'LINES',
+    'SHAPES',
+    'FIBONACCI',
+    'POSITION',
+    'ANNOTATION',
+    'MEASURE',
+  ];
   return order
     .map((family) => ({ family, tools: TOOLS.filter((tool) => tool.family === family) }))
     .filter((group) => group.tools.length > 0);

@@ -17,6 +17,18 @@ import { DrawingProperties } from '../chart/drawings/DrawingProperties';
 import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
 import { useChartStore } from '../state/chart-store';
+import { useLayout } from '../state/layout-store';
+import type { IndicatorInstance } from '../chart/indicators/registry';
+import {
+  onCrosshairSync,
+  onRangeSync,
+  publishCrosshair,
+  publishRange,
+  recordCrosshairApplied,
+  recordRangeApplied,
+  syncDiagnostics,
+  whileApplying,
+} from '../chart/pane-sync';
 import { useTraining } from '../state/training';
 import { useReplayStatus } from '../state/replay-status';
 import { resolveZone, timeFormatter } from '../chart/appearance';
@@ -25,6 +37,9 @@ import { IndicatorRows } from '../chart/IndicatorRows';
 import { IndicatorSettings } from '../chart/IndicatorSettings';
 import { saveError, usePersistence } from '../state/persistence-status';
 import './ChartPanel.css';
+
+/** One frozen empty list, so a pane with no indicators is a stable reference. */
+const EMPTY_INDICATORS: readonly IndicatorInstance[] = [];
 
 const INITIAL_BARS = 1_200;
 const PAGE_BARS = 1_000;
@@ -39,12 +54,45 @@ const PAGE_BARS = 1_000;
  * and drawings, keep the same discipline: both place themselves in an
  * animation frame.
  */
-export function ChartPanel(): JSX.Element {
-  const activeSymbol = useSession((s) => s.activeSymbol);
-  const instrument = useSession(activeInstrument);
+export interface ChartPanelProps {
+  /**
+   * The pane this chart is. One chart is still a pane, so there is exactly one
+   * code path whether the layout shows one chart or four.
+   */
+  readonly paneId?: string;
+  /** True when this is the chart the terminal's keystrokes belong to. */
+  readonly active?: boolean;
+  readonly onActivate?: (() => void) | undefined;
+  readonly onMaximize?: (() => void) | undefined;
+  readonly maximized?: boolean;
+}
 
-  const [timeframe, setTimeframe] = useState<Timeframe>(
-    () => (localStorage.getItem('atlas.chart.timeframe') as Timeframe) ?? '1m',
+export function ChartPanel({
+  paneId = 'p1',
+  active = true,
+  onActivate,
+  onMaximize,
+  maximized = false,
+}: ChartPanelProps = {}): JSX.Element {
+  const terminalSymbol = useSession((s) => s.activeSymbol);
+  const pane = useLayout((s) => s.panes.find((item) => item.id === paneId) ?? null);
+  /*
+   * A pane with no symbol of its own follows the terminal's.
+   *
+   * That is what keeps the first chart and the order ticket pointed at the
+   * same instrument: a chart that silently disagreed with the ticket beside it
+   * would be a way to lose money.
+   */
+  const activeSymbol = pane?.symbol ?? terminalSymbol;
+  const instrument = useSession(
+    (s) => s.instruments.find((i) => i.root === activeSymbol) ?? null,
+  );
+
+  const timeframe = (pane?.timeframe ?? '1m') as Timeframe;
+  const setPaneTimeframe = useLayout((s) => s.setPaneTimeframe);
+  const setTimeframe = useCallback(
+    (next: Timeframe) => setPaneTimeframe(paneId, next),
+    [paneId, setPaneTimeframe],
   );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,13 +106,17 @@ export function ChartPanel(): JSX.Element {
   const hoverTimeRef = useRef<number | null>(null);
   /** Which indicator instance has its settings open. Shared with the header,
    *  which opens the panel for an indicator the moment it is added. */
-  const indicatorSettings = useChartStore((s) => s.indicatorSettingsFor);
-  const setIndicatorSettings = useChartStore((s) => s.openIndicatorSettings);
+  const indicatorSettings = useLayout((s) => s.indicatorSettingsFor);
+  const setIndicatorSettings = useLayout((s) => s.openIndicatorSettings);
+  /** Whose settings panel it is: only the pane that owns it renders it. */
+  const settingsPane = useLayout((s) =>
+    s.indicatorSettingsFor ? (s.paneOf(s.indicatorSettingsFor)?.id ?? null) : null,
+  );
 
   const motionSettings = useMotion((s) => s.settings);
   const appearance = useChartStore((s) => s.appearance);
-  const chartType = useChartStore((s) => s.chartType);
-  const indicators = useChartStore((s) => s.indicators);
+  const chartType = pane?.chartType ?? 'CANDLES';
+  const indicators = pane?.indicators ?? EMPTY_INDICATORS;
   const showDates = useTraining((s) => s.visibility.dateTime);
   const chartFocus = useSession((s) => s.chartFocus);
   /*
@@ -174,14 +226,21 @@ export function ChartPanel(): JSX.Element {
      * that cannot read those can only assert that a screenshot changed, so the
      * chart's own geometry is readable from the page.
      */
-    (window as unknown as { __atlasChartView?: unknown }).__atlasChartView = (x?: number) =>
-      adapterRef.current?.viewDiagnostics(x) ?? null;
+    if (paneId === 'p1') {
+      (window as unknown as { __atlasChartView?: unknown }).__atlasChartView = (
+        x?: number,
+        price?: number,
+      ) => adapterRef.current?.viewDiagnostics(x, price) ?? null;
+      (window as unknown as { __atlasPaneSync?: unknown }).__atlasPaneSync = () =>
+        syncDiagnostics();
+    }
     // The legend is built once, after the mask may already have been chosen, so
     // it is told immediately rather than waiting for the mask to change again.
     legend.setDatesHidden(!useTraining.getState().visibility.dateTime);
     adapter.setDatesHidden(!useTraining.getState().visibility.dateTime);
-    adapter.setChartType(useChartStore.getState().chartType);
-    adapter.setIndicators(useChartStore.getState().indicators);
+    const mounted = useLayout.getState().panes.find((item) => item.id === paneId);
+    adapter.setChartType(mounted?.chartType ?? 'CANDLES');
+    adapter.setIndicators(mounted?.indicators ?? []);
 
     /*
      * The legend follows the crosshair, but at FRAME rate.
@@ -191,6 +250,8 @@ export function ChartPanel(): JSX.Element {
      * painted frame, for a reading nobody can take that fast. The latest bar
      * is remembered and written once a frame instead.
      */
+    /** While this is in the future, the pane is following another's crosshair. */
+    let followingUntil = 0;
     let hoverBar: NormalizedBar | null = null;
     let hoverPending = false;
     let hoverFrame = 0;
@@ -208,11 +269,46 @@ export function ChartPanel(): JSX.Element {
       // bar the trader is pointing at. A ref, not state: it changes on every
       // pointer move.
       hoverTimeRef.current = info.bar?.time ?? null;
+      /*
+       * Publish, unless this pane is currently FOLLOWING someone else's
+       * crosshair. Putting a crosshair on a chart makes that chart report a
+       * crosshair move, and publishing it back bounced the two panes off each
+       * other for as long as the pointer stayed still.
+       */
+      if (useLayout.getState().sync.crosshair && performance.now() > followingUntil) {
+        publishCrosshair({ from: paneId, timeMs: info.bar?.time ?? null });
+      }
+    });
+
+    // And the visible range, for panes that are keeping time in step.
+    const offRange = adapter.onVisibleRangeChange((range) => {
+      const layout = useLayout.getState();
+      if (!range || !layout.sync.time) return;
+      // Only the pane being worked in publishes. A pane that merely FOLLOWED a
+      // range must not turn round and broadcast it, or two charts push each
+      // other along and the pair runs away.
+      if (layout.activePaneId !== paneId) return;
+      publishRange({ from: paneId, fromMs: range.from, toMs: range.to });
+    });
+
+    const offCrosshairSync = onCrosshairSync((message) => {
+      if (message.from === paneId || !useLayout.getState().sync.crosshair) return;
+      followingUntil = performance.now() + 120;
+      adapterRef.current?.showCrosshairAt(message.timeMs);
+      recordCrosshairApplied(paneId, message.timeMs);
+    });
+    const offRangeSync = onRangeSync((message) => {
+      if (message.from === paneId || !useLayout.getState().sync.time) return;
+      whileApplying(() => adapterRef.current?.setVisibleTimeRange(message.fromMs, message.toMs));
+      recordRangeApplied(paneId, message.fromMs, message.toMs);
     });
 
     return () => {
       cancelAnimationFrame(hoverFrame);
       offCrosshair();
+      offRange();
+      offCrosshairSync();
+      offRangeSync();
       adapter.destroy();
       adapterRef.current = null;
       setChartReady(false);
@@ -240,7 +336,7 @@ export function ChartPanel(): JSX.Element {
   }, [precision, timeZone]);
 
   useEffect(() => {
-    localStorage.setItem('atlas.chart.timeframe', timeframe);
+    adapterRef.current?.setTimeframe(timeframe);
   }, [timeframe]);
 
   // -- load history on symbol / timeframe change ---------------------------
@@ -498,7 +594,15 @@ export function ChartPanel(): JSX.Element {
 
   return (
     <section className="chart-panel">
-      <ChartHeader timeframe={timeframe} onTimeframe={setTimeframe} onScreenshot={onScreenshot} />
+      <ChartHeader
+        paneId={paneId}
+        symbol={activeSymbol}
+        timeframe={timeframe}
+        onTimeframe={setTimeframe}
+        onScreenshot={onScreenshot}
+        onMaximize={onMaximize}
+        maximized={maximized}
+      />
 
       <div className="chart-stage">
         <div className="chart-status" data-testid="status-line">
@@ -581,6 +685,8 @@ export function ChartPanel(): JSX.Element {
           adapterRef={adapterRef}
           symbol={activeSymbol}
           pricePrecision={precision}
+          tickSize={tickSize}
+          tickValueMicros={instrument?.tickValueMicros ?? 0}
           ready={chartReady}
           boundsRef={boundsRef}
         />
@@ -608,12 +714,13 @@ export function ChartPanel(): JSX.Element {
           plot. Its values follow the crosshair.
         */}
         <IndicatorRows
+          paneId={paneId}
           adapterRef={adapterRef}
           hoverTimeRef={hoverTimeRef}
           onOpenSettings={setIndicatorSettings}
         />
 
-        {indicatorSettings ? (
+        {indicatorSettings && settingsPane === paneId ? (
           <IndicatorSettings
             instanceId={indicatorSettings}
             onClose={() => setIndicatorSettings(null)}
@@ -662,7 +769,13 @@ export function ChartPanel(): JSX.Element {
         ) : null}
 
         {propertiesFor ? (
-          <DrawingProperties drawingId={propertiesFor} onClose={closeProperties} />
+          <DrawingProperties
+            drawingId={propertiesFor}
+            onClose={closeProperties}
+            tickSize={tickSize}
+            tickValueMicros={instrument?.tickValueMicros ?? 0}
+            pricePrecision={precision}
+          />
         ) : null}
       </div>
     </section>

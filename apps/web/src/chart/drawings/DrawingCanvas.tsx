@@ -28,6 +28,9 @@ export interface DrawingCanvasProps {
   readonly adapterRef: React.RefObject<ChartAdapter | null>;
   readonly symbol: string;
   readonly pricePrecision: number;
+  /** For the position tools, which price a trade in ticks and in dollars. */
+  readonly tickSize: number;
+  readonly tickValueMicros: number;
   readonly ready: boolean;
   /** Shared with the input machine, so both agree where things are. */
   readonly boundsRef: React.RefObject<BoundsCache>;
@@ -37,6 +40,8 @@ export function DrawingCanvas({
   adapterRef,
   symbol,
   pricePrecision,
+  tickSize,
+  tickValueMicros,
   ready,
   boundsRef,
 }: DrawingCanvasProps): JSX.Element | null {
@@ -51,9 +56,11 @@ export function DrawingCanvas({
     tool: useChartStore.getState().tool,
     symbol,
     pricePrecision,
+    market: { tickSize, tickValue: tickValueMicros / 1_000_000 },
   });
   liveRef.current.symbol = symbol;
   liveRef.current.pricePrecision = pricePrecision;
+  liveRef.current.market = { tickSize, tickValue: tickValueMicros / 1_000_000 };
 
   useEffect(() => {
     const apply = (state: ReturnType<typeof useChartStore.getState>): void => {
@@ -136,13 +143,27 @@ export function DrawingCanvas({
             : drawing.id === live.hoverId
               ? 'HOVER'
               : 'NORMAL';
-        drawDrawing(ctx, drawing, projection as Projection, paintState, state.pricePrecision);
+        drawDrawing(
+          ctx,
+          drawing,
+          projection as Projection,
+          paintState,
+          state.pricePrecision,
+          state.market,
+        );
       }
 
       // The preview belongs to a placement in progress. With no tool armed
       // there is no placement, so a stale one is never painted.
       if (live.preview && state.tool !== 'CURSOR') {
-        drawDrawing(ctx, live.preview, projection as Projection, 'PENDING', state.pricePrecision);
+        drawDrawing(
+          ctx,
+          live.preview,
+          projection as Projection,
+          'PENDING',
+          state.pricePrecision,
+          state.market,
+        );
       }
     };
 

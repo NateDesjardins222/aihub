@@ -154,6 +154,12 @@ export class TradingViewAdvancedChartsAdapter implements ChartAdapter {
   }> {
     return [];
   }
+  setVisibleTimeRange(): void {
+    /* nothing to sync until this adapter is implemented */
+  }
+  showCrosshairAt(): void {
+    /* nothing to sync until this adapter is implemented */
+  }
   indicatorPanes(): ReadonlyArray<{
     instanceId: string;
     pane: number;

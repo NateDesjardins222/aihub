@@ -25,6 +25,8 @@ import type { ChartAdapter } from '../ChartAdapter';
 import { useChartStore } from '../../state/chart-store';
 import {
   ANCHOR_COUNT,
+  isPositionTool,
+  positionAnchors,
   applyHandle,
   hitTest,
   magnetAnchor,
@@ -304,7 +306,9 @@ export function useDrawingInput(options: DrawingInputOptions): void {
             id: newId(),
             kind,
             symbol: env.current.symbol,
-            anchors,
+            anchors: isPositionTool(kind)
+              ? placedPosition(kind, anchor, view, env.current.tickSize)
+              : anchors,
             style: defaults.style,
             options: defaults.options,
             text: kind === 'TEXT' ? 'Text' : '',
@@ -526,4 +530,23 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     resetInteraction();
     invalidate();
   }, [tool]);
+}
+
+
+/**
+ * A position tool from the one click that placed it.
+ *
+ * The box is thirty bars wide, measured in BAR INDEX rather than in time, so a
+ * position drawn at the close of a session does not stretch across the gap to
+ * the next one. The default risk comes from the model.
+ */
+function placedPosition(
+  kind: DrawingKind,
+  entry: Anchor,
+  view: Projection,
+  tickSize: number,
+): Anchor[] {
+  const index = view.timeToIndex(entry.time);
+  const rightTime = index === null ? entry.time : (view.indexToTime(index + 30) ?? entry.time);
+  return positionAnchors(kind, entry, tickSize, rightTime);
 }

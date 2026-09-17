@@ -10,7 +10,17 @@
  */
 import { useState, type JSX } from 'react';
 import { useChartStore } from '../../state/chart-store';
-import { KIND_LABEL, readLevels, type Drawing, type FibLevel } from './model';
+import {
+  ENTRY,
+  KIND_LABEL,
+  STOP,
+  TARGET,
+  isPositionTool,
+  positionMetrics,
+  readLevels,
+  type Drawing,
+  type FibLevel,
+} from './model';
 import {
   FIB_PRESETS,
   normalizeLevels,
@@ -33,9 +43,16 @@ const GROUP_ORDER = ['Appearance', 'Levels', 'Labels', 'Extend', 'Text'] as cons
 export function DrawingProperties({
   drawingId,
   onClose,
+  tickSize = 0.25,
+  tickValueMicros = 0,
+  pricePrecision = 2,
 }: {
   drawingId: string;
   onClose: () => void;
+  /** The instrument's tick, so a price can be typed in the steps it moves in. */
+  tickSize?: number;
+  tickValueMicros?: number;
+  pricePrecision?: number;
 }): JSX.Element | null {
   const drawing = useChartStore((s) => s.drawings.find((item) => item.id === drawingId) ?? null);
   const templates = useChartStore((s) => s.templates);
@@ -90,6 +107,38 @@ export function DrawingProperties({
               ))}
             </Group>
           ))}
+
+          {/*
+            Coordinates.
+
+            A trader who knows the stop is at 29,687.25 should be able to TYPE
+            it rather than drag a handle until the label reads the right thing.
+            Every anchor's price is editable here; the time is shown because it
+            is what the anchor is pinned to, and it is moved by dragging.
+          */}
+          <Group title="Coordinates">
+            {drawing.anchors.map((anchor, index) => (
+              <Row key={index} label={anchorLabel(drawing, index)}>
+                <div className="dp-coord">
+                  <Num
+                    value={anchor.price}
+                    step={tickSize}
+                    onChange={(price) => {
+                      const anchors = drawing.anchors.map((existing, at) =>
+                        at === index ? { ...existing, price } : existing,
+                      );
+                      updateDrawing(drawing.id, { anchors });
+                      commitHistory();
+                    }}
+                  />
+                  <span className="dp-coord-time">{whenLabel(anchor.time)}</span>
+                </div>
+              </Row>
+            ))}
+            {isPositionTool(drawing.kind) ? (
+              <p className="st-note">{riskLine(drawing, tickSize, tickValueMicros, pricePrecision)}</p>
+            ) : null}
+          </Group>
 
           <Group title="Visibility">
             <Row label="Locked" hint="A locked object can be selected but not moved">
@@ -272,6 +321,17 @@ function PropRow({
         </Row>
       );
 
+    case 'SELECT':
+      return (
+        <Row label={prop.label} hint={prop.hint}>
+          <Choice
+            value={typeof value === 'string' ? value : (prop.options?.[0]?.id ?? '')}
+            options={[...(prop.options ?? [])]}
+            onChange={(next) => set({ [prop.key]: next })}
+          />
+        </Row>
+      );
+
     case 'BOOLEAN':
       return (
         <Row label={prop.label} hint={prop.hint}>
@@ -388,6 +448,50 @@ function LevelEditor({
               )
             }
           />
+          {/* Its own thickness, and its own line style. Zero and "—" both
+              mean "the same as the object", so a set of seven levels does not
+              become seven separate decisions unless the trader wants it to. */}
+          <input
+            className="num dp-level-width"
+            type="number"
+            min={0}
+            max={6}
+            step={1}
+            value={level.width ?? 0}
+            aria-label={`Thickness of ${(level.value * 100).toFixed(1)}%`}
+            title="Thickness. 0 uses the object's own"
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (!Number.isFinite(next)) return;
+              write(levels.map((item, i) => (i === index ? { ...item, width: next } : item)));
+            }}
+          />
+          <select
+            className="dp-level-dash"
+            value={level.dash ?? ''}
+            aria-label={`Line style of ${(level.value * 100).toFixed(1)}%`}
+            title="Line style"
+            onChange={(event) =>
+              write(
+                levels.map((item, i) =>
+                  i === index
+                    ? {
+                        ...item,
+                        dash:
+                          event.target.value === ''
+                            ? undefined
+                            : (event.target.value as 'SOLID' | 'DASHED' | 'DOTTED'),
+                      }
+                    : item,
+                ),
+              )
+            }
+          >
+            <option value="">—</option>
+            <option value="SOLID">Solid</option>
+            <option value="DASHED">Dashed</option>
+            <option value="DOTTED">Dotted</option>
+          </select>
           <input
             className="dp-level-label"
             type="text"
@@ -425,4 +529,55 @@ function LevelEditor({
       </button>
     </div>
   );
+}
+
+/** What an anchor is called in this tool's own terms. */
+function anchorLabel(drawing: Drawing, index: number): string {
+  if (isPositionTool(drawing.kind)) {
+    if (index === ENTRY) return 'Entry';
+    if (index === TARGET) return 'Target';
+    if (index === STOP) return 'Stop';
+  }
+  return drawing.anchors.length === 1 ? 'Price' : `Point ${index + 1}`;
+}
+
+function whenLabel(timeMs: number): string {
+  const when = new Date(timeMs);
+  if (Number.isNaN(when.getTime())) return '';
+  return when.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * The trade the position tool is describing, in one line.
+ *
+ * Read from the same pure function the painter uses, so the dialog and the
+ * chart can never disagree about what the drawing says. It describes a PLAN:
+ * no order exists, and nothing here can create one.
+ */
+function riskLine(
+  drawing: Drawing,
+  tickSize: number,
+  tickValueMicros: number,
+  pricePrecision: number,
+): string {
+  const metrics = positionMetrics(drawing, tickSize, tickValueMicros / 1_000_000);
+  if (!metrics) return '';
+  const parts = [
+    `Risk ${metrics.riskTicks} ticks`,
+    `reward ${metrics.rewardTicks} ticks`,
+    metrics.ratio === null ? 'no risk set' : `R:R ${metrics.ratio.toFixed(2)}`,
+  ];
+  if (metrics.qty > 0 && tickValueMicros > 0) {
+    parts.push(
+      `${metrics.qty} contract${metrics.qty === 1 ? '' : 's'}: risk $${Math.round(metrics.riskMoney).toLocaleString('en-US')}, reward $${Math.round(metrics.rewardMoney).toLocaleString('en-US')}`,
+    );
+  }
+  if (metrics.riskPercent !== null) parts.push(`${metrics.riskPercent.toFixed(2)}% of the account`);
+  void pricePrecision;
+  return `${parts.join(' · ')}. Planning only - this never places an order.`;
 }

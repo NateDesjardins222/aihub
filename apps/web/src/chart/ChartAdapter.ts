@@ -195,6 +195,10 @@ export interface ChartAdapter {
   goToTime(time: number): void;
 
   getVisibleRange(): VisibleRange | null;
+  /** Show the same window of time as another pane. */
+  setVisibleTimeRange(fromMs: number, toMs: number): void;
+  /** Follow another pane's crosshair. Null clears it. */
+  showCrosshairAt(timeMs: number | null): void;
   /** Fires when the user scrolls back past the loaded history. */
   onNeedMoreHistory(callback: (oldestLoadedTime: number) => void): () => void;
   onCrosshairMove(callback: (info: CrosshairInfo) => void): () => void;
@@ -219,7 +223,10 @@ export interface ChartAdapter {
    * questions about the visible logical range and the bar spacing, and a test
    * that cannot read them can only assert that a screenshot changed.
    */
-  viewDiagnostics(xPixels?: number): {
+  viewDiagnostics(
+    xPixels?: number,
+    price?: number,
+  ): {
     readonly from: number;
     readonly to: number;
     readonly span: number;
@@ -228,5 +235,7 @@ export interface ChartAdapter {
     readonly logicalAtX: number | null;
     /** Price points between the top and the bottom of the plot. */
     readonly priceRange: number | null;
+    /** Where a given price sits in pixels, when one is supplied. */
+    readonly yAtPrice: number | null;
   } | null;
 }

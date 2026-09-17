@@ -29,12 +29,15 @@ const TOOL_ICON: Record<DrawingKind, IconName> = {
   FIB_RETRACEMENT: 'fib',
   TEXT: 'text',
   MEASURE: 'measure',
+  LONG_POSITION: 'position-long',
+  SHORT_POSITION: 'position-short',
 };
 
 const CATEGORIES: ReadonlyArray<{ name: string; tools: readonly DrawingKind[] }> = [
   { name: 'Lines', tools: ['TREND_LINE', 'RAY', 'EXTENDED_LINE', 'HORIZONTAL_LINE', 'VERTICAL_LINE'] },
   { name: 'Shapes', tools: ['RECTANGLE'] },
   { name: 'Fibonacci', tools: ['FIB_RETRACEMENT'] },
+  { name: 'Risk and reward', tools: ['LONG_POSITION', 'SHORT_POSITION'] },
   { name: 'Annotation', tools: ['TEXT'] },
   { name: 'Measure', tools: ['MEASURE'] },
 ];

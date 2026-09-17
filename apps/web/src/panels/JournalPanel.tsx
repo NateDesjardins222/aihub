@@ -9,7 +9,7 @@
  * formats and nothing else - a journal that recomputed its own statistics would
  * eventually disagree with the trades it is supposed to be summarizing.
  */
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import { useTrading } from '../trading/store';
 import { useTraining, MASK } from '../state/training';
 import {
@@ -48,6 +48,8 @@ export function JournalPanel(): JSX.Element {
   const accountId = useTrading((s) => s.accountId);
   const visibility = useTraining((s) => s.visibility);
   const [tab, setTab] = useState<JournalTab>('OVERVIEW');
+  /** A day picked from the calendar: the trades list then shows that day only. */
+  const [dayFilter, setDayFilter] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<ApiAnalytics | null>(null);
   const [trades, setTrades] = useState<ApiJournalTrade[]>([]);
   const [tags, setTags] = useState<ApiTag[]>([]);
@@ -126,14 +128,28 @@ export function JournalPanel(): JSX.Element {
       </div>
 
       {tab === 'OVERVIEW' ? <Overview analytics={analytics} masked={!visibility.pnl} /> : null}
-      {tab === 'CALENDAR' ? <Calendar analytics={analytics} masked={!visibility.pnl} /> : null}
+      {tab === 'CALENDAR' ? (
+        <Calendar
+          analytics={analytics}
+          masked={!visibility.pnl}
+          onPickDay={(tradeDate) => {
+            // A day on the calendar is a question - "what did I do on the
+            // 17th?" - so it opens the trades of that day rather than just
+            // colouring a square.
+            setDayFilter(tradeDate);
+            setTab('TRADES');
+          }}
+        />
+      ) : null}
       {tab === 'TRADES' ? (
         <Trades
-          trades={trades}
+          trades={dayFilter ? trades.filter((trade) => trade.tradeDate === dayFilter) : trades}
           tags={tags}
           masked={!visibility.tradeResults}
           onChanged={load}
           onTagsChanged={(next) => setTags(next)}
+          day={dayFilter}
+          onClearDay={() => setDayFilter(null)}
         />
       ) : null}
       {tab === 'SESSIONS' ? (
@@ -331,40 +347,190 @@ function EquityCurve({
 
 // --------------------------------------------------------------- calendar ---
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+interface DayResult {
+  readonly tradeDate: string;
+  readonly netPnlMicros: number;
+  readonly trades: number;
+  readonly wins: number;
+  readonly losses: number;
+}
+
+/** A trading date - 2026-09-17 - as a calendar day, with no timezone in it. */
+function parseDate(tradeDate: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(tradeDate);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]) - 1, day: Number(match[3]) };
+}
+
+function monthKey(year: number, month: number): string {
+  return `${year}-${String(month + 1).padStart(2, '0')}`;
+}
+
+function monthName(year: number, month: number): string {
+  return new Date(Date.UTC(year, month, 1)).toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * The trading month.
+ *
+ * A real calendar: seven columns from Sunday, the weeks of the month as rows,
+ * every day of the month in its own square whether or not it was traded, and a
+ * total for each week beside it. The previous version was a strip of cards for
+ * the days that happened to have trades, which tells a trader nothing about
+ * WHEN in the month they were losing money.
+ */
 function Calendar({
   analytics,
   masked,
+  onPickDay,
 }: {
   analytics: ApiAnalytics | null;
   masked: boolean;
+  onPickDay: (tradeDate: string) => void;
 }): JSX.Element {
-  if (!analytics || analytics.days.length === 0) {
+  const days: readonly DayResult[] = analytics?.days ?? [];
+  const byDate = useMemo(() => new Map(days.map((day) => [day.tradeDate, day])), [days]);
+
+  // Which months have anything in them, newest first, so the arrows can only
+  // walk to a month the account actually traded in - plus the current one.
+  const months = useMemo(() => {
+    const seen = new Set<string>();
+    for (const day of days) {
+      const parsed = parseDate(day.tradeDate);
+      if (parsed) seen.add(monthKey(parsed.year, parsed.month));
+    }
+    const now = new Date();
+    seen.add(monthKey(now.getUTCFullYear(), now.getUTCMonth()));
+    return [...seen].sort();
+  }, [days]);
+
+  const [cursor, setCursor] = useState<string>(() => months[months.length - 1] ?? '');
+  const index = Math.max(0, months.indexOf(cursor));
+  const shown = months[index] ?? months[months.length - 1] ?? '';
+  const [yearText, monthText] = shown.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText) - 1;
+
+  if (!shown || Number.isNaN(year)) {
     return <div className="journal-empty">No trading days recorded yet.</div>;
   }
 
-  const peak = Math.max(...analytics.days.map((d) => Math.abs(d.netPnlMicros)), 1);
+  // The grid: leading blanks to the first weekday, then every day of the month.
+  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const cells: Array<DayResult | { blank: true } | { day: number }> = [];
+  for (let i = 0; i < firstWeekday; i += 1) cells.push({ blank: true });
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = `${shown}-${String(day).padStart(2, '0')}`;
+    cells.push(byDate.get(key) ?? { day });
+  }
+  while (cells.length % 7 !== 0) cells.push({ blank: true });
+
+  const weeks: Array<Array<(typeof cells)[number]>> = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  const traded = days.filter((day) => day.tradeDate.startsWith(shown));
+  const monthNet = traded.reduce((sum, day) => sum + day.netPnlMicros, 0);
+  const monthTrades = traded.reduce((sum, day) => sum + day.trades, 0);
+  const green = traded.filter((day) => day.netPnlMicros > 0).length;
+
+  const money = (micros: number): string =>
+    masked ? MASK : formatMicros(micros, { sign: true });
 
   return (
     <div className="journal-body">
       <section className="journal-block">
-        <h4>Daily results</h4>
-        <div className="journal-calendar">
-          {analytics.days.map((day) => {
-            const intensity = Math.min(1, Math.abs(day.netPnlMicros) / peak);
-            const positive = day.netPnlMicros >= 0;
+        <header className="cal-head">
+          <button
+            className="cal-nav"
+            onClick={() => setCursor(months[Math.max(0, index - 1)] ?? shown)}
+            disabled={index <= 0}
+            aria-label="Previous month"
+          >
+            ‹
+          </button>
+          <h4 data-testid="calendar-month">{monthName(year, month)}</h4>
+          <button
+            className="cal-nav"
+            onClick={() => setCursor(months[Math.min(months.length - 1, index + 1)] ?? shown)}
+            disabled={index >= months.length - 1}
+            aria-label="Next month"
+          >
+            ›
+          </button>
+          <div className="hdr-spacer" />
+          <span className="cal-total" data-testid="calendar-total">
+            <b className={monthNet >= 0 ? 'up' : 'down'}>{money(monthNet)}</b>
+            <span className="cal-total-sub">
+              {traded.length} day{traded.length === 1 ? '' : 's'} · {monthTrades} trade
+              {monthTrades === 1 ? '' : 's'} · {green} green
+            </span>
+          </span>
+        </header>
+
+        <div className="cal-grid" data-testid="calendar-grid">
+          {WEEKDAYS.map((label) => (
+            <div className="cal-weekday" key={label}>
+              {label}
+            </div>
+          ))}
+          <div className="cal-weekday cal-weekday-total">Week</div>
+
+          {weeks.map((week, weekIndex) => {
+            const weekDays = week.filter((cell): cell is DayResult => 'tradeDate' in cell);
+            const weekNet = weekDays.reduce((sum, day) => sum + day.netPnlMicros, 0);
             return (
-              <div
-                key={day.tradeDate}
-                className={`journal-day ${positive ? 'up' : 'down'}`}
-                style={{ opacity: 0.25 + intensity * 0.75 }}
-                title={`${day.tradeDate}: ${day.trades} trades, ${day.wins}W ${day.losses}L`}
-              >
-                <span className="journal-day-date">{day.tradeDate.slice(5)}</span>
-                <span className="num journal-day-pnl">
-                  {masked ? MASK : formatMicros(day.netPnlMicros, { sign: true })}
-                </span>
-                <span className="journal-day-count">{day.trades} trades</span>
-              </div>
+              <Fragment key={weekIndex}>
+                {week.map((cell, cellIndex) => {
+                  if ('blank' in cell) {
+                    return <div className="cal-cell cal-cell-blank" key={cellIndex} />;
+                  }
+                  if (!('tradeDate' in cell)) {
+                    return (
+                      <div className="cal-cell cal-cell-quiet" key={cellIndex}>
+                        <span className="cal-day">{cell.day}</span>
+                      </div>
+                    );
+                  }
+                  const parsed = parseDate(cell.tradeDate);
+                  const positive = cell.netPnlMicros >= 0;
+                  return (
+                    <button
+                      className={`cal-cell cal-cell-traded ${positive ? 'up' : 'down'}`}
+                      key={cellIndex}
+                      data-testid="calendar-day"
+                      data-date={cell.tradeDate}
+                      onClick={() => onPickDay(cell.tradeDate)}
+                      title={`${cell.tradeDate}: ${cell.trades} trades, ${cell.wins}W ${cell.losses}L`}
+                    >
+                      <span className="cal-day">{parsed?.day ?? ''}</span>
+                      <span className="num cal-pnl">{money(cell.netPnlMicros)}</span>
+                      <span className="cal-count">
+                        {cell.trades} trade{cell.trades === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                  );
+                })}
+                <div
+                  className={`cal-cell cal-week ${weekDays.length === 0 ? 'cal-cell-quiet' : weekNet >= 0 ? 'up' : 'down'}`}
+                  data-testid="calendar-week"
+                >
+                  {weekDays.length > 0 ? (
+                    <>
+                      <span className="num cal-pnl">{money(weekNet)}</span>
+                      <span className="cal-count">
+                        {weekDays.length} day{weekDays.length === 1 ? '' : 's'}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              </Fragment>
             );
           })}
         </div>
@@ -381,12 +547,17 @@ function Trades({
   masked,
   onChanged,
   onTagsChanged,
+  day = null,
+  onClearDay,
 }: {
   trades: ApiJournalTrade[];
   tags: ApiTag[];
   masked: boolean;
   onChanged: () => Promise<void>;
   onTagsChanged: (tags: ApiTag[]) => void;
+  /** The calendar day being shown, when the list was opened from one. */
+  day?: string | null;
+  onClearDay?: () => void;
 }): JSX.Element {
   const [open, setOpen] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -395,7 +566,27 @@ function Trades({
 
   const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
 
-  if (trades.length === 0) return <div className="journal-empty">No trades recorded yet.</div>;
+  const dayChip = day ? (
+    <div className="journal-daychip" data-testid="journal-day-filter">
+      <span>
+        Showing <b>{day}</b> · {trades.length} trade{trades.length === 1 ? '' : 's'}
+      </span>
+      <button className="chip" onClick={onClearDay} aria-label="Show every trade">
+        Show all
+      </button>
+    </div>
+  ) : null;
+
+  if (trades.length === 0) {
+    return (
+      <div className="journal-body">
+        {dayChip}
+        <div className="journal-empty">
+          {day ? 'No trades on that day.' : 'No trades recorded yet.'}
+        </div>
+      </div>
+    );
+  }
 
   const toggleTag = async (trade: ApiJournalTrade, tagId: string): Promise<void> => {
     const next = trade.tagIds.includes(tagId)
@@ -407,6 +598,7 @@ function Trades({
 
   return (
     <div className="journal-body">
+      {dayChip}
       <ul className="journal-trades">
         {trades.map((trade) => {
           const expanded = open === trade.id;

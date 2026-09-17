@@ -11,7 +11,7 @@
  */
 import type { JSX } from 'react';
 import { useChartStore } from '../../state/chart-store';
-import { KIND_LABEL, type Drawing } from './model';
+import { KIND_LABEL, STOP, TARGET, isPositionTool, type Drawing } from './model';
 import { Icon } from '../../ui/Icon';
 import './ObjectTree.css';
 
@@ -101,6 +101,14 @@ function describe(drawing: Drawing): string {
   const first = drawing.anchors[0];
   if (!first) return '';
   if (drawing.kind === 'TEXT') return drawing.text.slice(0, 18);
+  if (isPositionTool(drawing.kind)) {
+    // Three prices, each named: "entry → stop" told a trader nothing about
+    // where the target was, which is half of what the tool is for.
+    const target = drawing.anchors[TARGET];
+    const stop = drawing.anchors[STOP];
+    if (!target || !stop) return format(first.price);
+    return `${format(first.price)} T ${format(target.price)} S ${format(stop.price)}`;
+  }
   if (drawing.anchors.length === 1) return format(first.price);
   const last = drawing.anchors[drawing.anchors.length - 1]!;
   return `${format(first.price)} → ${format(last.price)}`;

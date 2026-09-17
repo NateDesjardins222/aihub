@@ -85,3 +85,60 @@ With the fix removed the suite fails at its third check with `0 lit pixels`.
 
 Still owed here: nothing identified, but the panes have had no per-pane height
 work (an oscillator pane cannot be resized by dragging its separator yet).
+
+---
+
+## P2 — the drawing engine
+
+### Long and Short position tools
+
+New. They plan a trade and they never place one: nothing in them reaches the
+order router, the account or the engine.
+
+| Item | Status | Evidence |
+|---|---|---|
+| A long and a short position tool, in their own rail category | AUTOMATED TESTED + MANUALLY BROWSER VERIFIED | `position-tools.spec.mjs` (30) — "Risk and reward" in the catalogue; screenshots `position-long.png`, `position-both.png` |
+| Entry, target and stop, from ONE click at a 2:1 default | AUTOMATED TESTED | same — 40 ticks up, 20 down, every price rounded to the instrument's tick |
+| Each level dragged independently | AUTOMATED TESTED | same — the stop handle offers a resize cursor, drags the stop alone, and leaves the entry and the target to the tick |
+| The body drags the whole trade without changing it | AUTOMATED TESTED | same — all three prices move, risk and reward unchanged |
+| Risk and reward in ticks, with the ratio | AUTOMATED TESTED | same — "Risk 20 ticks · reward 40 ticks · R:R 2.00" |
+| Priced in dollars by a contract count | AUTOMATED TESTED | same — 1 contract $100/$200, 3 contracts $300/$600 on NQ's $5 tick |
+| Account risk as a percentage | AUTOMATED TESTED | same — $300 of a $50,000 account is "0.60% of the account" |
+| Prices can be TYPED, not only dragged | AUTOMATED TESTED | same — a Coordinates group with Entry, Target and Stop; typing the stop moved the stop alone |
+| It never places an order | AUTOMATED TESTED | same — no position opened, 27 order rows before and 27 after, and the account bar byte-identical |
+| Both survive a reload | AUTOMATED TESTED | same |
+| Unit arithmetic | AUTOMATED TESTED | `model.test.ts` — the 2:1 default, the short mirror, ticks/dollars/percent by hand, no ratio when the stop is at the entry, independent handles, the box's hit area |
+
+### Two defects found while building them
+
+**A saved position was thrown away on every reload.** Loading a chart checked
+each stored object's anchor count against the number of CLICKS its tool takes.
+A position tool takes one click and stores three anchors, so every one of them
+failed that check and was silently dropped. The two numbers are now separate
+(`ANCHOR_COUNT` for placement, `STORED_ANCHORS` for what a finished object
+holds).
+
+**An object edited outside a gesture could not be clicked where it was.** The
+hit-test bounds cache is invalidated by a view change and by the end of a drag.
+Geometry also changes with neither: a price typed into the settings dialog, an
+undo, a template that moves a level. Those left a stale rectangle, so the
+object rejected clicks on itself and accepted clicks where it used to be. The
+cache now also compares the drawing object it computed from, which the store
+replaces on every edit. Regression test: `bounds.test.ts`.
+
+**A thick dashed or dotted line painted solid.** The dash pattern was fixed at
+`[1, 3]` for dotted while the line cap was always round, so at five pixels wide
+each cap was wider than the gap after it. The pattern now scales with the line
+width and round caps are dropped whenever a pattern is in use.
+
+### The Fibonacci level editor
+
+| Item | Status | Evidence |
+|---|---|---|
+| Type any level, add, delete | AUTOMATED TESTED | `fib-levels.spec.mjs`, `line-tools.spec.mjs` — a custom 161.8% draws beyond the object |
+| Per-level colour, opacity, name, visibility | AUTOMATED TESTED | `line-tools.spec.mjs` — fading one level fades that line alone |
+| Per-level THICKNESS and LINE STYLE | AUTOMATED TESTED | `fib-levels.spec.mjs` — thickening one level paints 1,840 more pixels; dotting the same level breaks it up; setting it back paints exactly as before |
+| Labels on the left or the right | AUTOMATED TESTED | same — the painted ink moves from 3,979/2,039 px left/right to 1,738/3,244 |
+| Shading between levels, with its own opacity | AUTOMATED TESTED | same — mean alpha rises with shading on, stays faint at the default, and trebles at 0.5 |
+| Presets, templates, save as default, reset | AUTOMATED TESTED | `drawing-engine.spec.mjs` (36) |
+| Reverse, extend left/right, show prices, show levels | AUTOMATED TESTED | `line-tools.spec.mjs` |

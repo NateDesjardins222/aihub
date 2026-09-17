@@ -14,12 +14,17 @@
  */
 import { useEffect, useRef, type JSX } from 'react';
 import type { ChartAdapter } from './ChartAdapter';
-import { useChartStore } from '../state/chart-store';
+import { useLayout } from '../state/layout-store';
 import { indicatorDef, indicatorTitle, type IndicatorInstance } from './indicators/registry';
 import { Icon } from '../ui/Icon';
 import './IndicatorRows.css';
 
+/** One frozen empty list, so a pane with no indicators is a stable selector. */
+const EMPTY: readonly IndicatorInstance[] = [];
+
 export interface IndicatorRowsProps {
+  /** The pane whose indicators these are. */
+  readonly paneId: string;
   readonly adapterRef: React.RefObject<ChartAdapter | null>;
   /** The crosshair's bar time, or null when the pointer is off the plot. */
   readonly hoverTimeRef: React.RefObject<number | null>;
@@ -52,14 +57,17 @@ function panesOf(
 }
 
 export function IndicatorRows({
+  paneId,
   adapterRef,
   hoverTimeRef,
   onOpenSettings,
 }: IndicatorRowsProps): JSX.Element | null {
-  const indicators = useChartStore((s) => s.indicators);
-  const updateIndicator = useChartStore((s) => s.updateIndicator);
-  const removeIndicator = useChartStore((s) => s.removeIndicator);
-  const duplicateIndicator = useChartStore((s) => s.duplicateIndicator);
+  const indicators = useLayout(
+    (s) => s.panes.find((pane) => pane.id === paneId)?.indicators ?? EMPTY,
+  );
+  const updateIndicator = useLayout((s) => s.updateIndicator);
+  const removeIndicator = useLayout((s) => s.removeIndicator);
+  const duplicateIndicator = useLayout((s) => s.duplicateIndicator);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // One frame reads every value and writes the ones that changed.

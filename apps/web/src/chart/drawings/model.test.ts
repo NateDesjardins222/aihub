@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANCHOR_COUNT,
   DEFAULT_STYLE,
+  STORED_ANCHORS,
   FIB_LEVELS,
   distanceToLine,
   drawingBounds,
@@ -13,9 +15,12 @@ import {
   handlePoints,
   handlesFor,
   hitTest,
+  isPositionTool,
   magnetAnchor,
   moveAnchor,
   translate,
+  positionAnchors,
+  positionMetrics,
   translateByBars,
   type Drawing,
   type DrawingKind,
@@ -545,5 +550,131 @@ describe('moving a drawing by bars', () => {
       indexToTime: () => null,
     };
     expect(translateByBars(line, 5, -10, nowhere).anchors[0]).toEqual({ time: 0, price: 90 });
+  });
+});
+
+/**
+ * The position tools.
+ *
+ * NQ numbers, by hand: a 0.25 tick and $5 a tick for one contract. Everything
+ * here is arithmetic on three anchors - the point of the tests is that the
+ * arithmetic is the arithmetic a trader would do on paper, and that nothing in
+ * it touches an order, an account or a fill.
+ */
+describe('position tools', () => {
+  const NQ_TICK = 0.25;
+  const NQ_TICK_VALUE = 5;
+
+  it('places a 2:1 trade from the one click that made it', () => {
+    const anchors = positionAnchors('LONG_POSITION', { time: 60_000, price: 20_000 }, NQ_TICK, 90_000);
+    // 40 ticks up, 20 ticks down: 10 points and 5 points on NQ.
+    expect(anchors[0]).toEqual({ time: 60_000, price: 20_000 });
+    expect(anchors[1]).toEqual({ time: 90_000, price: 20_010 });
+    expect(anchors[2]).toEqual({ time: 90_000, price: 19_995 });
+  });
+
+  it('mirrors it for a short', () => {
+    const anchors = positionAnchors('SHORT_POSITION', { time: 0, price: 20_000 }, NQ_TICK, 30_000);
+    expect(anchors[1]!.price).toBe(19_990);
+    expect(anchors[2]!.price).toBe(20_005);
+    expect(isPositionTool('SHORT_POSITION')).toBe(true);
+    expect(isPositionTool('RECTANGLE')).toBe(false);
+  });
+
+  it('prices the trade in ticks, dollars and account risk', () => {
+    // Long 3 contracts from 20,000 with a 15-point target and a 5-point stop.
+    const long = drawing(
+      'LONG_POSITION',
+      [
+        [0, 20_000],
+        [60_000, 20_015],
+        [60_000, 19_995],
+      ],
+      { options: { qty: 3, accountSize: 50_000 } },
+    );
+    const m = positionMetrics(long, NQ_TICK, NQ_TICK_VALUE)!;
+    expect(m.rewardTicks).toBe(60);
+    expect(m.riskTicks).toBe(20);
+    expect(m.ratio).toBeCloseTo(3, 10);
+    // 60 ticks x $5 x 3 = $900 to make, 20 x $5 x 3 = $300 to lose.
+    expect(m.rewardMoney).toBe(900);
+    expect(m.riskMoney).toBe(300);
+    // $300 of a $50,000 account.
+    expect(m.riskPercent).toBeCloseTo(0.6, 10);
+  });
+
+  it('leaves the money out rather than inventing it', () => {
+    const noQty = drawing(
+      'SHORT_POSITION',
+      [
+        [0, 20_000],
+        [60_000, 19_990],
+        [60_000, 20_005],
+      ],
+      { options: { qty: 0, accountSize: 0 } },
+    );
+    const m = positionMetrics(noQty, NQ_TICK, NQ_TICK_VALUE)!;
+    expect(m.rewardTicks).toBe(40);
+    expect(m.riskTicks).toBe(20);
+    expect(m.rewardMoney).toBe(0);
+    expect(m.riskMoney).toBe(0);
+    // No account size means no percentage, NOT a percentage of nothing.
+    expect(m.riskPercent).toBeNull();
+  });
+
+  it('has no ratio when the stop is at the entry', () => {
+    const flat = drawing('LONG_POSITION', [
+      [0, 20_000],
+      [60_000, 20_010],
+      [60_000, 20_000],
+    ]);
+    expect(positionMetrics(flat, NQ_TICK, NQ_TICK_VALUE)!.ratio).toBeNull();
+  });
+
+  it('stores three anchors although it is placed with one click', () => {
+    // A saved chart is checked against STORED_ANCHORS, not against the click
+    // count: checking against the click count discarded every saved position
+    // on reload.
+    expect(STORED_ANCHORS.LONG_POSITION).toBe(3);
+    expect(ANCHOR_COUNT.LONG_POSITION).toBe(1);
+  });
+
+  it('gives the target and the stop their own handles', () => {
+    const long = drawing('LONG_POSITION', [
+      [0, 50],
+      [60_000, 70],
+      [60_000, 40],
+    ]);
+    const handles = handlesFor(long, projection);
+    // Three prices, each on its own, and the two edges of the box.
+    expect(handles.filter((h) => h.role.kind === 'PRICE')).toHaveLength(3);
+    expect(handles.filter((h) => h.role.kind === 'TIME')).toHaveLength(2);
+    const prices = handles.filter((h) => h.role.kind === 'PRICE').map((h) => h.y);
+    // price 50 -> y 50, 70 -> 30, 40 -> 60 under this projection
+    expect(prices).toEqual([50, 30, 60]);
+  });
+
+  it('drags the stop without moving the entry or the target', () => {
+    const long = drawing('LONG_POSITION', [
+      [0, 50],
+      [60_000, 70],
+      [60_000, 40],
+    ]);
+    const moved = applyHandle(long, { kind: 'PRICE', index: 2 }, { time: 999, price: 44 });
+    expect(moved.anchors[0]).toEqual({ time: 0, price: 50 });
+    expect(moved.anchors[1]).toEqual({ time: 60_000, price: 70 });
+    expect(moved.anchors[2]).toEqual({ time: 60_000, price: 44 });
+  });
+
+  it('is grabbable anywhere inside the box and nowhere outside it', () => {
+    const long = drawing('LONG_POSITION', [
+      [0, 50],
+      [60_000, 70],
+      [60_000, 40],
+    ]);
+    // x 0..60, y 30..60 under this projection.
+    expect(hitTest(long, projection, { x: 30, y: 45 }, false)).toEqual({ kind: 'BODY' });
+    expect(hitTest(long, projection, { x: 30, y: 20 }, false)).toBeNull();
+    expect(hitTest(long, projection, { x: 200, y: 45 }, false)).toBeNull();
   });
 });

@@ -19,6 +19,7 @@ import { useReplayStatus, useReplayStatusPolling } from '../state/replay-status'
 import { timeFormatter } from '../chart/appearance';
 import { MASK, useTraining } from '../state/training';
 import { Icon } from '../ui/Icon';
+import { LayoutMenu } from './LayoutMenu';
 import './AccountBar.css';
 
 export function AccountBar({
@@ -205,6 +206,7 @@ export function AccountBar({
       </span>
 
       <nav className="abar-nav" aria-label="Sections">
+        <LayoutMenu />
         <button
           className={`abar-icon ${surface === 'PRACTICE' ? 'abar-icon-on' : ''}`}
           onClick={() => openSurface('PRACTICE')}

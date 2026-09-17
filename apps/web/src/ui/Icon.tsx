@@ -56,7 +56,16 @@ export type IconName =
   | 'now'
   | 'undo'
   | 'redo'
-  | 'layers';
+  | 'layers'
+  | 'position-long'
+  | 'position-short'
+  | 'maximize'
+  | 'minimize'
+  | 'layout-1'
+  | 'layout-2v'
+  | 'layout-2h'
+  | 'layout-3'
+  | 'layout-4';
 
 const PATHS: Record<IconName, string> = {
   candles: 'M4 5v6M4 2v1M4 13v1M8 4v8M8 2v2M8 12v2M12 6v4M12 3v3M12 10v3',
@@ -109,6 +118,17 @@ const PATHS: Record<IconName, string> = {
   indicators: 'M2 12l3-5 2.5 2.5L10 4l4 6M2 2v12h12',
   reset: 'M13 8a5 5 0 11-1.6-3.7M13 2v3h-3',
   now: 'M3 8h7M8 4.5L11.5 8 8 11.5M13 3v10',
+  // A target above the entry and a stop below it, and the mirror of that.
+  'position-long': 'M2.5 9.5h11v3.5h-11zM2.5 3h11v5.5h-11zM8 12.2V4.2M5.8 6.4L8 4.2l2.2 2.2',
+  'position-short': 'M2.5 3h11v3.5h-11zM2.5 7.5h11V13h-11zM8 3.8v8M5.8 9.6L8 11.8l2.2-2.2',
+  maximize: 'M3 6.5V3h3.5M13 9.5V13H9.5M3 3l4 4M13 13l-4-4',
+  minimize: 'M6.5 3v3.5H3M9.5 13V9.5H13M3 6.5l4-4M13 9.5l-4 4',
+  // The layout chooser: the same 11x11 frame divided the way each one divides it.
+  'layout-1': 'M2.5 2.5h11v11h-11z',
+  'layout-2v': 'M2.5 2.5h11v11h-11zM8 2.5v11',
+  'layout-2h': 'M2.5 2.5h11v11h-11zM2.5 8h11',
+  'layout-3': 'M2.5 2.5h11v11h-11zM2.5 8h11M8 8v5.5',
+  'layout-4': 'M2.5 2.5h11v11h-11zM2.5 8h11M8 2.5v11',
 };
 
 export interface IconProps {

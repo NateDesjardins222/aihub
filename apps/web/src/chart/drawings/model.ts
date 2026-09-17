@@ -19,7 +19,9 @@ export type DrawingKind =
   | 'RECTANGLE'
   | 'FIB_RETRACEMENT'
   | 'TEXT'
-  | 'MEASURE';
+  | 'MEASURE'
+  | 'LONG_POSITION'
+  | 'SHORT_POSITION';
 
 export interface Anchor {
   /** Epoch milliseconds of the bar the anchor is pinned to. */
@@ -173,6 +175,16 @@ export interface FibLevel {
    */
   readonly opacity?: number;
   readonly label?: string;
+  /**
+   * The level's own thickness and line style.
+   *
+   * Both OPTIONAL and both meaning "inherit from the object" when absent - a
+   * width of 0 is the same thing - so a trader can make the one level that
+   * matters thicker without touching the other six, and a set saved before
+   * these existed still looks the way it was saved.
+   */
+  readonly width?: number;
+  readonly dash?: 'SOLID' | 'DASHED' | 'DOTTED';
 }
 
 export interface Drawing {
@@ -195,6 +207,28 @@ export interface Drawing {
   readonly createdAt: number;
 }
 
+/**
+ * How many anchors a finished object of each kind HOLDS.
+ *
+ * Not the same as the number of clicks it takes: a position tool is placed
+ * with one click and stores three anchors. Loading a saved chart checks
+ * against this, which is why the two numbers have to be separate - checking a
+ * stored position against its click count threw it away on every reload.
+ */
+export const STORED_ANCHORS: Record<DrawingKind, number> = {
+  TREND_LINE: 2,
+  RAY: 2,
+  EXTENDED_LINE: 2,
+  HORIZONTAL_LINE: 1,
+  VERTICAL_LINE: 1,
+  RECTANGLE: 2,
+  FIB_RETRACEMENT: 2,
+  TEXT: 1,
+  MEASURE: 2,
+  LONG_POSITION: 3,
+  SHORT_POSITION: 3,
+};
+
 /** How many anchors a kind needs before it is finished. */
 export const ANCHOR_COUNT: Record<DrawingKind, number> = {
   TREND_LINE: 2,
@@ -206,6 +240,16 @@ export const ANCHOR_COUNT: Record<DrawingKind, number> = {
   FIB_RETRACEMENT: 2,
   TEXT: 1,
   MEASURE: 2,
+  /*
+   * One click, three anchors.
+   *
+   * A position tool placed by three separate clicks is three chances to put
+   * the stop where the target belongs. One click sets the entry, and the
+   * target and the stop are placed at a sane default risk either side of it
+   * (see `positionAnchors`), then dragged to where the trade actually is.
+   */
+  LONG_POSITION: 1,
+  SHORT_POSITION: 1,
 };
 
 export const KIND_LABEL: Record<DrawingKind, string> = {
@@ -218,7 +262,119 @@ export const KIND_LABEL: Record<DrawingKind, string> = {
   FIB_RETRACEMENT: 'Fib retracement',
   TEXT: 'Text',
   MEASURE: 'Measure',
+  LONG_POSITION: 'Long position',
+  SHORT_POSITION: 'Short position',
 };
+
+/** The three anchors of a position tool, in the order they are stored. */
+export const ENTRY = 0;
+export const TARGET = 1;
+export const STOP = 2;
+
+export function isPositionTool(kind: DrawingKind): boolean {
+  return kind === 'LONG_POSITION' || kind === 'SHORT_POSITION';
+}
+
+/**
+ * Expand one click into an entry, a target and a stop.
+ *
+ * The defaults are a 20-tick stop and a 40-tick target - a 2:1 trade, which is
+ * a starting point a trader recognises rather than a zero-height box they have
+ * to build. `rightTime` is where the box's right edge goes; the caller reads it
+ * from the chart, because a width in BARS is the only width that means anything
+ * on a chart laid out by index.
+ */
+export function positionAnchors(
+  kind: DrawingKind,
+  entry: Anchor,
+  tickSize: number,
+  rightTime: number,
+): Anchor[] {
+  const tick = tickSize > 0 ? tickSize : 0.25;
+  const long = kind === 'LONG_POSITION';
+  /*
+   * On a tick, always.
+   *
+   * A trade cannot be entered at 29,726.6538, so a tool that plans one must
+   * not claim it can: the click is rounded to the instrument's tick before
+   * anything is measured from it, which is also what makes the risk a whole
+   * number of ticks rather than 19.87 of them.
+   */
+  const price = Math.round(entry.price / tick) * tick;
+  const target = price + (long ? 40 : -40) * tick;
+  const stop = price + (long ? -20 : 20) * tick;
+  const onTick = (value: number): number => Math.round(value / tick) * tick;
+  return [
+    { time: entry.time, price: onTick(price) },
+    { time: rightTime, price: onTick(target) },
+    { time: rightTime, price: onTick(stop) },
+  ];
+}
+
+/**
+ * What a position tool is saying, in the units a trader thinks in.
+ *
+ * Pure arithmetic on the anchors: no order is ever created, no account is ever
+ * touched. `tickValue` is the dollar value of one tick for ONE contract, so a
+ * quantity of zero simply leaves the money out.
+ */
+export interface PositionMetrics {
+  readonly entry: number;
+  readonly target: number;
+  readonly stop: number;
+  /** Signed distance to the target, in price. Positive when the trade is right. */
+  readonly rewardPrice: number;
+  readonly riskPrice: number;
+  readonly rewardTicks: number;
+  readonly riskTicks: number;
+  /** Reward divided by risk, or null when there is no risk to divide by. */
+  readonly ratio: number | null;
+  readonly qty: number;
+  readonly rewardMoney: number;
+  readonly riskMoney: number;
+  /** Risk as a percentage of the account size the trader entered, or null. */
+  readonly riskPercent: number | null;
+}
+
+export function positionMetrics(
+  drawing: Drawing,
+  tickSize: number,
+  tickValue: number,
+): PositionMetrics | null {
+  const entryAnchor = drawing.anchors[ENTRY];
+  const targetAnchor = drawing.anchors[TARGET];
+  const stopAnchor = drawing.anchors[STOP];
+  if (!entryAnchor || !targetAnchor || !stopAnchor) return null;
+  const tick = tickSize > 0 ? tickSize : 0.25;
+  const entry = entryAnchor.price;
+  const target = targetAnchor.price;
+  const stop = stopAnchor.price;
+  const rewardPrice = Math.abs(target - entry);
+  const riskPrice = Math.abs(entry - stop);
+  const rewardTicks = Math.round(rewardPrice / tick);
+  const riskTicks = Math.round(riskPrice / tick);
+  const qtyRaw = drawing.options['qty'];
+  const qty = typeof qtyRaw === 'number' && Number.isFinite(qtyRaw) ? Math.max(0, qtyRaw) : 0;
+  const rewardMoney = (rewardTicks * tickValue * qty);
+  const riskMoney = (riskTicks * tickValue * qty);
+  const accountRaw = drawing.options['accountSize'];
+  const account =
+    typeof accountRaw === 'number' && Number.isFinite(accountRaw) ? accountRaw : 0;
+  return {
+    entry,
+    target,
+    stop,
+    rewardPrice,
+    riskPrice,
+    rewardTicks,
+    riskTicks,
+    ratio: riskPrice === 0 ? null : rewardPrice / riskPrice,
+    qty,
+    rewardMoney,
+    riskMoney,
+    riskPercent: account > 0 ? (riskMoney / account) * 100 : null,
+  };
+}
 
 /** The Fibonacci levels drawn by FIB_RETRACEMENT, as fractions of the range. */
 export const FIB_LEVELS: readonly number[] = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
@@ -342,6 +498,29 @@ export function handlesFor(drawing: Drawing, projection: Projection): Handle[] {
       { x: midX, y: bottom, cursor: 'ns-resize', role: { kind: 'PRICE', index: bottomIndex } },
       { x: left, y: midY, cursor: 'ew-resize', role: { kind: 'TIME', index: leftIndex } },
       { x: right, y: midY, cursor: 'ew-resize', role: { kind: 'TIME', index: rightIndex } },
+    ];
+  }
+
+  if (isPositionTool(drawing.kind) && points[ENTRY] && points[TARGET] && points[STOP]) {
+    /*
+     * Three prices and two edges, each grabbable on its own.
+     *
+     * The target and the stop are dragged INDEPENDENTLY of the entry - that is
+     * the whole point of the tool - so each gets its own price handle at the
+     * middle of the box, and the edges move the box's width in time.
+     */
+    const entry = points[ENTRY] as Point;
+    const target = points[TARGET] as Point;
+    const stop = points[STOP] as Point;
+    const left = Math.min(entry.x, target.x);
+    const right = Math.max(entry.x, target.x);
+    const midX = (left + right) / 2;
+    return [
+      { x: midX, y: entry.y, cursor: 'ns-resize', role: { kind: 'PRICE', index: ENTRY } },
+      { x: midX, y: target.y, cursor: 'ns-resize', role: { kind: 'PRICE', index: TARGET } },
+      { x: midX, y: stop.y, cursor: 'ns-resize', role: { kind: 'PRICE', index: STOP } },
+      { x: left, y: entry.y, cursor: 'ew-resize', role: { kind: 'TIME', index: ENTRY } },
+      { x: right, y: entry.y, cursor: 'ew-resize', role: { kind: 'TIME', index: TARGET } },
     ];
   }
 
@@ -492,6 +671,21 @@ export function hitTest(
       return onEdge ? { kind: 'BODY' } : null;
     }
 
+    case 'LONG_POSITION':
+    case 'SHORT_POSITION': {
+      if (points.length < 3) return null;
+      const entry = points[ENTRY]!;
+      const target = points[TARGET]!;
+      const stop = points[STOP]!;
+      const left = Math.min(entry.x, target.x) - HIT_TOLERANCE;
+      const right = Math.max(entry.x, target.x) + HIT_TOLERANCE;
+      const top = Math.min(target.y, stop.y) - HIT_TOLERANCE;
+      const bottom = Math.max(target.y, stop.y) + HIT_TOLERANCE;
+      return cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom
+        ? { kind: 'BODY' }
+        : null;
+    }
+
     case 'RAY': {
       if (points.length < 2) return null;
       return distanceToRay(cursor, points[0]!, points[1]!) <= HIT_TOLERANCE ? { kind: 'BODY' } : null;
@@ -614,6 +808,9 @@ export function fibLevels(
   visible: boolean;
   opacity: number;
   label: string;
+  /** 0 means "the object's own thickness". */
+  width: number;
+  dash: 'SOLID' | 'DASHED' | 'DOTTED' | undefined;
 }> {
   const [a, b] = drawing.anchors;
   if (!a || !b) return [];
@@ -629,6 +826,8 @@ export function fibLevels(
     visible: level.visible,
     opacity: level.opacity ?? 1,
     label: level.label ?? '',
+    width: level.width ?? 0,
+    dash: level.dash,
   }));
 }
 
@@ -650,6 +849,14 @@ export function readLevels(drawing: Drawing): readonly FibLevel[] {
             ? Math.min(1, Math.max(0, level.opacity))
             : 1,
         label: typeof level.label === 'string' ? level.label : '',
+        width:
+          typeof level.width === 'number' && Number.isFinite(level.width)
+            ? Math.max(0, Math.min(10, level.width))
+            : 0,
+        dash:
+          level.dash === 'SOLID' || level.dash === 'DASHED' || level.dash === 'DOTTED'
+            ? level.dash
+            : undefined,
       }));
   }
   return FIB_LEVELS.map((value) => ({
@@ -658,6 +865,8 @@ export function readLevels(drawing: Drawing): readonly FibLevel[] {
     visible: true,
     opacity: 1,
     label: '',
+    width: 0,
+    dash: undefined,
   }));
 }
 

@@ -18,6 +18,7 @@ import type { ChartType } from '../chart/ChartAdapter';
 import { indicatorDef, type IndicatorInstance, type ParamValues } from '../chart/indicators/registry';
 import {
   ANCHOR_COUNT,
+  STORED_ANCHORS,
   DEFAULT_STYLE,
   normalizeStyle,
   type Drawing,
@@ -39,8 +40,6 @@ export type MagnetMode = 'OFF' | 'WEAK' | 'STRONG';
 
 interface ChartState {
   appearance: ChartAppearance;
-  chartType: ChartType;
-  indicators: readonly IndicatorInstance[];
   /** Every drawing, for every instrument. */
   drawings: readonly Drawing[];
   /** The tool the next click uses. Returns to CURSOR after a drawing is made. */
@@ -64,24 +63,6 @@ interface ChartState {
 
   setAppearance: (patch: DeepPartial<ChartAppearance>) => void;
   resetAppearance: () => void;
-  setChartType: (type: ChartType) => void;
-
-  addIndicator: (kind: string) => string;
-  removeIndicator: (id: string) => void;
-  updateIndicator: (id: string, patch: ParamValues | { visible: boolean }) => void;
-  toggleIndicator: (id: string) => void;
-  /** Another instance of the same indicator, with the same settings. */
-  duplicateIndicator: (id: string) => void;
-  /**
-   * Which indicator's settings panel is open.
-   *
-   * UI state in the chart store rather than in a component, because the thing
-   * that ADDS an indicator (the header's picker) and the thing that shows its
-   * settings (the chart) are in different parts of the tree - and adding an
-   * EMA without seeing its length was the complaint.
-   */
-  indicatorSettingsFor: string | null;
-  openIndicatorSettings: (id: string | null) => void;
 
   setTool: (tool: DrawingTool, sticky?: boolean) => void;
   setMagnet: (mode: MagnetMode) => void;
@@ -228,8 +209,6 @@ export const DEFAULT_FAVOURITE_TOOLS: readonly DrawingKind[] = [
 
 export const useChartStore = create<ChartState>((set, get) => ({
   appearance: DEFAULT_APPEARANCE,
-  chartType: 'CANDLES',
-  indicators: [],
   drawings: [],
   tool: 'CURSOR',
   toolSticky: false,
@@ -250,82 +229,6 @@ export const useChartStore = create<ChartState>((set, get) => ({
 
   resetAppearance() {
     set({ appearance: DEFAULT_APPEARANCE });
-  },
-
-  setChartType(type) {
-    set({ chartType: type });
-  },
-
-  addIndicator(kind) {
-    const def = indicatorDef(kind);
-    // An unknown kind adds nothing and has no instance to point at.
-    if (!def) return '';
-    // The id is returned so the caller can open the new instance's settings:
-    // adding an EMA and not being able to see its length was the complaint.
-    const instanceId = id('ind');
-    /*
-     * A second EMA in the same colour as the first is two lines a trader
-     * cannot tell apart. Each further instance of a kind takes the next
-     * colour in the palette; the first keeps the indicator's own default.
-     */
-    const sameKind = get().indicators.filter((instance) => instance.kind === kind).length;
-    const params: ParamValues = { ...def.defaults };
-    if (sameKind > 0 && typeof params['color'] === 'string') {
-      params['color'] = INSTANCE_COLOURS[(sameKind - 1) % INSTANCE_COLOURS.length] ?? params['color'];
-    }
-    set({
-      indicators: [...get().indicators, { id: instanceId, kind, params, visible: true }],
-    });
-    return instanceId;
-  },
-
-  indicatorSettingsFor: null,
-
-  openIndicatorSettings(instanceId) {
-    set({ indicatorSettingsFor: instanceId });
-  },
-
-  duplicateIndicator(instanceId) {
-    const source = get().indicators.find((instance) => instance.id === instanceId);
-    if (!source) return;
-    set({
-      indicators: [
-        ...get().indicators,
-        { ...source, id: id('ind'), params: { ...source.params } },
-      ],
-    });
-  },
-
-  removeIndicator(instanceId) {
-    set({ indicators: get().indicators.filter((instance) => instance.id !== instanceId) });
-  },
-
-  updateIndicator(instanceId, patch) {
-    /*
-     * One entry point for both a parameter change and a visibility change.
-     *
-     * `visible` is a property of the INSTANCE rather than one of the
-     * indicator's inputs, so it is recognised here rather than being written
-     * into the params where the compute function would ignore it.
-     */
-    const visibility = 'visible' in patch ? (patch as { visible: boolean }) : null;
-    set({
-      indicators: get().indicators.map((instance) =>
-        instance.id === instanceId
-          ? visibility
-            ? { ...instance, visible: visibility.visible }
-            : { ...instance, params: { ...instance.params, ...(patch as ParamValues) } }
-          : instance,
-      ),
-    });
-  },
-
-  toggleIndicator(instanceId) {
-    set({
-      indicators: get().indicators.map((instance) =>
-        instance.id === instanceId ? { ...instance, visible: !instance.visible } : instance,
-      ),
-    });
   },
 
   setTool(tool, sticky = false) {
@@ -582,14 +485,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   restore(stored) {
-    const chartType =
-      typeof stored.chartType === 'string' && (CHART_TYPES as string[]).includes(stored.chartType)
-        ? (stored.chartType as ChartType)
-        : 'CANDLES';
     set({
       appearance: normalizeAppearance(stored.appearance),
-      chartType,
-      indicators: sanitizeIndicators(stored.indicators),
       drawings: sanitizeDrawings(stored.drawings),
       favouriteTools:
         Array.isArray(stored.favouriteTools) && stored.favouriteTools.length > 0
@@ -611,8 +508,6 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const state = get();
     return {
       appearance: state.appearance,
-      chartType: state.chartType,
-      indicators: state.indicators,
       drawings: state.drawings,
       favouriteTools: state.favouriteTools,
       defaultStyle: state.defaultStyle,
@@ -708,7 +603,7 @@ function sanitizeDrawings(raw: unknown): readonly Drawing[] {
     const anchors = candidate.anchors.filter(
       (anchor) => Number.isFinite(anchor?.time) && Number.isFinite(anchor?.price),
     );
-    if (anchors.length !== ANCHOR_COUNT[candidate.kind as DrawingKind]) continue;
+    if (anchors.length !== STORED_ANCHORS[candidate.kind as DrawingKind]) continue;
     out.push({
       id: typeof candidate.id === 'string' ? candidate.id : id('draw'),
       kind: candidate.kind as DrawingKind,

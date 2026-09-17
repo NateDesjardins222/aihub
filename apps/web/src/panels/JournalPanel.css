@@ -142,26 +142,143 @@
 
 /* --- calendar ----------------------------------------------------------- */
 
-.journal-calendar {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-  gap: 4px;
+/* --- the trading month -------------------------------------------------- */
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
-.journal-day {
+.cal-head h4 {
+  margin: 0;
+  min-width: 132px;
+  text-align: center;
+}
+
+.cal-nav {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.cal-nav:disabled {
+  opacity: 0.35;
+}
+
+.cal-total {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 6px;
-  border-radius: 5px;
+  align-items: flex-end;
+  line-height: 1.25;
+  font-size: var(--fs-sm);
+}
+
+.cal-total-sub {
+  color: var(--muted);
   font-size: 10px;
 }
 
-.journal-day.up { background: color-mix(in srgb, var(--panel-2) 55%, var(--up)); }
-.journal-day.down { background: color-mix(in srgb, var(--panel-2) 55%, var(--down)); }
-.journal-day-date { color: var(--muted); font-size: 9px; }
-.journal-day-pnl { font-weight: 700; font-size: 11px; }
-.journal-day-count { color: var(--muted); font-size: 9px; }
+/*
+ * Seven days and a weekly total.
+ *
+ * Fixed rows rather than content-sized ones: a month where one day has three
+ * trades and another has none should still read as a grid, and rows that
+ * change height with their contents read as a list.
+ */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr) 0.9fr;
+  gap: 3px;
+}
+
+.cal-weekday {
+  padding: 2px 4px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cal-weekday-total {
+  text-align: right;
+}
+
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 52px;
+  padding: 4px 5px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: var(--panel-2);
+  text-align: left;
+  color: var(--text-secondary);
+}
+
+.cal-cell-blank {
+  background: transparent;
+}
+
+.cal-cell-quiet {
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+
+.cal-cell-traded:hover {
+  border-color: var(--border-strong);
+}
+
+.cal-cell.up {
+  /* A wash plus an edge: a tint alone is hard to read at a glance across a
+     month, and the edge is what makes a green week scannable. */
+  background: color-mix(in srgb, var(--panel-2) 58%, var(--up));
+  border-left: 2px solid var(--up);
+}
+
+.cal-cell.down {
+  background: color-mix(in srgb, var(--panel-2) 58%, var(--down));
+  border-left: 2px solid var(--down);
+}
+
+.cal-day {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.cal-pnl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-count {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+/* The weekly total sits at the end of its row, right-aligned. */
+.cal-week {
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* A day picked from the calendar, above the trades it opened. */
+.journal-daychip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
 
 /* --- trades ------------------------------------------------------------- */
 

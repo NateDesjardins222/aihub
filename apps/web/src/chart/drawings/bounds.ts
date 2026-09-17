@@ -44,7 +44,19 @@ export function projectionSignature(projection: Projection): string {
 
 export class BoundsCache {
   private signature = '';
-  private readonly boxes = new Map<string, Box | null>();
+  /**
+   * The box, and the drawing object it was computed from.
+   *
+   * Keeping the reference is what makes the cache safe. The view signature
+   * catches a pan or a zoom, and the end of a gesture forgets the object that
+   * moved - but geometry also changes with no gesture and no view change: a
+   * price typed into the settings dialog, an undo, a template that moves a
+   * level. Those left a STALE box, and a stale box is an object that cannot be
+   * clicked where it is and can be clicked where it used to be. The store
+   * replaces the drawing object on every edit, so comparing the reference
+   * catches all of them for the price of one comparison.
+   */
+  private readonly boxes = new Map<string, { box: Box | null; from: Drawing }>();
 
   /** Drop everything if the view moved. Called once a frame, not once a move. */
   sync(projection: Projection): void {
@@ -65,9 +77,9 @@ export class BoundsCache {
 
   boxFor(drawing: Drawing, projection: Projection): Box | null {
     const cached = this.boxes.get(drawing.id);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined && cached.from === drawing) return cached.box;
     const box = computeBox(drawing, projection);
-    this.boxes.set(drawing.id, box);
+    this.boxes.set(drawing.id, { box, from: drawing });
     return box;
   }
 

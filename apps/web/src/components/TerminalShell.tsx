@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import { useSession, activeInstrument } from '../state/session';
 import { AccountBar } from './AccountBar';
 import { DrawingRail } from '../panels/DrawingRail';
-import { ChartPanel } from '../panels/ChartPanel';
+import { ChartGrid } from '../panels/ChartGrid';
 import { OrderTicket } from '../panels/OrderTicket';
 import { ActivityPanel } from '../panels/ActivityPanel';
 import { Drawer } from '../panels/Drawer';
@@ -69,7 +69,7 @@ export function TerminalShell(): JSX.Element {
           )}
 
           <div className="terminal-centre">
-            <ChartPanel />
+            <ChartGrid />
           </div>
 
           {rightOpen ? (

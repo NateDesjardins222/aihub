@@ -50,9 +50,6 @@ export function SettingsDialog(): JSX.Element | null {
   const appearance = useChartStore((s) => s.appearance);
   const set = useChartStore((s) => s.setAppearance);
   const reset = useChartStore((s) => s.resetAppearance);
-  const indicators = useChartStore((s) => s.indicators);
-  const updateIndicator = useChartStore((s) => s.updateIndicator);
-  const removeIndicator = useChartStore((s) => s.removeIndicator);
   const [confirmReset, setConfirmReset] = useState(false);
   const execution = useExecution((s) => s.defaults);
   const setExecution = useExecution((s) => s.set);
@@ -246,60 +243,13 @@ export function SettingsDialog(): JSX.Element | null {
                   </Row>
                 </Group>
 
-                {indicators.length > 0 ? (
-                  <Group title="Indicators on this chart">
-                    {indicators.map((instance) => {
-                      const def = indicatorDef(instance.kind);
-                      if (!def) return null;
-                      return (
-                        <div className="st-ind" key={instance.id}>
-                          <div className="st-ind-head">
-                            <b>{def.name}</b>
-                            <button
-                              className="st-ind-remove"
-                              onClick={() => removeIndicator(instance.id)}
-                              title="Remove"
-                            >
-                              <Icon name="trash" size={12} />
-                            </button>
-                          </div>
-                          {def.params.map((param) => (
-                            <Row key={param.key} label={param.label}>
-                              {param.type === 'NUMBER' ? (
-                                <Num
-                                  value={Number(instance.params[param.key] ?? def.defaults[param.key] ?? 0)}
-                                  min={param.min}
-                                  max={param.max}
-                                  step={param.step}
-                                  onChange={(value) => updateIndicator(instance.id, { [param.key]: value })}
-                                />
-                              ) : param.type === 'COLOR' ? (
-                                <Colour
-                                  value={String(instance.params[param.key] ?? '#4d8dff')}
-                                  onChange={(value) => updateIndicator(instance.id, { [param.key]: value })}
-                                />
-                              ) : (
-                                <Pick
-                                  value={String(instance.params[param.key] ?? 'close')}
-                                  options={[
-                                    { id: 'close', label: 'Close' },
-                                    { id: 'open', label: 'Open' },
-                                    { id: 'high', label: 'High' },
-                                    { id: 'low', label: 'Low' },
-                                    { id: 'hl2', label: '(H+L)/2' },
-                                    { id: 'hlc3', label: '(H+L+C)/3' },
-                                    { id: 'ohlc4', label: '(O+H+L+C)/4' },
-                                  ]}
-                                  onChange={(value) => updateIndicator(instance.id, { [param.key]: value })}
-                                />
-                              )}
-                            </Row>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </Group>
-                ) : null}
+                {/*
+                  Indicators are edited from their own legend row on the chart
+                  they are drawn on. This dialog used to carry a second copy of
+                  every indicator's parameters, which is one list too many - and
+                  with more than one chart open it could not say which chart it
+                  meant.
+                */}
               </>
             ) : null}
 

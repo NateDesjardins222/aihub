@@ -1,0 +1,50 @@
+/* The layout chooser: five diagrams, not five words. */
+.lm-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+
+.lm-choice {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 38px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.lm-choice:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.lm-choice-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.lm-count {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.lm-sync {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.lm-sync:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

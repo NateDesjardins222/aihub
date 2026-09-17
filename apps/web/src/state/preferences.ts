@@ -16,14 +16,17 @@ import { useMotion } from './motion-store';
 import { normalizeMotion, type MotionSettings } from '../chart/motion';
 import { FULL_VISIBILITY, useTraining, type TrainingModeId, type Visibility } from './training';
 import { useChartStore, type StoredChart } from './chart-store';
+import { useLayout, type StoredLayout } from './layout-store';
 import { useWorkspace } from './workspace';
 import { useExecution, type ExecutionDefaults } from './execution';
 
 interface StoredPreferences {
   motion?: Partial<MotionSettings>;
   training?: { modeId?: TrainingModeId; visibility?: Partial<Visibility> };
-  /** Chart appearance, indicators and drawings. */
+  /** Chart appearance and drawings. */
   chart?: StoredChart;
+  /** The chart layout: how many charts, and what each one shows. */
+  layout?: StoredLayout;
   workspace?: { favouriteTimeframes?: readonly Timeframe[] };
   execution?: Partial<ExecutionDefaults>;
 }
@@ -50,6 +53,7 @@ function write(): void {
         visibility: useTraining.getState().visibility,
       },
       chart: display,
+      layout: useLayout.getState().snapshot(),
       workspace: { favouriteTimeframes: useWorkspace.getState().favouriteTimeframes },
       execution: useExecution.getState().snapshot(),
     };
@@ -130,6 +134,17 @@ export async function attachPreferences(): Promise<void> {
         drawings ?? (stored.chart?.drawings as unknown[] | undefined) ?? [],
       );
     }
+    /*
+     * The layout, with the old single-chart settings as the fallback.
+     *
+     * A workspace saved before the terminal had panes kept its chart style and
+     * its indicators in `chart`; those become the first pane rather than being
+     * dropped on the floor.
+     */
+    useLayout.getState().restore(stored.layout ?? {}, {
+      chartType: (stored.chart as { chartType?: unknown } | undefined)?.chartType,
+      indicators: (stored.chart as { indicators?: unknown } | undefined)?.indicators,
+    });
     if (stored.workspace) useWorkspace.getState().restore(stored.workspace);
     if (stored.execution) useExecution.getState().restore(stored.execution);
   } catch {
@@ -140,6 +155,7 @@ export async function attachPreferences(): Promise<void> {
   useMotion.subscribe(write);
   useTraining.subscribe(write);
   useChartStore.subscribe(write);
+  useLayout.subscribe(write);
   useWorkspace.subscribe(write);
   useExecution.subscribe(write);
 }

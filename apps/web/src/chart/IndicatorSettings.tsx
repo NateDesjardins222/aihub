@@ -8,7 +8,7 @@
  * have" was the complaint that prompted this.
  */
 import { useEffect, useRef, type JSX } from 'react';
-import { useChartStore } from '../state/chart-store';
+import { useLayout } from '../state/layout-store';
 import { indicatorDef, type ParamDef } from './indicators/registry';
 import { Check, Choice, Colour, Num, Row } from '../settings/Controls';
 import { Icon } from '../ui/Icon';
@@ -37,9 +37,14 @@ export interface IndicatorSettingsProps {
 }
 
 export function IndicatorSettings({ instanceId, onClose }: IndicatorSettingsProps): JSX.Element | null {
-  const instance = useChartStore((s) => s.indicators.find((i) => i.id === instanceId) ?? null);
-  const update = useChartStore((s) => s.updateIndicator);
-  const remove = useChartStore((s) => s.removeIndicator);
+  const instance = useLayout(
+    (s) =>
+      s.panes
+        .flatMap((pane) => pane.indicators)
+        .find((candidate) => candidate.id === instanceId) ?? null,
+  );
+  const update = useLayout((s) => s.updateIndicator);
+  const remove = useLayout((s) => s.removeIndicator);
 
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
