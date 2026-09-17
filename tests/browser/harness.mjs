@@ -86,6 +86,32 @@ export async function useAccount(page, name) {
   await page.waitForTimeout(1_800);
 }
 
+/**
+ * Put the active chart - and with it the order ticket - on an instrument.
+ *
+ * The terminal remembers what each pane was showing, and a suite that recalls
+ * a trade or changes a chart's symbol leaves it there for the next one. A
+ * suite that assumes NQ has to SAY so: the alternative is an order ticket
+ * pointed at ES while the suite waits for an NQ fill, which is thirty seconds
+ * of timeout and a failure that reads like a broken feature.
+ */
+export async function useSymbol(page, root = 'NQ') {
+  const header = page.locator('[data-pane=p1] .chdr-symbol, .chdr-symbol').first();
+  if ((await header.count()) === 0) return false;
+  const current = (await header.innerText()).replace(/\s+/g, ' ').trim();
+  if (current.startsWith(root)) return true;
+  await header.click();
+  await page.waitForTimeout(500);
+  const item = page.locator(`.popover .pop-item:has(.chdr-pop-root:text-is("${root}"))`);
+  if ((await item.count()) === 0) {
+    await page.keyboard.press('Escape');
+    return false;
+  }
+  await item.first().click();
+  await page.waitForTimeout(3_500);
+  return true;
+}
+
 /** Flatten and cancel, so a suite starts from a known state. */
 export async function reset(page) {
   const cancel = page.locator('.tk-grid2 button:has-text("Cancel")');

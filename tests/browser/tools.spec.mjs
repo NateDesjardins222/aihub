@@ -4,13 +4,15 @@
  * The drawing checks read the canvas rather than the DOM, because a drawing
  * that is in the store but not painted is not a drawing.
  */
-import { clearDrawings, createReport, launch, litPixels, shot, signIn } from './harness.mjs';
+import { clearDrawings, createReport, launch, litPixels, shot, signIn, useSymbol } from './harness.mjs';
 
 const { say, finish } = createReport('tools');
 const { browser, page, errors } = await launch();
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
 
   const canvas = await page.locator('.chart-canvas').boundingBox();
   const at = (fx, fy) => ({ x: canvas.x + canvas.width * fx, y: canvas.y + canvas.height * fy });

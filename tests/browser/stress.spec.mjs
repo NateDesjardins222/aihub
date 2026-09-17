@@ -11,7 +11,7 @@
  * objects through the toolbar would measure the toolbar. The frame counts come
  * from requestAnimationFrame inside the page during a real gesture.
  */
-import { createReport, launch, litPixels, shot, signIn } from './harness.mjs';
+import { createReport, launch, litPixels, shot, signIn, useSymbol } from './harness.mjs';
 
 const { say, finish } = createReport('stress');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
@@ -148,6 +148,8 @@ async function duringGesture(gesture) {
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
   const box = await page.locator('.chart-canvas').boundingBox();
   const at = (fx, fy) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy });
 

@@ -10,7 +10,7 @@
  * no position, no order, no change in balance. A drawing that can move money
  * is not a drawing.
  */
-import { clearDrawings, createReport, launch, litPixels, shot, signIn } from './harness.mjs';
+import { clearDrawings, createReport, launch, litPixels, shot, signIn, useSymbol } from './harness.mjs';
 
 const { say, finish } = createReport('position-tools');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
@@ -78,6 +78,8 @@ async function closeSettings() {
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
   await page.waitForTimeout(4_000);
   await clearDrawings(page);
 

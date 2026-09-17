@@ -5,13 +5,15 @@
  * leaves the old controls behind is not a redesign, and a test that only
  * checks the new ones would not notice.
  */
-import { createReport, launch, reset, shot, signIn, useAccount } from './harness.mjs';
+import { createReport, launch, reset, shot, signIn, useAccount, useSymbol } from './harness.mjs';
 
 const { say, finish } = createReport('terminal');
 const { browser, page, errors } = await launch();
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
   await useAccount(page, 'Practice 150K');
   await reset(page);
 

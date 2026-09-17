@@ -17,7 +17,7 @@
  * live feed NQ can travel while the test is dragging, and the assertions would
  * be about timing rather than about the gesture.
  */
-import { createReport, launch, shot, signIn, useAccount } from './harness.mjs';
+import { createReport, launch, shot, signIn, useAccount, useSymbol } from './harness.mjs';
 
 const { say, finish } = createReport('execution-interaction');
 const { browser, page, errors } = await launch();
@@ -100,6 +100,8 @@ const rule = (marker) =>
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
   await useAccount(page, 'Practice 150K');
 
   // --- a paused replay -----------------------------------------------------

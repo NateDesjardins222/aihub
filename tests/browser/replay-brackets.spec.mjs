@@ -9,7 +9,7 @@
  * Nothing in it closes the position. If a leg does not execute, the position
  * stays open and the suite fails.
  */
-import { createReport, launch, shot, signIn, useAccount, waitFor } from './harness.mjs';
+import { createReport, launch, shot, signIn, useAccount, useSymbol, waitFor } from './harness.mjs';
 
 const { say, finish } = createReport('replay-brackets');
 const { browser, page, errors } = await launch();
@@ -39,6 +39,8 @@ async function setBracket(mode, stopTicks, targetTicks) {
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
   await useAccount(page, 'Practice 150K');
 
   // --- start a historical session -----------------------------------------

@@ -110,9 +110,24 @@ async function treeRows() {
   return rows;
 }
 
-async function openSettings(x, y) {
-  await page.mouse.dblclick(x, y);
-  await page.waitForTimeout(600);
+/**
+ * Double-click where an object is, and say whether its settings opened.
+ *
+ * `find` is re-read between attempts because the price scale is LIVE: the
+ * market moves, the scale rescales, and an object's pixel position a second
+ * ago is not where it is now. A double-click six pixels off hits nothing, and
+ * that is the test being wrong rather than the terminal.
+ */
+async function openSettings(x, y, find = null) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const point = attempt === 0 || !find ? { x, y } : await find();
+    if (!point) break;
+    await page.mouse.dblclick(point.x, point.y);
+    await page.waitForTimeout(600);
+    const open = await page.locator('[data-testid=drawing-properties]').count();
+    if (open === 1) return 1;
+    await page.waitForTimeout(400);
+  }
   return page.locator('[data-testid=drawing-properties]').count();
 }
 
@@ -346,9 +361,15 @@ try {
     (await anchorPrices()).join(' / '),
   );
 
-  const hl = await paintedBounds(page, '.draw-canvas', { x0: 0.08, x1: 0.28 });
-  const hlY = (hl.top + hl.bottom) / 2;
-  say((await openSettings(at(0.45, 0.45).x, hlY)) === 1, 'double-clicking opens its settings');
+  const whereIsTheRule = async () => {
+    const box = await paintedBounds(page, '.draw-canvas', { x0: 0.08, x1: 0.28 });
+    return box ? { x: at(0.45, 0.45).x, y: (box.top + box.bottom) / 2 } : null;
+  };
+  const rulePoint = await whereIsTheRule();
+  say(
+    (await openSettings(rulePoint.x, rulePoint.y, whereIsTheRule)) === 1,
+    'double-clicking opens its settings',
+  );
   const hlRows = await settingRows();
   for (const wanted of ['Colour', 'Thickness', 'Line style', 'Price label']) {
     say(hlRows.includes(wanted), `horizontal line settings offer ${wanted.toLowerCase()}`);
@@ -369,7 +390,8 @@ try {
   await closeSettings();
   await shot(page, 'line-tools-horizontal');
 
-  await page.mouse.click(at(0.45, 0.45).x, hlY);
+  const stillThere = await whereIsTheRule();
+  await page.mouse.click(stillThere?.x ?? at(0.45, 0.45).x, stillThere?.y ?? at(0.45, 0.45).y);
   await page.waitForTimeout(300);
   await page.keyboard.press('Delete');
   await page.waitForTimeout(500);

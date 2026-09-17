@@ -9,7 +9,7 @@
  * Nothing here is graphical. Every assertion about a level is checked against
  * the working ORDER the server holds.
  */
-import { createReport, launch, shot, signIn, useAccount, waitFor } from './harness.mjs';
+import { createReport, launch, shot, signIn, useAccount, useSymbol, waitFor } from './harness.mjs';
 
 const { say, finish } = createReport('drag-protect');
 const { browser, page, errors } = await launch();
@@ -87,6 +87,8 @@ async function openPosition(side) {
 
 try {
   await signIn(page);
+  // This suite trades NQ, so the ticket has to be pointed at NQ.
+  await useSymbol(page, 'NQ');
   await useAccount(page, 'Practice 150K');
 
   // --- a replay, paused ----------------------------------------------------
