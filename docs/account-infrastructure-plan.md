@@ -266,14 +266,14 @@ review.
 Each ends green (unit suite, server suite, browser suites, typecheck) and is a
 commit.
 
-| # | Checkpoint | Contents |
-|---|-----------|----------|
-| I | **Data model** | organizations, roles, profiles + versions, lifecycles, audit log with the immutability trigger and hash chain, domain events, provisioning requests/keys, account columns, public account numbers, widened statuses, migration + backfill of every existing row. No behaviour change. |
-| J | **Services** | provisioning service, account service (activate/lock/unlock/disable/enable/reset/archive), event bus + outbox, audit writer subscribed to the engine, practice account on registration, removal of self-service account creation. |
-| K | **Configuration-driven rules** | `ruleConfigFor` reads the pinned profile version; allowed instruments and per-instrument sizing enforced in `risk.ts`; status gating for the new administrative states; profile versioning tests. |
-| L | **Admin API** | overview, users, accounts, live view, actions, audit search; `requireRole`; rate limits; the full permission and isolation test suite. |
-| M | **Admin UI** | `/admin` shell, overview, users, accounts, account detail with live view, actions with confirmation. |
-| N | **Terminal + acceptance** | selector from the authenticated user's accounts, switching with no state leakage, multi-account independence, and the §20 acceptance flow as a browser suite. |
+| # | Checkpoint | Contents | State |
+|---|-----------|----------|-------|
+| I | **Data model** | organizations, roles, profiles + versions, lifecycles, audit log with the immutability trigger and hash chain, domain events, provisioning requests/keys, account columns, public account numbers, widened statuses, migration + backfill of every existing row. No behaviour change. | done |
+| J | **Services** | provisioning service, account service (activate/lock/unlock/disable/enable/reset/archive), event bus + outbox, audit writer subscribed to the engine, practice account on registration, removal of self-service account creation. | done |
+| K | **Configuration-driven rules** | `ruleConfigFor` reads the pinned profile version; allowed instruments and per-instrument sizing enforced in `risk.ts`; status gating for the new administrative states; profile versioning tests. | done |
+| L | **Admin API** | overview, users, accounts, live view, actions, audit search; `requireRole`; rate limits; the full permission and isolation test suite. | done |
+| M | **Admin UI** | `/admin` shell, overview, users, accounts, account detail with live view, actions with confirmation. | done |
+| N | **Terminal + acceptance** | selector from the authenticated user's accounts, switching with no state leakage, multi-account independence, and the §20 acceptance flow as a browser suite. | done |
 
 ## 5. Test plan (§19)
 
@@ -295,3 +295,42 @@ Server-side, against the real database:
 * concurrent orders on two accounts of the same user do not interleave state
 * locking an account with an open position behaves as specified
 * server restart: balances, positions, orders and rule state recover
+
+
+---
+
+## 6. What was found while building it
+
+Three defects worth recording, because each one was invisible from the code
+and only appeared when the whole path was exercised:
+
+1. **An administrator's lock did not survive the next market tick.** The rule
+   engine re-evaluates an account on every mark and writes its own status, so
+   an operator's `LOCKED` was replaced by the rules' `ACTIVE` seconds later.
+   Fixed by separating the administrative hold from the rule status: the rules
+   keep advancing their own view underneath a hold, the effective status is
+   theirs only when no hold is in place, and lifting a hold returns the account
+   to wherever the rules actually left it.
+2. **Two endpoints joined the rule-template table directly**, so a provisioned
+   account - which has no template, because its terms live on a pinned product
+   version - was refused with `ACCOUNT_NOT_FOUND` by the engine's risk loader
+   and 404'd by the account P&L endpoint. Both go through the shared loader
+   now, and a test walks every endpoint the terminal calls for a provisioned
+   account.
+3. **A column interpolated into a correlated sub-select renders unqualified**
+   in Drizzle - `"id"` rather than `"users"."id"` - and silently binds to the
+   subquery's own table, so the admin console's account counts and open-contract
+   figures were zero. Written with explicit identifiers now, and asserted by
+   value rather than by absence.
+
+## 7. Where the seams are, for what comes next
+
+* **Payments**: `POST /api/v1/provisioning/accounts`, authenticated by an
+  organisation key and requiring an `Idempotency-Key`. A purchase webhook calls
+  it; nothing about money is implemented on this side.
+* **Notifications, CRM, payouts**: subscribe to the `domain_events` outbox or
+  the in-process bus. The execution engine neither knows nor cares.
+* **A second organisation**: every table already carries an organisation, every
+  admin route is already scoped to the caller's, and the isolation is tested.
+  What is missing is a branding surface, which the brief explicitly excludes.
+* **Roles beyond four**: `requireRole` ranks them in one table.
