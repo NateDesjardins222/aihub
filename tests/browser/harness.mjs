@@ -101,17 +101,67 @@ export async function returnToLive(page) {
       }).then((r) => r.json());
       if (!session?.accessToken) return;
       window.localStorage.setItem('atlas.refreshToken', session.refreshToken);
-      await fetch('/api/v1/marketdata/provider', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${session.accessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ provider: 'live' }),
-      });
+      const auth = {
+        authorization: `Bearer ${session.accessToken}`,
+        'content-type': 'application/json',
+      };
+      const toLive = () =>
+        fetch('/api/v1/marketdata/provider', {
+          method: 'POST',
+          headers: auth,
+          body: JSON.stringify({ provider: 'live' }),
+        });
+
+      if ((await toLive()).ok) return;
+
+      /*
+       * Refused, which means something is still open.
+       *
+       * A suite that died mid-trade leaves a position and its protective
+       * orders behind, and the platform - correctly - will not change the
+       * market underneath them. For a TEST account that is not a decision to
+       * respect: it is the previous run's litter, and every suite after it
+       * would be handed a chart with three bars on it. Cancel, flatten in the
+       * market the position belongs to, and then go home.
+       */
+      const accounts = await fetch('/api/v1/accounts', { headers: auth })
+        .then((r) => r.json())
+        .catch(() => ({ accounts: [] }));
+      for (const account of accounts.accounts ?? []) {
+        const summary = await fetch(`/api/v1/accounts/${account.id}/pnl`, { headers: auth })
+          .then((r) => r.json())
+          .catch(() => null);
+        if (!summary || (summary.openContracts ?? 0) === 0) continue;
+        await fetch('/api/v1/orders/cancel-all', {
+          method: 'POST',
+          headers: auth,
+          body: JSON.stringify({ accountId: account.id }),
+        }).catch(() => undefined);
+        for (const symbol of ['NQ', 'ES', 'MNQ', 'MES']) {
+          await fetch(`/api/v1/positions/${symbol}/flatten`, {
+            method: 'POST',
+            headers: auth,
+            body: JSON.stringify({ accountId: account.id }),
+          }).catch(() => undefined);
+        }
+        // A paused recording needs events before a market order can fill.
+        for (let i = 0; i < 10; i += 1) {
+          await fetch('/api/v1/marketdata/replay/step', {
+            method: 'POST',
+            headers: auth,
+            body: JSON.stringify({ count: 10 }),
+          }).catch(() => undefined);
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          const now = await fetch(`/api/v1/accounts/${account.id}/pnl`, { headers: auth })
+            .then((r) => r.json())
+            .catch(() => null);
+          if (!now || (now.openContracts ?? 0) === 0) break;
+        }
+      }
+      await toLive();
     })
     .catch(() => undefined);
-  await page.waitForTimeout(2_000);
+  await page.waitForTimeout(2_500);
 }
 
 /** Select an account by its display name and let the stores settle. */
