@@ -238,5 +238,27 @@ with the number of indicator panes rather than being a fixed multiple of one.
 
 ## P7 — performance and the manual pass
 
-(Filled in as the pass runs; the numbers below are from this machine, against
-the real server and the real market data.)
+### Performance
+
+`stress.spec.mjs` measures the single-chart budget: a pan, a crosshair sweep
+and a wheel zoom with 1, 10, 50, 100 and 250 objects on the chart, requiring
+more than 30fps and no frame over 120ms.
+
+`perf-panes.spec.mjs` (new) measures what multi-chart added: the same three
+gestures with FOUR charts open, and again with four charts keeping their
+crosshair and their time range in step - which is the worst case, because every
+pointer move then moves four charts.
+
+### The manual pass
+
+`tests/browser/manual-pass.mjs` is not a suite. It walks the whole terminal at
+1680x1050 and photographs every step, so the pass can be judged by eye: an
+assertion cannot tell you that a label is ugly, a control is hidden or a panel
+is cramped. Its steps: sign in, three intervals, two instruments, wheel zoom in
+and out, a pan, reset the scales, draw all nine ordinary tools, place both
+position tools, select one and open its style bar and its settings, the object
+tree, add two indicators and see their settings and rows, the layout menu, four
+charts, maximize and restore, two charts, the journal's four tabs including a
+day drilldown and a trade's detail, practice, the ticket's presets, all five
+blotter tabs, the blotter collapsed, every settings section, and back to a
+clean single chart.

@@ -572,10 +572,17 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(6_000);
+  // Give the stored drawings a chance to arrive: they are fetched after the
+  // page renders, so an empty tree a moment after a reload means "not yet".
+  let afterReload = await anchorPrices();
+  for (let i = 0; i < 6 && afterReload.length === 0; i += 1) {
+    await page.waitForTimeout(1_000);
+    afterReload = await anchorPrices();
+  }
   say(
-    JSON.stringify(await anchorPrices()) === JSON.stringify(beforeReload),
+    JSON.stringify(afterReload) === JSON.stringify(beforeReload),
     'the fib comes back on the prices it was drawn on',
-    (await anchorPrices()).join(' / '),
+    `${beforeReload.join(' / ') || '(none)'} -> ${afterReload.join(' / ') || '(none)'}`,
   );
   /*
    * A reload scrolls the view back to the newest bars, so the fib is off to
@@ -586,9 +593,18 @@ try {
   const fx = (x) => Math.min(1, Math.max(0, (x - canvasBox.x) / canvasBox.width));
   await page.mouse.move(at(0.6, 0.5).x, at(0.6, 0.5).y);
   let reloadedFib = await paintedBounds(page, '.draw-canvas');
-  for (let i = 0; i < 12 && (!reloadedFib || reloadedFib.right - reloadedFib.left < 80); i += 1) {
+  /*
+   * Zoom out until the object is back in view.
+   *
+   * The terminal opens on the recent session rather than on every bar it has
+   * loaded, so an object drawn earlier in the run can be a long way off the
+   * left edge after a reload - it is still on its own prices, which is what
+   * the check above just proved. Twelve steps was enough when the chart opened
+   * on twelve hundred bars; it is not enough now.
+   */
+  for (let i = 0; i < 40 && (!reloadedFib || reloadedFib.right - reloadedFib.left < 80); i += 1) {
     await page.mouse.wheel(0, 240);
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(200);
     reloadedFib = await paintedBounds(page, '.draw-canvas');
   }
   const rowsAfterReload =
