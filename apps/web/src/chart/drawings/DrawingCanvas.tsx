@@ -44,12 +44,14 @@ export function DrawingCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawings = useChartStore((s) => s.drawings);
   const selectedId = useChartStore((s) => s.selectedDrawingId);
+  const tool = useChartStore((s) => s.tool);
 
   // Read by the frame loop, which must not wait for a render to be current.
-  const liveRef = useRef({ drawings, selectedId, symbol });
+  const liveRef = useRef({ drawings, selectedId, symbol, tool });
   liveRef.current.drawings = drawings;
   liveRef.current.selectedId = selectedId;
   liveRef.current.symbol = symbol;
+  liveRef.current.tool = tool;
 
   useEffect(() => {
     if (!ready) return;
@@ -93,7 +95,9 @@ export function DrawingCanvas({
         drawDrawing(ctx, drawing, projection as Projection, state, pricePrecision);
       }
 
-      if (preview?.drawing) {
+      // The preview belongs to a placement in progress. With no tool armed
+      // there is no placement, so a stale one is never painted.
+      if (preview?.drawing && live.tool !== 'CURSOR') {
         drawDrawing(ctx, preview.drawing, projection as Projection, 'PENDING', pricePrecision);
       }
     };

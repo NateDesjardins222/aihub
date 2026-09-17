@@ -14,7 +14,7 @@ import { journalApi, type ApiPracticeSession } from '../trading/journal-api';
 import { tradingApi } from '../trading/api';
 import { captureSession as captureRecording, replayApi, type ReplayState } from '../market/api';
 import { formatMicros } from '../state/format';
-import { refreshReplayStatus } from '../state/replay-status';
+import { refreshReplayStatus, useReplayStatus } from '../state/replay-status';
 import './PracticePanel.css';
 
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50, 100] as const;
@@ -181,6 +181,23 @@ export function PracticePanel(): JSX.Element {
     [accountId, balance, loadRules, modeId, refresh, refreshSessions, refreshState, symbol, visibility],
   );
 
+  /** Leave the replay provider, whether or not a session is running. */
+  const backToLive = useCallback(async () => {
+    setBusy(true);
+    try {
+      await replayApi.pause().catch(() => undefined);
+      await replayApi.useProvider('live');
+      reveal();
+      setNote('Back on the live market.');
+      await Promise.all([refresh(), refreshState()]);
+      await refreshReplayStatus();
+    } catch (err) {
+      setError((err as { message?: string }).message ?? 'Could not return to the live market.');
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh, refreshState, reveal]);
+
   const endSession = useCallback(async () => {
     if (!active) return;
     setBusy(true);
@@ -204,6 +221,7 @@ export function PracticePanel(): JSX.Element {
     }
   }, [active, refresh, refreshState, reveal]);
 
+  const routedToReplay = useReplayStatus((s) => s.isReplay);
   const loaded = state?.loaded ?? false;
   const playing = state?.playing ?? false;
   const blind = state?.blind ?? false;
@@ -307,6 +325,28 @@ export function PracticePanel(): JSX.Element {
             </div>
             <button className="chip" disabled={busy} onClick={() => void endSession()}>
               End session &amp; review
+            </button>
+          </div>
+        ) : routedToReplay ? (
+          /*
+           * Routed through a replay with no session running.
+           *
+           * A reload in the middle of one leaves the terminal exactly here, and
+           * without a way out it shows a finished session's prices for ever.
+           */
+          <div className="practice-active">
+            <div className="practice-active-row">
+              <span className="practice-active-dot" />
+              <b>Replaying</b>
+              <span className="practice-active-meta">no session is being recorded</span>
+            </div>
+            <button
+              className="chip"
+              disabled={busy}
+              data-testid="back-to-live"
+              onClick={() => void backToLive()}
+            >
+              Return to the live market
             </button>
           </div>
         ) : (

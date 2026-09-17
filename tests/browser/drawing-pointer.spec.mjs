@@ -49,7 +49,8 @@ try {
   await page.mouse.click(at(0.3, 0.35).x, at(0.3, 0.35).y);
   await page.mouse.click(at(0.5, 0.6).x, at(0.5, 0.6).y);
   await page.waitForTimeout(700);
-  say((await litPixels(page, '.draw-canvas')) > 200, 'the trend line is painted');
+  const litTrendLine = await litPixels(page, '.draw-canvas');
+  say(litTrendLine > 200, 'the trend line is painted', `${litTrendLine} lit pixels`);
   say(
     await page.locator('.rail .rail-btn[aria-label=Cursor]').evaluate((n) => n.classList.contains('rail-btn-on')),
     'the tool returns to the cursor after placement',
@@ -75,9 +76,11 @@ try {
   await page.waitForTimeout(300);
   await page.mouse.click(at(0.78, 0.5).x, at(0.78, 0.5).y);
   await page.waitForTimeout(800);
+  const litWithRectangle = await litPixels(page, '.draw-canvas');
   say(
-    (await litPixels(page, '.draw-canvas')) > 1500,
+    litWithRectangle > litTrendLine,
     'the rectangle is painted alongside the trend line',
+    `${litTrendLine} -> ${litWithRectangle} lit pixels`,
   );
 
   // --- select, drag, deselect ---------------------------------------------
@@ -156,15 +159,38 @@ try {
   say(beforeFinal !== afterFinal, 'the chart pans after selecting and deselecting', `${beforeFinal} -> ${afterFinal}`);
 
   // --- undo / redo ---------------------------------------------------------
-  const litBefore = await litPixels(page, '.draw-canvas');
-  say(litBefore > 0, 'there is something to undo');
+  // From a known empty state, so the assertion is about undo and not about
+  // whatever earlier steps happened to leave behind.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  let litAfterClear = await litPixels(page, '.draw-canvas');
+  for (let attempt = 0; attempt < 4 && litAfterClear > 0; attempt += 1) {
+    const clearForUndo = page.locator('.rail .rail-btn[aria-label="Remove all drawings"]');
+    if (!(await clearForUndo.count())) break;
+    await clearForUndo.click();
+    await page.waitForTimeout(800);
+    litAfterClear = await litPixels(page, '.draw-canvas');
+  }
+  if (litAfterClear > 0) await shot(page, 'drawing-pointer-stuck');
+  say(litAfterClear === 0, 'the chart starts with nothing drawn', `${litAfterClear} lit pixels`);
+
+  await page.click('.rail .rail-btn[aria-label="Trend line"]');
+  await page.mouse.click(at(0.35, 0.3).x, at(0.35, 0.3).y);
+  await page.waitForTimeout(300);
+  await page.mouse.click(at(0.6, 0.55).x, at(0.6, 0.55).y);
+  await page.waitForTimeout(800);
+  const litOne = await litPixels(page, '.draw-canvas');
+  say(litOne > 200, 'one drawing is on the chart', `${litOne} lit pixels`);
+
   await page.keyboard.press('Control+z');
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(700);
   const litUndone = await litPixels(page, '.draw-canvas');
-  say(litUndone < litBefore, 'undo removes the last drawing', `${litBefore} -> ${litUndone}`);
+  say(litUndone === 0, 'undo removes it', `${litUndone} lit pixels`);
+
   await page.keyboard.press('Control+Shift+z');
-  await page.waitForTimeout(600);
-  say((await litPixels(page, '.draw-canvas')) >= litBefore - 5, 'redo brings it back');
+  await page.waitForTimeout(700);
+  const litRedone = await litPixels(page, '.draw-canvas');
+  say(litRedone > 200, 'redo brings it back', `${litRedone} lit pixels`);
 
   await shot(page, 'drawing-pointer');
 

@@ -15,6 +15,7 @@ import { normalizeMotion, type MotionSettings } from '../chart/motion';
 import { FULL_VISIBILITY, useTraining, type TrainingModeId, type Visibility } from './training';
 import { useChartStore, type StoredChart } from './chart-store';
 import { useWorkspace } from './workspace';
+import { useExecution, type ExecutionDefaults } from './execution';
 
 interface StoredPreferences {
   motion?: Partial<MotionSettings>;
@@ -22,6 +23,7 @@ interface StoredPreferences {
   /** Chart appearance, indicators and drawings. */
   chart?: StoredChart;
   workspace?: { favouriteTimeframes?: readonly Timeframe[] };
+  execution?: Partial<ExecutionDefaults>;
 }
 
 const WRITE_DEBOUNCE_MS = 600;
@@ -40,6 +42,7 @@ function write(): void {
       },
       chart: useChartStore.getState().snapshot(),
       workspace: { favouriteTimeframes: useWorkspace.getState().favouriteTimeframes },
+      execution: useExecution.getState().snapshot(),
     };
     void preferencesApi.write(preferences as Record<string, unknown>).catch(() => undefined);
   }, WRITE_DEBOUNCE_MS);
@@ -71,6 +74,7 @@ export async function attachPreferences(): Promise<void> {
     // on the chart.
     if (stored.chart) useChartStore.getState().restore(stored.chart);
     if (stored.workspace) useWorkspace.getState().restore(stored.workspace);
+    if (stored.execution) useExecution.getState().restore(stored.execution);
   } catch {
     // A trader with no stored preferences is not an error; they get the
     // defaults, and the first change they make saves them.
@@ -80,4 +84,5 @@ export async function attachPreferences(): Promise<void> {
   useTraining.subscribe(write);
   useChartStore.subscribe(write);
   useWorkspace.subscribe(write);
+  useExecution.subscribe(write);
 }

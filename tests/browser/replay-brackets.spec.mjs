@@ -17,6 +17,26 @@ const { browser, page, errors } = await launch();
 const positionText = async () =>
   ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');
 
+/** Set the bracket behaviour and distances in Settings. */
+async function setBracket(mode, stopTicks, targetTicks) {
+  await page.click('.abar-icon[aria-label=Settings]');
+  await page.waitForTimeout(700);
+  await page.click('.st-nav-item:text-is("Execution defaults")');
+  await page.waitForTimeout(400);
+  await page.click(
+    `.st-row:has-text("On a fill") .st-choice-btn:text-is("${
+      mode === 'AUTO' ? 'Attach a stop and target' : 'Nothing'
+    }")`,
+  );
+  if (mode === 'AUTO') {
+    await page.fill('.st-row:has-text("Stop distance") input', String(stopTicks));
+    await page.fill('.st-row:has-text("Target distance") input', String(targetTicks));
+  }
+  await page.waitForTimeout(500);
+  await page.click('.st-close');
+  await page.waitForTimeout(900);
+}
+
 try {
   await signIn(page);
   await useAccount(page, 'Practice 150K');
@@ -45,10 +65,9 @@ try {
   await page.waitForTimeout(800);
 
   // --- an Auto bracket, attached to the entry ------------------------------
-  await page.click('.tk-modes .tk-chip:text-is("Auto")');
-  await page.fill('#tk-sl', '20');
-  await page.fill('#tk-tp', '40');
-  await page.waitForTimeout(400);
+  // Bracket behaviour is an execution DEFAULT now, not a control on the ticket:
+  // a trader placing an order chooses a side and a size.
+  await setBracket('AUTO', 20, 40);
 
   await page.click('.abar-icon[aria-label=Practice]');
   await page.waitForTimeout(1_200);
@@ -57,7 +76,7 @@ try {
   await page.click('[data-testid=drawer-practice] .drawer-close');
   await page.waitForTimeout(600);
 
-  await page.click('.tk-chip:text-is("1")');
+  await page.click('.tk-preset:text-is("1")');
   await page.click('[data-testid=buy]');
   await page.waitForTimeout(1_800);
   say(
@@ -110,6 +129,9 @@ try {
     (await page.locator('.abar-pill-warn:text-is("REPLAY")').count()) === 0,
     'ending the session returns the terminal to the live feed',
   );
+
+  // Back to the default, so the next suite starts from a clean workspace.
+  await setBracket('OFF');
 
   say(errors.length === 0, 'no page errors', errors.join(' | '));
 } finally {

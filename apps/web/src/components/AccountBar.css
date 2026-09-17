@@ -5,8 +5,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
-  padding: 0 4px;
+  height: var(--header-h);
+  padding: 0 6px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
@@ -21,35 +21,43 @@
 }
 
 .abar-mark {
-  width: 11px;
-  height: 11px;
+  width: 13px;
+  height: 13px;
   border-radius: 2px;
   background: linear-gradient(135deg, var(--accent) 0%, var(--long) 100%);
 }
 
 .abar-word {
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
   font-weight: 700;
   letter-spacing: 0.13em;
   color: var(--text-primary);
 }
 
 .abar-sim {
-  padding: 1px 4px;
+  padding: 2px 6px;
   border: 1px solid var(--warn);
-  border-radius: 2px;
+  border-radius: var(--radius);
   color: var(--warn);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
 .abar-account {
-  height: 22px;
-  max-width: 170px;
+  height: var(--h-dense);
+  max-width: 190px;
   font-family: var(--font-ui);
   font-size: var(--fs-md);
   font-weight: 600;
+  line-height: 1.2;
+  padding: 0 24px 0 9px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) calc(50% + 1px), calc(100% - 9px) calc(50% + 1px);
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
 }
 
 .abar-metric {
@@ -62,7 +70,7 @@
 }
 
 .abar-metric-label {
-  font-size: 9px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.07em;
   color: var(--text-muted);
   font-weight: 700;
@@ -70,13 +78,14 @@
 
 .abar-metric-value {
   font-size: var(--fs-md);
+  font-weight: 500;
   color: var(--text-primary);
 }
 
 .abar-pill {
-  padding: 1px 5px;
-  border-radius: 2px;
-  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -126,8 +135,8 @@
 .abar-icon {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius);
   color: var(--text-secondary);
 }
@@ -150,8 +159,8 @@
 .abar-user {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--radius);
   color: var(--text-muted);
 }

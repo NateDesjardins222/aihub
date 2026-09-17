@@ -59,6 +59,25 @@ export async function signIn(page) {
   }
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(3_500);
+  await returnToLive(page);
+}
+
+/**
+ * Leave the replay provider if a previous run left the terminal on it.
+ *
+ * Suites share one server, so one that dies mid-session would otherwise hand
+ * every later suite a chart with three bars on it.
+ */
+export async function returnToLive(page) {
+  if ((await page.locator('.abar-pill-warn').count()) === 0) return;
+  await page.click('.abar-icon[aria-label=Practice]');
+  await page.waitForTimeout(2_000);
+  if (await page.locator('.practice-active .chip').count()) {
+    await page.locator('.practice-active .chip').first().click();
+    await page.waitForTimeout(6_000);
+  }
+  await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
+  await page.waitForTimeout(2_500);
 }
 
 /** Select an account by its display name and let the stores settle. */
@@ -74,7 +93,7 @@ export async function reset(page) {
     await cancel.click();
     await page.waitForTimeout(2_000);
   }
-  const close = page.locator('.tk-grid2 button:has-text("Close position")');
+  const close = page.locator('.tk-grid2 button:has-text("Close")');
   if (await close.isEnabled().catch(() => false)) {
     await close.click();
     await page.waitForTimeout(3_500);
@@ -82,7 +101,7 @@ export async function reset(page) {
 }
 
 /** How many pixels the drawing canvas has painted. Zero means nothing drawn. */
-export function litPixels(page, selector = '.draw-layer') {
+export function litPixels(page, selector = '.draw-canvas') {
   return page.evaluate((sel) => {
     const canvas = document.querySelector(sel);
     if (!canvas) return 0;

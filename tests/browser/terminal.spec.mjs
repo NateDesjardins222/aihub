@@ -47,46 +47,56 @@ try {
   const column = await page.locator('.terminal-right').boundingBox();
   say((column?.width ?? 999) <= 260, 'the order ticket is narrow', `${column?.width}px`);
   const ticket = await page.locator('.tk').boundingBox();
-  const slack = (column?.height ?? 0) - (ticket?.height ?? 0);
-  say(slack < 280, 'no enormous blank area below the ticket', `${Math.round(slack)}px of slack`);
-  const quote = ((await page.textContent('[data-testid=quote-block]')) ?? '').replace(/\s+/g, ' ');
-  say(/no bid\/ask on this feed/.test(quote), 'bid and ask are not fabricated', quote.slice(0, 60));
+  // The ticket is COMPACT and anchored to the top. Measuring the space under it
+  // stopped meaning anything once the ticket was stripped down - a short panel
+  // with room under it is the intended shape; a tall panel padded out with gaps
+  // was the problem.
+  say(
+    (ticket?.height ?? 999) < 430 && Math.abs((ticket?.y ?? 0) - (column?.y ?? 0)) < 40,
+    'the ticket is compact and anchored to the top',
+    `${Math.round(ticket?.height ?? 0)}px tall`,
+  );
+
+  // Nothing the brief asked to be removed is in it.
+  const ticketText = ((await page.textContent('.tk')) ?? '').replace(/\s+/g, ' ');
+  say(
+    !/Last traded/.test(ticketText) &&
+      !/no bid\/ask/.test(ticketText) &&
+      !/Position bracket/.test(ticketText) &&
+      !/Time in force/.test(ticketText) &&
+      !/Round turn/.test(ticketText) &&
+      !/Equity/.test(ticketText),
+    'the ticket carries no quote block, bracket selector, time in force or fee table',
+    ticketText.slice(0, 90),
+  );
+  say(
+    (await page.locator('[data-testid=quote-block]').count()) === 0,
+    'no bid/ask block: this feed has no book, and none is invented',
+  );
 
   // --- order, marker, bracket ---------------------------------------------
   // Wide levels: this is a live delayed feed and NQ can travel ten points while
   // the test is typing, which would fill a close stop mid-run.
-  await page.fill('#tk-sl', '400');
-  await page.fill('#tk-tp', '600');
-  await page.click('.tk-modes .tk-chip:text-is("Manual")');
-  await page.click('.tk-chip:text-is("2")');
+  await page.click('.tk-preset:text-is("3")');
   await page.click('[data-testid=buy]');
   await page.waitForTimeout(6_000);
 
   const position = ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');
-  say(/LONG 2/.test(position), 'a market order opens a position', position.slice(0, 50));
+  say(/LONG 3/.test(position), 'a market order opens a position', position.slice(0, 50));
   say((await page.locator('[data-marker=position]').count()) === 1, 'the position marker appears');
   say(
     (await page.locator('[data-marker=stop], [data-marker=target]').count()) === 0,
     'NO protective line appears merely because bracket mode is on',
   );
 
-  await page.click('[data-testid=marker-position] .pm-act:text-is("+SL")');
-  await page.waitForTimeout(4_000);
-  say((await page.locator('[data-marker=stop]').count()) === 1, '+SL on the position marker creates a stop');
-  await page.click('[data-testid=marker-position] .pm-act:text-is("+TP")');
-  await page.waitForTimeout(4_000);
-  say((await page.locator('[data-marker=target]').count()) === 1, '+TP on the position marker creates a target');
-
-  await page.click('.tab:text-is("Orders")');
-  await page.waitForTimeout(1_500);
-  const orders = ((await page.textContent('.panel-body')) ?? '').replace(/\s+/g, ' ');
+  // Nothing protective is WORKING either: the ticket's cancel control is the
+  // live count of working orders in this instrument.
   say(
-    /STOP LOSS/.test(orders) && /TAKE PROFIT/.test(orders),
-    'both legs are real working orders on the server',
-    orders.slice(0, 140),
+    !(await page.locator('.tk-grid2 button:has-text("Cancel orders")').isEnabled()),
+    'and there is nothing working on the server either',
   );
-  await page.click('.tab:text-is("Positions")');
   await shot(page, 'terminal-position');
+
 
   // --- labels never stack --------------------------------------------------
   const labels = await page.locator('.pm-tag').evaluateAll((nodes) =>
@@ -100,28 +110,10 @@ try {
   for (let i = 1; i < sorted.length; i += 1) {
     if (sorted[i].top < sorted[i - 1].bottom - 0.5) overlap = true;
   }
-  say(!overlap && labels.length >= 3, 'no two marker labels overlap', `${labels.length} labels`);
-
-  // --- dragging changes the AUTHORITATIVE order ----------------------------
-  const tag = page.locator('[data-testid=marker-stop]');
-  const before = ((await page.locator('[data-testid=marker-stop] .pm-price').textContent()) ?? '').trim();
-  const box = await tag.boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 40, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForTimeout(4_500);
-  const after = ((await page.locator('[data-testid=marker-stop] .pm-price').textContent()) ?? '').trim();
-  say(before !== after, 'dragging a stop moves it', `${before} -> ${after}`);
-
-  await page.click('.tab:text-is("Orders")');
-  await page.waitForTimeout(1_500);
-  const afterOrders = ((await page.textContent('.panel-body')) ?? '').replace(/\s+/g, ' ');
-  say(afterOrders.includes(after), 'the dragged price is the price the server holds', after);
-  await page.click('.tab:text-is("Positions")');
+  say(!overlap, 'no two marker labels overlap', `${labels.length} labels`);
 
   // --- close up ------------------------------------------------------------
-  await page.click('.tk-grid2 button:has-text("Close position")');
+  await page.click('.tk-grid2 button:has-text("Close")');
   await page.waitForTimeout(5_000);
   const flat = ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');
   say(/No active position/.test(flat), 'closing flattens the position');

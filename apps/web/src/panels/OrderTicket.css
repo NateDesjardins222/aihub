@@ -1,31 +1,31 @@
 /*
  * The order ticket.
  *
- * Content height, not stretched: the column ends where the ticket ends. 24px
- * controls, 11px labels, 1px borders - the density of the reference rather
- * than of a settings form.
+ * Narrow but not microscopic: 28px controls, 13px text, a 22px contract input
+ * and buy/sell buttons that are the most prominent controls on the panel. It is
+ * content-height - the column ends where the ticket ends.
  */
 .tk {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px;
+  gap: 10px;
+  padding: 10px;
   font-size: var(--fs-md);
 }
 
 .tk-empty {
-  padding: 14px;
+  padding: 18px;
   color: var(--text-muted);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
 }
 
 .tk-label {
   display: block;
   font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
-  font-weight: 600;
-  margin-bottom: 2px;
+  font-weight: 500;
+  margin-bottom: 4px;
 }
 
 .tk-field {
@@ -37,27 +37,36 @@
 .tk-field input,
 .tk-field select {
   width: 100%;
-  height: 24px;
-  padding: 0 6px;
+  height: var(--h-control);
+  padding: 0 9px;
   font-size: var(--fs-md);
 }
 
 .tk-field select {
   font-family: var(--font-ui);
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% + 1px),
+    calc(100% - 9px) calc(50% + 1px);
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
 }
 
 .tk-row {
   display: flex;
-  gap: 5px;
+  gap: 8px;
   align-items: flex-end;
 }
 
 .tk-contract {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 6px;
+  gap: 8px;
+  height: var(--h-control);
+  padding: 0 9px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -66,6 +75,7 @@
 .tk-contract .num {
   color: var(--text-primary);
   font-size: var(--fs-md);
+  font-weight: 500;
 }
 
 .tk-contract-root {
@@ -74,69 +84,66 @@
   font-size: var(--fs-xs);
 }
 
-.tk-qty-input {
-  font-size: var(--fs-lg) !important;
+/* --- quantity ----------------------------------------------------------- */
+
+.tk-qty {
+  font-size: var(--fs-2xl) !important;
   font-weight: 600;
+  height: 44px !important;
+  text-align: left;
 }
 
-/* --- quote block -------------------------------------------------------- */
-
-.tk-quote {
+.tk-presets {
   display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
 }
 
-.tk-quote-cell {
+.tk-preset,
+.tk-step {
   flex: 1 1 0;
+  display: grid;
+  place-items: center;
+  height: var(--h-control);
   min-width: 0;
-  padding: 3px 5px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-input);
-  text-align: center;
-}
-
-.tk-quote-cell .num {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-size: var(--fs-md);
-  color: var(--text-primary);
 }
 
-.tk-quote-wide {
-  flex: 1 1 100%;
-}
-
-.tk-bid {
-  border-color: var(--long-dim);
-}
-.tk-ask {
-  border-color: var(--short-dim);
-}
-
-.tk-last-big {
-  font-size: var(--fs-xl) !important;
-  font-weight: 600;
-}
-
-/* Says what the feed does not provide, instead of inventing it. */
-.tk-quote-note {
-  flex: 1 1 100%;
-  text-align: center;
-  font-size: var(--fs-xs);
+.tk-step {
+  flex: 0 0 30px;
   color: var(--text-muted);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-  padding: 2px 4px;
+}
+
+.tk-preset:hover,
+.tk-step:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* The active size is unmistakable: filled, not merely tinted. */
+.tk-preset-on,
+.tk-preset-on:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06111f;
+  font-weight: 700;
 }
 
 /* --- position ----------------------------------------------------------- */
 
 .tk-position {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 7px;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 10px;
+  flex-wrap: wrap;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-base);
@@ -149,7 +156,7 @@
 
 .tk-pos-flat {
   color: var(--text-muted);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   margin: 0 auto;
 }
 
@@ -160,108 +167,13 @@
 
 .tk-pos-at {
   color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
 }
 
-.tk-position .num:last-child {
+.tk-pos-pnl {
   margin-left: auto;
-}
-
-/* --- chips -------------------------------------------------------------- */
-
-.tk-quick {
-  display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
-}
-
-.tk-chip {
-  display: grid;
-  place-items: center;
-  min-width: 25px;
-  height: 21px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-}
-
-.tk-chip:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.tk-chip-on,
-.tk-chip-on:hover {
-  background: var(--accent-bg);
-  border-color: var(--accent-dim);
-  color: var(--text-primary);
-}
-
-.tk-chip-tiny {
-  min-width: 19px;
-  height: 19px;
-  padding: 0 4px;
-  border-radius: var(--radius);
-}
-
-/* --- bracket ------------------------------------------------------------ */
-
-.tk-bracket {
-  padding: 5px 6px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-}
-
-.tk-bracket-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.tk-bracket-head .tk-label {
-  margin-bottom: 0;
-}
-
-.tk-modes {
-  display: flex;
-  gap: 2px;
-}
-
-.tk-bracket-row {
-  margin-top: 5px;
-}
-
-.tk-units {
-  display: flex;
-  gap: 2px;
-  padding-bottom: 2px;
-}
-
-.tk-rr {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 5px;
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-}
-
-.tk-rr em {
-  color: var(--text-muted);
-  font-style: normal;
-}
-
-.tk-hint {
-  margin: 5px 0 0;
-  font-size: var(--fs-xs);
-  line-height: 1.35;
-  color: var(--text-muted);
+  font-size: var(--fs-md);
+  font-weight: 600;
 }
 
 /* --- actions ------------------------------------------------------------ */
@@ -269,49 +181,59 @@
 .tk-actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .tk-buy,
 .tk-sell {
-  height: 30px;
+  height: var(--h-primary);
   border-radius: var(--radius);
   font-weight: 700;
-  font-size: var(--fs-md);
-  letter-spacing: 0.02em;
+  font-size: var(--fs-lg);
+  letter-spacing: 0.01em;
   border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.tk-buy b,
+.tk-sell b {
+  font-family: var(--font-mono);
+  font-weight: 700;
 }
 
 .tk-buy {
-  background: var(--long-bg);
-  border-color: var(--long-dim);
-  color: var(--long);
+  background: var(--long);
+  border-color: var(--long);
+  color: #04160f;
 }
 
 .tk-buy:hover:not(:disabled) {
-  background: var(--long-dim);
-  color: #04120f;
+  background: var(--long-bright);
+  border-color: var(--long-bright);
 }
 
 .tk-sell {
-  background: var(--short-bg);
-  border-color: var(--short-dim);
-  color: var(--short);
+  background: var(--short);
+  border-color: var(--short);
+  color: #1b0606;
 }
 
 .tk-sell:hover:not(:disabled) {
-  background: var(--short-dim);
-  color: #170504;
+  background: var(--short-bright);
+  border-color: var(--short-bright);
 }
 
 .tk-grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: 6px;
 }
 
 .tk-grid2 button {
-  height: 23px;
+  height: var(--h-control);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-raised);
@@ -322,57 +244,18 @@
 .tk-grid2 button:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
-.tk-tif {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.tk-wide {
+  grid-column: 1 / -1;
 }
 
-.tk-tif .tk-label {
-  margin-bottom: 0;
-}
-
-.tk-msg {
-  padding: 4px 7px;
+.tk-error {
+  padding: 7px 9px;
   border-radius: var(--radius);
-  font-size: var(--fs-sm);
-  line-height: 1.35;
-}
-
-.tk-msg-ok {
-  background: var(--long-bg);
-  color: var(--long);
-}
-
-.tk-msg-bad {
   background: var(--short-bg);
-  color: var(--short);
-}
-
-.tk-facts {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px 8px;
-  margin: 1px 0 0;
-  padding-top: 5px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.tk-facts > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 5px;
-}
-
-.tk-facts dt {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-.tk-facts dd {
-  margin: 0;
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
+  color: var(--short-bright);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }

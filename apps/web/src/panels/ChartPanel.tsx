@@ -7,25 +7,20 @@ import { marketStream } from '../market/stream';
 import { fetchBars, fetchSymbolStatus, type FreshnessInfo } from '../market/api';
 import { ChartLegend } from './ChartLegend';
 import { ChartHeader } from '../chart/ChartHeader';
-import { PriceMarkers, type BracketMode } from '../chart/PriceMarkers';
+import { PriceMarkers } from '../chart/PriceMarkers';
 import { DrawingCanvas, type PreviewState } from '../chart/drawings/DrawingCanvas';
 import { useDrawingInput } from '../chart/drawings/useDrawingInput';
 import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
 import { useChartStore } from '../state/chart-store';
 import { useTraining } from '../state/training';
+import { useReplayStatus } from '../state/replay-status';
 import { resolveZone, timeFormatter } from '../chart/appearance';
 import { Icon } from '../ui/Icon';
 import './ChartPanel.css';
 
 const INITIAL_BARS = 1_200;
 const PAGE_BARS = 1_000;
-
-export interface ChartPanelProps {
-  readonly bracketMode: BracketMode;
-  readonly stopTicks: number;
-  readonly targetTicks: number;
-}
 
 /**
  * The chart.
@@ -37,7 +32,7 @@ export interface ChartPanelProps {
  * and drawings, keep the same discipline: both place themselves in an
  * animation frame.
  */
-export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelProps): JSX.Element {
+export function ChartPanel(): JSX.Element {
   const activeSymbol = useSession((s) => s.activeSymbol);
   const instrument = useSession(activeInstrument);
 
@@ -61,6 +56,15 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
   const indicators = useChartStore((s) => s.indicators);
   const showDates = useTraining((s) => s.visibility.dateTime);
   const chartFocus = useSession((s) => s.chartFocus);
+  /*
+   * Which market the terminal is routed through.
+   *
+   * Switching between the live feed and a replay changes what the history
+   * endpoint returns, so the series has to be reloaded - otherwise leaving a
+   * replay leaves its handful of bars on the chart with the live feed ticking
+   * into them.
+   */
+  const routedToReplay = useReplayStatus((s) => s.isReplay);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const adapterRef = useRef<LightweightChartsAdapter | null>(null);
@@ -77,6 +81,8 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
    * and the stream agree on what they are showing.
    */
   const seriesTimeframeRef = useRef<Timeframe | null>(null);
+  /** What the series currently holds, so an empty reload can be recognised. */
+  const loadedSeriesRef = useRef<{ symbol: string; timeframe: Timeframe } | null>(null);
   /**
    * The visual motion layer.
    *
@@ -205,7 +211,22 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
         if (token !== loadTokenRef.current) return;
 
         adapter.setTimeframe(timeframe);
+
+        // An EMPTY response over the same instrument leaves the series alone.
+        // Switching to a replay that has not emitted anything yet would
+        // otherwise wipe the chart, and with no series there is no price scale:
+        // every order marker loses its coordinate and disappears.
+        const sameSeries =
+          loadedSeriesRef.current?.symbol === activeSymbol &&
+          loadedSeriesRef.current?.timeframe === timeframe;
+        if (page.bars.length === 0 && sameSeries && adapter.barCount > 0) {
+          setHistoryNote(page.limitReason);
+          seriesTimeframeRef.current = timeframe;
+          return;
+        }
+
         adapter.applyHistory(page.bars);
+        loadedSeriesRef.current = { symbol: activeSymbol, timeframe };
         seriesTimeframeRef.current = timeframe;
         adapter.fitContent();
         setBarCount(page.bars.length);
@@ -225,7 +246,7 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
         if (token === loadTokenRef.current) setLoading(false);
       }
     })();
-  }, [activeSymbol, timeframe, instrument]);
+  }, [activeSymbol, timeframe, instrument, routedToReplay]);
 
   // -- live bars, straight from the stream into the chart ------------------
   useEffect(() => {
@@ -500,10 +521,9 @@ export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelPr
           containerRef={containerRef}
           symbol={activeSymbol}
           tickSize={tickSize}
+          tickValueMicros={instrument?.tickValueMicros ?? 0}
           pricePrecision={precision}
           ready={chartReady}
-          defaultStopTicks={bracketMode === 'OFF' ? 40 : stopTicks}
-          defaultTargetTicks={bracketMode === 'OFF' ? 80 : targetTicks}
         />
 
         <div className="chart-nav">

@@ -12,9 +12,17 @@
   min-height: 0;
 }
 
+/*
+ * The renderer's own canvases live in here and set their own z-indexes, so the
+ * container takes an explicit one: without it a library canvas can out-stack
+ * the overlays and swallow a press meant for a position marker.
+ *
+ * Layers: chart 1, drawings 4, markers 6, chrome above that.
+ */
 .chart-canvas {
   position: absolute;
   inset: 0;
+  z-index: 1;
 }
 
 /* --- status line -------------------------------------------------------- */

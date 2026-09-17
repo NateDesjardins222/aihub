@@ -1,70 +1,95 @@
 /*
- * Atlas Futures Terminal — original dark design system.
+ * Atlas — design system.
  *
- * Dense, low-chrome, built for long sessions in front of a chart. No third-party
- * branding, logos, colour schemes or visual assets are reproduced here.
+ * Original work. No third-party branding, logo, colour scheme or visual asset
+ * is reproduced; the typefaces are Inter and JetBrains Mono, both SIL OFL, and
+ * both self-hosted rather than fetched from a font CDN.
+ *
+ * The scale below is the readable one: 11/12/13/15/18/22 with 28px standard
+ * controls. The platform used to run on 10/11/12/13 with 20-24px controls,
+ * which is why it read as an engineering tool rather than as a terminal.
  */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
 
 :root {
   /* Surfaces, from deepest to most raised. */
-  --bg-void: #07090d;
-  --bg-base: #0b0e14;
-  --bg-panel: #10141c;
-  --bg-raised: #161b26;
-  --bg-hover: #1d2431;
-  --bg-active: #232b3b;
-  --bg-input: #0d1118;
+  --bg-void: #070910;
+  --bg-base: #0b0f18;
+  --bg-panel: #111724;
+  --bg-raised: #171f30;
+  --bg-hover: #1f293c;
+  --bg-active: #27334a;
+  --bg-input: #0d1220;
 
-  --border-subtle: #1b2230;
-  --border: #242d3e;
-  --border-strong: #32405a;
+  --border-subtle: #1a2231;
+  --border: #25314a;
+  --border-strong: #35445f;
 
-  --text-primary: #e4e9f2;
-  --text-secondary: #9aa6bd;
-  --text-muted: #63708a;
-  --text-disabled: #444f66;
+  --text-primary: #e8edf7;
+  --text-secondary: #9dabc4;
+  --text-muted: #67758f;
+  --text-disabled: #47536b;
 
-  /* Directional colours. Long/short are deliberately not red/green alone: the
-     shapes and labels carry the meaning too, for colour-vision accessibility. */
-  --long: #2ec4a6;
-  --long-dim: #1d7a68;
-  --long-bg: rgba(46, 196, 166, 0.12);
-  --short: #f2544b;
-  --short-dim: #9c3630;
-  --short-bg: rgba(242, 84, 75, 0.12);
+  /*
+   * Directional colours. Long/short are never carried by colour alone: the
+   * shapes, labels and signs carry the meaning too, for colour-vision
+   * accessibility. The -bright pair is reserved for P&L, which is the one
+   * number that should catch the eye from across a desk.
+   */
+  --long: #29d3a5;
+  --long-bright: #3ef0bd;
+  --long-dim: #18866a;
+  --long-bg: rgba(41, 211, 165, 0.14);
+  --short: #ff5a5a;
+  --short-bright: #ff7a7a;
+  --short-dim: #a33232;
+  --short-bg: rgba(255, 90, 90, 0.14);
 
-  --accent: #4d8dff;
-  --accent-dim: #2a5199;
-  --accent-bg: rgba(77, 141, 255, 0.12);
-  --warn: #f5a524;
-  --warn-bg: rgba(245, 165, 36, 0.12);
-  --danger: #f2544b;
-  --neutral: #6b7a94;
+  --accent: #5b9dff;
+  --accent-dim: #2f5fb3;
+  --accent-bg: rgba(91, 157, 255, 0.14);
+  --warn: #f7b23b;
+  --warn-bg: rgba(247, 178, 59, 0.14);
+  --danger: #ff5a5a;
+  --neutral: #74839d;
 
   /* Link-group colours for multi-chart symbol linking. */
-  --link-blue: #4d8dff;
-  --link-green: #2ec4a6;
-  --link-orange: #f5a524;
-  --link-purple: #a879f0;
-  --link-red: #f2544b;
+  --link-blue: #5b9dff;
+  --link-green: #29d3a5;
+  --link-orange: #f7b23b;
+  --link-purple: #b184f5;
+  --link-red: #ff5a5a;
 
-  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', Menlo, monospace;
+  --font-ui: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --fs-xs: 10px;
-  --fs-sm: 11px;
-  --fs-md: 12px;
-  --fs-lg: 13px;
-  --fs-xl: 15px;
+  /* Type scale. */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
 
-  --row-h: 22px;
-  --header-h: 44px;
-  --tab-h: 28px;
-  --radius: 3px;
-  --radius-lg: 5px;
+  /* Control heights. */
+  --h-dense: 24px;
+  --h-control: 28px;
+  --h-primary: 34px;
+
+  --row-h: 26px;
+  --header-h: 36px;
+  --tab-h: 30px;
+  --radius: 5px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
 
   --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.45);
-  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.62);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --fast: 110ms;
+  --medium: 180ms;
 }
 
 * {
@@ -84,15 +109,18 @@ body {
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
+  font-feature-settings: 'cv05' 1, 'ss03' 1;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
 }
 
-/* Numeric data always uses tabular figures so columns do not jitter on update. */
+/* Numeric data always uses tabular figures so columns do not jitter. */
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.01em;
 }
 
 .pos {
@@ -112,11 +140,23 @@ button {
   background: none;
   border: none;
   cursor: pointer;
+  transition:
+    background var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.4;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 input,
@@ -127,8 +167,14 @@ select {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 3px 6px;
+  padding: 4px 8px;
   outline: none;
+  transition: border-color var(--fast) var(--ease);
+}
+
+input:hover,
+select:hover {
+  border-color: var(--border-strong);
 }
 
 input:focus,
@@ -137,40 +183,43 @@ select:focus {
 }
 
 ::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-base);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 5px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--neutral);
+  background-clip: content-box;
 }
 
 .label {
   font-size: var(--fs-xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
   font-weight: 600;
 }
 
-/* A visible, honest marker for capability that is not built yet. Preferred over
-   a button that looks live and does nothing. */
+/* A visible, honest marker for capability that is not built yet. Preferred
+   over a control that looks live and does nothing. */
 .not-built {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 7px;
+  padding: 3px 9px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
   color: var(--text-muted);
   font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -180,5 +229,24 @@ select:focus {
   height: 100%;
   color: var(--text-muted);
   font-size: var(--fs-lg);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+}
+
+/* Menus and drawers open with a short, unfussy motion. */
+@keyframes atlas-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

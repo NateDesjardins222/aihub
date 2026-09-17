@@ -3,8 +3,8 @@
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  width: 34px;
-  padding: 4px 0;
+  width: 40px;
+  padding: 6px 0;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-subtle);
   flex: 0 0 auto;
@@ -15,7 +15,7 @@
 }
 
 .rail-sep {
-  width: 18px;
+  width: 22px;
   height: 1px;
   margin: 3px 0;
   background: var(--border);
@@ -24,8 +24,8 @@
 .rail-btn {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius);
   color: var(--text-secondary);
   flex: 0 0 auto;

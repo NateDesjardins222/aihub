@@ -322,4 +322,17 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     container.classList.toggle('chart-arming', tool !== 'CURSOR');
     return () => container.classList.remove('chart-arming');
   }, [containerRef, tool]);
+
+  /*
+   * Abandon a half-placed drawing when the tool changes.
+   *
+   * Switching tools mid-placement used to leave the preview painted for ever:
+   * it is not a drawing, so "remove all drawings" could not remove it and
+   * nothing else ever cleared it. Changing the tool is an abandonment.
+   */
+  useEffect(() => {
+    stateRef.current = 'IDLE';
+    pendingRef.current = [];
+    if (previewRef.current) previewRef.current = { ...previewRef.current, drawing: null };
+  }, [previewRef, tool]);
 }

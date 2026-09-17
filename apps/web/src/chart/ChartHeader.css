@@ -2,8 +2,8 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 28px;
-  padding: 0 4px 0 6px;
+  height: var(--tab-h);
+  padding: 0 6px 0 8px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-subtle);
   flex: 0 0 auto;
@@ -24,8 +24,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 21px;
-  padding: 0 7px;
+  height: var(--h-dense);
+  padding: 0 9px;
   border-radius: var(--radius);
   color: var(--text-secondary);
 }
@@ -38,6 +38,7 @@
 .chdr-symbol-root {
   font-size: var(--fs-lg);
   font-weight: 700;
+  font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text-primary);
 }
@@ -46,9 +47,9 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  padding: 1px 4px;
+  padding: 3px 6px;
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
 .chdr-tfs {
@@ -57,14 +58,17 @@
   gap: 1px;
 }
 
+/* Compact text controls, the way the reference sizes them: readable, with a
+   rounded selected state rather than an application-style button. */
 .chdr-tf {
-  min-width: 24px;
-  height: 21px;
-  padding: 0 5px;
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
+  min-width: 28px;
+  height: var(--h-dense);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-ui);
   font-size: var(--fs-md);
-  color: var(--text-muted);
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .chdr-tf:hover {
@@ -76,8 +80,8 @@
    text, rather than a filled application-style button. */
 .chdr-tf-on,
 .chdr-tf-on:hover {
-  background: var(--bg-active);
-  color: var(--text-primary);
+  background: var(--accent-bg);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -119,8 +123,8 @@
 .chdr-icon {
   display: grid;
   place-items: center;
-  width: 23px;
-  height: 21px;
+  width: 28px;
+  height: var(--h-dense);
   border-radius: var(--radius);
   color: var(--text-secondary);
 }
@@ -134,8 +138,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 21px;
-  padding: 0 7px;
+  height: var(--h-dense);
+  padding: 0 9px;
   border-radius: var(--radius);
   font-size: var(--fs-md);
   color: var(--text-secondary);

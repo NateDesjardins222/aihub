@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from 'react';
+import type { JSX } from 'react';
 import { useSession, activeInstrument } from '../state/session';
 import { AccountBar } from './AccountBar';
 import { DrawingRail } from '../panels/DrawingRail';
@@ -9,11 +9,9 @@ import { Drawer } from '../panels/Drawer';
 import { PracticePanel } from '../panels/PracticePanel';
 import { ReplayPanel } from '../panels/ReplayPanel';
 import { JournalPanel } from '../panels/JournalPanel';
-import { DomPanel } from '../panels/DomPanel';
 import { SettingsDialog } from '../settings/SettingsDialog';
 import { useWorkspace } from '../state/workspace';
 import { usePersistentFlag, usePersistentSize, useDragResize } from './usePersistentSize';
-import type { BracketMode } from '../chart/PriceMarkers';
 import './TerminalShell.css';
 
 /**
@@ -47,28 +45,6 @@ export function TerminalShell(): JSX.Element {
   const [bottomOpen, setBottomOpen] = usePersistentFlag('atlas.panel.bottom.open', true);
   const [railOpen, setRailOpen] = usePersistentFlag('atlas.panel.rail.open', true);
 
-  /**
-   * Bracket defaults, owned here so the ticket and the chart agree.
-   *
-   * MANUAL is the default: a fill draws the position marker and nothing
-   * protective exists until the trader asks for it, from the marker or from
-   * the ticket. That is the behaviour that was asked for, and the reason these
-   * three values live above both of them.
-   */
-  const [bracketMode, setBracketMode] = useState<BracketMode>(
-    () => (localStorage.getItem('atlas.bracket.mode') as BracketMode) ?? 'MANUAL',
-  );
-  const [stopTicks, setStopTicks] = useState(
-    () => Number(localStorage.getItem('atlas.bracket.stop')) || 40,
-  );
-  const [targetTicks, setTargetTicks] = useState(
-    () => Number(localStorage.getItem('atlas.bracket.target')) || 80,
-  );
-
-  useEffect(() => localStorage.setItem('atlas.bracket.mode', bracketMode), [bracketMode]);
-  useEffect(() => localStorage.setItem('atlas.bracket.stop', String(stopTicks)), [stopTicks]);
-  useEffect(() => localStorage.setItem('atlas.bracket.target', String(targetTicks)), [targetTicks]);
-
   // The right column is anchored to the right edge, so dragging left grows it.
   const onDragRight = useDragResize('x', rightWidth, setRightWidth, -1);
   const onDragBottom = useDragResize('y', bottomHeight, setBottomHeight, -1);
@@ -93,7 +69,7 @@ export function TerminalShell(): JSX.Element {
           )}
 
           <div className="terminal-centre">
-            <ChartPanel bracketMode={bracketMode} stopTicks={stopTicks} targetTicks={targetTicks} />
+            <ChartPanel />
           </div>
 
           {rightOpen ? (
@@ -118,14 +94,7 @@ export function TerminalShell(): JSX.Element {
                   </button>
                 </div>
                 <div className="terminal-right-body">
-                  <OrderTicket
-                    bracketMode={bracketMode}
-                    onBracketMode={setBracketMode}
-                    stopTicks={stopTicks}
-                    targetTicks={targetTicks}
-                    onStopTicks={setStopTicks}
-                    onTargetTicks={setTargetTicks}
-                  />
+                  <OrderTicket />
                 </div>
               </div>
             </>
@@ -155,11 +124,6 @@ export function TerminalShell(): JSX.Element {
             </Drawer>
           ) : null}
 
-          {surface === 'LADDER' ? (
-            <Drawer title="Price ladder" onClose={() => openSurface(null)} width={320} testId="drawer-ladder">
-              <DomPanel />
-            </Drawer>
-          ) : null}
         </div>
 
         <div className="terminal-bottom" style={{ height: bottomOpen ? bottomHeight : 22 }}>

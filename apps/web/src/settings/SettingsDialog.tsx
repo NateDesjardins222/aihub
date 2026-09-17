@@ -11,6 +11,7 @@
  */
 import { useState, type JSX } from 'react';
 import { useWorkspace, type SettingsTab } from '../state/workspace';
+import { useExecution } from '../state/execution';
 import { useChartStore } from '../state/chart-store';
 import { DEFAULT_APPEARANCE } from '../chart/appearance';
 import { indicatorDef } from '../chart/indicators/registry';
@@ -27,6 +28,7 @@ const TABS: ReadonlyArray<{ id: SettingsTab; label: string; group: string }> = [
   { id: 'SCALES', label: 'Scales and lines', group: 'Chart' },
   { id: 'CANVAS', label: 'Canvas', group: 'Chart' },
   { id: 'TRADING', label: 'Time and format', group: 'Terminal' },
+  { id: 'EXECUTION', label: 'Execution defaults', group: 'Terminal' },
   { id: 'SIMULATION', label: 'Simulation', group: 'Terminal' },
   { id: 'RISK', label: 'Risk and programme', group: 'Terminal' },
   { id: 'PRACTICE_VISIBILITY', label: 'Practice visibility', group: 'Terminal' },
@@ -52,6 +54,8 @@ export function SettingsDialog(): JSX.Element | null {
   const updateIndicator = useChartStore((s) => s.updateIndicator);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const [confirmReset, setConfirmReset] = useState(false);
+  const execution = useExecution((s) => s.defaults);
+  const setExecution = useExecution((s) => s.set);
 
   if (!tab) return null;
 
@@ -561,6 +565,62 @@ export function SettingsDialog(): JSX.Element | null {
                   </span>
                 </Row>
               </Group>
+            ) : null}
+
+            {tab === 'EXECUTION' ? (
+              <>
+                <Group title="Order defaults">
+                  <Row label="Time in force" hint="What a new order uses unless it is changed">
+                    <Choice
+                      value={execution.tif}
+                      options={[
+                        { id: 'DAY', label: 'Day' },
+                        { id: 'GTC', label: 'GTC' },
+                      ]}
+                      onChange={(tif) => setExecution({ tif })}
+                    />
+                  </Row>
+                </Group>
+
+                <Group title="Position bracket">
+                  <Row
+                    label="On a fill"
+                    hint="Off is the default: protection is created by dragging it off the position marker"
+                  >
+                    <Choice
+                      value={execution.bracketMode}
+                      options={[
+                        { id: 'OFF', label: 'Nothing' },
+                        { id: 'AUTO', label: 'Attach a stop and target' },
+                      ]}
+                      onChange={(bracketMode) => setExecution({ bracketMode })}
+                    />
+                  </Row>
+                  <Row label="Stop distance">
+                    <Num
+                      value={execution.stopTicks}
+                      min={0}
+                      max={100000}
+                      onChange={(stopTicks) => setExecution({ stopTicks })}
+                      suffix="ticks"
+                    />
+                  </Row>
+                  <Row label="Target distance">
+                    <Num
+                      value={execution.targetTicks}
+                      min={0}
+                      max={100000}
+                      onChange={(targetTicks) => setExecution({ targetTicks })}
+                      suffix="ticks"
+                    />
+                  </Row>
+                  <p className="st-note">
+                    These distances are also where a level first lands when it is dragged off the
+                    position marker. Whatever creates them, they are real working orders in an OCO
+                    pair, sized to the position and matched by the same engine as everything else.
+                  </p>
+                </Group>
+              </>
             ) : null}
 
             {tab === 'SIMULATION' ? <EnvironmentPanel /> : null}

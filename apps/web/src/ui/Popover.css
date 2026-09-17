@@ -6,16 +6,18 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
   overflow: auto;
-  padding: 3px;
+  padding: 4px;
   font-size: var(--fs-md);
+  animation: atlas-pop-in var(--fast) var(--ease);
 }
 
 .pop-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  padding: 5px 8px;
+  min-height: 28px;
+  padding: 6px 10px;
   border-radius: var(--radius);
   text-align: left;
   color: var(--text-primary);
@@ -38,7 +40,7 @@
 }
 
 .pop-head {
-  padding: 5px 8px 3px;
+  padding: 7px 10px 4px;
   font-size: var(--fs-xs);
   letter-spacing: 0.07em;
   text-transform: uppercase;

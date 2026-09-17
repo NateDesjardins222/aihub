@@ -191,14 +191,6 @@ export function AccountBar({
           <Icon name="journal" size={13} />
         </button>
         <button
-          className={`abar-icon ${surface === 'LADDER' ? 'abar-icon-on' : ''}`}
-          onClick={() => openSurface('LADDER')}
-          title="Price ladder"
-          aria-label="Price ladder"
-        >
-          <Icon name="ladder" size={13} />
-        </button>
-        <button
           className="abar-icon"
           onClick={() => openSettings('SYMBOL')}
           title="Settings"

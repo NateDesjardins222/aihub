@@ -11,8 +11,13 @@
 import { create } from 'zustand';
 import type { Timeframe } from '@atlas/contracts';
 
-/** Secondary surfaces. Exactly one, or none, is open. */
-export type Surface = 'PRACTICE' | 'JOURNAL' | 'LADDER' | null;
+/**
+ * Secondary surfaces. Exactly one, or none, is open.
+ *
+ * There is no price ladder: this feed carries no order book, and a ladder
+ * drawn around a last price would be a picture of depth that does not exist.
+ */
+export type Surface = 'PRACTICE' | 'JOURNAL' | null;
 
 /** Which section of the settings dialog is showing. */
 export type SettingsTab =
@@ -21,6 +26,7 @@ export type SettingsTab =
   | 'SCALES'
   | 'CANVAS'
   | 'TRADING'
+  | 'EXECUTION'
   | 'SIMULATION'
   | 'RISK'
   | 'PRACTICE_VISIBILITY';

@@ -3,15 +3,7 @@
  *
  * The line spans the plot; the label sits at the right, just inside the price
  * scale, where a trader's eye already is. `--leader` is written by the
- * animation frame and is the only thing that moves the label off its rule.
- */
-/*
- * Above the chart canvas and above the drawing layer.
- *
- * Without an explicit z-index the renderer's own canvases stack over the
- * markers, and the label buttons - cancel, +SL, +TP - cannot be clicked at
- * all. The container itself never takes pointer events, so panning and zooming
- * still reach the chart; only the labels do.
+ * animation frame and is the only thing that moves a label off its own rule.
  */
 .pm {
   position: absolute;
@@ -39,25 +31,20 @@
   top: -1px;
   height: 0;
   border-top: 1px dashed var(--line);
-  opacity: 0.85;
+  opacity: 0.8;
 }
 
 /* A short vertical tick joining a nudged label back to its own price. */
 .pm-leader {
   position: absolute;
-  right: 6px;
+  right: 7px;
   width: 1px;
   background: var(--line);
-  opacity: 0.55;
+  opacity: 0.5;
   top: 0;
   height: 0;
 }
 
-.pm-line[data-offset='yes'] .pm-leader {
-  height: calc(var(--leader) * 1);
-}
-
-/* A negative leader means the label went up, so the tick has to grow upward. */
 .pm-line[data-offset='yes'] .pm-leader {
   transform: translateY(min(var(--leader), 0px));
   height: max(var(--leader), calc(var(--leader) * -1));
@@ -65,17 +52,17 @@
 
 .pm-tag {
   position: absolute;
-  right: 4px;
-  top: calc(var(--leader) - 9.5px);
+  right: 5px;
+  top: calc(var(--leader) - 11px);
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 19px;
-  padding: 0 4px 0 6px;
+  gap: 6px;
+  height: 22px;
+  padding: 0 5px 0 7px;
   background: var(--bg-panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  border-radius: 5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
   white-space: nowrap;
   font-size: var(--fs-sm);
@@ -88,61 +75,100 @@
 
 .pm-kind {
   font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   font-weight: 700;
   color: var(--line);
 }
 
 .pm-qty {
-  min-width: 12px;
-  padding: 1px 3px;
-  border-radius: 2px;
+  min-width: 16px;
+  padding: 2px 4px;
+  border-radius: 3px;
   background: var(--bg-active);
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: var(--fs-xs);
   text-align: center;
 }
 
 .pm-price {
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
 }
 
+/* Estimated, and marked as such with the leading tilde in the markup. */
 .pm-pnl {
   font-size: var(--fs-sm);
-  min-width: 46px;
-  text-align: right;
-}
-
-.pm-acts {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  font-weight: 600;
 }
 
 .pm-act {
   display: grid;
   place-items: center;
-  height: 14px;
-  min-width: 14px;
+  height: 16px;
+  min-width: 16px;
   padding: 0 3px;
-  border-radius: 2px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: 700;
+  border-radius: 3px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
 }
 
 .pm-act:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: var(--border-strong);
 }
 
 .pm-act-close:hover:not(:disabled) {
   color: var(--short);
-  border-color: var(--short-dim);
+}
+
+/* --- the position marker ------------------------------------------------ */
+
+/*
+ * P&L and nothing else, at the size of a control rather than of a caption.
+ * It is also the grab handle for pulling out a stop or a target, so it shows a
+ * vertical-resize cursor.
+ */
+.pm-pos-tag {
+  height: 26px;
+  padding: 0 4px 0 9px;
+  gap: 7px;
+  cursor: ns-resize;
+  border-width: 1px;
+  background: var(--bg-raised);
+}
+
+.pm-pos-pnl {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-pos-pnl.up {
+  color: var(--long-bright);
+}
+
+.pm-pos-pnl.down {
+  color: var(--short-bright);
+}
+
+.pm-pos-side {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.pm-pos-qty {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
 }
 
 /* --- states ------------------------------------------------------------- */
@@ -152,25 +178,18 @@
 }
 .pm-position .pm-rule {
   border-top-style: solid;
-  border-top-width: 1px;
-}
-.pm-position .pm-tag {
-  background: var(--bg-raised);
-  border-color: var(--accent-dim);
 }
 
 .pm-stop {
   --line: var(--short);
 }
-.pm-stop .pm-rule {
-  border-top-style: dashed;
-}
-
 .pm-target {
   --line: var(--long);
 }
-.pm-target .pm-rule {
-  border-top-style: dashed;
+
+.pm-stop .pm-tag,
+.pm-target .pm-tag {
+  background: var(--bg-panel);
 }
 
 .pm-order.pm-buy {
@@ -201,21 +220,36 @@
   border-color: var(--text-primary);
 }
 
+/* The level being pulled off the position marker. */
+.pm-preview {
+  opacity: 0.95;
+}
+.pm-preview .pm-rule {
+  border-top-style: solid;
+  border-top-width: 1px;
+  opacity: 1;
+}
+.pm-preview .pm-tag {
+  pointer-events: none;
+  border-style: dashed;
+}
+
+/* Below the status line, which occupies the top of the plot. */
 .pm-paused {
   position: absolute;
-  top: 8px;
+  top: 34px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   background: var(--warn-bg);
   border: 1px solid var(--warn);
-  border-radius: var(--radius);
+  border-radius: 5px;
   color: var(--warn);
   font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   font-weight: 700;
   pointer-events: none;
 }

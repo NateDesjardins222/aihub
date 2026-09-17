@@ -1,24 +1,27 @@
 /**
  * Orders and positions, drawn on the chart.
  *
- * Three rules this layer is built on, all of which the previous one broke:
+ * The rules this layer is built on:
  *
  *   The RULE is always at the true price. Only the LABEL is de-overlapped, with
- *   a visible leader back to its line, so a level read off the chart is the
- *   level the server holds.
+ *   a leader back to its line, so a level read off the chart is the level the
+ *   server holds.
  *
- *   Nothing appears because a checkbox is ticked. A protective line exists only
- *   when a protective ORDER exists. Position Bracket in Manual - the default -
- *   gives the position marker "+SL" and "+TP" affordances that create real
- *   server-side OCO orders; Auto places them on the fill; Off places none.
+ *   The position marker shows the OPEN P&L and nothing else. Side, entry price
+ *   and quantity are available, but they are not what a trader looks at while a
+ *   trade is on.
  *
- *   Dragging is not graphical. It ends in a request that modifies the
- *   authoritative order, with the version the client believed it was moving, so
- *   a level that changed underneath the drag is refused rather than clobbered.
+ *   Protection is created by a GESTURE, not by a button. Press the position
+ *   marker and drag: above the entry on a long is a target and below it is a
+ *   stop, and the other way round on a short. A live preview shows the level
+ *   and what it is worth, and releasing creates a real server-side order.
  *
- * Positioning happens in an animation frame, not in React. Prices move and the
- * chart pans on every frame; re-rendering for that would be a component tree
- * render per tick.
+ *   Nothing here is graphical-only. A drag ends in a request that modifies the
+ *   authoritative order, with the version it was holding, and a cancel cancels
+ *   the working order.
+ *
+ * Positioning happens in an animation frame, not in React, because prices move
+ * and the chart pans on every frame.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { ChartAdapter } from './ChartAdapter';
@@ -28,6 +31,7 @@ import { MASK, useTraining } from '../state/training';
 import { useSession } from '../state/session';
 import { useReplayStatus } from '../state/replay-status';
 import { layoutMarkers, type MarkerInput } from './marker-layout';
+import { estimatePnlMicros, legFor, snapPrice as snap } from './protection';
 import { Icon } from '../ui/Icon';
 import './PriceMarkers.css';
 
@@ -39,11 +43,9 @@ export interface PriceMarkersProps {
   readonly containerRef: React.RefObject<HTMLDivElement | null>;
   readonly symbol: string;
   readonly tickSize: number;
+  readonly tickValueMicros: number;
   readonly pricePrecision: number;
   readonly ready: boolean;
-  /** Default protective distances in ticks, from the order ticket. */
-  readonly defaultStopTicks: number;
-  readonly defaultTargetTicks: number;
 }
 
 type Role = 'POSITION' | 'STOP' | 'TARGET' | 'ORDER' | 'REVIEW_ENTRY' | 'REVIEW_EXIT';
@@ -55,21 +57,22 @@ interface Marker {
   readonly side: 'BUY' | 'SELL' | null;
   readonly label: string;
   readonly qty: number | null;
-  /** Drag target: an order to modify, or the position's protective leg. */
   readonly drag:
     | { kind: 'ORDER'; orderId: string; field: 'limitPrice' | 'stopPrice'; version: number }
     | { kind: 'PROTECT'; leg: 'STOP' | 'TARGET' }
     | null;
-  readonly cancel: { kind: 'ORDER'; orderId: string } | { kind: 'PROTECT'; leg: 'STOP' | 'TARGET' } | null;
+  readonly cancel:
+    | { kind: 'ORDER'; orderId: string }
+    | { kind: 'PROTECT'; leg: 'STOP' | 'TARGET' }
+    | null;
+  /** Open P&L for the position; estimated P&L at the level for a protective leg. */
   readonly pnlMicros: number | null;
   readonly priority: number;
 }
 
-const LABEL_HEIGHT = 19;
-
-function snap(price: number, tickSize: number): number {
-  return Number((Math.round(price / tickSize) * tickSize).toFixed(10));
-}
+const LABEL_HEIGHT = 22;
+/** Below this, a press on the position marker is a click and not a drag. */
+const DRAG_THRESHOLD_PX = 6;
 
 function orderLevel(order: ApiOrder): { price: number; field: 'limitPrice' | 'stopPrice' } | null {
   // A triggered stop-limit shows where it now RESTS, which is its limit.
@@ -92,7 +95,7 @@ function entryLabel(order: ApiOrder): string {
           : order.type === 'TRAILING_STOP'
             ? 'TRAIL'
             : 'MKT';
-  return `${order.side === 'BUY' ? 'BUY' : 'SELL'} ${kind}`;
+  return `${order.side} ${kind}`;
 }
 
 export function PriceMarkers({
@@ -100,10 +103,9 @@ export function PriceMarkers({
   containerRef,
   symbol,
   tickSize,
+  tickValueMicros,
   pricePrecision,
   ready,
-  defaultStopTicks,
-  defaultTargetTicks,
 }: PriceMarkersProps): JSX.Element | null {
   const accountId = useTrading((s) => s.accountId);
   const orders = useTrading((s) => s.orders);
@@ -117,10 +119,14 @@ export function PriceMarkers({
 
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
+  /** Set while a protective level is being pulled off the position marker. */
+  const [creating, setCreating] = useState<{ leg: 'STOP' | 'TARGET'; price: number; pnl: number | null } | null>(null);
 
   const dragRef = useRef<{ key: string; startPrice: number; price: number } | null>(null);
+  const createRef = useRef<{ startY: number; active: boolean } | null>(null);
   const nodesRef = useRef(new Map<string, HTMLElement>());
   const overlayRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const workingOrders = useMemo(
     () =>
@@ -137,15 +143,6 @@ export function PriceMarkers({
   const position = useMemo(
     () => positions.find((p) => p.symbol === symbol && p.qty !== 0) ?? null,
     [positions, symbol],
-  );
-
-  const stopLeg = useMemo(
-    () => workingOrders.find((order) => order.bracketRole === 'STOP_LOSS') ?? null,
-    [workingOrders],
-  );
-  const targetLeg = useMemo(
-    () => workingOrders.find((order) => order.bracketRole === 'TAKE_PROFIT') ?? null,
-    [workingOrders],
   );
 
   const act = useCallback(
@@ -197,21 +194,20 @@ export function PriceMarkers({
           : order.bracketRole === 'TAKE_PROFIT'
             ? 'TARGET'
             : 'ORDER';
+      const estimated =
+        role === 'ORDER' || !position
+          ? null
+          : estimatePnlMicros(position, level.price, tickSize, tickValueMicros);
       out.push({
         key: order.id,
         role,
         price: level.price,
         side: order.side,
-        label: role === 'STOP' ? 'STOP' : role === 'TARGET' ? 'TARGET' : entryLabel(order),
+        label: role === 'STOP' ? 'SL' : role === 'TARGET' ? 'TP' : entryLabel(order),
         qty: order.remainingQty,
-        drag: {
-          kind: 'ORDER',
-          orderId: order.id,
-          field: level.field,
-          version: order.version,
-        },
+        drag: { kind: 'ORDER', orderId: order.id, field: level.field, version: order.version },
         cancel: { kind: 'ORDER', orderId: order.id },
-        pnlMicros: null,
+        pnlMicros: estimated,
         priority: role === 'ORDER' ? 1 : 2,
       });
     }
@@ -244,9 +240,9 @@ export function PriceMarkers({
     }
 
     return out;
-  }, [position, workingOrders, focus, symbol]);
+  }, [position, workingOrders, focus, symbol, tickSize, tickValueMicros]);
 
-  // --- dragging -----------------------------------------------------------
+  // --- dragging an existing level -----------------------------------------
 
   const beginDrag = useCallback((event: React.PointerEvent, marker: Marker): void => {
     if (!marker.drag) return;
@@ -262,7 +258,7 @@ export function PriceMarkers({
     const container = containerRef.current;
     if (!container) return;
     const marker = markers.find((m) => m.key === dragging);
-    if (!marker || !marker.drag) return;
+    if (!marker?.drag) return;
 
     const onMove = (event: PointerEvent): void => {
       const drag = dragRef.current;
@@ -278,8 +274,7 @@ export function PriceMarkers({
       const drag = dragRef.current;
       dragRef.current = null;
       setDragging(null);
-      if (!drag || !accountId) return;
-      if (drag.price === drag.startPrice) return;
+      if (!drag || !accountId || drag.price === drag.startPrice) return;
       const target = marker.drag!;
 
       if (target.kind === 'ORDER') {
@@ -311,6 +306,74 @@ export function PriceMarkers({
     };
   }, [accountId, act, adapterRef, containerRef, dragging, markers, symbol, tickSize]);
 
+  // --- pulling protection off the position marker -------------------------
+
+  const beginCreate = useCallback(
+    (event: React.PointerEvent): void => {
+      if (!position || position.avgEntryPrice === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      createRef.current = { startY: event.clientY, active: false };
+      (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+    },
+    [position],
+  );
+
+  useEffect(() => {
+    if (!position || position.avgEntryPrice === null) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onMove = (event: PointerEvent): void => {
+      const create = createRef.current;
+      const adapter = adapterRef.current;
+      if (!create || !adapter) return;
+      // A small movement is a click on the marker, not a gesture.
+      if (!create.active && Math.abs(event.clientY - create.startY) < DRAG_THRESHOLD_PX) return;
+      create.active = true;
+
+      const rect = container.getBoundingClientRect();
+      const raw = adapter.yToPrice(event.clientY - rect.top);
+      if (raw === null) return;
+      const price = snap(raw, tickSize);
+      const leg = legFor(position, price);
+      if (!leg) return;
+      setCreating({
+        leg,
+        price,
+        pnl: estimatePnlMicros(position, price, tickSize, tickValueMicros),
+      });
+    };
+
+    const onUp = (): void => {
+      const create = createRef.current;
+      createRef.current = null;
+      if (!create?.active) {
+        setCreating(null);
+        return;
+      }
+      setCreating((current) => {
+        if (current && accountId) {
+          void act(() =>
+            tradingApi.protect(accountId, symbol, {
+              [current.leg === 'STOP' ? 'stopPrice' : 'targetPrice']: current.price,
+            }),
+          );
+        }
+        return null;
+      });
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [accountId, act, adapterRef, containerRef, position, symbol, tickSize, tickValueMicros]);
+
   // --- placement, off the React tree --------------------------------------
 
   useEffect(() => {
@@ -326,8 +389,7 @@ export function PriceMarkers({
       const height = container.clientHeight;
       const drag = dragRef.current;
 
-      // Keep the whole layer clear of the price axis, so a label never sits on
-      // top of the scale's numbers.
+      // Keep the whole layer clear of the price axis.
       const overlay = overlayRef.current;
       if (overlay) overlay.style.right = `${Math.round(adapter.priceScaleWidth())}px`;
 
@@ -358,12 +420,25 @@ export function PriceMarkers({
           continue;
         }
         node.style.visibility = 'visible';
-        // The rule sits at the TRUE y; the label is offset by the leader.
         node.style.transform = `translateY(${Math.round(info.y)}px)`;
         node.style.setProperty('--leader', `${Math.round(placement.leader)}px`);
         node.dataset['offset'] = Math.abs(placement.leader) > 0.5 ? 'yes' : 'no';
         const label = node.querySelector<HTMLElement>('[data-price-label]');
         if (label) label.textContent = info.price.toFixed(pricePrecision);
+      }
+
+      // The preview follows the cursor directly rather than through the layout:
+      // it is a single transient line and must not push the real ones around.
+      const preview = previewRef.current;
+      if (preview) {
+        const price = Number(preview.dataset['price']);
+        const y = Number.isFinite(price) ? adapter.priceToY(price) : null;
+        if (y === null) {
+          preview.style.visibility = 'hidden';
+        } else {
+          preview.style.visibility = 'visible';
+          preview.style.transform = `translateY(${Math.round(y)}px)`;
+        }
       }
     };
 
@@ -376,25 +451,6 @@ export function PriceMarkers({
     else nodesRef.current.delete(key);
   }, []);
 
-  // --- protective affordances --------------------------------------------
-
-  const addProtection = useCallback(
-    (leg: 'STOP' | 'TARGET'): void => {
-      if (!accountId || !position || position.avgEntryPrice === null) return;
-      const long = position.signedQty > 0;
-      const distance = (leg === 'STOP' ? defaultStopTicks : defaultTargetTicks) * tickSize;
-      // A stop goes against the position, a target with it.
-      const direction = leg === 'STOP' ? (long ? -1 : 1) : long ? 1 : -1;
-      const price = snap(position.avgEntryPrice + direction * distance, tickSize);
-      void act(() =>
-        tradingApi.protect(accountId, symbol, {
-          [leg === 'STOP' ? 'stopPrice' : 'targetPrice']: price,
-        }),
-      );
-    },
-    [accountId, act, defaultStopTicks, defaultTargetTicks, position, symbol, tickSize],
-  );
-
   if (!ready || !accountId) return null;
 
   return (
@@ -406,75 +462,68 @@ export function PriceMarkers({
         </div>
       ) : null}
 
-      {markers.map((marker) => (
+      {/* The level being pulled off the position marker. */}
+      {creating ? (
         <div
-          key={marker.key}
-          className={[
-            'pm-line',
-            `pm-${marker.role.toLowerCase().replace('_', '-')}`,
-            marker.side === 'BUY' ? 'pm-buy' : marker.side === 'SELL' ? 'pm-sell' : '',
-            dragging === marker.key ? 'pm-dragging' : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          data-price={marker.price}
-          data-priority={marker.priority}
-          data-marker={marker.role.toLowerCase()}
-          ref={(node) => register(marker.key, node)}
+          className={`pm-line pm-preview pm-${creating.leg.toLowerCase()}`}
+          data-price={creating.price}
+          data-testid="marker-preview"
+          ref={previewRef}
         >
           <div className="pm-rule" />
-          {/* Drawn only when the label had to move off its line. */}
-          <div className="pm-leader" />
-          {/*
-            The test id is on the TAG rather than the line, because the line is
-            a zero-height rule: it has no box to hover or click.
-          */}
-          <div
-            className={`pm-tag ${marker.drag ? 'pm-tag-drag' : ''}`}
-            data-testid={`marker-${marker.role.toLowerCase()}`}
-            onPointerDown={(event) => beginDrag(event, marker)}
-            title={marker.drag ? 'Drag to move this level' : undefined}
-          >
-            <span className="pm-kind">{marker.label}</span>
-            {marker.qty !== null ? <span className="num pm-qty">{marker.qty}</span> : null}
-            <span className="num pm-price" data-price-label>
-              {marker.price.toFixed(pricePrecision)}
+          <div className="pm-tag">
+            <span className="pm-kind">{creating.leg === 'STOP' ? 'SL' : 'TP'}</span>
+            <span className={`num pm-pnl ${(creating.pnl ?? 0) >= 0 ? 'pos' : 'neg'}`}>
+              {creating.pnl === null ? '—' : `~ ${money(creating.pnl)}`}
             </span>
-            {marker.pnlMicros !== null ? (
-              <span
-                className={`num pm-pnl ${
-                  showPnl ? (marker.pnlMicros >= 0 ? 'pos' : 'neg') : ''
-                }`}
-                title="Open profit and loss, computed by the server"
-              >
-                {showPnl ? money(marker.pnlMicros) : MASK}
-              </span>
-            ) : null}
+            <span className="num pm-price">{creating.price.toFixed(pricePrecision)}</span>
+          </div>
+        </div>
+      ) : null}
 
-            {marker.role === 'POSITION' ? (
-              <span className="pm-acts">
-                {!stopLeg ? (
-                  <button
-                    className="pm-act"
-                    disabled={busy}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={() => addProtection('STOP')}
-                    title={`Add a protective stop ${defaultStopTicks} ticks away, then drag it`}
-                  >
-                    +SL
-                  </button>
-                ) : null}
-                {!targetLeg ? (
-                  <button
-                    className="pm-act"
-                    disabled={busy}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={() => addProtection('TARGET')}
-                    title={`Add a target ${defaultTargetTicks} ticks away, then drag it`}
-                  >
-                    +TP
-                  </button>
-                ) : null}
+      {markers.map((marker) => {
+        const isPosition = marker.role === 'POSITION';
+        const isProtective = marker.role === 'STOP' || marker.role === 'TARGET';
+        return (
+          <div
+            key={marker.key}
+            className={[
+              'pm-line',
+              `pm-${marker.role.toLowerCase().replace('_', '-')}`,
+              marker.side === 'BUY' ? 'pm-buy' : marker.side === 'SELL' ? 'pm-sell' : '',
+              dragging === marker.key ? 'pm-dragging' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            data-price={marker.price}
+            data-priority={marker.priority}
+            data-marker={marker.role.toLowerCase()}
+            ref={(node) => register(marker.key, node)}
+          >
+            <div className="pm-rule" />
+            <div className="pm-leader" />
+
+            {isPosition ? (
+              /*
+               * The position marker: open P&L, and nothing else in the box.
+               * It is also the handle - press it and drag to pull a stop or a
+               * target out of it - so it carries the grab affordance.
+               */
+              <div
+                className="pm-tag pm-pos-tag"
+                data-testid="marker-position"
+                onPointerDown={beginCreate}
+                title="Drag up or down to place a target or a stop"
+              >
+                <span
+                  className={`num pm-pos-pnl ${
+                    showPnl ? ((marker.pnlMicros ?? 0) >= 0 ? 'up' : 'down') : ''
+                  }`}
+                >
+                  {showPnl ? money(marker.pnlMicros ?? 0) : MASK}
+                </span>
+                <span className="pm-pos-side">{marker.label[0]}</span>
+                <span className="num pm-pos-qty">{marker.qty}</span>
                 <button
                   className="pm-act pm-act-close"
                   disabled={busy}
@@ -484,45 +533,65 @@ export function PriceMarkers({
                 >
                   <Icon name="close" size={9} />
                 </button>
-              </span>
-            ) : null}
-
-            {marker.cancel ? (
-              <button
-                className="pm-act pm-act-close"
-                disabled={busy}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => {
-                  const target = marker.cancel!;
-                  if (target.kind === 'ORDER') {
-                    void act(() => tradingApi.cancel(accountId, target.orderId));
-                  } else {
-                    void act(() =>
-                      tradingApi.protect(accountId, symbol, {
-                        [target.leg === 'STOP' ? 'stopPrice' : 'targetPrice']: null,
-                      }),
-                    );
-                  }
-                }}
-                title="Cancel this order"
+              </div>
+            ) : (
+              <div
+                className={`pm-tag ${marker.drag ? 'pm-tag-drag' : ''}`}
+                data-testid={`marker-${marker.role.toLowerCase()}`}
+                onPointerDown={(event) => beginDrag(event, marker)}
+                title={marker.drag ? 'Drag to move this level' : undefined}
               >
-                <Icon name="close" size={9} />
-              </button>
-            ) : null}
-
-            {marker.role === 'REVIEW_EXIT' ? (
-              <button
-                className="pm-act pm-act-close"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => clearFocus(null)}
-                title="Stop showing this trade"
-              >
-                <Icon name="close" size={9} />
-              </button>
-            ) : null}
+                <span className="pm-kind">{marker.label}</span>
+                {isProtective && marker.pnlMicros !== null ? (
+                  <span className={`num pm-pnl ${marker.pnlMicros >= 0 ? 'pos' : 'neg'}`}>
+                    {showPnl ? `~ ${money(marker.pnlMicros)}` : MASK}
+                  </span>
+                ) : null}
+                <span className="num pm-price" data-price-label>
+                  {marker.price.toFixed(pricePrecision)}
+                </span>
+                {marker.qty !== null ? (
+                  <span className="num pm-qty">
+                    {isProtective ? `-${marker.qty}` : marker.qty}
+                  </span>
+                ) : null}
+                {marker.cancel ? (
+                  <button
+                    className="pm-act pm-act-close"
+                    disabled={busy}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => {
+                      const target = marker.cancel!;
+                      if (target.kind === 'ORDER') {
+                        void act(() => tradingApi.cancel(accountId, target.orderId));
+                      } else {
+                        void act(() =>
+                          tradingApi.protect(accountId, symbol, {
+                            [target.leg === 'STOP' ? 'stopPrice' : 'targetPrice']: null,
+                          }),
+                        );
+                      }
+                    }}
+                    title="Cancel this order"
+                  >
+                    <Icon name="close" size={9} />
+                  </button>
+                ) : null}
+                {marker.role === 'REVIEW_EXIT' ? (
+                  <button
+                    className="pm-act pm-act-close"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => clearFocus(null)}
+                    title="Stop showing this trade"
+                  >
+                    <Icon name="close" size={9} />
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -534,32 +603,6 @@ function money(micros: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-}
-
-/**
- * Levels a bracket should be placed at for a new position.
- *
- * Exported so the order ticket and the chart agree on what "40 ticks" means
- * without either of them owning the other.
- */
-export function bracketLevels(
-  position: ApiPosition,
-  stopTicks: number,
-  targetTicks: number,
-  tickSize: number,
-): { stopPrice: number | null; targetPrice: number | null } {
-  if (position.avgEntryPrice === null) return { stopPrice: null, targetPrice: null };
-  const long = position.signedQty > 0;
-  return {
-    stopPrice:
-      stopTicks > 0
-        ? snap(position.avgEntryPrice + (long ? -1 : 1) * stopTicks * tickSize, tickSize)
-        : null,
-    targetPrice:
-      targetTicks > 0
-        ? snap(position.avgEntryPrice + (long ? 1 : -1) * targetTicks * tickSize, tickSize)
-        : null,
-  };
 }
 
 export { newClientOrderId };
