@@ -289,3 +289,33 @@ a claim of completeness.
 * **The alerts, watchlist, hotkey editor and screenshot-with-annotations
   features** that a TradingView-class terminal has are not in this milestone
   and were not asked for in it.
+
+---
+
+## Defects found and fixed in this pass, in one list
+
+Each one was found by using the terminal, not by reading the code.
+
+1. **Every drawing placement was silently refused** after a chart style change
+   or any appearance change structural enough to rebuild the price series. The
+   cached projection held a removed series, which answers null for every price.
+2. **A saved position tool was thrown away on every reload**, because loading
+   checked a stored object's anchor count against the number of clicks its tool
+   takes.
+3. **An object edited outside a gesture could not be clicked where it was**: a
+   typed price, an undo or a template left a stale hit-test rectangle.
+4. **A thick dashed or dotted line painted solid**, because the dash pattern was
+   fixed while the line cap was always round.
+5. **The indicator menu's gear opened the chart settings dialog**, not the
+   indicator it sat beside.
+6. **Recalling a trade from the journal did nothing** when the trade was on
+   another instrument.
+7. **The chart offered a stop where a stop cannot go**: the leg was decided
+   against the entry while the engine decides against the market, so a drag on a
+   position that had moved against the trader previewed a stop and came back
+   refused.
+8. **A position opened inside a recording could be stranded**: the guard that
+   stops a recording re-pricing a live position also refused the way back.
+9. **The price pane shrank to 40% of the chart** with four oscillators under it.
+10. **The order ticket grew past its height budget** because the preset row
+    wrapped at the default panel width.
