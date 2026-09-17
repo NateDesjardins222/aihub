@@ -21,6 +21,7 @@ import {
   users,
 } from './schema.js';
 import { hashPassword } from '../auth/password.js';
+import { recordAudit } from '../platform/audit.js';
 
 /**
  * The reason a query failed, as Postgres stated it.
@@ -155,36 +156,31 @@ describe('lifecycles', () => {
 
 describe('the audit log', () => {
   it('cannot be updated', async () => {
-    const [row] = await db
-      .insert(auditLog)
-      .values({
-        organizationId: orgId,
-        actorType: 'SYSTEM',
-        subjectType: 'ORGANIZATION',
-        subjectId: orgId,
-        action: 'test.immutability',
-        hash: 'deadbeef',
-      })
-      .returning();
+    // Written through the ordinary recorder, so this test leaves the chain
+    // intact - a hand-written row would break it for every later verification,
+    // and nothing can take it back out again.
+    const row = await recordAudit(db, {
+      organizationId: orgId,
+      actor: { type: 'SYSTEM', label: 'schema-test' },
+      subjectType: 'ORGANIZATION',
+      subjectId: orgId,
+      action: 'test.immutability',
+    });
     const message = await rejection(() =>
-      db.update(auditLog).set({ action: 'tampered' }).where(eq(auditLog.id, row!.id)),
+      db.update(auditLog).set({ action: 'tampered' }).where(eq(auditLog.id, row.id)),
     );
     expect(message).toMatch(/append-only/);
   });
 
   it('cannot be deleted', async () => {
-    const [row] = await db
-      .insert(auditLog)
-      .values({
-        organizationId: orgId,
-        actorType: 'SYSTEM',
-        subjectType: 'ORGANIZATION',
-        subjectId: orgId,
-        action: 'test.immutability',
-        hash: 'deadbeef',
-      })
-      .returning();
-    const message = await rejection(() => db.delete(auditLog).where(eq(auditLog.id, row!.id)));
+    const row = await recordAudit(db, {
+      organizationId: orgId,
+      actor: { type: 'SYSTEM', label: 'schema-test' },
+      subjectType: 'ORGANIZATION',
+      subjectId: orgId,
+      action: 'test.immutability',
+    });
+    const message = await rejection(() => db.delete(auditLog).where(eq(auditLog.id, row.id)));
     expect(message).toMatch(/append-only/);
   });
 });

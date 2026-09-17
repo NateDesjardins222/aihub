@@ -20,7 +20,13 @@ import {
   type RuleState,
   type RuleStatus,
 } from '@atlas/core';
-import { accounts, dailyAccountStats, ruleTemplates } from '../db/schema.js';
+import {
+  accountProfileVersions,
+  accountProfiles,
+  accounts,
+  dailyAccountStats,
+  ruleTemplates,
+} from '../db/schema.js';
 import type { Database } from '../db/client.js';
 
 type AccountRow = InferSelectModel<typeof accounts>;
@@ -276,15 +282,74 @@ export async function dailyStats(db: Database, accountId: string, limit = 60) {
     .limit(limit);
 }
 
+/**
+ * The terms an account trades under, as the rule engine wants them.
+ *
+ * An account pinned to a product VERSION takes its terms from there; one that
+ * predates products falls back to its rule template. Both arrive here in the
+ * same shape, so nothing downstream - the engine least of all - has to know
+ * which kind of account it is looking at.
+ *
+ * A version whose stored configuration is unreadable falls back to the
+ * template rather than to a guess: the alternative is evaluating a trader
+ * against numbers nobody chose.
+ */
+function templateFromVersion(
+  version: InferSelectModel<typeof accountProfileVersions>,
+  profile: InferSelectModel<typeof accountProfiles> | null,
+  fallback: TemplateRow | null,
+): TemplateRow | undefined {
+  const config = version.config as { rules?: Partial<RuleConfig>; payoutRules?: unknown } | null;
+  const rules = config?.rules;
+  if (!rules || typeof rules.accountSizeMicros !== 'number') return fallback ?? undefined;
+
+  return {
+    id: version.id,
+    name: profile?.name ?? 'Product',
+    accountType: profile?.accountType ?? 'PRACTICE',
+    accountSizeMicros: rules.accountSizeMicros,
+    profitTargetMicros: rules.profitTargetMicros ?? 0,
+    maxLossMicros: rules.maxLossMicros ?? 0,
+    drawdownType: rules.drawdownType ?? 'STATIC',
+    trailingLockAtMicros: rules.trailingLockAtMicros ?? null,
+    dailyLossLimitMicros: rules.dailyLossLimitMicros ?? null,
+    consistencyFormula: rules.consistencyFormula ?? 'BEST_DAY_OVER_TOTAL',
+    consistencyThreshold: rules.consistencyThreshold ?? null,
+    maxContracts: rules.maxContracts ?? 1,
+    microsCountAsFraction: rules.microsCountAsFraction ?? false,
+    minTradingDays: rules.minTradingDays ?? 0,
+    maxTradingDays: rules.maxTradingDays ?? null,
+    minDailyPnlToCountMicros: rules.minDailyPnlToCountMicros ?? 0,
+    minWinningDays: rules.minWinningDays ?? 0,
+    minWinningDayPnlMicros: rules.minWinningDayPnlMicros ?? 1,
+    dailyLossPolicy: rules.dailyLossPolicy ?? 'LOCK_DAY',
+    flattenOnBreach: rules.flattenOnBreach ?? true,
+    payoutRules: (config?.payoutRules ?? fallback?.payoutRules ?? {}) as never,
+    isSystem: fallback?.isSystem ?? false,
+    createdAt: version.createdAt,
+  };
+}
+
 export async function loadAccountAndTemplate(
   db: Database,
   accountId: string,
 ): Promise<{ account: AccountRow; template: TemplateRow | undefined } | null> {
   const [row] = await db
-    .select({ account: accounts, template: ruleTemplates })
+    .select({
+      account: accounts,
+      template: ruleTemplates,
+      version: accountProfileVersions,
+      profile: accountProfiles,
+    })
     .from(accounts)
     .leftJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
+    .leftJoin(accountProfileVersions, eq(accounts.profileVersionId, accountProfileVersions.id))
+    .leftJoin(accountProfiles, eq(accountProfileVersions.profileId, accountProfiles.id))
     .where(and(eq(accounts.id, accountId)));
   if (!row) return null;
-  return { account: row.account, template: row.template ?? undefined };
+
+  const pinned = row.version
+    ? templateFromVersion(row.version, row.profile, row.template)
+    : undefined;
+  return { account: row.account, template: pinned ?? row.template ?? undefined };
 }

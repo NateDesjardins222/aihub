@@ -3,19 +3,20 @@
  *
  * Accounts are always read from the database. The client is never trusted with a
  * balance, a drawdown figure or an account status.
+ *
+ * There is no endpoint here for CREATING an account. Accounts come from the
+ * provisioning service - an administrator, a machine-to-machine call, or the
+ * practice account a new trader is registered with - because "how many
+ * accounts do I have and on what terms" is not a decision a browser gets to
+ * make.
  */
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { z } from 'zod';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
-import { accounts, ruleTemplates } from '../../db/schema.js';
+import { accountProfileVersions, accountProfiles, accounts, ruleTemplates } from '../../db/schema.js';
 import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
-
-const createAccountSchema = z.object({
-  ruleTemplateId: z.string().uuid(),
-  name: z.string().min(1).max(80),
-});
+import { loadAccountAndTemplate } from '../../trading/account-rules.js';
 
 type TemplateRow = typeof ruleTemplates.$inferSelect;
 type AccountRow = typeof accounts.$inferSelect;
@@ -46,11 +47,14 @@ function presentTemplate(t: TemplateRow) {
  * engine in Milestone 5; until then these fields are explicitly zero rather
  * than fabricated.
  */
-function presentAccount(a: AccountRow, t: TemplateRow) {
+function presentAccount(a: AccountRow, t: TemplateRow, product?: ProductView | null) {
   const equityMicros = a.balanceMicros;
   return {
     id: a.id,
+    /** The number a trader quotes to support. */
+    publicId: a.publicId,
     name: a.name,
+    product: product ?? null,
     accountType: a.accountType,
     status: a.status,
     ruleTemplate: presentTemplate(t),
@@ -72,10 +76,21 @@ function presentAccount(a: AccountRow, t: TemplateRow) {
     tradingDaysCount: a.tradingDaysCount,
     currentTradeDate: a.currentTradeDate,
     failedReason: a.failedReason,
+    instrumentLimits: a.instrumentLimits ?? null,
+    activatedAt: a.activatedAt?.getTime() ?? null,
     seq: a.seq,
     createdAt: a.createdAt.getTime(),
   };
 }
+
+interface ProductView {
+  readonly key: string;
+  readonly name: string;
+  readonly version: number;
+}
+
+/** Statuses a trader's selector shows. An archived account is not one of them. */
+const VISIBLE_STATUSES = ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED', 'PASSED', 'FAILED'];
 
 export async function accountRoutes(app: FastifyInstance): Promise<void> {
   const { db } = getDb();
@@ -83,10 +98,25 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/', async (request, reply) => {
     const rows = await db
-      .select({ account: accounts, template: ruleTemplates })
+      .select({
+        account: accounts,
+        template: ruleTemplates,
+        version: accountProfileVersions,
+        profile: accountProfiles,
+      })
       .from(accounts)
-      .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
-      .where(eq(accounts.userId, request.user!.id))
+      // LEFT joins throughout: an account provisioned from a product has no
+      // rule template, and one created before products has no version. An
+      // inner join on either would hide half the platform's accounts.
+      .leftJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
+      .leftJoin(accountProfileVersions, eq(accounts.profileVersionId, accountProfileVersions.id))
+      .leftJoin(accountProfiles, eq(accountProfileVersions.profileId, accountProfiles.id))
+      .where(
+        and(
+          eq(accounts.userId, request.user!.id),
+          inArray(accounts.status, VISIBLE_STATUSES),
+        ),
+      )
       // Practice accounts first, largest programme first within each group, so
       // the terminal opens on the $150,000 practice account and can be traded
       // straight away with no setup.
@@ -97,50 +127,56 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
       // because of something a session did last week.
       .orderBy(
         sql`case when ${accounts.accountType} = 'PRACTICE' then 0 else 1 end`,
-        desc(ruleTemplates.accountSizeMicros),
+        // By the PRODUCT's size, not the account's current starting balance: a
+        // practice session can reset an account to a different balance, and the
+        // account the terminal opens on should not change because of something
+        // a session did last week.
+        sql`coalesce(
+          (${accountProfileVersions.config} -> 'rules' ->> 'accountSizeMicros')::bigint,
+          ${ruleTemplates.accountSizeMicros}
+        ) desc`,
         accounts.createdAt,
       );
-    return reply.send({
-      accounts: rows.map((r) => presentAccount(r.account, r.template)),
-    });
+
+    // The rule figures come from the same loader the engine uses, so what a
+    // trader is shown and what they are evaluated against cannot diverge.
+    const presented = [];
+    for (const row of rows) {
+      const loaded = await loadAccountAndTemplate(db, row.account.id);
+      const template = loaded?.template;
+      if (!template) continue;
+      presented.push(
+        presentAccount(
+          row.account,
+          template,
+          row.profile && row.version
+            ? { key: row.profile.key, name: row.profile.name, version: row.version.version }
+            : null,
+        ),
+      );
+    }
+    return reply.send({ accounts: presented });
   });
 
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const [row] = await db
-      .select({ account: accounts, template: ruleTemplates })
+      .select({ account: accounts, profile: accountProfiles, version: accountProfileVersions })
       .from(accounts)
-      .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
+      .leftJoin(accountProfileVersions, eq(accounts.profileVersionId, accountProfileVersions.id))
+      .leftJoin(accountProfiles, eq(accountProfileVersions.profileId, accountProfiles.id))
       .where(and(eq(accounts.id, request.params.id), eq(accounts.userId, request.user!.id)));
     if (!row) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
-    return reply.send(presentAccount(row.account, row.template));
-  });
-
-  app.post('/', async (request, reply) => {
-    const body = createAccountSchema.parse(request.body);
-    const [template] = await db
-      .select()
-      .from(ruleTemplates)
-      .where(eq(ruleTemplates.id, body.ruleTemplateId));
-    if (!template) throw ApiError.notFound('TEMPLATE_NOT_FOUND', 'No such rule template.');
-
-    const size = template.accountSizeMicros;
-    const [row] = await db
-      .insert(accounts)
-      .values({
-        userId: request.user!.id,
-        ruleTemplateId: template.id,
-        name: body.name,
-        accountType: template.accountType,
-        status: 'ACTIVE',
-        startingBalanceMicros: size,
-        balanceMicros: size,
-        highWaterMarkMicros: size,
-        drawdownFloorMicros: size - template.maxLossMicros,
-        dayStartBalanceMicros: size,
-        dayStartEquityMicros: size,
-      })
-      .returning();
-    return reply.code(201).send(presentAccount(row!, template));
+    const loaded = await loadAccountAndTemplate(db, row.account.id);
+    if (!loaded?.template) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+    return reply.send(
+      presentAccount(
+        row.account,
+        loaded.template,
+        row.profile && row.version
+          ? { key: row.profile.key, name: row.profile.name, version: row.version.version }
+          : null,
+      ),
+    );
   });
 }
 

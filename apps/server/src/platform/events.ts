@@ -1,0 +1,106 @@
+/**
+ * Domain events, and the outbox they are written to.
+ *
+ * Something important happened to an account; whoever cares can find out. The
+ * publisher writes a row and notifies whatever is subscribed in this process.
+ * Nothing in the execution engine knows any of this exists: the engine emits
+ * its own change and valuation events, and a subscriber in this layer turns
+ * the ones that matter into domain events and audit records.
+ *
+ * That separation is the whole point. Payments, e-mail, Discord, a CRM and a
+ * payout system attach HERE later, by subscribing or by draining the outbox -
+ * never by a call inside the matcher.
+ */
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import type { Database } from '../db/client.js';
+import { domainEvents } from '../db/schema.js';
+
+export type DomainEventType =
+  | 'account.created'
+  | 'account.activated'
+  | 'account.locked'
+  | 'account.unlocked'
+  | 'account.passed'
+  | 'account.failed'
+  | 'account.reset'
+  | 'account.disabled'
+  | 'account.enabled'
+  | 'account.archived'
+  | 'account.configuration_changed'
+  | 'order.submitted'
+  | 'order.modified'
+  | 'order.cancelled'
+  | 'order.filled'
+  | 'position.liquidated'
+  | 'rule.violated'
+  | 'user.created'
+  | 'user.disabled'
+  | 'user.enabled'
+  | 'profile.version_published';
+
+export interface DomainEvent {
+  readonly type: DomainEventType;
+  readonly organizationId: string | null;
+  readonly accountId?: string | null;
+  readonly userId?: string | null;
+  readonly payload: Record<string, unknown>;
+  readonly occurredAt?: Date;
+}
+
+export type EventHandler = (event: DomainEvent) => void | Promise<void>;
+
+class EventBus {
+  private readonly handlers = new Set<EventHandler>();
+
+  subscribe(handler: EventHandler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
+  }
+
+  /**
+   * Record an event and hand it to the subscribers.
+   *
+   * The row is written first: a subscriber that throws must not lose the
+   * event, and a process that dies after the write still has it in the outbox
+   * for a future delivery worker. Subscriber failures are swallowed on purpose
+   * - a broken notifier must never fail the account action that caused it.
+   */
+  async publish(db: Database, event: DomainEvent): Promise<void> {
+    await db.insert(domainEvents).values({
+      organizationId: event.organizationId,
+      type: event.type,
+      accountId: event.accountId ?? null,
+      userId: event.userId ?? null,
+      payload: event.payload as never,
+      occurredAt: event.occurredAt ?? new Date(),
+    });
+
+    for (const handler of this.handlers) {
+      try {
+        await handler(event);
+      } catch {
+        // A subscriber is a bystander. It does not get a vote on whether the
+        // account action succeeded.
+      }
+    }
+  }
+}
+
+export const events = new EventBus();
+
+/** Undelivered events, oldest first. For the delivery worker that comes later. */
+export async function pendingEvents(db: Database, limit = 100) {
+  return db
+    .select()
+    .from(domainEvents)
+    .where(isNull(domainEvents.deliveredAt))
+    .orderBy(asc(domainEvents.occurredAt))
+    .limit(limit);
+}
+
+export async function markDelivered(db: Database, id: string): Promise<void> {
+  await db
+    .update(domainEvents)
+    .set({ deliveredAt: new Date(), attempts: sql`${domainEvents.attempts} + 1` })
+    .where(and(eq(domainEvents.id, id), isNull(domainEvents.deliveredAt)));
+}

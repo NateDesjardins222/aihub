@@ -10,12 +10,27 @@ import {
   signAccessToken,
 } from './tokens.js';
 import { env } from '../config/env.js';
+import { defaultOrganizationId, ensurePracticeAccount } from '../platform/provisioning.js';
+import { recordAudit } from '../platform/audit.js';
+import { events } from '../platform/events.js';
 
 export interface AuthenticatedUser {
   readonly id: string;
   readonly email: string;
   readonly displayName: string;
   readonly isAdmin: boolean;
+  readonly role: UserRole;
+  readonly organizationId: string | null;
+}
+
+export type UserRole = 'TRADER' | 'SUPPORT' | 'ADMIN' | 'SUPER_ADMIN';
+
+const ROLES: readonly UserRole[] = ['TRADER', 'SUPPORT', 'ADMIN', 'SUPER_ADMIN'];
+
+function readRole(value: string, isAdmin: boolean): UserRole {
+  if ((ROLES as string[]).includes(value)) return value as UserRole;
+  // A row written before roles existed still has its administrator flag.
+  return isAdmin ? 'ADMIN' : 'TRADER';
 }
 
 export interface AuthResult {
@@ -27,7 +42,12 @@ export interface AuthResult {
 
 export class AuthError extends Error {
   constructor(
-    readonly code: 'EMAIL_TAKEN' | 'INVALID_CREDENTIALS' | 'INVALID_REFRESH' | 'USER_NOT_FOUND',
+    readonly code:
+      | 'EMAIL_TAKEN'
+      | 'INVALID_CREDENTIALS'
+      | 'INVALID_REFRESH'
+      | 'USER_NOT_FOUND'
+      | 'USER_DISABLED',
     message: string,
   ) {
     super(message);
@@ -53,7 +73,13 @@ async function issue(
   });
   return {
     user,
-    accessToken: signAccessToken({ sub: user.id, email: user.email, isAdmin: user.isAdmin }),
+    accessToken: signAccessToken({
+      sub: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin,
+      role: user.role,
+      organizationId: user.organizationId,
+    }),
     refreshToken: token,
     expiresIn: env().ACCESS_TOKEN_TTL_SECONDS,
   };
@@ -68,18 +94,41 @@ export async function register(
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
   if (existing.length > 0) throw new AuthError('EMAIL_TAKEN', 'That email is already registered.');
 
+  const organizationId = await defaultOrganizationId(db);
   const passwordHash = await hashPassword(input.password);
   const [row] = await db
     .insert(users)
-    .values({ email, passwordHash, displayName: input.displayName })
+    .values({ email, passwordHash, displayName: input.displayName, organizationId })
     .returning();
   if (!row) throw new AuthError('USER_NOT_FOUND', 'Registration failed.');
 
-  return issue(
-    db,
-    { id: row.id, email: row.email, displayName: row.displayName, isAdmin: row.isAdmin },
-    userAgent,
-  );
+  await recordAudit(db, {
+    organizationId,
+    actor: { type: 'USER', userId: row.id, label: row.email },
+    subjectType: 'USER',
+    subjectId: row.id,
+    userId: row.id,
+    action: 'user.created',
+    newState: { email: row.email, displayName: row.displayName, role: row.role },
+  });
+  await events.publish(db, {
+    type: 'user.created',
+    organizationId,
+    userId: row.id,
+    payload: { email: row.email, displayName: row.displayName },
+  });
+
+  /*
+   * The practice account.
+   *
+   * Provisioned through the ordinary provisioning service, with the same
+   * product, lifecycle, audit trail and rule configuration as any other
+   * account. It is not a frontend convenience and not a seed-script special
+   * case: a new trader signs in and an account is simply there.
+   */
+  await ensurePracticeAccount(db, row.id, organizationId);
+
+  return issue(db, present(row), userAgent);
 }
 
 export async function login(
@@ -95,12 +144,13 @@ export async function login(
   const stored = row?.passwordHash ?? (await hashPassword('placeholder-for-timing'));
   const ok = await verifyPassword(input.password, stored);
   if (!row || !ok) throw new AuthError('INVALID_CREDENTIALS', 'Incorrect email or password.');
+  if (row.status !== 'ACTIVE') {
+    throw new AuthError('USER_DISABLED', 'This account has been disabled.');
+  }
 
-  return issue(
-    db,
-    { id: row.id, email: row.email, displayName: row.displayName, isAdmin: row.isAdmin },
-    userAgent,
-  );
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, row.id));
+
+  return issue(db, present(row), userAgent);
 }
 
 /**
@@ -129,12 +179,10 @@ export async function refresh(
 
   const [user] = await db.select().from(users).where(eq(users.id, record.userId));
   if (!user) throw new AuthError('USER_NOT_FOUND', 'User no longer exists.');
+  // A user disabled mid-session cannot refresh their way back in.
+  if (user.status !== 'ACTIVE') throw new AuthError('USER_DISABLED', 'This account has been disabled.');
 
-  const result = await issue(
-    db,
-    { id: user.id, email: user.email, displayName: user.displayName, isAdmin: user.isAdmin },
-    userAgent,
-  );
+  const result = await issue(db, present(user), userAgent);
   await db
     .update(refreshTokens)
     .set({ replacedByTokenHash: hashRefreshToken(result.refreshToken) })
@@ -152,5 +200,18 @@ export async function logout(db: Database, presented: string): Promise<void> {
 export async function getUserById(db: Database, id: string): Promise<AuthenticatedUser | null> {
   const [row] = await db.select().from(users).where(eq(users.id, id));
   if (!row) return null;
-  return { id: row.id, email: row.email, displayName: row.displayName, isAdmin: row.isAdmin };
+  return present(row);
+}
+
+type UserRow = typeof users.$inferSelect;
+
+function present(row: UserRow): AuthenticatedUser {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    isAdmin: row.isAdmin,
+    role: readRole(row.role, row.isAdmin),
+    organizationId: row.organizationId,
+  };
 }

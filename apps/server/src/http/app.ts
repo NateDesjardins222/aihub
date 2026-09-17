@@ -16,6 +16,7 @@ import { TradingEngine } from '../trading/engine.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb } from '../db/client.js';
 import { MarketDataGateway } from '../ws/gateway.js';
+import { recordEngineActivity } from '../platform/engine-audit.js';
 
 export interface BuiltApp {
   readonly app: FastifyInstance;
@@ -118,7 +119,16 @@ export async function buildApp(): Promise<BuiltApp> {
   const gateway = new MarketDataGateway(stack.market, engine);
   gateway.register(app);
 
+  /*
+   * The platform record listens to the engine; the engine does not know it is
+   * there. Fills become audit rows and domain events, and a terminal rule
+   * outcome closes the account's lifecycle - all without a line of it inside
+   * the matching path.
+   */
+  const stopRecording = recordEngineActivity(db, engine);
+
   app.addHook('onClose', async () => {
+    stopRecording();
     engine.stop();
     await stack.market.stop();
   });

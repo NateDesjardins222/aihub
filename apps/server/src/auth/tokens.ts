@@ -12,7 +12,10 @@ import { env } from '../config/env.js';
 export interface AccessTokenClaims {
   readonly sub: string;
   readonly email: string;
+  /** Kept for tokens issued before roles existed. Authorization reads `role`. */
   readonly isAdmin: boolean;
+  readonly role?: string;
+  readonly organizationId?: string | null;
 }
 
 export function signAccessToken(claims: AccessTokenClaims): string {
@@ -30,9 +33,17 @@ export function verifyAccessToken(token: string): AccessTokenClaims | null {
       issuer: 'atlas-futures',
     });
     if (typeof decoded === 'string') return null;
-    const { sub, email, isAdmin } = decoded as Record<string, unknown>;
+    const { sub, email, isAdmin, role, organizationId } = decoded as Record<string, unknown>;
     if (typeof sub !== 'string' || typeof email !== 'string') return null;
-    return { sub, email, isAdmin: isAdmin === true };
+    return {
+      sub,
+      email,
+      isAdmin: isAdmin === true,
+      // A token minted before roles existed carries none; an administrator's
+      // flag still stands in for one until it expires.
+      role: typeof role === 'string' ? role : isAdmin === true ? 'ADMIN' : 'TRADER',
+      organizationId: typeof organizationId === 'string' ? organizationId : null,
+    };
   } catch {
     return null;
   }

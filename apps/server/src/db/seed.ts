@@ -7,8 +7,17 @@
  */
 import { eq } from 'drizzle-orm';
 import { createDb } from './client.js';
-import { accounts, ruleTemplates, tradeTags, users } from './schema.js';
+import {
+  accountProfileVersions,
+  accountProfiles,
+  accounts,
+  ruleTemplates,
+  tradeTags,
+  users,
+} from './schema.js';
 import { hashPassword } from '../auth/password.js';
+import { publishProfileVersion } from '../platform/profiles.js';
+import { provisionAccount, defaultOrganizationId } from '../platform/provisioning.js';
 
 const M = 1_000_000;
 
@@ -139,6 +148,64 @@ const TEMPLATES: TemplateSeed[] = [
   },
 ];
 
+/** Publish version 1 of a product, unless it already has one. */
+async function publishProductOnce(
+  db: ReturnType<typeof createDb>['db'],
+  organizationId: string,
+  key: string,
+  t: TemplateSeed,
+): Promise<boolean> {
+  const [profile] = await db.select().from(accountProfiles).where(eq(accountProfiles.key, key));
+  if (profile) {
+    const [version] = await db
+      .select({ id: accountProfileVersions.id })
+      .from(accountProfileVersions)
+      .where(eq(accountProfileVersions.profileId, profile.id))
+      .limit(1);
+    if (version) return false;
+  }
+
+  await publishProfileVersion(db, {
+    organizationId,
+    key,
+    name: t.name.replace(/^Atlas /, ''),
+    accountType: t.accountType,
+    description: `Seeded product: ${t.name}`,
+    config: {
+      rules: {
+        accountSizeMicros: t.accountSize * M,
+        profitTargetMicros: t.profitTarget * M,
+        maxLossMicros: t.maxLoss * M,
+        drawdownType: t.drawdownType,
+        trailingLockAtMicros: t.trailingLockAt === null ? null : t.trailingLockAt * M,
+        dailyLossLimitMicros: t.dailyLossLimit === null ? null : t.dailyLossLimit * M,
+        dailyLossPolicy: 'LOCK_DAY',
+        consistencyFormula: 'BEST_DAY_OVER_TOTAL',
+        consistencyThreshold: t.consistencyThreshold,
+        minTradingDays: t.minTradingDays,
+        minWinningDays: 0,
+        maxTradingDays: t.maxTradingDays,
+        minDailyPnlToCountMicros: 0,
+        minWinningDayPnlMicros: 1,
+        maxContracts: t.maxContracts,
+        microsCountAsFraction: true,
+        flattenOnBreach: true,
+      },
+      execution: null,
+      instruments: { allowed: null, maxContracts: t.maxContracts, perInstrument: {} },
+      display: { startingBalanceMicros: t.accountSize * M },
+      payoutRules: {
+        minTradingDaysForPayout: 10,
+        maxPayoutPercent: 0.5,
+        profitSplitPercent: 0.9,
+        minPayoutMicros: 100 * M,
+      },
+    },
+    notes: 'Seeded',
+  });
+  return true;
+}
+
 async function main(): Promise<void> {
   const { sql, db } = createDb();
   try {
@@ -184,6 +251,27 @@ async function main(): Promise<void> {
     }
     console.log(`rule templates ready: ${templateIds.size}`);
 
+    const organizationId = await defaultOrganizationId(db);
+
+    /*
+     * Products.
+     *
+     * The same numbers as the rule templates above, published through the
+     * ordinary product service so a fresh database has exactly what a migrated
+     * one has: a product with a version, which accounts are pinned to. Nothing
+     * here is specific to any firm - a firm decides the values, Atlas enforces
+     * them.
+     */
+    let published = 0;
+    for (const t of TEMPLATES) {
+      const key = t.name
+        .replace(/^Atlas /, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-');
+      if (await publishProductOnce(db, organizationId, key, t)) published += 1;
+    }
+    console.log(`products published: ${published} (${TEMPLATES.length} total)`);
+
     const demoEmail = 'demo@atlasfutures.local';
     let [demo] = await db.select().from(users).where(eq(users.email, demoEmail));
     if (!demo) {
@@ -193,6 +281,7 @@ async function main(): Promise<void> {
           email: demoEmail,
           passwordHash: await hashPassword('atlas-demo-2026'),
           displayName: 'Demo Trader',
+          organizationId,
         })
         .returning();
       console.log('demo user created: demo@atlasfutures.local / atlas-demo-2026');
@@ -239,9 +328,14 @@ async function main(): Promise<void> {
     const haveAccount = new Set(existingAccounts.map((row) => row.name));
 
     {
-      // Checked per account rather than "are there any at all", so a database
-      // seeded before this account existed still gets it. Nothing is touched
-      // if it is already there: an account carries a balance and a history.
+      /*
+       * Demo accounts, provisioned through the ordinary service.
+       *
+       * Not inserted directly: the seed uses the same path an administrator
+       * and a purchase webhook use, so a development database exercises the
+       * lifecycle, the audit trail and the product pinning like any other.
+       * Idempotent by key, so re-seeding never produces a second account.
+       */
       let created = 0;
       for (const name of [
         'Atlas Practice 150K',
@@ -249,26 +343,20 @@ async function main(): Promise<void> {
         'Atlas Evaluation 100K',
         'Atlas Evaluation 150K',
       ]) {
-        if (haveAccount.has(name.replace('Atlas ', ''))) continue;
-        created += 1;
-        const template = TEMPLATES.find((t) => t.name === name)!;
-        const size = template.accountSize * M;
-        const floor = size - template.maxLoss * M;
-        await db.insert(accounts).values({
+        const display = name.replace('Atlas ', '');
+        if (haveAccount.has(display)) continue;
+        const key = display.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        await provisionAccount(db, {
+          organizationId,
           userId: demo!.id,
-          ruleTemplateId: templateIds.get(name)!,
-          name: name.replace('Atlas ', ''),
-          accountType: template.accountType,
-          status: 'ACTIVE',
-          startingBalanceMicros: size,
-          balanceMicros: size,
-          highWaterMarkMicros: size,
-          drawdownFloorMicros: floor,
-          dayStartBalanceMicros: size,
-          dayStartEquityMicros: size,
+          profileKey: key,
+          displayName: display,
+          idempotencyKey: `seed:${demo!.id}:${key}`,
+          actor: { type: 'SYSTEM', label: 'seed' },
         });
+        created += 1;
       }
-      console.log(`demo accounts created: ${created}`);
+      console.log(`demo accounts provisioned: ${created}`);
     }
   } finally {
     await sql.end({ timeout: 5 });
