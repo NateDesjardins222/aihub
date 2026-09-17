@@ -262,3 +262,30 @@ charts, maximize and restore, two charts, the journal's four tabs including a
 day drilldown and a trade's detail, practice, the ticket's presets, all five
 blotter tabs, the blotter collapsed, every settings section, and back to a
 clean single chart.
+
+---
+
+## What is NOT finished
+
+Written plainly, because the brief asked for exactly this list rather than for
+a claim of completeness.
+
+* **The five secondary drawing tools still have no per-tool pass.** Ray,
+  extended line, vertical line, text and measure place, select, move, keep
+  their anchors through a pan, offer the settings their registry entry declares
+  and delete - `remaining-tools.spec.mjs` proves all of that. What none of them
+  has had is the detail work the rectangle, trend line, horizontal line, fib
+  and the two position tools got: the measure's readout, text styling, and
+  whatever each tool's own settings should grow to.
+* **Indicator panes cannot be resized by dragging their separator.** The price
+  pane's share of the height adapts to how many panes are below it, but a
+  trader cannot set it by hand.
+* **The drawing toolbar's contextual bar is a style bar, not a full contextual
+  toolbar.** Style, lock, duplicate and delete are on it; coordinates and
+  visibility are in the settings dialog rather than beside the object.
+* **Only two Fibonacci tools' worth of the family exists.** The retracement is
+  complete, including the level editor; fans, arcs, time zones and the
+  extension-as-its-own-tool are not built.
+* **The alerts, watchlist, hotkey editor and screenshot-with-annotations
+  features** that a TradingView-class terminal has are not in this milestone
+  and were not asked for in it.
