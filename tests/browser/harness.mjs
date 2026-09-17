@@ -69,15 +69,49 @@ export async function signIn(page) {
  * every later suite a chart with three bars on it.
  */
 export async function returnToLive(page) {
-  if ((await page.locator('.abar-pill-warn').count()) === 0) return;
-  await page.click('.abar-icon[aria-label=Practice]');
-  await page.waitForTimeout(2_000);
-  if (await page.locator('.practice-active .chip').count()) {
-    await page.locator('.practice-active .chip').first().click();
-    await page.waitForTimeout(6_000);
+  if (await page.locator('.abar-pill-warn').count()) {
+    await page.click('.abar-icon[aria-label=Practice]');
+    await page.waitForTimeout(2_000);
+    if (await page.locator('.practice-active .chip').count()) {
+      await page.locator('.practice-active .chip').first().click();
+      await page.waitForTimeout(6_000);
+    }
+    await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
+    await page.waitForTimeout(2_500);
   }
-  await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
-  await page.waitForTimeout(2_500);
+
+  /*
+   * And then say so to the server directly.
+   *
+   * Ending a practice session is not the same thing as putting the platform
+   * back on the live feed: a suite that died mid-run, or one that switched the
+   * provider itself, leaves the recording serving every later suite - which is
+   * how `stress` came to be asked to seed drawings onto a chart with three
+   * bars on it. Refused if an account still holds something, which is correct
+   * and is left alone.
+   */
+  await page
+    .evaluate(async () => {
+      const refreshToken = window.localStorage.getItem('atlas.refreshToken');
+      if (!refreshToken) return;
+      const session = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      }).then((r) => r.json());
+      if (!session?.accessToken) return;
+      window.localStorage.setItem('atlas.refreshToken', session.refreshToken);
+      await fetch('/api/v1/marketdata/provider', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${session.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ provider: 'live' }),
+      });
+    })
+    .catch(() => undefined);
+  await page.waitForTimeout(2_000);
 }
 
 /** Select an account by its display name and let the stores settle. */
