@@ -136,6 +136,39 @@ export class OrderRejectedError extends Error {
   }
 }
 
+/**
+ * The extremes of every genuine print observed since a match pass last ran.
+ *
+ * Prices in ticks, so the excursions are integer arithmetic like everything
+ * else the engine records.
+ */
+interface PriceWindow {
+  minTicks: number;
+  maxTicks: number;
+}
+
+/**
+ * One market observation, handed to the matcher by the event that produced it.
+ *
+ * Carrying it rather than re-reading the market is what makes a replayed
+ * session repeatable: the pass prices itself off the observation it was
+ * triggered by, however long it waited for the account's lock.
+ */
+interface MatchPass {
+  /**
+   * The pinned observation, or null to price off the market as it stands.
+   *
+   * Only a REPLAY pins one. Live, observations can be coalesced under load, and
+   * a pass holding the observation that triggered it would then be stuck in the
+   * past: the burst that dropped forty prints would leave the survivor matching
+   * the first of them, and a stop the market ran through would not fire. Live,
+   * the freshest observation is the honest one; in a replay, nothing is dropped
+   * and the triggering observation is the exact one.
+   */
+  readonly observed: MarketSnapshot | null;
+  readonly window: PriceWindow | null;
+}
+
 export interface BracketOffsets {
   readonly stopLossTicks?: number | null;
   readonly takeProfitTicks?: number | null;
@@ -253,7 +286,7 @@ export class TradingEngine {
    * database write still happens on the match, but it writes a range that has
    * already seen every print.
    */
-  private readonly livePath = new Map<string, { minTicks: number; maxTicks: number }>();
+  private readonly livePath = new Map<string, PriceWindow>();
   private valuationTimer: NodeJS.Timeout | null = null;
   /** Accounts currently holding a position or working order, by symbol. */
   private readonly activeSymbols = new Map<string, Set<string>>();
@@ -289,15 +322,24 @@ export class TradingEngine {
   async start(): Promise<void> {
     await this.refreshActiveSymbols();
 
+    // The observation is taken HERE, synchronously, and carried into the match.
+    // Reading the market again inside the match would read whatever had arrived
+    // by the time the account's lock came free, so a pass triggered by one
+    // observation could price itself off a later one - which makes the same
+    // recording produce different fills depending on how busy the machine was.
     const offQuote = this.market.bus.onAnyQuote((quote) => {
       if (quote.last !== null) this.observePrice(quote.symbol, quote.last);
-      void this.onMarketEvent(quote.symbol).catch(() => undefined);
+      const spec = getInstrument(quote.symbol);
+      const observed = spec ? this.snapshotFor(spec) : null;
+      void this.onMarketEvent(quote.symbol, observed).catch(() => undefined);
     });
     const offBar = this.market.bus.onAnyBar((bar) => {
       if (!bar.closed) return; // a forming bar's extremes are not final
       this.observePrice(bar.symbol, bar.high);
       this.observePrice(bar.symbol, bar.low);
-      void this.onMarketEvent(bar.symbol).catch(() => undefined);
+      const spec = getInstrument(bar.symbol);
+      const observed = spec ? this.snapshotFor(spec) : null;
+      void this.onMarketEvent(bar.symbol, observed).catch(() => undefined);
     });
     this.marketUnsubscribe = () => {
       offQuote();
@@ -733,18 +775,34 @@ export class TradingEngine {
     }
   }
 
-  /** Begin a new path for a position that has just opened. */
-  private startPath(accountId: string, symbol: string, ticks: number | null): void {
-    if (ticks === null) {
-      this.livePath.delete(this.pathKey(accountId, symbol));
-      return;
-    }
-    this.livePath.set(this.pathKey(accountId, symbol), { minTicks: ticks, maxTicks: ticks });
+  /**
+   * Take the prices observed since the last pass, and clear the buffer.
+   *
+   * Draining rather than reading is what makes the excursions reproducible. The
+   * buffer is a mutable object that every arriving print writes into, so a pass
+   * that read it after an await would see prints belonging to observations it
+   * has not matched yet - and a trade could record a low the market only
+   * reached after it had closed. Each drain is taken synchronously, in event
+   * order, and the window it returns is folded into the stored running extreme,
+   * so nothing is double counted and nothing is lost.
+   */
+  private drainPath(accountId: string, symbol: string): PriceWindow | null {
+    const key = this.pathKey(accountId, symbol);
+    const window = this.livePath.get(key);
+    if (!window) return null;
+    this.livePath.delete(key);
+    return { minTicks: window.minTicks, maxTicks: window.maxTicks };
   }
 
-  private async onMarketEvent(symbol: string): Promise<void> {
+  private async onMarketEvent(symbol: string, observed: MarketSnapshot | null): Promise<void> {
     const accountIds = this.activeSymbols.get(symbol);
     if (!accountIds || accountIds.size === 0) return;
+
+    // Every account's pass is DECIDED and its price window DRAINED before any
+    // of them runs. Doing it inside the loop would make the boundary between
+    // one pass's prices and the next's depend on how long another account's
+    // match took, which is not a property of the market.
+    const passes: Array<{ accountId: string; key: string; window: PriceWindow | null }> = [];
     for (const accountId of [...accountIds]) {
       const key = `${accountId}|${symbol}`;
       // A match reads the CURRENT market, so two queued matches for the same
@@ -757,12 +815,28 @@ export class TradingEngine {
       // An account with a WORKING order is exempt: for it, each observation is
       // a chance to fill, and collapsing two of them would silently skip a
       // price the market actually traded.
-      const exempt = this.working.has(key) && this.mutex.depthOf(accountId) < MAX_QUEUED_MATCHES;
+      //
+      // A REPLAY is exempt unconditionally, queue depth included. Whether two
+      // events collapse depends on how fast the machine happened to be, so any
+      // dropped observation makes the session unrepeatable - a different fill,
+      // a different excursion, a different trade from the same recording and
+      // the same actions. A replay is a bounded, self-paced stream rather than
+      // a live feed that can burst without limit, so it is matched in full and
+      // simply takes as long as it takes.
+      const exempt =
+        this.market.isReplay() ||
+        (this.working.has(key) && this.mutex.depthOf(accountId) < MAX_QUEUED_MATCHES);
       if (!exempt && this.pendingMatches.has(key)) continue;
       this.pendingMatches.add(key);
-      await this.mutex.run(accountId, () => {
-        this.pendingMatches.delete(key);
-        return this.matchLocked(accountId, symbol);
+      passes.push({ accountId, key, window: this.drainPath(accountId, symbol) });
+    }
+
+    // See MatchPass.observed: pinned in a replay, freshest live.
+    const pinned = this.market.isReplay() ? observed : null;
+    for (const pass of passes) {
+      await this.mutex.run(pass.accountId, () => {
+        this.pendingMatches.delete(pass.key);
+        return this.matchLocked(pass.accountId, symbol, { observed: pinned, window: pass.window });
       });
     }
   }
@@ -1135,10 +1209,19 @@ export class TradingEngine {
    * sibling cannot survive its partner's fill, because both writes land or
    * neither does.
    */
-  private async matchLocked(accountId: string, symbol: string): Promise<EngineChange> {
+  private async matchLocked(
+    accountId: string,
+    symbol: string,
+    pass?: MatchPass,
+  ): Promise<EngineChange> {
     const spec = requireInstrument(symbol);
+    // The observation this pass is matching. A market-event pass carries the
+    // one it was triggered by; a valuation tick or an explicit re-match reads
+    // the market as it stands, which for those callers IS the observation.
+    const snapshot = pass?.observed ?? this.snapshotFor(spec);
+    const window = pass ? pass.window : this.drainPath(accountId, spec.root);
+    const markTicks = snapshot?.lastTicks ?? null;
     const env = await this.loadEnvironment(accountId);
-    const snapshot = this.snapshotFor(spec);
 
     const openRows = await this.db
       .select()
@@ -1163,7 +1246,7 @@ export class TradingEngine {
       if (position.qty !== 0) {
         // The excursions are a record of the PATH, so they are updated on every
         // mark - including the ones that fill nothing, which is most of them.
-        await this.trackExcursion(accountId, spec);
+        await this.trackExcursion(accountId, spec, window, markTicks);
         await this.enforceLocked(accountId);
       }
       return this.buildChange(accountId, spec, openOrders, [], [], position);
@@ -1186,7 +1269,14 @@ export class TradingEngine {
     // The excursions belong to the position as it was BEFORE this fill closed
     // part of it, including whatever this very observation did to it: a trade
     // stopped out at its low took that excursion on its way there.
-    const excursion = await this.excursionContext(accountId, spec, position, result.position);
+    const excursion = await this.excursionContext(
+      accountId,
+      spec,
+      position,
+      result.position,
+      window,
+      markTicks,
+    );
     const sessionId = await this.currentSessionId(accountId);
 
     if (result.fills.length > 0 || changedOrders.length > 0) {
@@ -1303,7 +1393,7 @@ export class TradingEngine {
     if (result.orders.some((order) => isOpen(order))) this.working.add(key);
     else this.working.delete(key);
 
-    if (result.position.qty !== 0) await this.trackExcursion(accountId, spec);
+    if (result.position.qty !== 0) await this.trackExcursion(accountId, spec, window, markTicks);
 
     // The rules see every fill before anyone else does. A drawdown breached by
     // this fill has to close the account NOW, not on the next valuation tick,
@@ -1401,21 +1491,24 @@ export class TradingEngine {
     spec: InstrumentSpec,
     before: PositionState,
     after: PositionState,
+    window: PriceWindow | null,
+    markTicks: number | null,
   ): Promise<{ maePerContract: number; mfePerContract: number; riskPerContract: number | null }> {
     const [row] = await this.db
       .select()
       .from(positionsTable)
       .where(and(eq(positionsTable.accountId, accountId), eq(positionsTable.symbol, spec.root)));
 
-    // A position opening from flat starts clean, whatever the old row holds -
-    // and so does its path, which begins at the price it opened at.
+    // A position opening from flat starts clean, whatever the old row holds.
+    // The drained window belongs to the market BEFORE the position existed, so
+    // it is discarded: the path starts at the price the position opened at.
     const opening = before.qty === 0 && after.qty !== 0;
-    if (opening) this.startPath(accountId, spec.root, this.markTicks(spec));
-    if (after.qty === 0) this.livePath.delete(this.pathKey(accountId, spec.root));
     let mae = opening ? 0 : (row?.maeMicros ?? 0);
     let mfe = opening ? 0 : (row?.mfeMicros ?? 0);
 
-    const reach = this.reachSinceMark(accountId, spec, before);
+    const reach = opening
+      ? this.reachFrom(spec, after, null, markTicks)
+      : this.reachFrom(spec, before, window, markTicks);
     if (reach !== null) {
       mae = Math.round(Math.min(mae, reach.worst));
       mfe = Math.round(Math.max(mfe, reach.best));
@@ -1447,18 +1540,17 @@ export class TradingEngine {
    * the figure does not depend on which observations happened to arrive while
    * the engine was busy.
    */
-  private reachSinceMark(
-    accountId: string,
+  private reachFrom(
     spec: InstrumentSpec,
     position: PositionState,
+    window: PriceWindow | null,
+    markTicks: number | null,
   ): { worst: number; best: number } | null {
     if (position.qty === 0) return null;
-    const path = this.livePath.get(this.pathKey(accountId, spec.root));
-    const mark = this.markTicks(spec);
 
     const candidates: number[] = [];
-    if (path) candidates.push(path.minTicks, path.maxTicks);
-    if (mark !== null) candidates.push(mark);
+    if (window) candidates.push(window.minTicks, window.maxTicks);
+    if (markTicks !== null) candidates.push(markTicks);
     if (candidates.length === 0) return null;
 
     const excursions = candidates
@@ -1487,7 +1579,12 @@ export class TradingEngine {
    * Called on every mark, so the figures come from genuine observations and not
    * from a reconstruction after the fact.
    */
-  private async trackExcursion(accountId: string, spec: InstrumentSpec): Promise<void> {
+  private async trackExcursion(
+    accountId: string,
+    spec: InstrumentSpec,
+    window: PriceWindow | null,
+    markTicks: number | null,
+  ): Promise<void> {
     const [row] = await this.db
       .select()
       .from(positionsTable)
@@ -1495,7 +1592,7 @@ export class TradingEngine {
     if (!row || row.qty === 0) return;
 
     const position = toEnginePosition(row, spec.root);
-    const reach = this.reachSinceMark(accountId, spec, position);
+    const reach = this.reachFrom(spec, position, window, markTicks);
     if (reach === null) return;
 
     // Rounded: the average entry is fractional by nature, so an excursion
@@ -1672,6 +1769,16 @@ export class TradingEngine {
     const now = Date.now();
     const qty = entry.filledQty;
 
+    // Eligibility is measured on the SAME clock the matcher uses, which in a
+    // replay is the recording's and not the server's. A leg stamped with the
+    // wall clock inside a replay of last Tuesday is dated days after every
+    // observation it will ever see, so it can never become eligible: the stop
+    // is drawn on the chart, price trades straight through it, and nothing
+    // fills. The entry escaped this because it is submitted through
+    // submitLocked, which already had the market's clock in hand.
+    const snapshot = this.snapshotFor(spec);
+    const marketNow = this.eligibilityClock(snapshot);
+
     const legs: EngineOrder[] = [];
     const base = {
       accountId,
@@ -1681,8 +1788,11 @@ export class TradingEngine {
       tif: 'GTC' as const,
       ocoGroupId: groupId,
       parentOrderId: entry.id,
-      tradingDate: tradingDate(spec, now),
+      // The trading day a leg belongs to is the market's, for the same reason:
+      // a replayed session's orders belong to the day being replayed.
+      tradingDate: tradingDate(spec, marketNow),
       now,
+      eligibleAt: marketNow + env.latencyMs,
       // The legs exist from the moment the entry filled, so that is their place
       // in market time - not the server clock, which on a delayed feed runs
       // minutes ahead of everything the engine can see.

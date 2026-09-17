@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { accounts, trades as tradesTable } from '../db/schema.js';
+import { accounts, orders as ordersTable, trades as tradesTable } from '../db/schema.js';
 import { TradingEngine } from './engine.js';
 import { ScriptedMarket, createFixture, settle, type TestFixture } from './harness.js';
 
@@ -74,9 +74,21 @@ async function runSession(actions: readonly Action[], latencyMs: number) {
     .select()
     .from(accounts)
     .where(eq(accounts.id, fixture.accountId));
+  const orderRows = await fixture.db
+    .select()
+    .from(ordersTable)
+    .where(eq(ordersTable.accountId, fixture.accountId));
 
   const result = {
     balance: account!.balanceMicros,
+    // How the protective legs ended. Included in the comparison, and asserted
+    // to be non-empty below, because a bracket that never fills at all also
+    // never varies - which is how a stop that could not become eligible in a
+    // replay hid behind a passing determinism test.
+    legs: orderRows
+      .filter((row) => row.bracketRole === 'STOP_LOSS' || row.bracketRole === 'TAKE_PROFIT')
+      .map((row) => `${row.bracketRole}:${row.status}:${row.filledQty}`)
+      .sort(),
     // Sorted by CONTENT, not by row order: two trades that closed on the same
     // observation have the same timestamp, and which of them the database hands
     // back first is not part of what determinism means here.
@@ -160,6 +172,9 @@ describe('replay determinism', () => {
     const second = await runSession(SCRIPT, 250);
     expect(second).toEqual(first);
     expect(first.trades.length).toBeGreaterThan(1);
+    // The script's stops and targets must actually execute, or this test is
+    // comparing two sessions in which nothing protective ever happened.
+    expect(first.legs.filter((leg) => leg.includes(':FILLED:'))).not.toHaveLength(0);
   }, 60_000);
 
   it('produces the same result three times running', async () => {
