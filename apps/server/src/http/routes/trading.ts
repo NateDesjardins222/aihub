@@ -292,6 +292,40 @@ export function tradingRoutes(deps: Deps) {
       }
     });
 
+    /**
+     * Attach, move or remove a position's protective orders.
+     *
+     * Prices come in as decimals because that is what the chart and the ticket
+     * have; they are snapped to the instrument's tick grid here, where the
+     * specification lives, rather than trusted from the client. `null` removes
+     * a leg and an omitted field leaves it alone - so moving a stop cannot
+     * silently cancel a target.
+     */
+    app.post<{ Params: { symbol: string } }>('/positions/:symbol/protect', async (request, reply) => {
+      const body = z
+        .object({
+          accountId: z.string().uuid(),
+          stopPrice: z.number().positive().nullable().optional(),
+          targetPrice: z.number().positive().nullable().optional(),
+        })
+        .parse(request.body);
+      await assertOwnership(request.user!.id, body.accountId);
+      const spec = requireInstrument(request.params.symbol.toUpperCase());
+      const toTicks = (price: number | null | undefined): number | null | undefined =>
+        price === undefined || price === null ? price : priceToTicks(spec, price);
+
+      try {
+        return reply.send(
+          await deps.engine.setProtection(body.accountId, request.user!.id, spec.root, {
+            stopTicks: toTicks(body.stopPrice),
+            targetTicks: toTicks(body.targetPrice),
+          }),
+        );
+      } catch (err) {
+        mapRejection(err);
+      }
+    });
+
     app.post<{ Params: { symbol: string } }>('/positions/:symbol/reverse', async (request, reply) => {
       const body = z.object({ accountId: z.string().uuid() }).parse(request.body);
       await assertOwnership(request.user!.id, body.accountId);

@@ -100,6 +100,29 @@ const TEMPLATES: TemplateSeed[] = [
     maxTradingDays: null,
   },
   {
+    /*
+     * The account the terminal opens on.
+     *
+     * Deliberately permissive so the platform can be exercised without a rule
+     * tripping, and deliberately generic: it is an ordinary row in the same
+     * template table as every programme, with the same fields. Nothing about
+     * any particular prop firm's programme is wired into the engine - the
+     * size, the target, the drawdown TYPE and the contract cap are data.
+     */
+    name: 'Atlas Practice 150K',
+    accountType: 'PRACTICE',
+    accountSize: 150_000,
+    profitTarget: 1_000_000,
+    maxLoss: 150_000,
+    drawdownType: 'STATIC',
+    trailingLockAt: null,
+    dailyLossLimit: null,
+    consistencyThreshold: null,
+    maxContracts: 50,
+    minTradingDays: 0,
+    maxTradingDays: null,
+  },
+  {
     // Deliberately permissive, for exercising the platform without tripping rules.
     name: 'Atlas Practice 100K',
     accountType: 'PRACTICE',
@@ -210,12 +233,24 @@ async function main(): Promise<void> {
     }
 
     const existingAccounts = await db
-      .select({ id: accounts.id })
+      .select({ id: accounts.id, name: accounts.name })
       .from(accounts)
       .where(eq(accounts.userId, demo!.id));
+    const haveAccount = new Set(existingAccounts.map((row) => row.name));
 
-    if (existingAccounts.length === 0) {
-      for (const name of ['Atlas Evaluation 50K', 'Atlas Evaluation 100K', 'Atlas Practice 100K']) {
+    {
+      // Checked per account rather than "are there any at all", so a database
+      // seeded before this account existed still gets it. Nothing is touched
+      // if it is already there: an account carries a balance and a history.
+      let created = 0;
+      for (const name of [
+        'Atlas Practice 150K',
+        'Atlas Evaluation 50K',
+        'Atlas Evaluation 100K',
+        'Atlas Evaluation 150K',
+      ]) {
+        if (haveAccount.has(name.replace('Atlas ', ''))) continue;
+        created += 1;
         const template = TEMPLATES.find((t) => t.name === name)!;
         const size = template.accountSize * M;
         const floor = size - template.maxLoss * M;
@@ -233,7 +268,7 @@ async function main(): Promise<void> {
           dayStartEquityMicros: size,
         });
       }
-      console.log('demo accounts created: 3');
+      console.log(`demo accounts created: ${created}`);
     }
   } finally {
     await sql.end({ timeout: 5 });

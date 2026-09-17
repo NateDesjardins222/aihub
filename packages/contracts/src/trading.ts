@@ -171,6 +171,10 @@ export type RejectReason =
   | 'UNSUPPORTED_ORDER_TYPE'
   | 'STOP_ON_WRONG_SIDE'
   | 'LIMIT_ON_WRONG_SIDE'
+  /** Protection was asked for on an instrument the account has no position in. */
+  | 'NO_POSITION'
+  /** A stop above a long, or a target below it: not protection, an instant exit. */
+  | 'PROTECTION_ON_WRONG_SIDE'
   | 'MAX_CONTRACTS_EXCEEDED'
   | 'POSITION_LIMIT_EXCEEDED'
   | 'DAILY_LOSS_LIMIT'

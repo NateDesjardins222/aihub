@@ -30,6 +30,7 @@ import {
 } from '@atlas/core';
 import {
   priceToTicks,
+  ticksToPrice,
   requireInstrument,
   getInstrument,
   listInstruments,
@@ -173,6 +174,17 @@ export interface BracketOffsets {
   readonly stopLossTicks?: number | null;
   readonly takeProfitTicks?: number | null;
   readonly trailingStopTicks?: number | null;
+}
+
+/**
+ * Where a position's protective orders should sit, in ticks.
+ *
+ * `undefined` leaves a leg alone, `null` removes it. The distinction matters:
+ * moving a stop must not silently cancel a target the trader cannot see.
+ */
+export interface ProtectionLevels {
+  readonly stopTicks?: number | null;
+  readonly targetTicks?: number | null;
 }
 
 export interface SubmitOrderInput {
@@ -933,6 +945,28 @@ export class TradingEngine {
   }
 
   /**
+   * Attach, move or remove the protective orders of an OPEN position.
+   *
+   * This is the other half of the bracket workflow. A bracket submitted with an
+   * entry is a plan made before the trade exists; this is protection added to a
+   * trade that already does - which is how a trader who took a position at
+   * market and then decided where the risk should sit actually works.
+   *
+   * The orders it creates are ordinary working orders in an OCO pair: sized to
+   * the position, resized when the position changes, canceled when it closes,
+   * and executed by the same matcher as everything else. Dragging one on the
+   * chart modifies THIS, not a picture of it.
+   */
+  async setProtection(
+    accountId: string,
+    userId: string | null,
+    symbol: string,
+    levels: ProtectionLevels,
+  ): Promise<EngineChange> {
+    return this.mutex.run(accountId, () => this.setProtectionLocked(accountId, userId, symbol, levels));
+  }
+
+  /**
    * The clock the matcher measures latency against.
    *
    * Live, it is the wall clock: the feed's own sampling is the dominant delay
@@ -1380,6 +1414,7 @@ export class TradingEngine {
     // believing they have no position when they do.
     try {
       await this.syncBrackets(accountId, spec, env);
+      await this.syncProtection(accountId, spec);
     } catch (err) {
       await this.audit(accountId, 'RISK_RULE_TRIGGERED', null, 'ENGINE', { bracketSyncFailed: true }, null, {
         message: err instanceof Error ? err.message : String(err),
@@ -1646,6 +1681,202 @@ export class TradingEngine {
       worst = worst === null ? distance : Math.max(worst, distance);
     }
     return worst;
+  }
+
+  private async setProtectionLocked(
+    accountId: string,
+    userId: string | null,
+    symbol: string,
+    levels: ProtectionLevels,
+  ): Promise<EngineChange> {
+    const spec = requireInstrument(symbol);
+    const env = await this.loadEnvironment(accountId);
+    const position = await this.loadPosition(accountId, spec.root);
+
+    if (position.qty === 0) {
+      const rejection = {
+        reason: 'NO_POSITION' as const,
+        message: 'There is no open position in this instrument to protect.',
+      };
+      await this.recordRisk(accountId, null, rejection);
+      throw new OrderRejectedError(rejection.reason, rejection.message);
+    }
+
+    const snapshot = this.snapshotFor(spec);
+    const markTicks = snapshot?.lastTicks ?? null;
+    const long = position.qty > 0;
+    const exitSide: Side = long ? 'SELL' : 'BUY';
+    const qty = Math.abs(position.qty);
+
+    // A protective level on the wrong side of the market is not protection: a
+    // stop above a long's price is an instant market exit, and a target below
+    // it takes a loss the trader thinks is a profit. Refused with a reason
+    // rather than quietly moved.
+    const check = (ticks: number, role: 'STOP_LOSS' | 'TAKE_PROFIT'): void => {
+      if (markTicks === null) return;
+      const belowMarket = ticks < markTicks;
+      const wants = role === 'STOP_LOSS' ? long : !long;
+      if (belowMarket !== wants) {
+        throw new OrderRejectedError(
+          'PROTECTION_ON_WRONG_SIDE',
+          role === 'STOP_LOSS'
+            ? `A stop for a ${long ? 'long' : 'short'} must sit ${long ? 'below' : 'above'} the market.`
+            : `A target for a ${long ? 'long' : 'short'} must sit ${long ? 'above' : 'below'} the market.`,
+          { level: ticksToPrice(spec, ticks), market: ticksToPrice(spec, markTicks) },
+        );
+      }
+    };
+    if (levels.stopTicks !== undefined && levels.stopTicks !== null) check(levels.stopTicks, 'STOP_LOSS');
+    if (levels.targetTicks !== undefined && levels.targetTicks !== null) {
+      check(levels.targetTicks, 'TAKE_PROFIT');
+    }
+
+    const openRows = await this.db
+      .select()
+      .from(ordersTable)
+      .where(
+        and(
+          eq(ordersTable.accountId, accountId),
+          eq(ordersTable.symbol, spec.root),
+          inArray(ordersTable.bracketRole, ['STOP_LOSS', 'TAKE_PROFIT']),
+          inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']),
+        ),
+      );
+
+    // Both legs share one OCO group, so whichever fills cancels the other. An
+    // existing group is reused: adding a target to a position that already has
+    // a stop must pair them, not leave two independent exits that could both
+    // fill and flip the account.
+    const groupId = openRows.find((row) => row.ocoGroupId)?.ocoGroupId ?? randomUUID();
+    const now = Date.now();
+    const marketNow = this.eligibilityClock(snapshot);
+
+    const apply = async (
+      role: 'STOP_LOSS' | 'TAKE_PROFIT',
+      ticks: number | null | undefined,
+    ): Promise<void> => {
+      if (ticks === undefined) return; // untouched
+      const existing = openRows.find((row) => row.bracketRole === role);
+
+      if (ticks === null) {
+        if (existing) {
+          await this.db
+            .update(ordersTable)
+            .set({ status: 'CANCELED', version: existing.version + 1, updatedAt: new Date() })
+            .where(eq(ordersTable.id, existing.id));
+        }
+        return;
+      }
+
+      if (existing) {
+        await this.db
+          .update(ordersTable)
+          .set({
+            ...(role === 'STOP_LOSS' ? { stopTicks: ticks } : { limitTicks: ticks }),
+            qty,
+            ocoGroupId: groupId,
+            // Moving a level makes the order new business at that price: it has
+            // not rested there, so it cannot claim a price the market traded
+            // before the move.
+            hasRested: false,
+            restedMarketTs: snapshot?.exchangeTs ?? null,
+            version: existing.version + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(ordersTable.id, existing.id));
+        return;
+      }
+
+      const leg = createOrder(
+        {
+          id: randomUUID(),
+          accountId,
+          clientOrderId: `protect-${role === 'STOP_LOSS' ? 'sl' : 'tp'}-${randomUUID()}`,
+          symbol: spec.root,
+          side: exitSide,
+          qty,
+          type: role === 'STOP_LOSS' ? 'STOP_MARKET' : 'LIMIT',
+          stopTicks: role === 'STOP_LOSS' ? ticks : null,
+          limitTicks: role === 'TAKE_PROFIT' ? ticks : null,
+          tif: 'GTC',
+          ocoGroupId: groupId,
+          bracketRole: role,
+          tradingDate: tradingDate(spec, marketNow),
+          now,
+          marketTs: snapshot?.exchangeTs ?? null,
+          eligibleAt: marketNow + env.latencyMs,
+        },
+        env,
+      );
+      await this.db.insert(ordersTable).values(toOrderValues(leg));
+    };
+
+    await apply('STOP_LOSS', levels.stopTicks);
+    await apply('TAKE_PROFIT', levels.targetTicks);
+
+    // Pair anything that was already working into the same group, so a stop
+    // placed before a target is not left orphaned beside it.
+    for (const row of openRows) {
+      if (row.ocoGroupId === groupId) continue;
+      await this.db
+        .update(ordersTable)
+        .set({ ocoGroupId: groupId, version: row.version + 1, updatedAt: new Date() })
+        .where(eq(ordersTable.id, row.id));
+    }
+
+    await this.audit(accountId, 'ORDER_ACCEPTED', userId, 'USER', { protection: levels }, null, null);
+
+    // Match immediately: a level placed where the market already is should fill
+    // now rather than wait for the next observation.
+    return this.matchLocked(accountId, spec.root);
+  }
+
+  /**
+   * Keep position-attached protection sized to the position it protects.
+   *
+   * The bracket legs of an entry are reconciled by syncBrackets against that
+   * entry. Protection added to a position afterwards has no entry to reconcile
+   * against, so it is reconciled against the position itself: it shrinks when
+   * the position is reduced by hand, and goes when the position goes. Without
+   * this, a stop for 3 left behind by a position cut to 1 would not close the
+   * remainder - it would reverse it.
+   */
+  private async syncProtection(accountId: string, spec: InstrumentSpec): Promise<void> {
+    const rows = await this.db
+      .select()
+      .from(ordersTable)
+      .where(
+        and(
+          eq(ordersTable.accountId, accountId),
+          eq(ordersTable.symbol, spec.root),
+          isNull(ordersTable.parentOrderId),
+          inArray(ordersTable.bracketRole, ['STOP_LOSS', 'TAKE_PROFIT']),
+          inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']),
+        ),
+      );
+    if (rows.length === 0) return;
+
+    const position = await this.loadPosition(accountId, spec.root);
+    for (const row of rows) {
+      // A leg exits the position's direction. Flat, or flipped the other way,
+      // and it protects nothing while being able to open something.
+      const aligned =
+        position.qty !== 0 && (row.side === 'SELL' ? position.qty > 0 : position.qty < 0);
+      const target = aligned ? row.filledQty + Math.abs(position.qty) : row.filledQty;
+
+      if (target <= row.filledQty) {
+        await this.db
+          .update(ordersTable)
+          .set({ status: 'CANCELED', version: row.version + 1, updatedAt: new Date() })
+          .where(eq(ordersTable.id, row.id));
+        continue;
+      }
+      if (row.qty === target) continue;
+      await this.db
+        .update(ordersTable)
+        .set({ qty: target, version: row.version + 1, updatedAt: new Date() })
+        .where(eq(ordersTable.id, row.id));
+    }
   }
 
   /**
