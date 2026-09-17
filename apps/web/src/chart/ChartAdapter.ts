@@ -144,8 +144,30 @@ export interface ChartAdapter {
    */
   setIndicators(indicators: readonly IndicatorInstance[]): void;
 
-  /** Titles and current values for the status line, in display order. */
-  indicatorLegend(): ReadonlyArray<{ id: string; label: string; color: string; value: string }>;
+  /**
+   * One row per plot, in display order, with the value at a given bar.
+   *
+   * Pass the crosshair's time to read that bar; pass nothing for the newest.
+   */
+  indicatorLegend(atTimeMs?: number | null): ReadonlyArray<{
+    id: string;
+    instanceId: string;
+    label: string;
+    color: string;
+    value: string;
+  }>;
+
+  /**
+   * Which pane each indicator instance is drawn in, and where that pane sits.
+   *
+   * Used to put an indicator's legend row at the top left of its own pane.
+   */
+  indicatorPanes(): ReadonlyArray<{
+    instanceId: string;
+    pane: number;
+    top: number;
+    height: number;
+  }>;
 
   /** Pixel geometry for the overlay layers. Null before the chart is mounted. */
   projection(): ChartProjection | null;

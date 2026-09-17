@@ -28,6 +28,9 @@ export interface Plot {
   readonly kind: PlotKind;
   readonly color: string;
   readonly lineWidth: number;
+  readonly lineStyle: 'SOLID' | 'DASHED' | 'DOTTED';
+  /** 0 to 1. Applied to the colour, since the renderer has no alpha layer. */
+  readonly opacity: number;
   readonly points: readonly PlotPoint[];
 }
 
@@ -41,7 +44,7 @@ export interface IndicatorOutput {
   readonly range?: { min: number; max: number };
 }
 
-export type ParamType = 'NUMBER' | 'SOURCE' | 'COLOR';
+export type ParamType = 'NUMBER' | 'SOURCE' | 'COLOR' | 'LINE_STYLE';
 
 export interface ParamDef {
   readonly key: string;
@@ -91,7 +94,15 @@ function colourOf(params: ParamValues, key: string, fallback: string): string {
 function plot(
   bars: readonly NormalizedBar[],
   values: ReadonlyArray<number | null>,
-  spec: { id: string; label: string; kind?: PlotKind; color: string; lineWidth?: number },
+  spec: {
+    id: string;
+    label: string;
+    kind?: PlotKind;
+    color: string;
+    lineWidth?: number;
+    lineStyle?: 'SOLID' | 'DASHED' | 'DOTTED';
+    opacity?: number;
+  },
 ): Plot {
   const points: PlotPoint[] = [];
   for (let i = 0; i < bars.length; i += 1) {
@@ -105,13 +116,48 @@ function plot(
     kind: spec.kind ?? 'LINE',
     color: spec.color,
     lineWidth: spec.lineWidth ?? 1,
+    lineStyle: spec.lineStyle ?? 'SOLID',
+    opacity: spec.opacity ?? 1,
     points,
+  };
+}
+
+/** The style an instance's parameters ask for, for the `plot` helper. */
+function styleOf(params: ParamValues, fallbackWidth = 1): {
+  lineWidth: number;
+  lineStyle: 'SOLID' | 'DASHED' | 'DOTTED';
+  opacity: number;
+} {
+  const raw = params['lineStyle'];
+  return {
+    lineWidth: Math.max(1, Math.min(4, num(params, 'lineWidth', fallbackWidth))),
+    lineStyle: raw === 'DASHED' || raw === 'DOTTED' ? raw : 'SOLID',
+    opacity: Math.max(0.1, Math.min(1, num(params, 'opacity', 100) / 100)),
   };
 }
 
 const PERIOD: ParamDef = { key: 'period', label: 'Length', type: 'NUMBER', min: 1, max: 1000, step: 1 };
 const SOURCE: ParamDef = { key: 'source', label: 'Source', type: 'SOURCE' };
 const COLOUR: ParamDef = { key: 'color', label: 'Colour', type: 'COLOR' };
+
+/*
+ * Appearance, for every indicator that draws a line.
+ *
+ * These were fixed in code: an indicator could be given a colour and nothing
+ * else, so two moving averages could not be told apart by weight, and a guide
+ * line could not be faded behind the price. Width, style and opacity are
+ * parameters like any other now, and they are read by the adapter when it
+ * builds the series.
+ */
+const WIDTH: ParamDef = { key: 'lineWidth', label: 'Thickness', type: 'NUMBER', min: 1, max: 4, step: 1 };
+const LINE_STYLE: ParamDef = { key: 'lineStyle', label: 'Line style', type: 'LINE_STYLE' };
+const OPACITY: ParamDef = { key: 'opacity', label: 'Opacity', type: 'NUMBER', min: 10, max: 100, step: 5 };
+
+/** The style trio, appended to an indicator's own inputs. */
+const STYLE: readonly ParamDef[] = [WIDTH, LINE_STYLE, OPACITY];
+
+/** Defaults for the style trio, merged into every line indicator. */
+const STYLE_DEFAULTS = { lineWidth: 1, lineStyle: 'SOLID', opacity: 100 } as const;
 
 export const INDICATORS: readonly IndicatorDef[] = [
   {
@@ -120,8 +166,8 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Moving averages',
     overlay: true,
     description: 'The mean of the last N values of the chosen source.',
-    params: [PERIOD, SOURCE, COLOUR],
-    defaults: { period: 20, source: 'close', color: '#4d8dff' },
+    params: [PERIOD, SOURCE, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, period: 20, source: 'close', color: '#4d8dff' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -132,7 +178,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
             id: 'sma',
             label: `MA ${num(params, 'period', 20)}`,
             color: colourOf(params, 'color', '#4d8dff'),
-            lineWidth: 1,
+            ...styleOf(params),
           },
         ),
       ],
@@ -144,8 +190,8 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Moving averages',
     overlay: true,
     description: 'Weights recent values more heavily. Seeded from the simple average.',
-    params: [PERIOD, SOURCE, COLOUR],
-    defaults: { period: 21, source: 'close', color: '#f5a524' },
+    params: [PERIOD, SOURCE, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, period: 21, source: 'close', color: '#f5a524' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -156,6 +202,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
             id: 'ema',
             label: `EMA ${num(params, 'period', 21)}`,
             color: colourOf(params, 'color', '#f5a524'),
+            ...styleOf(params),
           },
         ),
       ],
@@ -168,8 +215,8 @@ export const INDICATORS: readonly IndicatorDef[] = [
     overlay: true,
     description:
       'Volume-weighted average price, anchored to the session open. Needs genuine volume: a feed that reports none produces no line.',
-    params: [SOURCE, COLOUR],
-    defaults: { source: 'hlc3', color: '#a879f0' },
+    params: [SOURCE, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, source: 'hlc3', color: '#a879f0' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -177,7 +224,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
           id: 'vwap',
           label: 'VWAP',
           color: colourOf(params, 'color', '#a879f0'),
-          lineWidth: 2,
+          ...styleOf(params, 2),
         }),
       ],
     }),
@@ -193,8 +240,9 @@ export const INDICATORS: readonly IndicatorDef[] = [
       { key: 'multiplier', label: 'Deviations', type: 'NUMBER', min: 0.1, max: 10, step: 0.1 },
       SOURCE,
       COLOUR,
+      ...STYLE,
     ],
-    defaults: { period: 20, multiplier: 2, source: 'close', color: '#6b7a94' },
+    defaults: { ...STYLE_DEFAULTS, period: 20, multiplier: 2, source: 'close', color: '#6b7a94' },
     compute: (bars, params, ctx) => {
       const values = bars.map((b) => sourceValue(b, src(params, 'source')));
       const period = num(params, 'period', 20);
@@ -204,9 +252,9 @@ export const INDICATORS: readonly IndicatorDef[] = [
       return {
         pane: ctx.pane,
         plots: [
-          plot(bars, upper, { id: 'upper', label: `BB upper`, color: base }),
-          plot(bars, middle, { id: 'middle', label: `BB ${period}`, color: base }),
-          plot(bars, lower, { id: 'lower', label: `BB lower`, color: base }),
+          plot(bars, upper, { id: 'upper', label: `BB upper`, color: base, ...styleOf(params) }),
+          plot(bars, middle, { id: 'middle', label: `BB ${period}`, color: base, ...styleOf(params) }),
+          plot(bars, lower, { id: 'lower', label: `BB lower`, color: base, ...styleOf(params) }),
         ],
       };
     },
@@ -228,6 +276,8 @@ export const INDICATORS: readonly IndicatorDef[] = [
           kind: 'HISTOGRAM',
           color: 'rgba(46, 196, 166, 0.34)',
           lineWidth: 1,
+          lineStyle: 'SOLID',
+          opacity: 1,
           points: bars.map((b) => ({
             time: b.time,
             value: b.volume,
@@ -243,8 +293,8 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Oscillators',
     overlay: false,
     description: "Wilder's RSI. Bounded 0-100.",
-    params: [PERIOD, SOURCE, COLOUR],
-    defaults: { period: 14, source: 'close', color: '#4d8dff' },
+    params: [PERIOD, SOURCE, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, period: 14, source: 'close', color: '#4d8dff' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       range: { min: 0, max: 100 },
@@ -261,6 +311,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
             id: 'rsi',
             label: `RSI ${num(params, 'period', 14)}`,
             color: colourOf(params, 'color', '#4d8dff'),
+            ...styleOf(params),
           },
         ),
       ],
@@ -277,8 +328,9 @@ export const INDICATORS: readonly IndicatorDef[] = [
       { key: 'slow', label: 'Slow length', type: 'NUMBER', min: 1, max: 400, step: 1 },
       { key: 'signal', label: 'Signal length', type: 'NUMBER', min: 1, max: 200, step: 1 },
       SOURCE,
+      ...STYLE,
     ],
-    defaults: { fast: 12, slow: 26, signal: 9, source: 'close' },
+    defaults: { ...STYLE_DEFAULTS, fast: 12, slow: 26, signal: 9, source: 'close' },
     compute: (bars, params, ctx) => {
       const values = bars.map((b) => sourceValue(b, src(params, 'source')));
       const result = macd(values, num(params, 'fast', 12), num(params, 'slow', 26), num(params, 'signal', 9));
@@ -296,9 +348,18 @@ export const INDICATORS: readonly IndicatorDef[] = [
         pane: ctx.pane,
         guides: [{ value: 0, color: 'rgba(107, 122, 148, 0.35)' }],
         plots: [
-          { id: 'hist', label: 'Histogram', kind: 'HISTOGRAM', color: 'rgba(107,122,148,0.4)', lineWidth: 1, points: histogram },
-          plot(bars, result.macd, { id: 'macd', label: 'MACD', color: '#4d8dff' }),
-          plot(bars, result.signal, { id: 'signal', label: 'Signal', color: '#f5a524' }),
+          {
+            id: 'hist',
+            label: 'Histogram',
+            kind: 'HISTOGRAM',
+            color: 'rgba(107,122,148,0.4)',
+            lineWidth: 1,
+            lineStyle: 'SOLID',
+            opacity: 1,
+            points: histogram,
+          },
+          plot(bars, result.macd, { id: 'macd', label: 'MACD', color: '#4d8dff', ...styleOf(params) }),
+          plot(bars, result.signal, { id: 'signal', label: 'Signal', color: '#f5a524', ...styleOf(params) }),
         ],
       };
     },
@@ -309,8 +370,8 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Volatility',
     overlay: false,
     description: "Wilder's average of the true range. In price units, not percent.",
-    params: [PERIOD, COLOUR],
-    defaults: { period: 14, color: '#f5a524' },
+    params: [PERIOD, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, period: 14, color: '#f5a524' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -318,6 +379,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
           id: 'atr',
           label: `ATR ${num(params, 'period', 14)}`,
           color: colourOf(params, 'color', '#f5a524'),
+          ...styleOf(params),
         }),
       ],
     }),
@@ -348,4 +410,40 @@ export function searchIndicators(query: string): readonly IndicatorDef[] {
   return INDICATORS.filter((def) =>
     `${def.name} ${def.kind} ${def.category}`.toLowerCase().includes(needle),
   );
+}
+
+/**
+ * How an instance describes itself: its short name and the inputs that matter.
+ *
+ * "EMA 21 close" rather than "Exponential moving average", because the length
+ * is the thing a trader needs to see without opening anything. The legend rows
+ * and the indicator menu both use this, so an instance is called the same
+ * thing wherever it appears.
+ */
+export function indicatorTitle(kind: string, params: ParamValues): string {
+  const def = indicatorDef(kind);
+  const parts: string[] = [];
+  for (const param of def?.params ?? []) {
+    if (param.type === 'COLOR' || param.type === 'LINE_STYLE') continue;
+    if (param.key === 'lineWidth' || param.key === 'opacity') continue;
+    const value = params[param.key];
+    if (value === undefined || value === '') continue;
+    parts.push(String(value));
+  }
+  const name = indicatorShortName(kind);
+  return parts.length > 0 ? `${name} ${parts.join(' ')}` : name;
+}
+
+/** The abbreviation a chart puts on the plot, not the catalogue's full name. */
+export function indicatorShortName(kind: string): string {
+  switch (kind) {
+    case 'SMA':
+      return 'MA';
+    case 'BOLL':
+      return 'BB';
+    case 'VOLUME':
+      return 'Volume';
+    default:
+      return kind;
+  }
 }

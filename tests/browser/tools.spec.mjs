@@ -213,8 +213,13 @@ try {
   await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Relative strength")');
   await page.waitForTimeout(3_000);
 
-  const status = ((await page.textContent('[data-testid=status-line]')) ?? '').replace(/\s+/g, ' ');
-  const rsi = Number(status.match(/RSI 14\s*([\d.]+)/)?.[1] ?? NaN);
+  // Read from the LEGEND ROWS, which is where an indicator's value lives now.
+  const rowText = async () =>
+    (await page.locator('[data-testid=indicator-row]').allTextContents())
+      .join(' | ')
+      .replace(/\s+/g, ' ');
+  const status = await rowText();
+  const rsi = Number(status.match(/RSI 14 close\s*([\d.]+)/)?.[1] ?? NaN);
   say(Number.isFinite(rsi) && rsi >= 0 && rsi <= 100, 'RSI computes a value inside 0-100', String(rsi));
 
   await page.click('.chdr-btn:has-text("Indicators")');
@@ -223,8 +228,8 @@ try {
   await page.waitForTimeout(400);
   await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Moving average")');
   await page.waitForTimeout(3_000);
-  const status2 = ((await page.textContent('[data-testid=status-line]')) ?? '').replace(/\s+/g, ' ');
-  const ma = Number(status2.match(/MA 20\s*([\d.]+)/)?.[1] ?? NaN);
+  const status2 = await rowText();
+  const ma = Number(status2.match(/MA 20 close\s*([\d.]+)/)?.[1] ?? NaN);
   const last = Number(((await page.textContent('.sl-price')) ?? '').trim());
   say(
     Number.isFinite(ma) && Math.abs(ma - last) / last < 0.05,
@@ -271,9 +276,6 @@ try {
     'the clock format survives a reload',
   );
 
-  const restored = ((await page.textContent('[data-testid=status-line]')) ?? '').replace(/\s+/g, ' ');
-  say(/RSI 14/.test(restored) && /MA 20/.test(restored), 'the indicators survive a reload too');
-
   // Put everything back so the next run starts clean.
   await page.click('.st-choice-btn:text-is("12-hour")');
   await page.click('.st-nav-item:text-is("Canvas")');
@@ -282,6 +284,15 @@ try {
   await page.waitForTimeout(700);
   await page.click('.st-close');
   await page.waitForTimeout(1_000);
+
+  // Read the legend with the dialog CLOSED: the settings dialog covers the
+  // chart, and the legend rows are part of the chart.
+  const restored = await rowText();
+  say(
+    /RSI 14/.test(restored) && /MA 20/.test(restored),
+    'the indicators survive a reload too',
+    restored,
+  );
 
   say(errors.length === 0, 'no page errors', errors.join(' | '));
 } finally {

@@ -66,10 +66,22 @@ interface ChartState {
   resetAppearance: () => void;
   setChartType: (type: ChartType) => void;
 
-  addIndicator: (kind: string) => void;
+  addIndicator: (kind: string) => string;
   removeIndicator: (id: string) => void;
-  updateIndicator: (id: string, params: ParamValues) => void;
+  updateIndicator: (id: string, patch: ParamValues | { visible: boolean }) => void;
   toggleIndicator: (id: string) => void;
+  /** Another instance of the same indicator, with the same settings. */
+  duplicateIndicator: (id: string) => void;
+  /**
+   * Which indicator's settings panel is open.
+   *
+   * UI state in the chart store rather than in a component, because the thing
+   * that ADDS an indicator (the header's picker) and the thing that shows its
+   * settings (the chart) are in different parts of the tree - and adding an
+   * EMA without seeing its length was the complaint.
+   */
+  indicatorSettingsFor: string | null;
+  openIndicatorSettings: (id: string | null) => void;
 
   setTool: (tool: DrawingTool, sticky?: boolean) => void;
   setMagnet: (mode: MagnetMode) => void;
@@ -153,6 +165,21 @@ export interface ToolDefault {
   readonly options: ToolOptions;
 }
 
+/**
+ * Colours for the second and later instance of the same indicator.
+ *
+ * Deliberately far apart on the wheel: EMA 9 / 21 / 50 / 200 have to be
+ * distinguishable at a glance without opening anything.
+ */
+const INSTANCE_COLOURS: readonly string[] = [
+  '#4d8dff',
+  '#7de08a',
+  '#ff5a5a',
+  '#c792ea',
+  '#3fd0c9',
+  '#f0a5d8',
+];
+
 const CHART_TYPES: readonly ChartType[] = [
   'CANDLES',
   'HOLLOW_CANDLES',
@@ -231,11 +258,40 @@ export const useChartStore = create<ChartState>((set, get) => ({
 
   addIndicator(kind) {
     const def = indicatorDef(kind);
-    if (!def) return;
+    // An unknown kind adds nothing and has no instance to point at.
+    if (!def) return '';
+    // The id is returned so the caller can open the new instance's settings:
+    // adding an EMA and not being able to see its length was the complaint.
+    const instanceId = id('ind');
+    /*
+     * A second EMA in the same colour as the first is two lines a trader
+     * cannot tell apart. Each further instance of a kind takes the next
+     * colour in the palette; the first keeps the indicator's own default.
+     */
+    const sameKind = get().indicators.filter((instance) => instance.kind === kind).length;
+    const params: ParamValues = { ...def.defaults };
+    if (sameKind > 0 && typeof params['color'] === 'string') {
+      params['color'] = INSTANCE_COLOURS[(sameKind - 1) % INSTANCE_COLOURS.length] ?? params['color'];
+    }
+    set({
+      indicators: [...get().indicators, { id: instanceId, kind, params, visible: true }],
+    });
+    return instanceId;
+  },
+
+  indicatorSettingsFor: null,
+
+  openIndicatorSettings(instanceId) {
+    set({ indicatorSettingsFor: instanceId });
+  },
+
+  duplicateIndicator(instanceId) {
+    const source = get().indicators.find((instance) => instance.id === instanceId);
+    if (!source) return;
     set({
       indicators: [
         ...get().indicators,
-        { id: id('ind'), kind, params: { ...def.defaults }, visible: true },
+        { ...source, id: id('ind'), params: { ...source.params } },
       ],
     });
   },
@@ -244,10 +300,22 @@ export const useChartStore = create<ChartState>((set, get) => ({
     set({ indicators: get().indicators.filter((instance) => instance.id !== instanceId) });
   },
 
-  updateIndicator(instanceId, params) {
+  updateIndicator(instanceId, patch) {
+    /*
+     * One entry point for both a parameter change and a visibility change.
+     *
+     * `visible` is a property of the INSTANCE rather than one of the
+     * indicator's inputs, so it is recognised here rather than being written
+     * into the params where the compute function would ignore it.
+     */
+    const visibility = 'visible' in patch ? (patch as { visible: boolean }) : null;
     set({
       indicators: get().indicators.map((instance) =>
-        instance.id === instanceId ? { ...instance, params: { ...instance.params, ...params } } : instance,
+        instance.id === instanceId
+          ? visibility
+            ? { ...instance, visible: visibility.visible }
+            : { ...instance, params: { ...instance.params, ...(patch as ParamValues) } }
+          : instance,
       ),
     });
   },

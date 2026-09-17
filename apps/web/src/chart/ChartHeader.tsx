@@ -12,7 +12,7 @@ import { useSession, activeInstrument } from '../state/session';
 import { useChartStore } from '../state/chart-store';
 import { useWorkspace, ALL_TIMEFRAMES } from '../state/workspace';
 import { PHASE_1_CHART_TYPES, type ChartType } from './ChartAdapter';
-import { INDICATORS, indicatorDef, searchIndicators } from './indicators/registry';
+import { INDICATORS, indicatorDef, indicatorTitle, searchIndicators } from './indicators/registry';
 import { Icon, type IconName } from '../ui/Icon';
 import { Popover, usePopover } from '../ui/Popover';
 import './ChartHeader.css';
@@ -75,6 +75,7 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
   const setChartType = useChartStore((s) => s.setChartType);
   const indicators = useChartStore((s) => s.indicators);
   const addIndicator = useChartStore((s) => s.addIndicator);
+  const openIndicatorSettings = useChartStore((s) => s.openIndicatorSettings);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleIndicator = useChartStore((s) => s.toggleIndicator);
 
@@ -279,19 +280,20 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
                   <button
                     className="pop-item chdr-ind-item"
                     onClick={() => {
-                      openSettings('SYMBOL');
+                      /*
+                       * This instance's own settings - not the chart's.
+                       * It used to open the chart settings dialog on its
+                       * SYMBOL tab, which had nothing to do with the
+                       * indicator the gear was sitting next to.
+                       */
+                      openIndicatorSettings(instance.id);
                       indicatorMenu.close();
                     }}
                     title="Edit this indicator's settings"
                   >
                     <Icon name="gear" size={11} />
-                    {def?.name ?? instance.kind}
-                    <span className="pop-item-sub">
-                      {def?.params
-                        .filter((param) => param.type === 'NUMBER')
-                        .map((param) => instance.params[param.key])
-                        .join(' ')}
-                    </span>
+                    {indicatorTitle(instance.kind, instance.params)}
+                    <span className="pop-item-sub">{def?.name ?? instance.kind}</span>
                   </button>
                   <button
                     className="chdr-ind-btn"
@@ -324,8 +326,17 @@ export function ChartHeader({ timeframe, onTimeframe, onScreenshot }: ChartHeade
                   key={def.kind}
                   className="pop-item"
                   onClick={() => {
-                    addIndicator(def.kind);
+                    /*
+                     * Added AND opened.
+                     *
+                     * "Adding EMA should expose a real numeric Length input" -
+                     * so the new instance's settings appear with it, rather
+                     * than the trader having to hunt for where its length
+                     * lives.
+                     */
+                    const id = addIndicator(def.kind);
                     indicatorMenu.close();
+                    if (id) openIndicatorSettings(id);
                   }}
                   title={def.description}
                 >

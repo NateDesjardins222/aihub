@@ -1,0 +1,74 @@
+/*
+ * One indicator's settings, as a panel on the chart rather than a modal.
+ *
+ * A trader adjusting a length wants to see the line move while they do it, so
+ * this sits over the plot and leaves the chart visible and live behind it.
+ */
+.is-panel {
+  position: absolute;
+  top: 30px;
+  left: 8px;
+  z-index: 20;
+  width: 268px;
+  max-height: calc(100% - 60px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  animation: atlas-pop-in var(--fast) var(--ease);
+}
+
+.is-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.is-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.is-close,
+.is-remove {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  min-width: 22px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+}
+
+.is-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.is-body {
+  padding: 4px 12px 10px;
+  overflow-y: auto;
+}
+
+.is-foot {
+  display: flex;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.is-remove {
+  display: flex;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+}
+
+.is-remove:hover {
+  background: var(--short-bg);
+  color: var(--short-bright);
+}

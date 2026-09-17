@@ -1,0 +1,116 @@
+/*
+ * The indicator legend.
+ *
+ * Top left of the plot, one row per indicator, out of the way of the price
+ * action. Its controls stay invisible until the pointer is on the row: a chart
+ * with four indicators should not look like a chart with sixteen buttons.
+ */
+.ind-rows {
+  position: absolute;
+  top: 26px;
+  left: 8px;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.ind-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 4px 0 2px;
+  border-radius: var(--radius);
+  pointer-events: auto;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background var(--fast) var(--ease);
+}
+
+.ind-row:hover {
+  background: rgba(17, 23, 36, 0.82);
+}
+
+/* A hidden indicator is still listed, and says so by being faint. */
+.ind-row-off {
+  opacity: 0.45;
+}
+
+.ind-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.ind-title {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.ind-values {
+  display: flex;
+  gap: 6px;
+}
+
+.ind-value {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+}
+
+/*
+ * The row's own controls: visibility, settings, duplicate, remove. Hidden
+ * until the row is hovered, which keeps the legend a legend.
+ */
+.ind-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+
+.ind-row:hover .ind-actions,
+.ind-row:focus-within .ind-actions {
+  opacity: 1;
+}
+
+.ind-btn {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+}
+
+.ind-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ind-btn-danger:hover {
+  color: var(--short-bright);
+}
+
+/*
+ * One group per pane. An oscillator's row belongs beside the oscillator, so
+ * the group is offset to the top of its own pane by the animation frame -
+ * pane heights change with the window and with every indicator added.
+ */
+.ind-pane-rows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}

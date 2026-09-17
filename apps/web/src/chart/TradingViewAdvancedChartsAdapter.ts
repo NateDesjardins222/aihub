@@ -145,7 +145,21 @@ export class TradingViewAdvancedChartsAdapter implements ChartAdapter {
   setDatesHidden(_hidden: boolean): void {}
   applyAppearance(_appearance: ChartAppearance): void {}
   setIndicators(_indicators: readonly IndicatorInstance[]): void {}
-  indicatorLegend(): ReadonlyArray<{ id: string; label: string; color: string; value: string }> {
+  indicatorLegend(): ReadonlyArray<{
+    id: string;
+    instanceId: string;
+    label: string;
+    color: string;
+    value: string;
+  }> {
+    return [];
+  }
+  indicatorPanes(): ReadonlyArray<{
+    instanceId: string;
+    pane: number;
+    top: number;
+    height: number;
+  }> {
     return [];
   }
   projection(): ChartProjection | null {

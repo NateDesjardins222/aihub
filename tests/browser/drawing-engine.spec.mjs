@@ -329,6 +329,38 @@ try {
     `${beforePan} -> ${afterPan}`,
   );
 
+  /*
+   * Changing the chart style must not silently kill the drawing engine.
+   *
+   * It did: rebuilding the price series left the cached projection holding a
+   * removed one, which answered null for every price, so an anchor could not
+   * be formed and NOTHING could be drawn. The tool still armed, nothing threw,
+   * and the same happened after any appearance change structural enough to
+   * rebuild the series - which is how a reloaded terminal ended up unable to
+   * draw at all.
+   */
+  await clearDrawings(page);
+  await page.click('.chdr-icon[title="Candles"]');
+  await page.waitForTimeout(400);
+  await page.click('.popover .pop-item:has-text("Bars")');
+  await page.waitForTimeout(900);
+  await page.click('.rail .rail-btn[aria-label="Horizontal line"]');
+  await page.waitForTimeout(250);
+  const afterStyle = at(0.45, 0.45);
+  await page.mouse.click(afterStyle.x, afterStyle.y);
+  await page.waitForTimeout(700);
+  say((await litPixels(page)) > 100, 'a drawing still places after the chart style changes');
+  await clearDrawings(page);
+  await page.click('.chdr-icon[title="Bars"]');
+  await page.waitForTimeout(400);
+  await page.click('.popover .pop-item:has-text("Candles")');
+  await page.waitForTimeout(900);
+  await page.click('.rail .rail-btn[aria-label="Horizontal line"]');
+  await page.waitForTimeout(250);
+  await page.mouse.click(afterStyle.x, afterStyle.y);
+  await page.waitForTimeout(700);
+  say((await litPixels(page)) > 100, 'and after changing it back');
+
   await shot(page, 'drawing-engine');
   say(errors.length === 0, 'no page errors', errors.join(' | '));
 } finally {

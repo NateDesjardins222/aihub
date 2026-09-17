@@ -21,6 +21,8 @@ import { useTraining } from '../state/training';
 import { useReplayStatus } from '../state/replay-status';
 import { resolveZone, timeFormatter } from '../chart/appearance';
 import { Icon } from '../ui/Icon';
+import { IndicatorRows } from '../chart/IndicatorRows';
+import { IndicatorSettings } from '../chart/IndicatorSettings';
 import { saveError, usePersistence } from '../state/persistence-status';
 import './ChartPanel.css';
 
@@ -52,9 +54,12 @@ export function ChartPanel(): JSX.Element {
   const [freshness, setFreshness] = useState<FreshnessInfo | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [chartReady, setChartReady] = useState(false);
-  const [legendIndicators, setLegendIndicators] = useState<
-    ReadonlyArray<{ id: string; label: string; color: string; value: string }>
-  >([]);
+  /** The crosshair's bar time, for the indicator rows. */
+  const hoverTimeRef = useRef<number | null>(null);
+  /** Which indicator instance has its settings open. Shared with the header,
+   *  which opens the panel for an indicator the moment it is added. */
+  const indicatorSettings = useChartStore((s) => s.indicatorSettingsFor);
+  const setIndicatorSettings = useChartStore((s) => s.openIndicatorSettings);
 
   const motionSettings = useMotion((s) => s.settings);
   const appearance = useChartStore((s) => s.appearance);
@@ -199,6 +204,10 @@ export function ChartPanel(): JSX.Element {
     const offCrosshair = adapter.onCrosshairMove((info) => {
       hoverBar = info.bar;
       hoverPending = true;
+      // The indicator rows read this, so their values are the values of the
+      // bar the trader is pointing at. A ref, not state: it changes on every
+      // pointer move.
+      hoverTimeRef.current = info.bar?.time ?? null;
     });
 
     return () => {
@@ -349,17 +358,8 @@ export function ChartPanel(): JSX.Element {
   }, [motionSettings]);
 
   // Indicator values for the status line, sampled rather than pushed: the
-  // numbers change on every bar and the status line is chrome.
-  useEffect(() => {
-    if (!chartReady || !statusLine.indicatorTitlesVisible) {
-      setLegendIndicators([]);
-      return;
-    }
-    const tick = (): void => setLegendIndicators(adapterRef.current?.indicatorLegend() ?? []);
-    tick();
-    const id = window.setInterval(tick, 700);
-    return () => window.clearInterval(id);
-  }, [chartReady, indicators, statusLine.indicatorTitlesVisible]);
+  // Indicator values now live in the legend rows, which read them from the
+  // adapter in their own animation frame - so nothing samples them here.
 
   /**
    * Show a trade from the journal.
@@ -567,17 +567,6 @@ export function ChartPanel(): JSX.Element {
             <span className="sl-meta">{barCount.toLocaleString('en-US')} bars</span>
           ) : null}
 
-          {legendIndicators.length > 0 ? (
-            <span className="sl-inds">
-              {legendIndicators.map((entry) => (
-                <span className="sl-ind" key={entry.id}>
-                  <i style={{ background: entry.color }} />
-                  {entry.label}
-                  <b className="num">{entry.value}</b>
-                </span>
-              ))}
-            </span>
-          ) : null}
 
           {freshness && freshness.state !== 'FRESH' ? (
             <span className={`sl-feed sl-feed-${freshness.state.toLowerCase()}`}>
@@ -613,6 +602,23 @@ export function ChartPanel(): JSX.Element {
           pricePrecision={precision}
           ready={chartReady}
         />
+
+        {/*
+          The indicator legend, one row per indicator, over the top left of the
+          plot. Its values follow the crosshair.
+        */}
+        <IndicatorRows
+          adapterRef={adapterRef}
+          hoverTimeRef={hoverTimeRef}
+          onOpenSettings={setIndicatorSettings}
+        />
+
+        {indicatorSettings ? (
+          <IndicatorSettings
+            instanceId={indicatorSettings}
+            onClose={() => setIndicatorSettings(null)}
+          />
+        ) : null}
 
         <div className="chart-nav">
           <button onClick={() => adapterRef.current?.resetScale()} title="Reset the scales">

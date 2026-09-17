@@ -14,6 +14,7 @@ const SUITES = [
   'terminal',
   'responsive',
   'chart-navigation',
+  'indicators',
   'drawing-pointer',
   'drawing-engine',
   'rectangle',

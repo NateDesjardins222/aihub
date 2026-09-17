@@ -362,6 +362,18 @@ export class LightweightChartsAdapter implements ChartAdapter {
       this.priceSeries = null;
     }
 
+    /*
+     * The cached projection closes over the price series, so it dies with it.
+     *
+     * This was a silent, total failure of the drawing engine: changing the
+     * chart type - or any appearance setting structural enough to rebuild the
+     * series, which includes the candle colours and the scale side - left
+     * `yToPrice` asking a REMOVED series for a price. It answers null, an
+     * anchor needs both a time and a price, so every placement was refused
+     * and no drawing ever appeared. Nothing threw, and the tool still armed.
+     */
+    this.projectionCache = null;
+
     const a = this.appearance.symbol;
     const priceFormat = {
       type: 'price' as const,
@@ -865,8 +877,12 @@ export class LightweightChartsAdapter implements ChartAdapter {
               : this.chart.addSeries(
                   LineSeries,
                   {
-                    color: plot.color,
+                    // Colour, thickness and dash all come from the instance's
+                    // own parameters, so two moving averages can be told
+                    // apart by weight as well as by hue.
+                    color: withOpacity(plot.color, plot.opacity),
                     lineWidth: plot.lineWidth as 1 | 2 | 3 | 4,
+                    lineStyle: dashOf(plot.lineStyle),
                     priceLineVisible: false,
                     lastValueVisible: false,
                     crosshairMarkerVisible: false,
@@ -885,7 +901,11 @@ export class LightweightChartsAdapter implements ChartAdapter {
             });
           }
         } else {
-          entry.series.applyOptions({ color: plot.color } as never);
+          entry.series.applyOptions({
+            color: withOpacity(plot.color, plot.opacity),
+            lineWidth: plot.lineWidth,
+            lineStyle: dashOf(plot.lineStyle),
+          } as never);
           entry.plot = plot;
         }
 
@@ -976,21 +996,118 @@ export class LightweightChartsAdapter implements ChartAdapter {
     return value;
   }
 
-  indicatorLegend(): ReadonlyArray<{ id: string; label: string; color: string; value: string }> {
-    const out: Array<{ id: string; label: string; color: string; value: string }> = [];
+  /**
+   * The legend, optionally AT a bar rather than at the end of the series.
+   *
+   * With a crosshair over the chart a trader is reading that bar, so the
+   * indicator values beside it have to be that bar's values. Without one they
+   * are the newest, which is what a live chart shows.
+   *
+   * `instanceId` comes back with each row so the legend can group its rows by
+   * indicator - one row per instance, the way every charting package lists
+   * them - rather than printing one long line.
+   */
+  indicatorLegend(
+    atTimeMs?: number | null,
+  ): ReadonlyArray<{
+    id: string;
+    instanceId: string;
+    label: string;
+    color: string;
+    value: string;
+  }> {
+    const out: Array<{
+      id: string;
+      instanceId: string;
+      label: string;
+      color: string;
+      value: string;
+    }> = [];
     for (const instance of this.indicators) {
       if (!instance.visible) continue;
       for (const [key, entry] of this.indicatorSeries) {
         if (!key.startsWith(`${instance.id}:`)) continue;
+        const value =
+          atTimeMs === undefined || atTimeMs === null
+            ? (this.legendValues.get(key) ?? '—')
+            : this.valueAt(entry.plot, atTimeMs);
         out.push({
           id: key,
+          instanceId: instance.id,
           label: entry.plot.label,
           color: entry.plot.color,
-          value: this.legendValues.get(key) ?? '—',
+          value,
         });
       }
     }
     return out;
+  }
+
+  /**
+   * Where each indicator instance's pane sits, in pixels from the top of the
+   * plot.
+   *
+   * The legend row for an oscillator belongs at the top left of ITS pane, not
+   * stacked over the candles with the moving averages. Only the renderer knows
+   * how tall each pane ended up, so it is asked every frame rather than
+   * guessed at.
+   */
+  indicatorPanes(): ReadonlyArray<{
+    instanceId: string;
+    pane: number;
+    top: number;
+    height: number;
+  }> {
+    const chart = this.chart;
+    if (!chart) return [];
+    const tops: number[] = [];
+    const heights: number[] = [];
+    try {
+      const panes = chart.panes();
+      let top = 0;
+      for (let i = 0; i < panes.length; i += 1) {
+        const height = panes[i]?.getHeight() ?? 0;
+        tops.push(top);
+        heights.push(height);
+        // The separator between panes is one pixel of chrome, not plot.
+        top += height + 1;
+      }
+    } catch {
+      // A renderer without pane geometry keeps every row on the price pane.
+      return this.indicators.map((instance) => ({
+        instanceId: instance.id,
+        pane: 0,
+        top: 0,
+        height: 0,
+      }));
+    }
+    return this.indicators.map((instance) => {
+      const pane = this.panes.get(instance.id) ?? 0;
+      return {
+        instanceId: instance.id,
+        pane,
+        top: tops[pane] ?? 0,
+        height: heights[pane] ?? 0,
+      };
+    });
+  }
+
+  /** One plot's value at a bar time, formatted. Bisected: the points are sorted. */
+  private valueAt(plot: Plot, timeMs: number): string {
+    const points = plot.points;
+    if (points.length === 0) return '—';
+    let low = 0;
+    let high = points.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const at = points[mid]!.time;
+      if (at === timeMs) return points[mid]!.value.toFixed(this.legendPrecision(plot));
+      if (at < timeMs) low = mid + 1;
+      else high = mid - 1;
+    }
+    // No point at that bar: the indicator has no value there (a warm-up
+    // period, or a gap). Saying nothing is correct; interpolating is not.
+    return '—';
   }
 
   private toSeriesPoint(bar: NormalizedBar): never {
@@ -1440,4 +1557,9 @@ function withOpacity(color: string, opacity: number): string {
     ? [short[1]!, short[2]!, short[3]!].map((c) => parseInt(c + c, 16))
     : [long![1]!, long![2]!, long![3]!].map((c) => parseInt(c, 16));
   return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha.toFixed(3)})`;
+}
+
+/** A plot's dash setting, in the renderer's own terms. */
+function dashOf(style: 'SOLID' | 'DASHED' | 'DOTTED'): LineStyle {
+  return style === 'DASHED' ? LineStyle.Dashed : style === 'DOTTED' ? LineStyle.Dotted : LineStyle.Solid;
 }
