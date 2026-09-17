@@ -421,6 +421,58 @@ describe('the admin views', () => {
   });
 });
 
+describe('creating a user', () => {
+  it('is refused to support', async () => {
+    const response = await call('POST', '/api/v1/admin/users', tokens['SUPPORT']!, {
+      email: `support-made-${crypto.randomUUID().slice(0, 8)}@atlas.test`,
+      displayName: 'Nope',
+      password: 'a-long-enough-password',
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('creates a trader with a practice account and an audit record', async () => {
+    const email = `onboarded-${crypto.randomUUID().slice(0, 8)}@atlas.test`;
+    const response = await call('POST', '/api/v1/admin/users', tokens['ADMIN']!, {
+      email,
+      displayName: 'Onboarded Trader',
+      password: 'a-long-enough-password',
+    });
+    expect(response.status).toBe(201);
+    created.push(response.json.user.id);
+    expect(response.json.user.role).toBe('TRADER');
+
+    const owned = await db.select().from(accounts).where(eq(accounts.userId, response.json.user.id));
+    expect(owned).toHaveLength(1);
+    expect(owned[0]!.accountType).toBe('PRACTICE');
+
+    // And they can sign in with the password the operator set.
+    const login = await call('POST', '/api/v1/auth/login', null, {
+      email,
+      password: 'a-long-enough-password',
+    });
+    expect(login.status).toBe(200);
+  });
+
+  it('refuses an address that is already registered', async () => {
+    const email = `dupe-${crypto.randomUUID().slice(0, 8)}@atlas.test`;
+    const first = await call('POST', '/api/v1/admin/users', tokens['ADMIN']!, {
+      email,
+      displayName: 'First',
+      password: 'a-long-enough-password',
+      withPracticeAccount: false,
+    });
+    created.push(first.json.user.id);
+    const second = await call('POST', '/api/v1/admin/users', tokens['ADMIN']!, {
+      email,
+      displayName: 'Second',
+      password: 'a-long-enough-password',
+      withPracticeAccount: false,
+    });
+    expect(second.status).toBe(409);
+  });
+});
+
 describe('provisioning through the admin API', () => {
   it('creates an account for a user', async () => {
     const response = await call('POST', '/api/v1/admin/accounts', tokens['ADMIN']!, {

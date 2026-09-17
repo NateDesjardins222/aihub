@@ -296,6 +296,57 @@ describe('registration', () => {
   });
 });
 
+describe('a provisioned account through the terminal\u2019s own endpoints', () => {
+  /*
+   * A provisioned account has no rule template - its terms live on the pinned
+   * product version. Any endpoint that joins the template table directly
+   * therefore cannot see it, which is how the account P&L endpoint came to 404
+   * for every provisioned account while the account list showed it happily.
+   * This walks the set the terminal actually calls.
+   */
+  it('is visible everywhere the terminal looks', async () => {
+    const email = `terminal-${crypto.randomUUID().slice(0, 8)}@atlas.test`;
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: { email, password: 'a-long-enough-password', displayName: 'Terminal Paths' },
+    });
+    const session = JSON.parse(registered.body);
+    users_.push(session.user.id);
+
+    const provisioned = await provisionAccount(db, {
+      organizationId,
+      userId: session.user.id,
+      profileKey: TEST_KEY,
+    });
+
+    const get = (url: string) =>
+      app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${session.accessToken}` } });
+
+    const list = await get('/api/v1/accounts');
+    expect(list.statusCode).toBe(200);
+    expect(JSON.parse(list.body).accounts.map((a: { id: string }) => a.id)).toContain(
+      provisioned.accountId,
+    );
+
+    for (const path of [
+      `/api/v1/accounts/${provisioned.accountId}`,
+      `/api/v1/accounts/${provisioned.accountId}/pnl`,
+      `/api/v1/accounts/${provisioned.accountId}/rules`,
+      `/api/v1/orders?accountId=${provisioned.accountId}`,
+      `/api/v1/positions?accountId=${provisioned.accountId}`,
+    ]) {
+      const response = await get(path);
+      expect(response.statusCode, path).toBe(200);
+    }
+
+    const pnl = JSON.parse((await get(`/api/v1/accounts/${provisioned.accountId}/pnl`)).body);
+    expect(pnl.balanceMicros).toBe(150_000 * M);
+    expect(pnl.equityMicros).toBe(150_000 * M);
+    expect(pnl.maxContracts).toBe(15);
+  });
+});
+
 describe('a trader with many accounts', () => {
   it('gets all of them, each with its own number, balance and lifecycle', async () => {
     const userId = await makeUser('many');

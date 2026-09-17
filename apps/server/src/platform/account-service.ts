@@ -67,6 +67,8 @@ interface TransitionOptions {
   readonly event: DomainEventType;
   readonly patch: Partial<AccountRow>;
   readonly allowedFrom?: readonly AccountStatus[];
+  /** Lifting a hold: the effective status returns to the rule engine's. */
+  readonly restoreRuleStatus?: boolean;
 }
 
 async function transition(
@@ -86,7 +88,11 @@ async function transition(
 
   const [after] = await db
     .update(accounts)
-    .set({ ...options.patch, updatedAt: new Date() })
+    .set({
+      ...options.patch,
+      ...(options.restoreRuleStatus ? { status: before.ruleStatus ?? 'ACTIVE' } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(accounts.id, accountId))
     .returning();
 
@@ -127,7 +133,7 @@ export async function activateAccount(
     action: 'account.activated',
     event: 'account.activated',
     allowedFrom: ['PENDING', 'DISABLED'],
-    patch: { status: 'ACTIVE', activatedAt: new Date(), failedReason: null },
+    patch: { status: 'ACTIVE', adminHold: null, activatedAt: new Date(), failedReason: null },
   });
 }
 
@@ -154,7 +160,9 @@ export async function lockAccount(
     action: 'admin.account.locked',
     event: 'account.locked',
     allowedFrom: ['ACTIVE', 'GOAL_REACHED', 'PENDING'],
-    patch: { status: 'LOCKED' },
+    // The hold is what makes this stick: without it the next market event
+    // would re-evaluate the rules and put the account straight back.
+    patch: { status: 'LOCKED', adminHold: 'LOCKED' },
   });
 }
 
@@ -170,7 +178,10 @@ export async function unlockAccount(
     action: 'admin.account.unlocked',
     event: 'account.unlocked',
     allowedFrom: ['LOCKED'],
-    patch: { status: 'ACTIVE', lockedUntilDate: null },
+    // Back to wherever the RULES say the account is, which is not necessarily
+    // active: an account that failed while an operator held it stays failed.
+    patch: { adminHold: null, lockedUntilDate: null },
+    restoreRuleStatus: true,
   });
 }
 
@@ -188,7 +199,7 @@ export async function disableAccount(
     action: 'admin.account.disabled',
     event: 'account.disabled',
     allowedFrom: ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED', 'PASSED', 'FAILED'],
-    patch: { status: 'DISABLED' },
+    patch: { status: 'DISABLED', adminHold: 'DISABLED' },
   });
 }
 
@@ -204,7 +215,8 @@ export async function enableAccount(
     action: 'admin.account.enabled',
     event: 'account.enabled',
     allowedFrom: ['DISABLED'],
-    patch: { status: 'ACTIVE' },
+    patch: { adminHold: null },
+    restoreRuleStatus: true,
   });
 }
 
@@ -230,7 +242,7 @@ export async function archiveAccount(
     reason,
     action: 'admin.account.archived',
     event: 'account.archived',
-    patch: { status: 'ARCHIVED' },
+    patch: { status: 'ARCHIVED', adminHold: 'ARCHIVED' },
   });
 }
 
@@ -375,6 +387,8 @@ export async function resetAccount(
       .update(accounts)
       .set({
         status: 'ACTIVE',
+        ruleStatus: 'ACTIVE',
+        adminHold: null,
         profileVersionId: versionId ?? current!.profileVersionId,
         startingBalanceMicros: startingBalance,
         balanceMicros: startingBalance,

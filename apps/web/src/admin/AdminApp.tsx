@@ -1,0 +1,157 @@
+/**
+ * The operator console.
+ *
+ * A separate experience from the trading terminal: its own shell, its own
+ * navigation, none of the terminal's chrome, and lazily loaded so a trader
+ * never downloads it. The terminal gains nothing admin-shaped in return -
+ * that was the requirement, and it is also the only way either surface stays
+ * legible.
+ *
+ * Routing is by pathname, kept deliberately small: four views and a detail
+ * page do not need a router library.
+ */
+import { useCallback, useEffect, useState, type JSX } from 'react';
+import { useSession } from '../state/session';
+import { AdminOverviewPage } from './pages/OverviewPage';
+import { AdminUsersPage } from './pages/UsersPage';
+import { AdminUserPage } from './pages/UserPage';
+import { AdminAccountsPage } from './pages/AccountsPage';
+import { AdminAccountPage } from './pages/AccountPage';
+import { AdminProductsPage } from './pages/ProductsPage';
+import './Admin.css';
+
+export type AdminRoute =
+  | { name: 'OVERVIEW' }
+  | { name: 'USERS' }
+  | { name: 'USER'; id: string }
+  | { name: 'ACCOUNTS' }
+  | { name: 'ACCOUNT'; id: string }
+  | { name: 'PRODUCTS' };
+
+export function parseAdminRoute(pathname: string): AdminRoute {
+  const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
+  if (parts[0] === 'users') return parts[1] ? { name: 'USER', id: parts[1] } : { name: 'USERS' };
+  if (parts[0] === 'accounts') {
+    return parts[1] ? { name: 'ACCOUNT', id: parts[1] } : { name: 'ACCOUNTS' };
+  }
+  if (parts[0] === 'products') return { name: 'PRODUCTS' };
+  return { name: 'OVERVIEW' };
+}
+
+export function adminPath(route: AdminRoute): string {
+  switch (route.name) {
+    case 'USERS':
+      return '/admin/users';
+    case 'USER':
+      return `/admin/users/${route.id}`;
+    case 'ACCOUNTS':
+      return '/admin/accounts';
+    case 'ACCOUNT':
+      return `/admin/accounts/${route.id}`;
+    case 'PRODUCTS':
+      return '/admin/products';
+    default:
+      return '/admin';
+  }
+}
+
+const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
+  { route: { name: 'OVERVIEW' }, label: 'Overview' },
+  { route: { name: 'USERS' }, label: 'Users' },
+  { route: { name: 'ACCOUNTS' }, label: 'Accounts' },
+  { route: { name: 'PRODUCTS' }, label: 'Products' },
+];
+
+export function AdminApp(): JSX.Element {
+  const user = useSession((s) => s.user);
+  const [route, setRoute] = useState<AdminRoute>(() => parseAdminRoute(window.location.pathname));
+
+  // The browser's own back and forward buttons work, because an operator
+  // reading five accounts in a row will use them.
+  useEffect(() => {
+    const onPop = (): void => setRoute(parseAdminRoute(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const go = useCallback((next: AdminRoute) => {
+    window.history.pushState(null, '', adminPath(next));
+    setRoute(next);
+  }, []);
+
+  const role = user?.role ?? (user?.isAdmin ? 'ADMIN' : 'TRADER');
+  const mayMutate = role === 'ADMIN' || role === 'SUPER_ADMIN';
+
+  /*
+   * The server decides. This check keeps a trader from loading a console full
+   * of empty tables and confusing error toasts; it is not what stops them
+   * doing anything, which is `requireRole` on every route.
+   */
+  if (role === 'TRADER') {
+    return (
+      <div className="adm-denied">
+        <h1>Atlas operations</h1>
+        <p>This area is for operators. Your account does not have access.</p>
+        <a href="/">Back to the terminal</a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="adm">
+      <header className="adm-top">
+        <a className="adm-brand" href="/admin" onClick={link(go, { name: 'OVERVIEW' })}>
+          <span className="adm-mark" />
+          ATLAS <span className="adm-brand-sub">operations</span>
+        </a>
+        <nav className="adm-nav">
+          {NAV.map((entry) => (
+            <a
+              key={entry.label}
+              href={adminPath(entry.route)}
+              className={`adm-nav-item ${sameSection(route, entry.route) ? 'adm-nav-on' : ''}`}
+              onClick={link(go, entry.route)}
+            >
+              {entry.label}
+            </a>
+          ))}
+        </nav>
+        <div className="adm-spacer" />
+        <span className="adm-role" title="Your role decides what you may do">
+          {role.replace('_', ' ')}
+        </span>
+        <span className="adm-who">{user?.email}</span>
+        <a className="adm-exit" href="/">
+          Terminal
+        </a>
+      </header>
+
+      <main className="adm-main">
+        {route.name === 'OVERVIEW' ? <AdminOverviewPage go={go} /> : null}
+        {route.name === 'USERS' ? <AdminUsersPage go={go} /> : null}
+        {route.name === 'USER' ? <AdminUserPage id={route.id} go={go} /> : null}
+        {route.name === 'ACCOUNTS' ? <AdminAccountsPage go={go} /> : null}
+        {route.name === 'ACCOUNT' ? (
+          <AdminAccountPage id={route.id} go={go} mayMutate={mayMutate} />
+        ) : null}
+        {route.name === 'PRODUCTS' ? <AdminProductsPage /> : null}
+      </main>
+    </div>
+  );
+}
+
+function sameSection(current: AdminRoute, target: AdminRoute): boolean {
+  if (current.name === target.name) return true;
+  if (target.name === 'USERS' && current.name === 'USER') return true;
+  if (target.name === 'ACCOUNTS' && current.name === 'ACCOUNT') return true;
+  return false;
+}
+
+/** A real link that navigates in place: middle-click and copy-link still work. */
+function link(go: (route: AdminRoute) => void, route: AdminRoute) {
+  return (event: React.MouseEvent): void => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    go(route);
+  };
+}

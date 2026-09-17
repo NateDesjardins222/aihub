@@ -18,6 +18,8 @@ const SUITES = [
   'tools',
   'replay-brackets',
   'layout',
+  'admin',
+  'acceptance',
 ];
 const only = process.argv.slice(2);
 const chosen = only.length > 0 ? SUITES.filter((s) => only.includes(s)) : SUITES;

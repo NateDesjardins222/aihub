@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { accounts, positions as positionsTable } from '../db/schema.js';
+import { lockAccount, unlockAccount } from '../platform/account-service.js';
 import { OrderRejectedError, TradingEngine } from './engine.js';
 import {
   OPEN_MARKET_TS,
@@ -188,5 +189,63 @@ describe('administrative statuses', () => {
     });
     await settle();
     expect(await engine.openExposure(fixture.accountId)).toBe(false);
+  });
+});
+
+describe('an operator hold', () => {
+  it('survives the rule engine re-evaluating the account', async () => {
+    await setup();
+    await buy('NQ', 1);
+    await settle();
+
+    // An administrator locks the account while a position is open.
+    await lockAccount(
+      fixture.db,
+      fixture.accountId,
+      { type: 'ADMIN', label: 'operator' },
+      'Suspected breach',
+    );
+
+    // The market moves, which is what makes the engine re-evaluate the rules.
+    // Before the hold existed this put the account straight back to ACTIVE,
+    // silently undoing the operator's decision.
+    await market.quote('NQ', 20_050);
+    await settle();
+    await engine.enforceRules(fixture.accountId);
+    await settle();
+
+    const [account] = await fixture.db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, fixture.accountId));
+    expect(account!.status).toBe('LOCKED');
+    expect(account!.adminHold).toBe('LOCKED');
+    // The rules kept their own view underneath it.
+    expect(account!.ruleStatus).toBe('ACTIVE');
+
+    const error = await rejection(() => buy('NQ', 1));
+    expect(error.reason).toBe('ACCOUNT_LOCKED');
+  });
+
+  it('returns the account to where the rules say it is when lifted', async () => {
+    await setup();
+    await lockAccount(
+      fixture.db,
+      fixture.accountId,
+      { type: 'ADMIN', label: 'operator' },
+      'Holding',
+    );
+    await unlockAccount(fixture.db, fixture.accountId, { type: 'ADMIN', label: 'operator' }, 'Cleared');
+
+    const [account] = await fixture.db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, fixture.accountId));
+    expect(account!.status).toBe('ACTIVE');
+    expect(account!.adminHold).toBeNull();
+
+    await buy('NQ', 1);
+    await settle();
+    expect(await engine.openExposure(fixture.accountId)).toBe(true);
   });
 });

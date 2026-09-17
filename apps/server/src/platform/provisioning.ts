@@ -195,6 +195,9 @@ export async function provisionAccount(
         name: input.displayName?.trim() || profile.profileName,
         accountType: profile.accountType,
         status: input.activate === false ? 'PENDING' : 'ACTIVE',
+        // An account that has not been activated is on an operator hold, so
+        // the rule engine cannot quietly activate it on the next mark.
+        adminHold: input.activate === false ? 'PENDING' : null,
         activatedAt: input.activate === false ? null : new Date(),
         startingBalanceMicros: startingBalance,
         balanceMicros: startingBalance,

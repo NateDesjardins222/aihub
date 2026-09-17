@@ -234,7 +234,26 @@ export const accounts = pgTable(
     profileVersionId: uuid('profile_version_id').references(() => accountProfileVersions.id),
     name: varchar('name', { length: 80 }).notNull(),
     accountType: varchar('account_type', { length: 20 }).notNull(),
+    /**
+     * What the account IS, to everything that reads it: the rule engine's
+     * outcome, unless an operator has put a hold on it.
+     */
     status: varchar('status', { length: 20 }).notNull().default('ACTIVE'),
+    /**
+     * An operator's decision: PENDING, LOCKED, DISABLED or ARCHIVED. Null when
+     * there is none.
+     *
+     * Separate from the rule status because the two answer different
+     * questions. A day-lockout the rules imposed expires by itself; an
+     * administrator's lock does not, and the rule engine must not be able to
+     * lift it by re-evaluating a mark.
+     */
+    adminHold: varchar('admin_hold', { length: 20 }),
+    /**
+     * The rule engine's own view, which it keeps advancing underneath a hold
+     * so that lifting one returns the account to where the rules say it is.
+     */
+    ruleStatus: varchar('rule_status', { length: 20 }).notNull().default('ACTIVE'),
     startingBalanceMicros: micros('starting_balance_micros').notNull(),
     balanceMicros: micros('balance_micros').notNull(),
     realizedPnlMicros: micros('realized_pnl_micros').notNull().default(0),

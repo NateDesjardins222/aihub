@@ -91,7 +91,11 @@ export function normalizeRuleConfig(config: RuleConfig): RuleConfig {
 
 export function ruleStateFor(account: AccountRow): RuleState {
   return {
-    status: account.status as RuleState['status'],
+    // The rules read THEIR status, not the effective one. An account an
+    // operator has disabled is still, as far as the programme is concerned,
+    // wherever the rules last left it - and that is what it returns to when
+    // the hold is lifted.
+    status: (account.ruleStatus ?? account.status) as RuleState['status'],
     startingBalanceMicros: account.startingBalanceMicros,
     balanceMicros: account.balanceMicros,
     highWaterMarkMicros: account.highWaterMarkMicros,
@@ -213,7 +217,13 @@ export function nextDate(tradingDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Persist the rule state the evaluation produced. */
+/**
+ * Persist the rule state the evaluation produced.
+ *
+ * The rule status is always written. The EFFECTIVE status is only written when
+ * no operator hold is in place: an administrator who locked an account did not
+ * ask for the next market tick to unlock it.
+ */
 export async function persistRuleState(
   db: Database,
   accountId: string,
@@ -222,7 +232,8 @@ export async function persistRuleState(
   await db
     .update(accounts)
     .set({
-      status: next.status,
+      ruleStatus: next.status,
+      status: sql`case when ${accounts.adminHold} is null then ${next.status} else ${accounts.status} end`,
       highWaterMarkMicros: next.highWaterMarkMicros,
       drawdownFloorMicros: next.drawdownFloorMicros,
       currentTradeDate: next.currentTradeDate,

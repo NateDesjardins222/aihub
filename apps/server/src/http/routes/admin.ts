@@ -42,8 +42,10 @@ import { loadAccountAndTemplate, ruleConfigFor } from '../../trading/account-rul
 import {
   ProvisioningError,
   defaultOrganizationId,
+  ensurePracticeAccount,
   provisionAccount,
 } from '../../platform/provisioning.js';
+import { hashPassword } from '../../auth/password.js';
 import {
   AccountActionError,
   activateAccount,
@@ -319,6 +321,67 @@ export function adminRoutes(deps: AdminDeps) {
         })),
       });
     });
+
+    /**
+     * Create a trader.
+     *
+     * An operator onboarding someone directly - the other route in is
+     * self-service registration. The password is chosen by the caller and
+     * never stored in the clear; the practice account comes through the same
+     * provisioning service registration uses, so a hand-made user and a
+     * self-registered one are indistinguishable afterwards.
+     */
+    app.post(
+      '/users',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const body = z
+          .object({
+            email: z.string().email().max(254),
+            displayName: z.string().min(1).max(60),
+            password: z.string().min(12).max(200),
+            role: z.enum(['TRADER', 'SUPPORT']).default('TRADER'),
+            withPracticeAccount: z.boolean().default(true),
+          })
+          .parse(request.body);
+        const organizationId = await organizationOf(request.user!.id);
+        const email = body.email.trim().toLowerCase();
+
+        const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+        if (existing) throw ApiError.conflict('EMAIL_TAKEN', 'That email is already registered.');
+
+        const [created] = await db
+          .insert(users)
+          .values({
+            email,
+            displayName: body.displayName,
+            passwordHash: await hashPassword(body.password),
+            role: body.role,
+            organizationId,
+          })
+          .returning();
+
+        await recordAudit(db, {
+          organizationId,
+          actor: actorFor(request),
+          subjectType: 'USER',
+          subjectId: created!.id,
+          userId: created!.id,
+          action: 'admin.user.created',
+          newState: { email, displayName: body.displayName, role: body.role },
+        });
+        await events.publish(db, {
+          type: 'user.created',
+          organizationId,
+          userId: created!.id,
+          payload: { email, createdBy: request.user!.email },
+        });
+
+        if (body.withPracticeAccount) await ensurePracticeAccount(db, created!.id, organizationId);
+
+        return reply.code(201).send({ user: presentUser(created!) });
+      },
+    );
 
     app.post<{ Params: { id: string } }>(
       '/users/:id/disable',

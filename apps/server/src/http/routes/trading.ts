@@ -414,12 +414,13 @@ export function tradingRoutes(deps: Deps) {
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       await assertOwnership(request.user!.id, params.id);
 
-      const [row] = await db
-        .select({ account: accounts, template: ruleTemplates })
-        .from(accounts)
-        .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
-        .where(eq(accounts.id, params.id));
-      if (!row) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+      // Through the shared loader, which resolves an account's terms from its
+      // pinned product version or, for an account that predates products, its
+      // rule template. Joining the template table directly would 404 every
+      // provisioned account - it does not have one.
+      const loaded = await loadAccountAndTemplate(db, params.id);
+      if (!loaded?.template) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+      const row = { account: loaded.account, template: loaded.template };
 
       const positionRows = await db
         .select()

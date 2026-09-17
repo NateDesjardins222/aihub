@@ -1,10 +1,15 @@
 /** Shapes returned by the Atlas REST API, mirroring the server presenters. */
 
+export type UserRole = 'TRADER' | 'SUPPORT' | 'ADMIN' | 'SUPER_ADMIN';
+
 export interface ApiUser {
   id: string;
   email: string;
   displayName: string;
+  /** Kept for sessions opened before roles existed. `role` is what decides. */
   isAdmin: boolean;
+  role?: UserRole;
+  organizationId?: string | null;
 }
 
 export interface AuthResponse {
@@ -35,7 +40,10 @@ export interface ApiRuleTemplate {
 
 export interface ApiAccount {
   id: string;
+  /** The number a trader quotes to support: SIM-001234. */
+  publicId: string;
   name: string;
+  product: { key: string; name: string; version: number } | null;
   accountType: string;
   status: string;
   ruleTemplate: ApiRuleTemplate;
@@ -54,6 +62,8 @@ export interface ApiAccount {
   tradingDaysCount: number;
   currentTradeDate: string | null;
   failedReason: string | null;
+  instrumentLimits: unknown;
+  activatedAt: number | null;
   seq: number;
   createdAt: number;
 }
