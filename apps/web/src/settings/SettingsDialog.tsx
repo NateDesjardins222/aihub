@@ -9,7 +9,7 @@
  * All of it persists through the existing preferences blob, so a reload comes
  * back to the same chart.
  */
-import { useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { useWorkspace, type SettingsTab } from '../state/workspace';
 import { useExecution } from '../state/execution';
 import { useChartStore } from '../state/chart-store';
@@ -57,12 +57,45 @@ export function SettingsDialog(): JSX.Element | null {
   const execution = useExecution((s) => s.defaults);
   const setExecution = useExecution((s) => s.set);
 
+  /*
+   * Escape closes it, and a click on the scrim closes it.
+   *
+   * It is a modal dialog and neither worked: the only way out was the small
+   * cross in the corner. The listener is registered while the dialog is open
+   * and reads `close` through a ref, so a re-render cannot leave a stale
+   * handler behind.
+   */
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!tab) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      // A colour picker or a select open on top of the dialog gets the key
+      // first; this only acts when the dialog itself is the frontmost thing.
+      event.stopPropagation();
+      closeRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tab]);
+
   if (!tab) return null;
 
   const groups = [...new Set(TABS.map((entry) => entry.group))];
 
   return (
-    <div className="st-scrim" role="dialog" aria-modal="true" aria-label="Settings">
+    <div
+      className="st-scrim"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+      onPointerDown={(event) => {
+        // Only a press on the scrim itself, never one that started inside the
+        // dialog and happened to end on it.
+        if (event.target === event.currentTarget) close();
+      }}
+    >
       <div className="st-dialog">
         <header className="st-head">
           <h3>Settings</h3>
@@ -470,6 +503,49 @@ export function SettingsDialog(): JSX.Element | null {
                       onChange={(crosshairLabelBackground) =>
                         set({ scales: { crosshairLabelBackground } })
                       }
+                    />
+                  </Row>
+                  <Row label="Line style">
+                    <Choice
+                      value={appearance.scales.crosshairDash}
+                      options={[
+                        { id: 'SOLID', label: 'Solid' },
+                        { id: 'DASHED', label: 'Dashed' },
+                        { id: 'DOTTED', label: 'Dotted' },
+                      ]}
+                      onChange={(crosshairDash) => set({ scales: { crosshairDash } })}
+                    />
+                  </Row>
+                  <Row label="Thickness">
+                    <Num
+                      value={appearance.scales.crosshairWidth}
+                      min={1}
+                      max={3}
+                      step={1}
+                      onChange={(crosshairWidth) => set({ scales: { crosshairWidth } })}
+                    />
+                  </Row>
+                  <Row label="Strength" hint="How strongly the crosshair is drawn">
+                    <Num
+                      value={Math.round(appearance.scales.crosshairOpacity * 100)}
+                      min={20}
+                      max={100}
+                      step={5}
+                      onChange={(percent) => set({ scales: { crosshairOpacity: percent / 100 } })}
+                    />
+                  </Row>
+                  <Row label="Price label">
+                    <Check
+                      checked={appearance.scales.crosshairPriceLabel}
+                      name="Price label"
+                      onChange={(crosshairPriceLabel) => set({ scales: { crosshairPriceLabel } })}
+                    />
+                  </Row>
+                  <Row label="Time label">
+                    <Check
+                      checked={appearance.scales.crosshairTimeLabel}
+                      name="Time label"
+                      onChange={(crosshairTimeLabel) => set({ scales: { crosshairTimeLabel } })}
                     />
                   </Row>
                 </Group>

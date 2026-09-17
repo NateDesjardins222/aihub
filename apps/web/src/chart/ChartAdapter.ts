@@ -162,6 +162,11 @@ export interface ChartAdapter {
   priceScaleWidth(): number;
 
   fitContent(): void;
+  /**
+   * Open on the recent session at a readable spacing, rather than fitting
+   * every loaded bar into the width of the plot.
+   */
+  showRecent(bars?: number): void;
   scrollToRealtime(): void;
   resetScale(): void;
   setAutoScale(enabled: boolean): void;
@@ -183,4 +188,23 @@ export interface ChartAdapter {
 
   priceToY(price: number): number | null;
   yToPrice(y: number): number | null;
+
+  /**
+   * What the view currently is, in the chart's own terms.
+   *
+   * Exposed for measurement rather than for display: "does zooming hold the
+   * bar under the cursor" and "does the newest bar keep its place" are
+   * questions about the visible logical range and the bar spacing, and a test
+   * that cannot read them can only assert that a screenshot changed.
+   */
+  viewDiagnostics(xPixels?: number): {
+    readonly from: number;
+    readonly to: number;
+    readonly span: number;
+    readonly barSpacing: number;
+    /** Fractional bar index under a given x, when one is supplied. */
+    readonly logicalAtX: number | null;
+    /** Price points between the top and the bottom of the plot. */
+    readonly priceRange: number | null;
+  } | null;
 }

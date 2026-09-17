@@ -151,7 +151,16 @@ export class LightweightChartsAdapter implements ChartAdapter {
       ...this.layoutOptions(),
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: {
-        mouseWheel: true,
+        /*
+         * The wheel is handled by this adapter, not by the renderer.
+         *
+         * The built-in behaviour zooms symmetrically about the middle of the
+         * view, which is why the chart "zoomed too directly inward": the bar
+         * under the cursor slid away while you were trying to look at it, and
+         * the newest bar drifted off the right edge. `onWheel` below zooms
+         * about the pointer and leaves the right-hand margin where it was.
+         */
+        mouseWheel: false,
         pinch: true,
         axisPressedMouseMove: { time: true, price: true },
         axisDoubleClickReset: { time: true, price: true },
@@ -193,6 +202,22 @@ export class LightweightChartsAdapter implements ChartAdapter {
           ? CrosshairMode.Hidden
           : CrosshairMode.Normal;
 
+    /*
+     * The crosshair's own ink.
+     *
+     * Opacity is applied to the COLOUR rather than to a layer, because the
+     * renderer draws the crosshair straight onto the canvas: there is no
+     * element to fade. A trader who wants a faint guide gets a faint colour.
+     */
+    const crosshairInk = withOpacity(a.scales.crosshairColor, a.scales.crosshairOpacity);
+    const crosshairWidth = Math.max(1, Math.min(3, Math.round(a.scales.crosshairWidth))) as 1 | 2 | 3;
+    const crosshairDash =
+      a.scales.crosshairDash === 'SOLID'
+        ? LineStyle.Solid
+        : a.scales.crosshairDash === 'DOTTED'
+          ? LineStyle.Dotted
+          : LineStyle.Dashed;
+
     return {
       layout: {
         background,
@@ -208,17 +233,26 @@ export class LightweightChartsAdapter implements ChartAdapter {
       },
       crosshair: {
         mode: crosshairMode,
+        /*
+         * Thickness, dash and strength come from the appearance now.
+         *
+         * They were hard-coded to one pixel dashed, which is a reasonable
+         * default and was the only option: a trader who wants a solid hairline
+         * or a heavier line on a bright screen could not have one.
+         */
         vertLine: {
-          color: a.scales.crosshairColor,
-          width: 1 as const,
-          style: LineStyle.Dashed,
+          color: crosshairInk,
+          width: crosshairWidth,
+          style: crosshairDash,
           labelBackgroundColor: a.scales.crosshairLabelBackground,
+          labelVisible: a.scales.crosshairTimeLabel,
         },
         horzLine: {
-          color: a.scales.crosshairColor,
-          width: 1 as const,
-          style: LineStyle.Dashed,
+          color: crosshairInk,
+          width: crosshairWidth,
+          style: crosshairDash,
           labelBackgroundColor: a.scales.crosshairLabelBackground,
+          labelVisible: a.scales.crosshairPriceLabel,
         },
       },
       /*
@@ -288,6 +322,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
   }
 
   destroy(): void {
+    this.container?.removeEventListener('wheel', this.onWheel);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.orderLines.clear();
@@ -449,8 +484,72 @@ export class LightweightChartsAdapter implements ChartAdapter {
     });
   }
 
+  /**
+   * The wheel, as a trader expects it.
+   *
+   * Plain wheel zooms about the POINTER: the bar under the cursor is the one
+   * you are looking at, so it stays where it is and the rest of the view
+   * expands or contracts around it. Zooming with the pointer near the right
+   * edge therefore keeps the newest bar and its margin in place, which is the
+   * right-offset behaviour a symmetrical zoom loses.
+   *
+   * Shift scrolls sideways through time instead, in whole bars, which is how
+   * every charting package treats shift-wheel.
+   *
+   * The step is multiplicative and small (about 10% per notch, scaled by the
+   * browser's own delta) so a flick of the wheel is a nudge rather than a
+   * jump. A trackpad's fine-grained deltas come through proportionally.
+   */
+  private readonly onWheel = (event: WheelEvent): void => {
+    const chart = this.chart;
+    const container = this.container;
+    if (!chart || !container) return;
+
+    const timeScale = chart.timeScale();
+    const range = timeScale.getVisibleLogicalRange();
+    if (!range) return;
+
+    event.preventDefault();
+
+    const span = range.to - range.from;
+    if (span <= 0) return;
+
+    // Horizontal intent: shift-wheel, or a trackpad's sideways gesture.
+    const sideways = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+    if (sideways) {
+      const delta = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+      const bars = (delta / 120) * Math.max(1, Math.round(span * 0.06));
+      timeScale.setVisibleLogicalRange({ from: range.from + bars, to: range.to + bars });
+      return;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const anchor = timeScale.coordinateToLogical(x);
+    if (anchor === null) return;
+
+    /*
+     * A notch is 120 in the browser's units. `zoom` is how much of the current
+     * span survives: a notch forward keeps 92% of it, a notch back stretches
+     * it to 109%. Clamped, so a violent scroll cannot invert the range.
+     */
+    const notches = Math.max(-4, Math.min(4, event.deltaY / 120));
+    const zoom = Math.exp(notches * 0.09);
+    const nextSpan = Math.max(6, Math.min(4_000, span * zoom));
+    if (nextSpan === span) return;
+
+    // The pointer's position within the view is preserved, which is what keeps
+    // the bar under the cursor under the cursor.
+    const ratio = (anchor - range.from) / span;
+    const from = anchor - ratio * nextSpan;
+    timeScale.setVisibleLogicalRange({ from, to: from + nextSpan });
+  };
+
   private wireEvents(): void {
-    if (!this.chart) return;
+    if (!this.chart || !this.container) return;
+
+    // Passive false: this handler prevents the page from scrolling.
+    this.container.addEventListener('wheel', this.onWheel, { passive: false });
 
     this.chart.subscribeCrosshairMove((param) => {
       if (this.crosshairCallbacks.size === 0) return;
@@ -940,6 +1039,28 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.chart?.timeScale().fitContent();
   }
 
+  /**
+   * The view a chart should OPEN on.
+   *
+   * `fitContent` puts every loaded bar on screen, which for two thousand
+   * one-minute bars is a wall of hairlines about one pixel apart - the chart
+   * opened looking like a heart-rate trace rather than like candles. A trader
+   * opens a chart on the recent session at a spacing where a candle is a
+   * candle, and scrolls back for history.
+   *
+   * `bars` is how many to show; the newest bar keeps a small margin on the
+   * right, the way every charting package leaves room for price to move into.
+   */
+  showRecent(bars = 180): void {
+    const chart = this.chart;
+    if (!chart || this.bars.length === 0) return;
+    const timeScale = chart.timeScale();
+    const count = Math.min(bars, this.bars.length);
+    const last = this.bars.length - 1;
+    const margin = Math.max(2, Math.round(count * 0.04));
+    timeScale.setVisibleLogicalRange({ from: last - count + 1, to: last + margin });
+  }
+
   scrollToRealtime(): void {
     this.chart?.timeScale().scrollToRealTime();
   }
@@ -1258,6 +1379,35 @@ export class LightweightChartsAdapter implements ChartAdapter {
     }
   }
 
+  viewDiagnostics(xPixels?: number): {
+    from: number;
+    to: number;
+    span: number;
+    barSpacing: number;
+    logicalAtX: number | null;
+    priceRange: number | null;
+  } | null {
+    const chart = this.chart;
+    const container = this.container;
+    if (!chart || !container) return null;
+    const timeScale = chart.timeScale();
+    const range = timeScale.getVisibleLogicalRange();
+    if (!range) return null;
+    const top = this.yToPrice(0);
+    const bottom = this.yToPrice(container.clientHeight);
+    return {
+      from: range.from,
+      to: range.to,
+      span: range.to - range.from,
+      barSpacing: timeScale.options().barSpacing,
+      logicalAtX:
+        xPixels === undefined
+          ? null
+          : ((timeScale.coordinateToLogical(xPixels) as number | null) ?? null),
+      priceRange: top === null || bottom === null ? null : Math.abs(top - bottom),
+    };
+  }
+
   priceToY(price: number): number | null {
     return this.priceSeries?.priceToCoordinate(price) ?? null;
   }
@@ -1273,4 +1423,21 @@ export class LightweightChartsAdapter implements ChartAdapter {
   get oldestBarTime(): number | null {
     return this.bars[0]?.time ?? null;
   }
+}
+
+/**
+ * A colour with an opacity applied, for a renderer that has no alpha of its
+ * own. Hex in, rgba out; anything already functional is left alone.
+ */
+function withOpacity(color: string, opacity: number): string {
+  const alpha = Math.max(0, Math.min(1, opacity));
+  if (alpha >= 0.999) return color;
+  const hex = color.trim();
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex);
+  const long = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!short && !long) return color;
+  const parts = short
+    ? [short[1]!, short[2]!, short[3]!].map((c) => parseInt(c + c, 16))
+    : [long![1]!, long![2]!, long![3]!].map((c) => parseInt(c, 16));
+  return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha.toFixed(3)})`;
 }

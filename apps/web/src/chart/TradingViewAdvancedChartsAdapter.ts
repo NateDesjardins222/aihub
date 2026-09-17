@@ -163,4 +163,10 @@ export class TradingViewAdvancedChartsAdapter implements ChartAdapter {
   yToPrice(_y: number): number | null {
     return null;
   }
+  viewDiagnostics(): null {
+    return null;
+  }
+  showRecent(): void {
+    /* nothing to show until this adapter is implemented */
+  }
 }

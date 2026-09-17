@@ -160,6 +160,17 @@ export function ChartPanel(): JSX.Element {
       { precision, timeZone },
     );
     legendRef.current = legend;
+
+    /*
+     * A measurement hook, not a feature.
+     *
+     * Whether the wheel "feels right" comes down to the visible logical range,
+     * the bar spacing and whether the bar under the cursor stays put. A test
+     * that cannot read those can only assert that a screenshot changed, so the
+     * chart's own geometry is readable from the page.
+     */
+    (window as unknown as { __atlasChartView?: unknown }).__atlasChartView = (x?: number) =>
+      adapterRef.current?.viewDiagnostics(x) ?? null;
     // The legend is built once, after the mask may already have been chosen, so
     // it is told immediately rather than waiting for the mask to change again.
     legend.setDatesHidden(!useTraining.getState().visibility.dateTime);
@@ -261,7 +272,8 @@ export function ChartPanel(): JSX.Element {
         adapter.applyHistory(page.bars);
         loadedSeriesRef.current = { symbol: activeSymbol, timeframe };
         seriesTimeframeRef.current = timeframe;
-        adapter.fitContent();
+        // The recent session at a readable spacing, not every bar ever loaded.
+        adapter.showRecent();
         setBarCount(page.bars.length);
         setHistoryNote(page.limitReason);
 

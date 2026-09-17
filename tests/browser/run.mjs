@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   'terminal',
+  'responsive',
+  'chart-navigation',
   'drawing-pointer',
   'drawing-engine',
   'rectangle',

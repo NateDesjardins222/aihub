@@ -93,19 +93,34 @@
   text-align: left;
 }
 
+/*
+ * The quantity row, at any panel width.
+ *
+ * It used to be one flex line with `flex: 1 1 0` and `min-width: 0`, which
+ * means "shrink these as far as you like". Dragged to the panel's minimum of
+ * 196px, the two-digit presets needed 22px inside a 16px box and their numbers
+ * spilled out over the neighbouring button. A control that cannot fit its own
+ * label has to WRAP, not shrink: nothing is hidden, nothing overlaps, and the
+ * row simply takes a second line when it needs one.
+ */
 .tk-presets {
-  display: flex;
+  /*
+   * A grid rather than a wrapping flex line: a lone item on a second row fills
+   * a cell instead of stretching across the whole panel.
+   */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
   gap: 4px;
   margin-top: 6px;
 }
 
 .tk-preset,
 .tk-step {
-  flex: 1 1 0;
   display: grid;
   place-items: center;
   height: var(--h-control);
-  min-width: 0;
+  /* Two digits plus the padding they need. Below this the row wraps. */
+  min-width: 26px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-raised);
@@ -115,7 +130,7 @@
 }
 
 .tk-step {
-  flex: 0 0 30px;
+  min-width: 28px;
   color: var(--text-muted);
 }
 

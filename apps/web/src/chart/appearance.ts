@@ -71,6 +71,14 @@ export interface ScalesAppearance {
   readonly crosshairStyle: 'CROSS' | 'MAGNET' | 'HIDDEN';
   readonly crosshairColor: string;
   readonly crosshairLabelBackground: string;
+  /** Thickness in pixels, 1 to 3. */
+  readonly crosshairWidth: number;
+  readonly crosshairDash: 'SOLID' | 'DASHED' | 'DOTTED';
+  /** How strongly the crosshair is drawn, 0.2 to 1. */
+  readonly crosshairOpacity: number;
+  /** The price chip on the axis, and the time chip under the plot. */
+  readonly crosshairPriceLabel: boolean;
+  readonly crosshairTimeLabel: boolean;
   /** Top and bottom breathing room, as a fraction of the pane. */
   readonly scaleMarginTop: number;
   readonly scaleMarginBottom: number;
@@ -146,6 +154,11 @@ export const DEFAULT_APPEARANCE: ChartAppearance = {
     crosshairStyle: 'CROSS',
     crosshairColor: '#4d8dff',
     crosshairLabelBackground: '#2a5199',
+    crosshairWidth: 1,
+    crosshairDash: 'DASHED',
+    crosshairOpacity: 0.9,
+    crosshairPriceLabel: true,
+    crosshairTimeLabel: true,
     scaleMarginTop: 0.08,
     scaleMarginBottom: 0.22,
   },
@@ -249,6 +262,14 @@ export function normalizeAppearance(raw: unknown): ChartAppearance {
         c.crosshairLabelBackground,
         d.scales.crosshairLabelBackground,
       ),
+      crosshairWidth: clamp(Number(c.crosshairWidth), 1, 3, d.scales.crosshairWidth),
+      crosshairDash:
+        c.crosshairDash === 'SOLID' || c.crosshairDash === 'DOTTED'
+          ? c.crosshairDash
+          : d.scales.crosshairDash,
+      crosshairOpacity: clamp(Number(c.crosshairOpacity), 0.2, 1, d.scales.crosshairOpacity),
+      crosshairPriceLabel: flag(c.crosshairPriceLabel, d.scales.crosshairPriceLabel),
+      crosshairTimeLabel: flag(c.crosshairTimeLabel, d.scales.crosshairTimeLabel),
       scaleMarginTop: clamp(Number(c.scaleMarginTop), 0, 0.4, d.scales.scaleMarginTop),
       scaleMarginBottom: clamp(Number(c.scaleMarginBottom), 0, 0.6, d.scales.scaleMarginBottom),
     },
