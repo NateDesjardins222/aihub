@@ -233,9 +233,27 @@ try {
     await page.click(`.chdr-tf:text-is("${other}")`);
     await page.waitForTimeout(4_500);
     await home();
+    /*
+     * Still there, and findable.
+     *
+     * The terminal opens on the recent session rather than on every bar it
+     * holds, so an object anchored ten hours back is legitimately off screen
+     * on a one-minute chart until the view is widened. The tree says the
+     * objects survived the interval change; the wheel proves they are still
+     * painted where their prices are.
+     */
+    const survived = (await treeCount()) === count;
+    let inView = (await litPixels(page, '.draw-canvas')) > 20;
+    for (let i = 0; i < 30 && !inView; i += 1) {
+      await page.mouse.move(at(0.5, 0.5).x, at(0.5, 0.5).y);
+      await page.mouse.wheel(0, 240);
+      await page.waitForTimeout(150);
+      inView = (await litPixels(page, '.draw-canvas')) > 20;
+    }
     say(
-      (await litPixels(page, '.draw-canvas')) > 20,
+      survived && inView,
       `changing the interval to ${other} keeps them at ${count}`,
+      survived ? '' : `${await treeCount()} objects in the tree`,
     );
     await page.click(`.chdr-tf:text-is("${current}")`);
     await page.waitForTimeout(4_500);
