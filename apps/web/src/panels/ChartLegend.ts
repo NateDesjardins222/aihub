@@ -7,6 +7,8 @@
  * text nodes and writes into them, which costs nothing measurable.
  */
 import type { NormalizedBar } from '@atlas/contracts';
+import { timeFormatter } from '../chart/appearance';
+import { useChartStore } from '../state/chart-store';
 
 export interface LegendFields {
   readonly price: HTMLElement;
@@ -67,7 +69,7 @@ export class ChartLegend {
       this.fields[key].textContent = '—';
     }
     this.fields.change.textContent = '';
-    this.fields.change.className = 'legend-change';
+    tone(this.fields.change, null);
   }
 
   private render(): void {
@@ -84,16 +86,17 @@ export class ChartLegend {
     this.fields.barTime.textContent = this.formatBarTime(bar.time);
 
     // Direction colour follows the bar itself, not the session, so the legend
-    // agrees with the candle the user is looking at.
-    const up = bar.close >= bar.open;
-    this.fields.price.className = `num legend-price ${up ? 'pos' : 'neg'}`;
+    // agrees with the candle the user is looking at. Only the tone class is
+    // touched: assigning className would drop the layout classes the status
+    // line puts on these elements.
+    tone(this.fields.price, bar.close >= bar.open);
 
     if (this.previousClose !== null) {
       const delta = bar.close - this.previousClose;
       const percent = (delta / this.previousClose) * 100;
       const sign = delta > 0 ? '+' : '';
       this.fields.change.textContent = `${sign}${delta.toFixed(this.precision)} (${sign}${percent.toFixed(2)}%)`;
-      this.fields.change.className = `num legend-change ${delta >= 0 ? 'pos' : 'neg'}`;
+      tone(this.fields.change, delta >= 0);
     }
   }
 
@@ -110,23 +113,28 @@ export class ChartLegend {
     this.render();
   }
 
+  /**
+   * Both formatters follow the terminal's clock setting.
+   *
+   * 12-hour with AM/PM by default. Read live from the store rather than
+   * captured, because the setting can change while the legend is mounted and
+   * the legend is not a React component that would re-render.
+   */
   private formatBarTime(ms: number): string {
-    return new Intl.DateTimeFormat('en-US', {
-      ...(this.datesHidden ? {} : { month: 'short' as const, day: '2-digit' as const }),
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: this.timeZone,
+    return timeFormatter(useChartStore.getState().appearance, this.timeZone, {
+      date: !this.datesHidden,
     }).format(ms);
   }
 
   private formatClock(ms: number): string {
-    return new Intl.DateTimeFormat('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-      timeZone: this.timeZone,
+    return timeFormatter(useChartStore.getState().appearance, this.timeZone, {
+      seconds: true,
     }).format(ms);
   }
+}
+
+/** Set the up/down tone on an element without disturbing its other classes. */
+function tone(element: HTMLElement, up: boolean | null): void {
+  element.classList.toggle('pos', up === true);
+  element.classList.toggle('neg', up === false);
 }

@@ -25,7 +25,10 @@ import type {
   OrderLineSpec,
   PriceScaleMode,
   VisibleRange,
+  ChartProjection,
 } from './ChartAdapter';
+import type { ChartAppearance } from './appearance';
+import type { IndicatorInstance } from './indicators/registry';
 
 export class AdvancedChartsUnavailableError extends Error {
   constructor() {
@@ -140,6 +143,20 @@ export class TradingViewAdvancedChartsAdapter implements ChartAdapter {
     return null;
   }
   setDatesHidden(_hidden: boolean): void {}
+  applyAppearance(_appearance: ChartAppearance): void {}
+  setIndicators(_indicators: readonly IndicatorInstance[]): void {}
+  indicatorLegend(): ReadonlyArray<{ id: string; label: string; color: string; value: string }> {
+    return [];
+  }
+  projection(): ChartProjection | null {
+    return null;
+  }
+  barNear(_timeMs: number): NormalizedBar | null {
+    return null;
+  }
+  priceScaleWidth(): number {
+    return 0;
+  }
   priceToY(_price: number): number | null {
     return null;
   }

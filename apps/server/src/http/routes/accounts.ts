@@ -5,7 +5,7 @@
  * balance, a drawdown figure or an account status.
  */
 import type { FastifyInstance } from 'fastify';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../../db/client.js';
 import { accounts, ruleTemplates } from '../../db/schema.js';
@@ -87,11 +87,13 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
       .from(accounts)
       .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
       .where(eq(accounts.userId, request.user!.id))
-      // Practice accounts first, oldest first within each group. The terminal
-      // selects the first account it is handed, so opening it lands on
-      // something that can be traded without any setup.
+      // Practice accounts first, largest first within each group. The terminal
+      // opens on the first account it is handed, so this lands it on the
+      // largest practice account - which is the $150,000 one - and it can be
+      // traded straight away with no setup.
       .orderBy(
         sql`case when ${accounts.accountType} = 'PRACTICE' then 0 else 1 end`,
+        desc(accounts.startingBalanceMicros),
         accounts.createdAt,
       );
     return reply.send({

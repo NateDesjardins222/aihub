@@ -1,74 +1,63 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { NormalizedBar, Timeframe } from '@atlas/contracts';
 import { useSession, activeInstrument } from '../state/session';
 import { LightweightChartsAdapter } from '../chart/LightweightChartsAdapter';
-import { PHASE_1_CHART_TYPES, type ChartType } from '../chart/ChartAdapter';
 import { marketStream } from '../market/stream';
 import { fetchBars, fetchSymbolStatus, type FreshnessInfo } from '../market/api';
 import { ChartLegend } from './ChartLegend';
-import { ChartTrading } from '../chart/ChartTrading';
+import { ChartHeader } from '../chart/ChartHeader';
+import { PriceMarkers, type BracketMode } from '../chart/PriceMarkers';
+import { DrawingLayer } from '../chart/drawings/DrawingLayer';
 import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
+import { useChartStore } from '../state/chart-store';
 import { useTraining } from '../state/training';
-import { FeedBadge } from './FeedBadge';
+import { resolveZone, timeFormatter } from '../chart/appearance';
+import { Icon } from '../ui/Icon';
 import './ChartPanel.css';
-
-/** Timeframes Milestone 2 is required to support, in toolbar order. */
-const TIMEFRAMES: readonly Timeframe[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1D'];
-
-const CHART_TYPE_LABELS: Record<ChartType, string> = {
-  CANDLES: 'Candles',
-  HOLLOW_CANDLES: 'Hollow candles',
-  BARS: 'Bars',
-  LINE: 'Line',
-  LINE_WITH_MARKERS: 'Line + markers',
-  AREA: 'Area',
-  BASELINE: 'Baseline',
-  HEIKIN_ASHI: 'Heikin Ashi',
-  RENKO: 'Renko',
-  KAGI: 'Kagi',
-  LINE_BREAK: 'Line break',
-  POINT_AND_FIGURE: 'Point & figure',
-  HIGH_LOW: 'High-low',
-};
 
 const INITIAL_BARS = 1_200;
 const PAGE_BARS = 1_000;
 
+export interface ChartPanelProps {
+  readonly bracketMode: BracketMode;
+  readonly stopTicks: number;
+  readonly targetTicks: number;
+}
+
 /**
  * The chart.
  *
- * React owns the chrome — symbol, timeframe, chart type, status. It does NOT
- * own the price data: bars arrive on the market stream and go straight into the
- * chart adapter and the legend. A tick therefore costs one canvas update and a
- * few text nodes, and never a component render.
+ * React owns the chrome - symbol, interval, style, status. It does NOT own the
+ * price data: bars arrive on the market stream and go straight into the chart
+ * adapter and the legend, so a tick costs one canvas update and a few text
+ * nodes rather than a component tree render. The two overlay layers, markers
+ * and drawings, keep the same discipline: both place themselves in an
+ * animation frame.
  */
-export function ChartPanel(): JSX.Element {
-  const instruments = useSession((s) => s.instruments);
+export function ChartPanel({ bracketMode, stopTicks, targetTicks }: ChartPanelProps): JSX.Element {
   const activeSymbol = useSession((s) => s.activeSymbol);
-  const setActiveSymbol = useSession((s) => s.setActiveSymbol);
   const instrument = useSession(activeInstrument);
 
   const [timeframe, setTimeframe] = useState<Timeframe>(
     () => (localStorage.getItem('atlas.chart.timeframe') as Timeframe) ?? '1m',
   );
-  const [chartType, setChartType] = useState<ChartType>(
-    () => (localStorage.getItem('atlas.chart.type') as ChartType) ?? 'CANDLES',
-  );
-  const [showVolume, setShowVolume] = useState(
-    () => localStorage.getItem('atlas.chart.volume') !== 'false',
-  );
-  const [logScale, setLogScale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [barCount, setBarCount] = useState(0);
   const [historyNote, setHistoryNote] = useState<string | null>(null);
   const [freshness, setFreshness] = useState<FreshnessInfo | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
-  /** Flipped once the chart is mounted, so the trading overlay can measure it. */
   const [chartReady, setChartReady] = useState(false);
+  const [legendIndicators, setLegendIndicators] = useState<
+    ReadonlyArray<{ id: string; label: string; color: string; value: string }>
+  >([]);
+
   const motionSettings = useMotion((s) => s.settings);
+  const appearance = useChartStore((s) => s.appearance);
+  const chartType = useChartStore((s) => s.chartType);
+  const indicators = useChartStore((s) => s.indicators);
   const showDates = useTraining((s) => s.visibility.dateTime);
   const chartFocus = useSession((s) => s.chartFocus);
 
@@ -108,7 +97,9 @@ export function ChartPanel(): JSX.Element {
 
   const precision = instrument?.pricePrecision ?? 2;
   const tickSize = instrument?.tickSize ?? 0.25;
-  const timeZone = instrument?.sessionTimezone ?? 'America/Chicago';
+  const exchangeZone = instrument?.sessionTimezone ?? 'America/Chicago';
+  const timeZone = resolveZone(appearance, exchangeZone);
+  const statusLine = appearance.statusLine;
 
   // -- mount the chart once ------------------------------------------------
   useEffect(() => {
@@ -116,7 +107,13 @@ export function ChartPanel(): JSX.Element {
     if (!container) return;
 
     const adapter = new LightweightChartsAdapter();
-    adapter.mount({ container, pricePrecision: precision, tickSize, timeZone });
+    adapter.mount({
+      container,
+      pricePrecision: precision,
+      tickSize,
+      timeZone: exchangeZone,
+      appearance: useChartStore.getState().appearance,
+    });
     adapterRef.current = adapter;
     setChartReady(true);
 
@@ -139,6 +136,8 @@ export function ChartPanel(): JSX.Element {
     // it is told immediately rather than waiting for the mask to change again.
     legend.setDatesHidden(!useTraining.getState().visibility.dateTime);
     adapter.setDatesHidden(!useTraining.getState().visibility.dateTime);
+    adapter.setChartType(useChartStore.getState().chartType);
+    adapter.setIndicators(useChartStore.getState().indicators);
 
     const offCrosshair = adapter.onCrosshairMove((info) => legend.setHovered(info.bar));
 
@@ -156,17 +155,15 @@ export function ChartPanel(): JSX.Element {
 
   useEffect(() => {
     adapterRef.current?.setChartType(chartType);
-    localStorage.setItem('atlas.chart.type', chartType);
   }, [chartType]);
 
   useEffect(() => {
-    adapterRef.current?.setVolumeVisible(showVolume);
-    localStorage.setItem('atlas.chart.volume', String(showVolume));
-  }, [showVolume]);
+    adapterRef.current?.applyAppearance(appearance);
+  }, [appearance]);
 
   useEffect(() => {
-    adapterRef.current?.setPriceScaleMode(logScale ? 'LOGARITHMIC' : 'NORMAL');
-  }, [logScale]);
+    adapterRef.current?.setIndicators(indicators);
+  }, [indicators]);
 
   useEffect(() => {
     legendRef.current?.configure({ precision, timeZone });
@@ -237,9 +234,6 @@ export function ChartPanel(): JSX.Element {
       legendRef.current?.setLive(bar);
     });
 
-    // One animation frame loop per mounted chart. It draws whatever the motion
-    // layer says should be on screen - in RAW mode that is exactly the bar that
-    // just arrived, and nothing more.
     let frame = requestAnimationFrame(function draw(now: number): void {
       frame = requestAnimationFrame(draw);
       if (seriesTimeframeRef.current !== timeframe) return;
@@ -249,13 +243,12 @@ export function ChartPanel(): JSX.Element {
 
     const offQuote = marketStream.subscribeQuote(activeSymbol, (quote) => {
       if (quote.last === null) return;
-      updatedRef.current!.textContent = new Intl.DateTimeFormat('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZone,
-      }).format(quote.exchangeTs);
+      if (!updatedRef.current) return;
+      updatedRef.current.textContent = timeFormatter(
+        useChartStore.getState().appearance,
+        exchangeZone,
+        { seconds: true },
+      ).format(quote.exchangeTs);
     });
 
     return () => {
@@ -264,14 +257,27 @@ export function ChartPanel(): JSX.Element {
       offQuote();
       motion.reset();
     };
-  }, [activeSymbol, timeframe, instrument, timeZone, tickSize]);
+  }, [activeSymbol, timeframe, instrument, exchangeZone, tickSize]);
 
-  // Settings are read live, so switching between raw and smooth - or changing
-  // how hard the smoothing is - takes effect on the next frame. The chart is
-  // never remounted and the series is never reloaded.
+  // Settings are read live, so switching between raw and smooth takes effect on
+  // the next frame. The chart is never remounted and the series is never
+  // reloaded.
   useEffect(() => {
     motionRef.current.setSettings(motionSettings);
   }, [motionSettings]);
+
+  // Indicator values for the status line, sampled rather than pushed: the
+  // numbers change on every bar and the status line is chrome.
+  useEffect(() => {
+    if (!chartReady || !statusLine.indicatorTitlesVisible) {
+      setLegendIndicators([]);
+      return;
+    }
+    const tick = (): void => setLegendIndicators(adapterRef.current?.indicatorLegend() ?? []);
+    tick();
+    const id = window.setInterval(tick, 700);
+    return () => window.clearInterval(id);
+  }, [chartReady, indicators, statusLine.indicatorTitlesVisible]);
 
   /**
    * Show a trade from the journal.
@@ -349,109 +355,40 @@ export function ChartPanel(): JSX.Element {
     return () => window.clearInterval(id);
   }, [countdown]);
 
-  const onScreenshot = useCallback(async () => {
-    const blob = await adapterRef.current?.screenshot();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `atlas-${activeSymbol}-${timeframe}.png`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  const onScreenshot = useCallback(() => {
+    void (async () => {
+      const blob = await adapterRef.current?.screenshot();
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `atlas-${activeSymbol}-${timeframe}.png`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    })();
   }, [activeSymbol, timeframe]);
-
-  const contractLabel = useMemo(
-    () => instrument?.activeContract.code ?? activeSymbol,
-    [instrument, activeSymbol],
-  );
 
   return (
     <section className="chart-panel">
-      <div className="chart-toolbar">
-        <select
-          className="chart-symbol"
-          value={activeSymbol}
-          onChange={(e) => setActiveSymbol(e.target.value)}
-          title="Select instrument"
-        >
-          {instruments.map((i) => (
-            <option key={i.root} value={i.root}>
-              {i.root} — {i.description}
-            </option>
-          ))}
-        </select>
-
-        <span className="chart-contract" title="Front month, from the exchange listing cycle">
-          {contractLabel}
-        </span>
-
-        <div className="chart-tf">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf}
-              className={`tf-btn ${tf === timeframe ? 'tf-btn-active' : ''}`}
-              onClick={() => setTimeframe(tf)}
-            >
-              {tf}
-            </button>
-          ))}
-        </div>
-
-        <select
-          className="chart-type"
-          value={chartType}
-          onChange={(e) => setChartType(e.target.value as ChartType)}
-          title="Chart type"
-        >
-          {PHASE_1_CHART_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {CHART_TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
-
-        <div className="chart-toolbar-spacer" />
-
-        <button
-          className={`chip ${showVolume ? 'chip-on' : ''}`}
-          onClick={() => setShowVolume(!showVolume)}
-          title="Toggle volume"
-        >
-          VOL
-        </button>
-        <button
-          className={`chip ${logScale ? 'chip-on' : ''}`}
-          onClick={() => setLogScale(!logScale)}
-          title="Logarithmic price scale"
-        >
-          LOG
-        </button>
-        <button className="chip" onClick={() => adapterRef.current?.resetScale()} title="Reset scale">
-          RESET
-        </button>
-        <button
-          className="chip"
-          onClick={() => adapterRef.current?.scrollToRealtime()}
-          title="Scroll to the newest bar"
-        >
-          NOW
-        </button>
-        <button className="chip" onClick={() => void onScreenshot()} title="Save a PNG of the chart">
-          PNG
-        </button>
-
-        <FeedBadge freshness={freshness} />
-      </div>
+      <ChartHeader timeframe={timeframe} onTimeframe={setTimeframe} onScreenshot={onScreenshot} />
 
       <div className="chart-stage">
-        <div className="chart-legend">
-          <span className="legend-symbol">{activeSymbol}</span>
-          <span className="legend-tf">{timeframe}</span>
-          <span className="num legend-price flat" ref={priceRef}>
+        <div className="chart-status" data-testid="status-line">
+          {statusLine.symbolVisible ? (
+            <>
+              <span className="sl-symbol">{activeSymbol}</span>
+              <span className="sl-tf">{timeframe}</span>
+            </>
+          ) : null}
+          <span className="num sl-price flat" ref={priceRef}>
             —
           </span>
-          <span className="num legend-change" ref={changeRef} />
-          <span className="legend-ohlc">
+          <span
+            className="num sl-change"
+            ref={changeRef}
+            style={statusLine.changeVisible ? undefined : { display: 'none' }}
+          />
+          <span className="sl-ohlc" style={statusLine.ohlcVisible ? undefined : { display: 'none' }}>
             <b>O</b>
             <span className="num" ref={openRef}>
               —
@@ -468,36 +405,88 @@ export function ChartPanel(): JSX.Element {
             <span className="num" ref={closeRef}>
               —
             </span>
+          </span>
+          <span
+            className="sl-ohlc"
+            style={statusLine.volumeVisible ? undefined : { display: 'none' }}
+          >
             <b>V</b>
             <span className="num" ref={volumeRef}>
               —
             </span>
           </span>
-          <span className="legend-sep" />
-          <span className="legend-meta">
-            bar <span className="num" ref={barTimeRef}>—</span>
+          <span className="sl-meta" style={{ display: 'none' }}>
+            <span ref={barTimeRef}>—</span>
           </span>
-          <span className="legend-meta">
-            updated <span className="num" ref={updatedRef}>—</span> {shortZone(timeZone)}
-          </span>
-          {countdown !== null ? (
-            <span className="legend-meta" title="Time until this bar closes">
-              closes in <span className="num">{formatCountdown(countdown)}</span>
+          {statusLine.barCloseCountdownVisible && countdown !== null ? (
+            <span className="sl-meta" title="Time until this bar closes">
+              closes <span className="num">{formatCountdown(countdown)}</span>
             </span>
           ) : null}
-          <span className="legend-meta">{barCount.toLocaleString('en-US')} bars</span>
+          {statusLine.updatedAtVisible ? (
+            <span className="sl-meta">
+              updated{' '}
+              <span className="num" ref={updatedRef}>
+                —
+              </span>
+            </span>
+          ) : (
+            <span className="sl-meta" style={{ display: 'none' }}>
+              <span ref={updatedRef}>—</span>
+            </span>
+          )}
+          {statusLine.barCountVisible ? (
+            <span className="sl-meta">{barCount.toLocaleString('en-US')} bars</span>
+          ) : null}
+
+          {legendIndicators.length > 0 ? (
+            <span className="sl-inds">
+              {legendIndicators.map((entry) => (
+                <span className="sl-ind" key={entry.id}>
+                  <i style={{ background: entry.color }} />
+                  {entry.label}
+                  <b className="num">{entry.value}</b>
+                </span>
+              ))}
+            </span>
+          ) : null}
+
+          {freshness && freshness.state !== 'FRESH' ? (
+            <span className={`sl-feed sl-feed-${freshness.state.toLowerCase()}`}>
+              {freshness.state.replace('_', ' ')}
+            </span>
+          ) : null}
         </div>
 
         <div className="chart-canvas" ref={containerRef} />
 
-        <ChartTrading
+        <DrawingLayer
+          adapterRef={adapterRef}
+          symbol={activeSymbol}
+          pricePrecision={precision}
+          tickSize={tickSize}
+          ready={chartReady}
+        />
+
+        <PriceMarkers
           adapterRef={adapterRef}
           containerRef={containerRef}
           symbol={activeSymbol}
           tickSize={tickSize}
           pricePrecision={precision}
           ready={chartReady}
+          defaultStopTicks={bracketMode === 'OFF' ? 40 : stopTicks}
+          defaultTargetTicks={bracketMode === 'OFF' ? 80 : targetTicks}
         />
+
+        <div className="chart-nav">
+          <button onClick={() => adapterRef.current?.resetScale()} title="Reset the scales">
+            <Icon name="reset" size={12} />
+          </button>
+          <button onClick={() => adapterRef.current?.scrollToRealtime()} title="Scroll to the newest bar">
+            <Icon name="now" size={12} />
+          </button>
+        </div>
 
         {loading ? <div className="chart-overlay">Loading real market history…</div> : null}
         {loadError ? <div className="chart-overlay chart-overlay-error">{loadError}</div> : null}
@@ -505,10 +494,6 @@ export function ChartPanel(): JSX.Element {
       </div>
     </section>
   );
-}
-
-function shortZone(timeZone: string): string {
-  return timeZone.split('/').pop()?.replace('_', ' ') ?? timeZone;
 }
 
 function formatCountdown(seconds: number): string {

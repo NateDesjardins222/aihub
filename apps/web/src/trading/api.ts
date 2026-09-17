@@ -226,6 +226,17 @@ export const tradingApi = {
     api.post<unknown>(`/api/v1/positions/${symbol}/flatten`, { accountId }),
   reverse: (accountId: string, symbol: string) =>
     api.post<unknown>(`/api/v1/positions/${symbol}/reverse`, { accountId }),
+  /**
+   * Attach, move or remove the protective orders of an OPEN position.
+   *
+   * `undefined` leaves a leg alone and `null` removes it, matching the server:
+   * moving a stop must not silently cancel a target the trader cannot see.
+   */
+  protect: (
+    accountId: string,
+    symbol: string,
+    levels: { stopPrice?: number | null; targetPrice?: number | null },
+  ) => api.post<unknown>(`/api/v1/positions/${symbol}/protect`, { accountId, ...levels }),
   environment: (accountId: string) =>
     api.get<{ environment: SimulationEnvironment; depthAwareAvailable: boolean }>(
       `/api/v1/accounts/${accountId}/environment`,

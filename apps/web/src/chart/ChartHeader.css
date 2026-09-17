@@ -1,0 +1,176 @@
+.chdr {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 4px 0 6px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+
+.chdr-spacer {
+  flex: 1 1 auto;
+}
+
+.chdr-div {
+  width: 1px;
+  height: 15px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.chdr-symbol {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+
+.chdr-symbol:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chdr-symbol-root {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.chdr-contract {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.chdr-tfs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.chdr-tf {
+  min-width: 24px;
+  height: 21px;
+  padding: 0 5px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  color: var(--text-muted);
+}
+
+.chdr-tf:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The active interval is marked, not shouted: a subtle tint and full-strength
+   text, rather than a filled application-style button. */
+.chdr-tf-on,
+.chdr-tf-on:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.chdr-tf-more {
+  min-width: 18px;
+  padding: 0 2px;
+}
+
+.chdr-tf-row {
+  display: flex;
+  align-items: center;
+}
+
+.chdr-tf-row .pop-item {
+  font-family: var(--font-mono);
+}
+
+.chdr-fav,
+.chdr-ind-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  color: var(--text-disabled);
+  flex: 0 0 auto;
+}
+
+.chdr-fav:hover,
+.chdr-ind-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chdr-fav-on {
+  color: var(--warn);
+}
+
+.chdr-icon {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 21px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+
+.chdr-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chdr-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+}
+
+.chdr-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chdr-count {
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.chdr-pop-root {
+  font-family: var(--font-mono);
+  min-width: 34px;
+}
+
+.chdr-pop-desc {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.chdr-ind-row {
+  display: flex;
+  align-items: center;
+}

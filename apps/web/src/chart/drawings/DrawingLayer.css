@@ -1,0 +1,7 @@
+.draw-layer {
+  position: absolute;
+  inset: 0;
+  /* Above the chart canvas, below the order markers: a click on a stop label
+     must reach the stop, not start a trend line. */
+  z-index: 4;
+}

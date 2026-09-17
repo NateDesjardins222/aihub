@@ -1,0 +1,47 @@
+.drawer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 62vw;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.35);
+  flex: 0 0 auto;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px 0 11px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+
+.drawer-head h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.drawer-close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+
+.drawer-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

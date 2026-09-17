@@ -3,7 +3,6 @@ import type { JSX } from 'react';
 import { useSession, selectedAccount } from '../state/session';
 import { useTrading } from '../trading/store';
 import { useMotion } from '../state/motion-store';
-import { TRAINING_MODES, useTraining, type TrainingModeId } from '../state/training';
 import { PRESETS, presetMatches, type EnvironmentPreset } from '../state/presets';
 import { tradingApi, type SimulationEnvironment } from '../trading/api';
 import { replayApi } from '../market/api';
@@ -27,10 +26,6 @@ export function EnvironmentPanel(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const motion = useMotion((s) => s.settings);
   const setMotion = useMotion((s) => s.set);
-  const modeId = useTraining((s) => s.modeId);
-  const setTrainingMode = useTraining((s) => s.setMode);
-  const visibility = useTraining((s) => s.visibility);
-  const setVisibility = useTraining((s) => s.setVisibility);
   const loadRules = useTrading((s) => s.loadRules);
   const accountId = useTrading((s) => s.accountId);
 
@@ -166,47 +161,6 @@ export function EnvironmentPanel(): JSX.Element {
           stops, targets, P&amp;L, the OHLC behind the candle and anything recorded use genuine
           observations only. The catch-up deadline is what guarantees the drawn price can lag
           the market but never disagree with it.
-        </p>
-      </section>
-
-      <section className="env-section">
-        <div className="label">Training mode</div>
-        <div className="env-row env-presets">
-          {TRAINING_MODES.map((mode) => (
-            <button
-              key={mode.id}
-              className={`chip ${modeId === mode.id ? 'chip-on' : ''}`}
-              title={mode.description}
-              onClick={() => setTrainingMode(mode.id as TrainingModeId)}
-            >
-              {mode.name}
-            </button>
-          ))}
-        </div>
-        <div className="env-visibility">
-          {(
-            [
-              ['pnl', 'P&L'],
-              ['balance', 'Balance'],
-              ['tradeResults', 'Trade results'],
-              ['dateTime', 'Date & clock'],
-              ['rules', 'Rule progress'],
-              ['journal', 'Journal'],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key} className="env-toggle-inline">
-              <input
-                type="checkbox"
-                checked={visibility[key]}
-                onChange={(e) => setVisibility({ [key]: e.target.checked })}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-        <p className="env-note">
-          A training mode decides what is SHOWN. Fills, rules, P&amp;L and the journal are
-          unaffected by it, and a mode that hides the money still records every cent.
         </p>
       </section>
 

@@ -132,9 +132,14 @@ export const useSession = create<SessionState>((set, get) => ({
 
     const remembered = localStorage.getItem(SELECTED_ACCOUNT_KEY);
     const stillExists = accountsResponse.accounts.some((a) => a.id === remembered);
+    // With nothing remembered, open on a PRACTICE account rather than whatever
+    // happens to be first: an evaluation account has a drawdown and a daily
+    // loss limit, and a trader opening the terminal to try something out should
+    // not have to notice that before their first order.
+    const practice = accountsResponse.accounts.find((a) => a.accountType === 'PRACTICE');
     const selectedAccountId = stillExists
       ? remembered
-      : (accountsResponse.accounts[0]?.id ?? null);
+      : (practice?.id ?? accountsResponse.accounts[0]?.id ?? null);
 
     set({
       accounts: accountsResponse.accounts,

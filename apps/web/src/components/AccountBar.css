@@ -1,0 +1,175 @@
+/*
+ * The account bar. One row, 30px, dense.
+ */
+.abar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 4px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.abar-brand {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px 0 2px;
+}
+
+.abar-mark {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--long) 100%);
+}
+
+.abar-word {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  color: var(--text-primary);
+}
+
+.abar-sim {
+  padding: 1px 4px;
+  border: 1px solid var(--warn);
+  border-radius: 2px;
+  color: var(--warn);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.abar-account {
+  height: 22px;
+  max-width: 170px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.abar-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0 5px;
+  border-left: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.abar-metric-label {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.abar-metric-value {
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+}
+
+.abar-pill {
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.abar-pill-ok {
+  background: var(--long-bg);
+  color: var(--long);
+}
+.abar-pill-good {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.abar-pill-bad {
+  background: var(--short-bg);
+  color: var(--short);
+}
+.abar-pill-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.abar-pill-neutral {
+  background: var(--bg-active);
+  color: var(--text-muted);
+}
+
+.abar-session {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+}
+
+.abar-clock {
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+}
+
+.abar-nav {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-left: 4px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.abar-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+
+.abar-icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.abar-icon-on,
+.abar-icon-on:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.abar-icon-off {
+  color: var(--text-disabled);
+}
+
+.abar-user {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.abar-user:hover {
+  background: var(--short-bg);
+  color: var(--short);
+}
+
+/* Narrow screens drop the least load-bearing metrics rather than wrapping. */
+@media (max-width: 1500px) {
+  .abar-metric:nth-of-type(n + 5) {
+    display: none;
+  }
+}
+
+@media (max-width: 1280px) {
+  .abar-brand {
+    display: none;
+  }
+}

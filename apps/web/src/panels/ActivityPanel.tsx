@@ -3,15 +3,21 @@ import type { JSX } from 'react';
 import { useSession, selectedAccount } from '../state/session';
 import { formatMicros, pnlClass } from '../state/format';
 import { MASK, useTraining } from '../state/training';
-import { JournalPanel } from './JournalPanel';
 import { useTrading } from '../trading/store';
 import { tradingApi } from '../trading/api';
 import type { ApiInstrument } from '../api/types';
 import { Pending } from './Pending';
 
-type ActivityTab = 'POSITIONS' | 'ORDERS' | 'TRADES' | 'JOURNAL' | 'ACCOUNTS' | 'QUOTES';
+type ActivityTab = 'POSITIONS' | 'ORDERS' | 'TRADES' | 'ACCOUNTS' | 'QUOTES';
 
-const TABS: ActivityTab[] = ['POSITIONS', 'ORDERS', 'TRADES', 'JOURNAL', 'ACCOUNTS', 'QUOTES'];
+/**
+ * The blotter's tabs.
+ *
+ * The journal is NOT one of them any more: it is a drawer of its own, reached
+ * from the account bar, because analytics and a list of open positions are not
+ * the same kind of thing and the blotter should stay a blotter.
+ */
+const TABS: ActivityTab[] = ['POSITIONS', 'ORDERS', 'TRADES', 'ACCOUNTS', 'QUOTES'];
 
 /**
  * Bottom activity panel.
@@ -83,7 +89,6 @@ export function ActivityPanel({
           {tab === 'POSITIONS' ? <PositionsTable /> : null}
           {tab === 'ORDERS' ? <OrdersTable /> : null}
           {tab === 'TRADES' ? <TradesTable /> : null}
-          {tab === 'JOURNAL' ? <JournalPanel /> : null}
           {tab === 'ACCOUNTS' ? <AccountsTable /> : null}
           {tab === 'QUOTES' ? (
             <Pending title="Quotes" milestone="Milestone 9">

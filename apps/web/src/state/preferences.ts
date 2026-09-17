@@ -8,14 +8,20 @@
  * Writes are debounced, because a slider produces a preference change per
  * frame and none of them is worth a request.
  */
+import type { Timeframe } from '@atlas/contracts';
 import { preferencesApi } from '../trading/journal-api';
 import { useMotion } from './motion-store';
 import { normalizeMotion, type MotionSettings } from '../chart/motion';
 import { FULL_VISIBILITY, useTraining, type TrainingModeId, type Visibility } from './training';
+import { useChartStore, type StoredChart } from './chart-store';
+import { useWorkspace } from './workspace';
 
 interface StoredPreferences {
   motion?: Partial<MotionSettings>;
   training?: { modeId?: TrainingModeId; visibility?: Partial<Visibility> };
+  /** Chart appearance, indicators and drawings. */
+  chart?: StoredChart;
+  workspace?: { favouriteTimeframes?: readonly Timeframe[] };
 }
 
 const WRITE_DEBOUNCE_MS = 600;
@@ -32,6 +38,8 @@ function write(): void {
         modeId: useTraining.getState().modeId,
         visibility: useTraining.getState().visibility,
       },
+      chart: useChartStore.getState().snapshot(),
+      workspace: { favouriteTimeframes: useWorkspace.getState().favouriteTimeframes },
     };
     void preferencesApi.write(preferences as Record<string, unknown>).catch(() => undefined);
   }, WRITE_DEBOUNCE_MS);
@@ -57,6 +65,12 @@ export async function attachPreferences(): Promise<void> {
         visibility: { ...FULL_VISIBILITY, ...(stored.training.visibility ?? {}) },
       });
     }
+    // A stored chart blob was written by some earlier build of this file, so
+    // every field is validated on the way in rather than trusted. A drawing
+    // that no longer makes sense is dropped; it never becomes a broken object
+    // on the chart.
+    if (stored.chart) useChartStore.getState().restore(stored.chart);
+    if (stored.workspace) useWorkspace.getState().restore(stored.workspace);
   } catch {
     // A trader with no stored preferences is not an error; they get the
     // defaults, and the first change they make saves them.
@@ -64,4 +78,6 @@ export async function attachPreferences(): Promise<void> {
 
   useMotion.subscribe(write);
   useTraining.subscribe(write);
+  useChartStore.subscribe(write);
+  useWorkspace.subscribe(write);
 }

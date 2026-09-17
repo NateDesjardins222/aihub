@@ -1,0 +1,221 @@
+/*
+ * Order and position markers.
+ *
+ * The line spans the plot; the label sits at the right, just inside the price
+ * scale, where a trader's eye already is. `--leader` is written by the
+ * animation frame and is the only thing that moves the label off its rule.
+ */
+/*
+ * Above the chart canvas and above the drawing layer.
+ *
+ * Without an explicit z-index the renderer's own canvases stack over the
+ * markers, and the label buttons - cancel, +SL, +TP - cannot be clicked at
+ * all. The container itself never takes pointer events, so panning and zooming
+ * still reach the chart; only the labels do.
+ */
+.pm {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.pm-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  visibility: hidden;
+  --leader: 0px;
+  --line: var(--neutral);
+}
+
+.pm-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 0;
+  border-top: 1px dashed var(--line);
+  opacity: 0.85;
+}
+
+/* A short vertical tick joining a nudged label back to its own price. */
+.pm-leader {
+  position: absolute;
+  right: 6px;
+  width: 1px;
+  background: var(--line);
+  opacity: 0.55;
+  top: 0;
+  height: 0;
+}
+
+.pm-line[data-offset='yes'] .pm-leader {
+  height: calc(var(--leader) * 1);
+}
+
+/* A negative leader means the label went up, so the tick has to grow upward. */
+.pm-line[data-offset='yes'] .pm-leader {
+  transform: translateY(min(var(--leader), 0px));
+  height: max(var(--leader), calc(var(--leader) * -1));
+}
+
+.pm-tag {
+  position: absolute;
+  right: 4px;
+  top: calc(var(--leader) - 9.5px);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 19px;
+  padding: 0 4px 0 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
+
+.pm-tag-drag {
+  cursor: ns-resize;
+}
+
+.pm-kind {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--line);
+}
+
+.pm-qty {
+  min-width: 12px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.pm-price {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.pm-pnl {
+  font-size: var(--fs-sm);
+  min-width: 46px;
+  text-align: right;
+}
+
+.pm-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pm-act {
+  display: grid;
+  place-items: center;
+  height: 14px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.pm-act:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.pm-act-close:hover:not(:disabled) {
+  color: var(--short);
+  border-color: var(--short-dim);
+}
+
+/* --- states ------------------------------------------------------------- */
+
+.pm-position {
+  --line: var(--accent);
+}
+.pm-position .pm-rule {
+  border-top-style: solid;
+  border-top-width: 1px;
+}
+.pm-position .pm-tag {
+  background: var(--bg-raised);
+  border-color: var(--accent-dim);
+}
+
+.pm-stop {
+  --line: var(--short);
+}
+.pm-stop .pm-rule {
+  border-top-style: dashed;
+}
+
+.pm-target {
+  --line: var(--long);
+}
+.pm-target .pm-rule {
+  border-top-style: dashed;
+}
+
+.pm-order.pm-buy {
+  --line: var(--long);
+}
+.pm-order.pm-sell {
+  --line: var(--short);
+}
+.pm-order .pm-rule {
+  border-top-style: dotted;
+}
+
+.pm-review-entry,
+.pm-review-exit {
+  --line: var(--link-purple);
+}
+.pm-review-entry .pm-rule,
+.pm-review-exit .pm-rule {
+  border-top-style: solid;
+  opacity: 0.5;
+}
+
+.pm-dragging .pm-rule {
+  border-top-style: solid;
+  opacity: 1;
+}
+.pm-dragging .pm-tag {
+  border-color: var(--text-primary);
+}
+
+.pm-paused {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  pointer-events: none;
+}

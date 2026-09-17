@@ -2,102 +2,14 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 0;
+  min-width: 0;
+  background: var(--bg-base);
 }
-
-.chart-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--tab-h);
-  min-height: var(--tab-h);
-  padding: 0 8px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.chart-symbol {
-  min-width: 180px;
-  max-width: 260px;
-  font-family: var(--font-ui);
-  background: var(--bg-raised);
-}
-
-.chart-type {
-  font-family: var(--font-ui);
-  background: var(--bg-raised);
-}
-
-.chart-contract {
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-}
-
-.chart-tf {
-  display: flex;
-  gap: 1px;
-}
-.tf-btn {
-  padding: 3px 7px;
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
-}
-.tf-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.tf-btn-active {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
-.chart-toolbar-spacer {
-  flex: 1;
-}
-
-.chip {
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-.chip:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.chip-on {
-  background: var(--accent-bg);
-  border-color: var(--accent-dim);
-  color: var(--accent);
-}
-
-.conn-replay {
-  color: var(--link-purple);
-  border-color: var(--link-purple);
-}
-.conn-latency {
-  margin-left: 4px;
-  font-style: normal;
-  opacity: 0.65;
-  font-family: var(--font-mono);
-}
-
-/* ------------------------------------------------------------------ stage -- */
 
 .chart-stage {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  background: var(--bg-base);
 }
 
 .chart-canvas {
@@ -105,92 +17,166 @@
   inset: 0;
 }
 
-/* The legend floats above the canvas so the chart keeps the full height. */
-.chart-legend {
+/* --- status line -------------------------------------------------------- */
+
+/*
+ * Floats over the top-left of the plot, like the reference. It is written to
+ * directly by the legend rather than re-rendered, so it can update on every
+ * bar without costing a React render.
+ */
+.chart-status {
   position: absolute;
-  top: 6px;
-  left: 10px;
-  z-index: 3;
+  top: 4px;
+  left: 8px;
+  right: 60px;
+  z-index: 2;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
+  gap: 4px 9px;
   pointer-events: none;
   font-size: var(--fs-sm);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  line-height: 1.5;
 }
 
-.legend-symbol {
-  font-size: var(--fs-lg);
+.sl-symbol {
+  font-size: var(--fs-md);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
 }
-.legend-tf {
-  padding: 1px 5px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+
+.sl-tf {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
-.legend-price {
-  font-size: var(--fs-xl);
-  font-weight: 700;
+
+.sl-price {
+  font-size: var(--fs-md);
+  font-weight: 600;
 }
-.legend-change {
+
+.sl-change {
   font-size: var(--fs-sm);
 }
-.legend-ohlc {
+
+.sl-ohlc {
   display: inline-flex;
-  gap: 4px;
-  align-items: baseline;
+  align-items: center;
+  gap: 3px;
   color: var(--text-secondary);
-  font-family: var(--font-mono);
 }
-.legend-ohlc b {
+
+.sl-ohlc b {
   color: var(--text-muted);
   font-weight: 600;
-  margin-left: 4px;
+  font-size: var(--fs-xs);
 }
-.legend-sep {
-  width: 1px;
-  height: 11px;
-  background: var(--border-strong);
-}
-.legend-meta {
+
+.sl-meta {
   color: var(--text-muted);
   font-size: var(--fs-xs);
 }
-.legend-meta .num {
-  color: var(--text-secondary);
+
+.sl-inds {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
+
+.sl-ind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.sl-ind i {
+  width: 7px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.sl-ind b {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.sl-feed {
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.sl-feed-market_closed,
+.sl-feed-no_data {
+  background: var(--short-bg);
+  color: var(--short);
+}
+
+/* --- viewport controls -------------------------------------------------- */
+
+.chart-nav {
+  position: absolute;
+  right: 60px;
+  bottom: 8px;
+  z-index: 4;
+  display: flex;
+  gap: 2px;
+}
+
+.chart-nav button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+
+.chart-nav button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* --- overlays ----------------------------------------------------------- */
 
 .chart-overlay {
   position: absolute;
   inset: 0;
-  z-index: 4;
   display: grid;
   place-items: center;
+  z-index: 6;
   background: rgba(11, 14, 20, 0.72);
   color: var(--text-secondary);
-  font-size: var(--fs-lg);
-  letter-spacing: 0.04em;
+  font-size: var(--fs-md);
+  letter-spacing: 0.03em;
 }
+
 .chart-overlay-error {
   color: var(--short);
 }
 
 .chart-history-note {
   position: absolute;
+  left: 8px;
   bottom: 8px;
-  left: 10px;
-  z-index: 3;
-  max-width: 460px;
+  z-index: 5;
+  max-width: 52ch;
   padding: 4px 8px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-muted);
   font-size: var(--fs-xs);
-  line-height: 1.5;
+  line-height: 1.4;
 }

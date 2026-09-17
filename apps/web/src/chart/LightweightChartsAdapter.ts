@@ -33,6 +33,7 @@ import type { NormalizedBar, Timeframe } from '@atlas/contracts';
 import type {
   ChartAdapter,
   ChartInit,
+  ChartProjection,
   ChartType,
   CrosshairInfo,
   OrderLineHandle,
@@ -41,22 +42,46 @@ import type {
   VisibleRange,
 } from './ChartAdapter';
 import { isStatefulTransform, transformFor } from './transforms';
+import {
+  DEFAULT_APPEARANCE,
+  resolveZone,
+  timeFormatter,
+  type ChartAppearance,
+} from './appearance';
+import { indicatorDef, type IndicatorInstance, type Plot } from './indicators/registry';
 
-const COLORS = {
-  up: '#2ec4a6',
-  down: '#f2544b',
-  upFill: 'rgba(46, 196, 166, 0.85)',
-  downFill: 'rgba(242, 84, 75, 0.85)',
-  volumeUp: 'rgba(46, 196, 166, 0.34)',
-  volumeDown: 'rgba(242, 84, 75, 0.34)',
-  line: '#4d8dff',
-  areaTop: 'rgba(77, 141, 255, 0.34)',
-  areaBottom: 'rgba(77, 141, 255, 0.02)',
-  grid: '#151b26',
-  border: '#242d3e',
-  text: '#9aa6bd',
-  background: '#0b0e14',
-} as const;
+
+/**
+ * Re-alpha a colour for the derived fills.
+ *
+ * Accepts the hex and rgb/rgba forms the settings dialog can produce. Anything
+ * it cannot parse is returned unchanged rather than replaced by a guess, so an
+ * unusual but valid CSS colour still renders as the trader chose.
+ */
+function withAlpha(color: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (hex) {
+    const body = hex[1]!;
+    const full =
+      body.length === 3
+        ? body
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : body;
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const rgb = /^rgba?\(([^)]+)\)$/i.exec(color.trim());
+  if (rgb) {
+    const parts = rgb[1]!.split(',').map((part) => part.trim());
+    const [r, g, b] = parts;
+    if (r && g && b) return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return color;
+}
 
 function toTime(ms: number): UTCTimestamp {
   return Math.floor(ms / 1000) as UTCTimestamp;
@@ -81,7 +106,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private pricePrecision = 2;
   /** Blind practice: the clock is shown, the calendar is not. */
   private datesHidden = false;
-  private timeZone = 'America/Chicago';
   private tickSize = 0.25;
   private volumeVisible = true;
   private autoScale = true;
@@ -90,6 +114,25 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private bars: NormalizedBar[] = [];
   private readonly byTime = new Map<number, number>();
 
+  private appearance: ChartAppearance = DEFAULT_APPEARANCE;
+  /** The instrument's own zone. The appearance decides which one is displayed. */
+  private exchangeZone = 'America/Chicago';
+  private indicators: readonly IndicatorInstance[] = [];
+  /**
+   * One rendered series per indicator plot, keyed `instanceId:plotId`.
+   *
+   * Kept beside the price series rather than inside it: an indicator is drawn
+   * FROM the bars and is never allowed to become one of them.
+   */
+  private readonly indicatorSeries = new Map<
+    string,
+    { series: ISeriesApi<SeriesType>; plot: Plot; pane: number }
+  >();
+  private readonly indicatorGuides = new Map<string, IPriceLine[]>();
+  private readonly legendValues = new Map<string, string>();
+  /** Pane index per indicator instance. 0 is the price pane. */
+  private readonly panes = new Map<string, number>();
+
   private readonly orderLines = new Map<string, { line: IPriceLine; spec: OrderLineSpec }>();
   private readonly historyCallbacks = new Set<(oldest: number) => void>();
   private readonly crosshairCallbacks = new Set<(info: CrosshairInfo) => void>();
@@ -97,59 +140,15 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private historyRequestPending = false;
 
   mount(init: ChartInit): void {
-    this.timeZone = init.timeZone;
+    this.exchangeZone = init.timeZone;
+    this.appearance = init.appearance;
     this.container = init.container;
     this.pricePrecision = init.pricePrecision;
     this.tickSize = init.tickSize;
+    this.volumeVisible = init.appearance.symbol.volumeVisible;
 
     this.chart = createChart(init.container, {
-      layout: {
-        background: { type: ColorType.Solid, color: COLORS.background },
-        textColor: COLORS.text,
-        fontSize: 11,
-        fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: COLORS.grid },
-        horzLines: { color: COLORS.grid },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: '#4d8dff', width: 1, style: LineStyle.Dashed, labelBackgroundColor: '#2a5199' },
-        horzLine: { color: '#4d8dff', width: 1, style: LineStyle.Dashed, labelBackgroundColor: '#2a5199' },
-      },
-      rightPriceScale: {
-        borderColor: COLORS.border,
-        scaleMargins: { top: 0.08, bottom: 0.22 },
-        autoScale: true,
-      },
-      timeScale: {
-        borderColor: COLORS.border,
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 6,
-        barSpacing: 7,
-        // Session gaps are real and must stay visible as gaps.
-        fixLeftEdge: false,
-        lockVisibleTimeRangeOnResize: true,
-      },
-      localization: {
-        locale: 'en-US',
-        priceFormatter: (price: number) => price.toFixed(this.pricePrecision),
-        // Blind practice hides WHICH day this is, never what happened in it:
-        // the clock stays, the calendar goes. A trader who can read the date off
-        // the axis can remember what the session did next, and the point of a
-        // blind session is that they cannot.
-        timeFormatter: (time: Time) =>
-          new Intl.DateTimeFormat('en-US', {
-            ...(this.datesHidden ? {} : { month: 'short', day: '2-digit' }),
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-            timeZone: init.timeZone,
-          }).format(fromTime(time)),
-      },
+      ...this.layoutOptions(),
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: {
         mouseWheel: true,
@@ -169,6 +168,114 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.resize();
   }
 
+  /**
+   * Everything about the chart that is appearance rather than data.
+   *
+   * Built as one object so it can be handed to `createChart` on mount and to
+   * `applyOptions` on every settings change, which means there is exactly one
+   * description of how the chart looks.
+   */
+  private layoutOptions() {
+    const a = this.appearance;
+    const zone = resolveZone(a, this.exchangeZone);
+    const background = a.canvas.backgroundGradientTo
+      ? {
+          type: ColorType.VerticalGradient as const,
+          topColor: a.canvas.background,
+          bottomColor: a.canvas.backgroundGradientTo,
+        }
+      : { type: ColorType.Solid as const, color: a.canvas.background };
+
+    const crosshairMode =
+      a.scales.crosshairStyle === 'MAGNET'
+        ? CrosshairMode.Magnet
+        : a.scales.crosshairStyle === 'HIDDEN'
+          ? CrosshairMode.Hidden
+          : CrosshairMode.Normal;
+
+    return {
+      layout: {
+        background,
+        textColor: a.canvas.textColor,
+        fontSize: a.canvas.fontSize,
+        fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+        attributionLogo: false,
+        panes: { separatorColor: a.scales.paneSeparatorColor, separatorHoverColor: a.scales.scaleLineColor },
+      },
+      grid: {
+        vertLines: { color: a.scales.gridColor, visible: a.scales.gridVerticalVisible },
+        horzLines: { color: a.scales.gridColor, visible: a.scales.gridHorizontalVisible },
+      },
+      crosshair: {
+        mode: crosshairMode,
+        vertLine: {
+          color: a.scales.crosshairColor,
+          width: 1 as const,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: a.scales.crosshairLabelBackground,
+        },
+        horzLine: {
+          color: a.scales.crosshairColor,
+          width: 1 as const,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: a.scales.crosshairLabelBackground,
+        },
+      },
+      rightPriceScale: {
+        visible: a.scales.priceScaleVisible && a.scales.priceScaleSide === 'RIGHT',
+        borderColor: a.scales.scaleLineColor,
+        scaleMargins: { top: a.scales.scaleMarginTop, bottom: a.scales.scaleMarginBottom },
+        autoScale: a.scales.autoScale,
+      },
+      leftPriceScale: {
+        visible: a.scales.priceScaleVisible && a.scales.priceScaleSide === 'LEFT',
+        borderColor: a.scales.scaleLineColor,
+        scaleMargins: { top: a.scales.scaleMarginTop, bottom: a.scales.scaleMarginBottom },
+        autoScale: a.scales.autoScale,
+      },
+      timeScale: {
+        visible: a.scales.timeScaleVisible,
+        borderColor: a.scales.scaleLineColor,
+        timeVisible: true,
+        secondsVisible: this.timeframe.endsWith('s'),
+        rightOffset: 6,
+        barSpacing: 7,
+        fixLeftEdge: false,
+        lockVisibleTimeRangeOnResize: true,
+        // The axis formatter is installed unconditionally, because the default
+        // is 24-hour and 12-hour with AM/PM is what this platform shows. It
+        // must always return a string: a formatter that returns undefined does
+        // not fall back to the library's labels, it prints "undefined".
+        tickMarkFormatter: (time: Time): string => this.axisLabel(fromTime(time)),
+      },
+      localization: {
+        locale: 'en-US',
+        priceFormatter: (price: number) => price.toFixed(this.pricePrecision),
+        // Blind practice hides WHICH day this is, never what happened in it:
+        // the clock stays, the calendar goes. A trader who can read the date off
+        // the axis can remember what the session did next, and the point of a
+        // blind session is that they cannot.
+        timeFormatter: (time: Time) =>
+          timeFormatter(this.appearance, this.exchangeZone, { date: !this.datesHidden }).format(
+            fromTime(time),
+          ),
+      },
+      ...(zone ? {} : {}),
+    };
+  }
+
+  /**
+   * One tick label on the time axis.
+   *
+   * Always a string. The date half is dropped in blind practice, and the time
+   * half follows the 12/24-hour setting.
+   */
+  private axisLabel(ms: number): string {
+    return timeFormatter(this.appearance, this.exchangeZone, {
+      date: false,
+    }).format(ms);
+  }
+
   destroy(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -176,6 +283,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.historyCallbacks.clear();
     this.crosshairCallbacks.clear();
     this.rangeCallbacks.clear();
+    this.indicatorSeries.clear();
+    this.indicatorGuides.clear();
+    this.legendValues.clear();
+    this.panes.clear();
     this.chart?.remove();
     this.chart = null;
     this.priceSeries = null;
@@ -199,83 +310,108 @@ export class LightweightChartsAdapter implements ChartAdapter {
       this.priceSeries = null;
     }
 
+    const a = this.appearance.symbol;
     const priceFormat = {
       type: 'price' as const,
       precision: this.pricePrecision,
       minMove: this.tickSize,
     };
+    const common = {
+      priceFormat,
+      priceLineVisible: a.lastPriceLineVisible,
+      priceScaleId: this.appearance.scales.priceScaleSide === 'LEFT' ? 'left' : 'right',
+    };
 
     switch (this.chartType) {
       case 'BARS':
         this.priceSeries = this.chart.addSeries(BarSeries, {
-          upColor: COLORS.up,
-          downColor: COLORS.down,
+          ...common,
+          upColor: a.upColor,
+          downColor: a.downColor,
           thinBars: false,
-          priceFormat,
         });
         break;
 
       case 'LINE':
       case 'LINE_WITH_MARKERS':
         this.priceSeries = this.chart.addSeries(LineSeries, {
-          color: COLORS.line,
-          lineWidth: 2,
+          ...common,
+          color: a.lineColor,
+          lineWidth: a.lineWidth as 1 | 2 | 3 | 4,
           pointMarkersVisible: this.chartType === 'LINE_WITH_MARKERS',
-          priceFormat,
         });
         break;
 
       case 'AREA':
         this.priceSeries = this.chart.addSeries(AreaSeries, {
-          lineColor: COLORS.line,
-          topColor: COLORS.areaTop,
-          bottomColor: COLORS.areaBottom,
-          lineWidth: 2,
-          priceFormat,
+          ...common,
+          lineColor: a.lineColor,
+          topColor: a.areaTopColor,
+          bottomColor: a.areaBottomColor,
+          lineWidth: a.lineWidth as 1 | 2 | 3 | 4,
         });
         break;
 
       case 'BASELINE':
         this.priceSeries = this.chart.addSeries(BaselineSeries, {
-          topLineColor: COLORS.up,
-          topFillColor1: 'rgba(46,196,166,0.28)',
-          topFillColor2: 'rgba(46,196,166,0.03)',
-          bottomLineColor: COLORS.down,
-          bottomFillColor1: 'rgba(242,84,75,0.03)',
-          bottomFillColor2: 'rgba(242,84,75,0.28)',
-          priceFormat,
+          ...common,
+          topLineColor: a.upColor,
+          topFillColor1: withAlpha(a.upColor, 0.28),
+          topFillColor2: withAlpha(a.upColor, 0.03),
+          bottomLineColor: a.downColor,
+          bottomFillColor1: withAlpha(a.downColor, 0.03),
+          bottomFillColor2: withAlpha(a.downColor, 0.28),
         });
         break;
 
       case 'HOLLOW_CANDLES':
-        // Hollow candles: up bars are outlined, down bars filled.
+        // Up bars outlined, down bars filled.
         this.priceSeries = this.chart.addSeries(CandlestickSeries, {
+          ...common,
           upColor: 'rgba(0,0,0,0)',
-          downColor: COLORS.downFill,
-          borderUpColor: COLORS.up,
-          borderDownColor: COLORS.down,
-          wickUpColor: COLORS.up,
-          wickDownColor: COLORS.down,
-          priceFormat,
+          downColor: a.bodyVisible ? a.downColor : 'rgba(0,0,0,0)',
+          borderVisible: true,
+          borderUpColor: a.borderUpColor,
+          borderDownColor: a.borderDownColor,
+          wickVisible: a.wickVisible,
+          wickUpColor: a.wickUpColor,
+          wickDownColor: a.wickDownColor,
         });
         break;
 
       default:
         this.priceSeries = this.chart.addSeries(CandlestickSeries, {
-          upColor: COLORS.upFill,
-          downColor: COLORS.downFill,
-          borderUpColor: COLORS.up,
-          borderDownColor: COLORS.down,
-          wickUpColor: COLORS.up,
-          wickDownColor: COLORS.down,
-          priceFormat,
+          ...common,
+          upColor: a.bodyVisible ? a.upColor : 'rgba(0,0,0,0)',
+          downColor: a.bodyVisible ? a.downColor : 'rgba(0,0,0,0)',
+          borderVisible: a.borderVisible,
+          borderUpColor: a.borderUpColor,
+          borderDownColor: a.borderDownColor,
+          wickVisible: a.wickVisible,
+          wickUpColor: a.wickUpColor,
+          wickDownColor: a.wickDownColor,
         });
     }
 
     this.priceSeries.priceScale().applyOptions({
-      autoScale: this.autoScale,
-      scaleMargins: { top: 0.08, bottom: 0.22 },
+      autoScale: this.autoScale && this.appearance.scales.autoScale,
+      scaleMargins: {
+        top: this.appearance.scales.scaleMarginTop,
+        bottom: this.appearance.scales.scaleMarginBottom,
+      },
     });
+    this.applyScaleMode();
+  }
+
+  /** Log / percent / normal, from the appearance rather than a separate toggle. */
+  private applyScaleMode(): void {
+    const a = this.appearance.scales;
+    const mode = a.percentScale
+      ? PriceScaleMode.Percentage
+      : a.logScale
+        ? PriceScaleMode.Logarithmic
+        : PriceScaleMode.Normal;
+    this.priceSeries?.priceScale().applyOptions({ mode });
   }
 
   private createVolumeSeries(): void {
@@ -284,6 +420,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
       visible: this.volumeVisible,
+      // Volume has its own hidden scale, so its "last value" would print a
+      // meaningless price label on the price axis.
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
     // Volume occupies the lower fifth, overlaid on the same pane.
     this.chart.priceScale('volume').applyOptions({
@@ -357,6 +497,40 @@ export class LightweightChartsAdapter implements ChartAdapter {
       INDEXED_TO_100: PriceScaleMode.IndexedTo100,
     };
     this.priceSeries?.priceScale().applyOptions({ mode: map[mode] });
+  }
+
+  /**
+   * Apply a whole appearance.
+   *
+   * The series is rebuilt only when something structural changed - the candle
+   * colours, the scale side. Rebuilding on every keystroke of a colour picker
+   * would drop the viewport and flash the chart.
+   */
+  applyAppearance(appearance: ChartAppearance): void {
+    const previous = this.appearance;
+    this.appearance = appearance;
+    if (!this.chart) return;
+
+    this.chart.applyOptions(this.layoutOptions() as never);
+
+    const structural =
+      JSON.stringify(previous.symbol) !== JSON.stringify(appearance.symbol) ||
+      previous.scales.priceScaleSide !== appearance.scales.priceScaleSide;
+    if (structural) {
+      this.createPriceSeries();
+      this.volumeVisible = appearance.symbol.volumeVisible;
+      this.volumeSeries?.applyOptions({ visible: this.volumeVisible });
+      this.redraw();
+    } else {
+      this.applyScaleMode();
+      this.priceSeries?.priceScale().applyOptions({
+        autoScale: appearance.scales.autoScale,
+        scaleMargins: {
+          top: appearance.scales.scaleMarginTop,
+          bottom: appearance.scales.scaleMarginBottom,
+        },
+      });
+    }
   }
 
   applyHistory(bars: readonly NormalizedBar[]): void {
@@ -436,6 +610,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (this.volumeVisible && this.volumeSeries) {
       this.volumeSeries.update(this.toVolumePoint(bar));
     }
+    // Indicators are recomputed from the bars, so the newest one has to reach
+    // them. Only when something is actually drawn: with no indicators on the
+    // chart this costs nothing, which is the common case.
+    if (this.indicatorSeries.size > 0) this.renderIndicators();
   }
 
   private reindex(): void {
@@ -450,6 +628,203 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (this.volumeSeries) {
       this.volumeSeries.setData(this.bars.map((b) => this.toVolumePoint(b)));
     }
+    this.renderIndicators();
+  }
+
+  // -- indicators ----------------------------------------------------------
+
+  /**
+   * Replace the indicator set.
+   *
+   * Panes are allocated in the order the indicators were added, so adding an
+   * oscillator does not reshuffle the one already below the chart.
+   */
+  setIndicators(indicators: readonly IndicatorInstance[]): void {
+    this.indicators = [...indicators];
+
+    // Drop the series of anything no longer present.
+    const live = new Set(this.indicators.filter((i) => i.visible).map((i) => i.id));
+    for (const [key, entry] of [...this.indicatorSeries]) {
+      const instanceId = key.slice(0, key.lastIndexOf(':'));
+      if (live.has(instanceId)) continue;
+      this.chart?.removeSeries(entry.series);
+      this.indicatorSeries.delete(key);
+      this.legendValues.delete(key);
+    }
+    for (const [key] of [...this.indicatorGuides]) {
+      if (!live.has(key)) this.indicatorGuides.delete(key);
+    }
+
+    this.panes.clear();
+    let nextPane = 1;
+    for (const instance of this.indicators) {
+      if (!instance.visible) continue;
+      const def = indicatorDef(instance.kind);
+      if (!def) continue;
+      this.panes.set(instance.id, def.overlay ? 0 : nextPane++);
+    }
+
+    this.renderIndicators();
+  }
+
+  /**
+   * Compute and draw every indicator.
+   *
+   * The computation happens HERE, from the bars the adapter already holds,
+   * which is what keeps a moving average from turning every tick into a React
+   * render. It reads bars and writes series; it can never write a bar.
+   */
+  private renderIndicators(): void {
+    if (!this.chart || this.bars.length === 0) return;
+
+    for (const instance of this.indicators) {
+      if (!instance.visible) continue;
+      const def = indicatorDef(instance.kind);
+      if (!def) continue;
+      const pane = this.panes.get(instance.id) ?? 0;
+
+      let output;
+      try {
+        output = def.compute(this.bars, { ...def.defaults, ...instance.params }, {
+          pane: def.overlay ? 'PRICE' : pane,
+          isSessionStart: (_bar, index) => this.isSessionStart(index),
+        });
+      } catch {
+        // A bad parameter must not take the chart down with it. The indicator
+        // simply does not draw, and the trader can fix or remove it.
+        continue;
+      }
+
+      for (const plot of output.plots) {
+        const key = `${instance.id}:${plot.id}`;
+        let entry = this.indicatorSeries.get(key);
+
+        if (!entry) {
+          const series =
+            plot.kind === 'HISTOGRAM'
+              ? this.chart.addSeries(
+                  HistogramSeries,
+                  {
+                    color: plot.color,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    priceScaleId: pane === 0 ? 'indicator-overlay' : 'right',
+                  },
+                  pane,
+                )
+              : this.chart.addSeries(
+                  LineSeries,
+                  {
+                    color: plot.color,
+                    lineWidth: plot.lineWidth as 1 | 2 | 3 | 4,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false,
+                  },
+                  pane,
+                );
+          entry = { series, plot, pane };
+          this.indicatorSeries.set(key, entry);
+
+          // An overlaid histogram gets its own hidden scale so it cannot
+          // squash the price axis.
+          if (plot.kind === 'HISTOGRAM' && pane === 0) {
+            this.chart.priceScale('indicator-overlay').applyOptions({
+              scaleMargins: { top: 0.82, bottom: 0 },
+              visible: false,
+            });
+          }
+        } else {
+          entry.series.applyOptions({ color: plot.color } as never);
+          entry.plot = plot;
+        }
+
+        entry.series.setData(
+          plot.points.map((point) => ({
+            time: toTime(point.time),
+            value: point.value,
+            ...(point.color ? { color: point.color } : {}),
+          })) as never,
+        );
+
+        const last = plot.points[plot.points.length - 1];
+        this.legendValues.set(
+          key,
+          last ? last.value.toFixed(this.legendPrecision(plot)) : '—',
+        );
+      }
+
+      // Pane guides, e.g. RSI's 30/70. Created once per instance.
+      if (output.guides && output.guides.length > 0 && !this.indicatorGuides.has(instance.id)) {
+        const host = this.indicatorSeries.get(`${instance.id}:${output.plots[0]?.id ?? ''}`);
+        if (host) {
+          this.indicatorGuides.set(
+            instance.id,
+            output.guides.map((guide) =>
+              host.series.createPriceLine({
+                price: guide.value,
+                color: guide.color,
+                lineWidth: 1,
+                lineStyle: LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+              }),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /** Oscillators read better with fewer decimals than prices. */
+  private legendPrecision(plot: Plot): number {
+    return plot.kind === 'HISTOGRAM' ? 0 : Math.max(2, this.pricePrecision);
+  }
+
+  /**
+   * Is this bar the first of a trading session?
+   *
+   * Decided from the GAP between bars rather than from a session calendar the
+   * chart does not have: a jump of more than four times the usual spacing is a
+   * break in the data, which for a futures instrument is the daily halt. It is
+   * used only to anchor session statistics, never to create a bar.
+   */
+  private isSessionStart(index: number): boolean {
+    if (index === 0) return true;
+    const previous = this.bars[index - 1];
+    const current = this.bars[index];
+    if (!previous || !current) return false;
+    const spacing = this.typicalSpacing();
+    return spacing > 0 && current.time - previous.time > spacing * 4;
+  }
+
+  private typicalSpacing(): number {
+    if (this.bars.length < 3) return 0;
+    // The median of the first few gaps: robust to the one big gap we are
+    // looking for, unlike the mean.
+    const gaps: number[] = [];
+    for (let i = 1; i < Math.min(this.bars.length, 40); i += 1) {
+      gaps.push(this.bars[i]!.time - this.bars[i - 1]!.time);
+    }
+    gaps.sort((a, b) => a - b);
+    return gaps[Math.floor(gaps.length / 2)] ?? 0;
+  }
+
+  indicatorLegend(): ReadonlyArray<{ id: string; label: string; color: string; value: string }> {
+    const out: Array<{ id: string; label: string; color: string; value: string }> = [];
+    for (const instance of this.indicators) {
+      if (!instance.visible) continue;
+      for (const [key, entry] of this.indicatorSeries) {
+        if (!key.startsWith(`${instance.id}:`)) continue;
+        out.push({
+          id: key,
+          label: entry.plot.label,
+          color: entry.plot.color,
+          value: this.legendValues.get(key) ?? '—',
+        });
+      }
+    }
+    return out;
   }
 
   private toSeriesPoint(bar: NormalizedBar): never {
@@ -474,7 +849,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
     return {
       time: toTime(bar.time),
       value: bar.volume,
-      color: bar.close >= bar.open ? COLORS.volumeUp : COLORS.volumeDown,
+      color:
+        bar.close >= bar.open
+          ? this.appearance.symbol.volumeUpColor
+          : this.appearance.symbol.volumeDownColor,
     } as never;
   }
 
@@ -547,7 +925,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
   addOrderLine(spec: OrderLineSpec): OrderLineHandle {
     if (!this.priceSeries) throw new Error('CHART_NOT_MOUNTED');
-    const colour = spec.side === 'BUY' ? COLORS.up : COLORS.down;
+    const colour = spec.side === 'BUY' ? this.appearance.symbol.upColor : this.appearance.symbol.downColor;
     const line = this.priceSeries.createPriceLine({
       price: spec.price,
       color: colour,
@@ -566,7 +944,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
         entry.line.applyOptions({
           price: next.price,
           title: next.label,
-          color: next.side === 'BUY' ? COLORS.up : COLORS.down,
+          color:
+            next.side === 'BUY'
+              ? this.appearance.symbol.upColor
+              : this.appearance.symbol.downColor,
         });
         this.orderLines.set(spec.id, { line: entry.line, spec: next });
       },
@@ -599,23 +980,75 @@ export class LightweightChartsAdapter implements ChartAdapter {
   setDatesHidden(hidden: boolean): void {
     if (this.datesHidden === hidden) return;
     this.datesHidden = hidden;
-    // The axis formatter is INSTALLED to hide dates and REMOVED to show them.
-    // A formatter that returns undefined for the normal case does not fall back
-    // to the library's own labels - it renders the string "undefined" across
-    // the whole axis.
-    this.chart?.applyOptions({
-      timeScale: {
-        tickMarkFormatter: hidden
-          ? (time: Time): string =>
-              new Intl.DateTimeFormat('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-                timeZone: this.timeZone,
-              }).format(fromTime(time))
-          : undefined,
+    // Only the crosshair label carries a date; the axis never does, because the
+    // tick labels are times. Reapplying the options rebuilds the formatter
+    // closure, which reads `datesHidden` when it runs.
+    this.chart?.applyOptions(this.layoutOptions() as never);
+  }
+
+  /**
+   * Pixel geometry for the overlay layers.
+   *
+   * Recreated on every call rather than cached: the time scale moves whenever
+   * the user pans, and a stale projection puts a drawing somewhere the market
+   * never was.
+   */
+  projection(): ChartProjection | null {
+    const chart = this.chart;
+    const series = this.priceSeries;
+    const container = this.container;
+    if (!chart || !series || !container) return null;
+    const timeScale = chart.timeScale();
+    return {
+      timeToX: (timeMs) => timeScale.timeToCoordinate(toTime(timeMs)),
+      xToTime: (x) => {
+        const time = timeScale.coordinateToTime(x);
+        if (time !== null) return fromTime(time);
+        // Past the last bar there is no time on the scale yet. Extrapolating by
+        // the logical index keeps a drawing anchored where the cursor is,
+        // without inventing a bar: the anchor is a time, not an observation.
+        const logical = timeScale.coordinateToLogical(x);
+        const spacing = this.typicalSpacing();
+        const last = this.bars[this.bars.length - 1];
+        if (logical === null || spacing === 0 || !last) return null;
+        return last.time + Math.round(logical - (this.bars.length - 1)) * spacing;
       },
-    });
+      priceToY: (price) => series.priceToCoordinate(price),
+      yToPrice: (y) => series.coordinateToPrice(y),
+      // The PLOT's width, not the container's: an overlay that ran to the
+      // container edge would paint over the price axis.
+      width: Math.max(0, container.clientWidth - this.priceScaleWidth()),
+      height: container.clientHeight,
+    };
+  }
+
+  /**
+   * The genuine bar nearest a time.
+   *
+   * Used by the drawing magnet, which snaps only to prices a bar printed.
+   */
+  barNear(timeMs: number): NormalizedBar | null {
+    if (this.bars.length === 0) return null;
+    let low = 0;
+    let high = this.bars.length - 1;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (this.bars[mid]!.time < timeMs) low = mid + 1;
+      else high = mid;
+    }
+    const at = this.bars[low]!;
+    const before = this.bars[low - 1];
+    if (!before) return at;
+    return Math.abs(at.time - timeMs) <= Math.abs(timeMs - before.time) ? at : before;
+  }
+
+  priceScaleWidth(): number {
+    const side = this.appearance.scales.priceScaleSide === 'LEFT' ? 'left' : 'right';
+    try {
+      return this.chart?.priceScale(side).width() ?? 0;
+    } catch {
+      return 0;
+    }
   }
 
   priceToY(price: number): number | null {

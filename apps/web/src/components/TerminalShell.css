@@ -1,177 +1,20 @@
+/*
+ * The terminal layout.
+ *
+ * The chart is the application: the rail is 34px, the ticket defaults to 224px,
+ * and everything else is a drawer or a dialog. Nothing between the account bar
+ * and the blotter competes with the plot for width.
+ */
 .terminal {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-void);
+  background: var(--bg-base);
 }
-
-/* ---------------------------------------------------------------- header -- */
-
-.terminal-header {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  height: var(--header-h);
-  min-height: var(--header-h);
-  padding: 0 12px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-
-.hdr-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.hdr-mark {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 16px;
-}
-.hdr-mark span {
-  width: 3px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-.hdr-mark span:nth-child(1) {
-  height: 40%;
-  opacity: 0.5;
-}
-.hdr-mark span:nth-child(2) {
-  height: 70%;
-  opacity: 0.75;
-}
-.hdr-mark span:nth-child(3) {
-  height: 100%;
-  background: var(--long);
-}
-.hdr-wordmark {
-  font-size: var(--fs-lg);
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
-.hdr-sim {
-  padding: 1px 5px;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
-  color: var(--warn);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.hdr-group {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.hdr-account-select {
-  min-width: 150px;
-  padding: 3px 6px;
-  font-family: var(--font-ui);
-  background: var(--bg-raised);
-}
-
-.hdr-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 78px;
-}
-.hdr-metric-value {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
-
-.hdr-spacer {
-  flex: 1;
-}
-
-.hdr-session {
-  gap: 8px;
-}
-.hdr-clock {
-  font-size: var(--fs-lg);
-  color: var(--text-secondary);
-}
-
-.hdr-user {
-  padding: 4px 9px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-.hdr-user:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.pill {
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-.pill-ok {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-.pill-good {
-  background: var(--long-bg);
-  color: var(--long);
-}
-.pill-bad {
-  background: var(--short-bg);
-  color: var(--short);
-}
-.pill-warn {
-  background: var(--warn-bg);
-  color: var(--warn);
-}
-
-.conn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-.conn i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.conn-pending {
-  color: var(--text-muted);
-}
-.conn-live {
-  color: var(--long);
-  border-color: var(--long-dim);
-}
-.conn-delayed {
-  color: var(--warn);
-  border-color: var(--warn);
-}
-.conn-down {
-  color: var(--short);
-  border-color: var(--short-dim);
-}
-
-/* ------------------------------------------------------------------ body -- */
 
 .terminal-body {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -183,20 +26,38 @@
 }
 
 .terminal-centre {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-base);
 }
 
 .terminal-right {
-  flex-shrink: 0;
-  min-width: 0;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+
+.terminal-right-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 2px 0 7px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+
+/* The ticket is content-height. The column scrolls if the window is short,
+   rather than stretching the ticket into a screen of blank space. */
+.terminal-right-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .terminal-bottom {
@@ -204,88 +65,152 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-panel);
-  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-subtle);
+  z-index: 4;
 }
-
-/* -------------------------------------------------------------- splitters -- */
 
 .splitter {
+  flex: 0 0 auto;
   background: transparent;
-  transition: background 120ms ease;
-  flex-shrink: 0;
+  transition: background 90ms linear;
 }
-.splitter:hover,
-.splitter:active {
+
+.splitter:hover {
   background: var(--accent-dim);
 }
+
 .splitter-v {
-  width: 4px;
+  width: 3px;
   cursor: col-resize;
 }
+
 .splitter-h {
-  position: absolute;
-  top: -2px;
-  left: 0;
-  right: 0;
-  height: 5px;
+  height: 3px;
   cursor: row-resize;
 }
 
-.rail-expand {
-  width: 14px;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius);
   color: var(--text-muted);
-  font-size: var(--fs-md);
+  font-size: 12px;
 }
-.rail-expand:hover {
+
+.icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-/* ----------------------------------------------------------- panel chrome -- */
+.hdr-spacer {
+  flex: 1 1 auto;
+}
 
+.rail-expand-left {
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.drawer-section {
+  border-top: 1px solid var(--border);
+}
+
+/* Panel heads used by the drawers' inner panels. */
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: var(--tab-h);
-  min-height: var(--tab-h);
-  padding: 0 8px;
-  background: var(--bg-panel);
+  gap: 4px;
+  height: 25px;
+  padding: 0 4px 0 8px;
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.panel-title {
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+  flex: 0 0 auto;
 }
 
 .tabs {
   display: flex;
-  align-items: stretch;
-  height: 100%;
+  gap: 1px;
+  overflow: hidden;
 }
+
 .tab {
-  padding: 0 11px;
-  font-size: var(--fs-sm);
+  height: 21px;
+  padding: 0 8px;
+  border-radius: var(--radius);
   color: var(--text-muted);
-  border-bottom: 2px solid transparent;
-  letter-spacing: 0.04em;
+  font-size: var(--fs-md);
+  white-space: nowrap;
 }
+
 .tab:hover {
-  color: var(--text-secondary);
-}
-.tab-active {
+  background: var(--bg-hover);
   color: var(--text-primary);
-  border-bottom-color: var(--accent);
 }
+
+.tab-active,
+.tab-active:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.chip {
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chip-on,
+.chip-on:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.pill {
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.pill-ok {
+  background: var(--long-bg);
+  color: var(--long);
+}
+.pill-good {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.pill-bad {
+  background: var(--short-bg);
+  color: var(--short);
+}
+.pill-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
 .tab-count {
   margin-left: 5px;
   padding: 0 4px;
@@ -295,27 +220,8 @@
   font-size: var(--fs-xs);
 }
 
-.panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.icon-btn {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius);
-  color: var(--text-muted);
-}
-.icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 /* A panel region whose feature is not implemented yet. Honest by design: it
-   states which milestone delivers it instead of showing dead controls. */
+   states what delivers it instead of showing dead controls. */
 .pending {
   display: flex;
   flex-direction: column;
@@ -359,7 +265,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 4px 8px;
+  padding: 3px 8px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   text-align: left;
@@ -371,7 +277,7 @@
   white-space: nowrap;
 }
 .data-table td {
-  padding: 3px 8px;
+  padding: 2px 8px;
   border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
   height: var(--row-h);
@@ -383,7 +289,7 @@
   text-align: right;
 }
 .empty-row td {
-  padding: 18px;
+  padding: 16px;
   text-align: center;
   color: var(--text-muted);
   font-size: var(--fs-sm);
