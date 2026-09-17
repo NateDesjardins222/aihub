@@ -40,13 +40,13 @@ import {
 import type { Database } from '../db/client.js';
 import {
   accountEvents,
+  accountProfileVersions,
   accounts,
   executions,
   orders as ordersTable,
   positions as positionsTable,
   practiceSessions,
   riskEvents,
-  ruleTemplates,
   trades,
 } from '../db/schema.js';
 import type { NormalizedBar, NormalizedQuote } from '@atlas/contracts';
@@ -89,7 +89,12 @@ import {
   ruleStateFor,
 } from './account-rules.js';
 import { rollTradingDay, type RuleStatus } from '@atlas/core';
-import { checkOrder, increasingQty, type RiskRejection } from './risk.js';
+import {
+  checkOrder,
+  increasingQty,
+  type InstrumentPolicy,
+  type RiskRejection,
+} from './risk.js';
 import {
   presentOrder,
   presentPosition,
@@ -2099,19 +2104,47 @@ export class TradingEngine {
   }
 
   private async loadRiskAccount(accountId: string) {
-    const [row] = await this.db
-      .select({ account: accounts, template: ruleTemplates })
-      .from(accounts)
-      .innerJoin(ruleTemplates, eq(accounts.ruleTemplateId, ruleTemplates.id))
-      .where(eq(accounts.id, accountId));
-    if (!row) throw new OrderRejectedError('ACCOUNT_NOT_FOUND', 'No such account.');
+    // Through the shared loader, so an account pinned to a product version and
+    // one that predates products arrive in the same shape. An inner join on
+    // the old template table would refuse every order on a provisioned
+    // account, because a provisioned account does not have one.
+    const loaded = await loadAccountAndTemplate(this.db, accountId);
+    if (!loaded?.template) throw new OrderRejectedError('ACCOUNT_NOT_FOUND', 'No such account.');
+    const { account, template } = loaded;
     return {
-      id: row.account.id,
-      status: row.account.status,
-      maxContracts: row.template.maxContracts,
-      microsCountAsFraction: row.template.microsCountAsFraction,
-      failedReason: row.account.failedReason,
+      id: account.id,
+      status: account.status,
+      maxContracts: template.maxContracts,
+      microsCountAsFraction: template.microsCountAsFraction,
+      failedReason: account.failedReason,
+      instruments: await this.instrumentPolicy(account),
     };
+  }
+
+  /**
+   * What the account may trade.
+   *
+   * The product's policy, with the account's own overrides laid over it: a
+   * firm sells a product, and support can narrow one trader's account without
+   * inventing a new product for them.
+   */
+  private async instrumentPolicy(account: {
+    profileVersionId: string | null;
+    instrumentLimits: unknown;
+  }): Promise<InstrumentPolicy | null> {
+    let fromProduct: InstrumentPolicy | null = null;
+    if (account.profileVersionId) {
+      const [version] = await this.db
+        .select({ config: accountProfileVersions.config })
+        .from(accountProfileVersions)
+        .where(eq(accountProfileVersions.id, account.profileVersionId));
+      const instruments = (version?.config as { instruments?: InstrumentPolicy } | null)
+        ?.instruments;
+      if (instruments) fromProduct = instruments;
+    }
+    const override = (account.instrumentLimits ?? null) as InstrumentPolicy | null;
+    if (!fromProduct && !override) return null;
+    return { ...(fromProduct ?? {}), ...(override ?? {}) };
   }
 
   private async openContractWeight(accountId: string, microsAsFraction: boolean): Promise<number> {

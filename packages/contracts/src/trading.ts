@@ -159,7 +159,13 @@ export type RejectReason =
   | 'ACCOUNT_FAILED'
   | 'ACCOUNT_LOCKED'
   | 'ACCOUNT_PASSED'
+  /** Provisioned but not yet activated. */
+  | 'ACCOUNT_PENDING'
+  | 'ACCOUNT_DISABLED'
+  | 'ACCOUNT_ARCHIVED'
   | 'UNKNOWN_INSTRUMENT'
+  /** The account's product does not permit this instrument. */
+  | 'INSTRUMENT_NOT_PERMITTED'
   | 'MARKET_CLOSED'
   | 'MARKET_DATA_STALE'
   | 'MARKET_DATA_UNAVAILABLE'

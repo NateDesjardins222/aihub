@@ -22,6 +22,36 @@ export interface RiskAccount {
   readonly maxContracts: number;
   readonly microsCountAsFraction: boolean;
   readonly failedReason?: string | null;
+  /**
+   * What this account may trade, from its product's configuration and its own
+   * overrides. Absent means every instrument Atlas carries, at the programme's
+   * own contract cap - which is what every account had before products.
+   */
+  readonly instruments?: InstrumentPolicy | null;
+}
+
+/**
+ * Permitted instruments and sizing.
+ *
+ * A firm sells "NQ and ES, five contracts, but only two of ES". Atlas does not
+ * know why; it enforces what the configuration says. A per-instrument cap only
+ * ever LOWERS the account-wide cap - a product cannot raise its own limit by
+ * naming an instrument.
+ */
+export interface InstrumentPolicy {
+  readonly allowed?: readonly string[] | null;
+  readonly maxContracts?: number | null;
+  readonly perInstrument?: Readonly<Record<string, number>> | null;
+}
+
+/** The contract cap that applies to one instrument on one account. */
+export function effectiveContractCap(account: RiskAccount, root: string): number {
+  const policy = account.instruments ?? null;
+  const caps = [account.maxContracts];
+  if (policy?.maxContracts != null) caps.push(policy.maxContracts);
+  const perInstrument = policy?.perInstrument?.[root];
+  if (perInstrument != null) caps.push(perInstrument);
+  return Math.min(...caps);
 }
 
 export interface RiskRequest {
@@ -67,6 +97,9 @@ const ACCOUNT_STATUS_REASON: Record<string, RejectReason> = {
   PASSED: 'ACCOUNT_PASSED',
   LOCKED: 'ACCOUNT_LOCKED',
   SUSPENDED: 'ACCOUNT_LOCKED',
+  PENDING: 'ACCOUNT_PENDING',
+  DISABLED: 'ACCOUNT_DISABLED',
+  ARCHIVED: 'ACCOUNT_ARCHIVED',
 };
 
 const ACCOUNT_STATUS_MESSAGE: Record<string, string> = {
@@ -74,6 +107,9 @@ const ACCOUNT_STATUS_MESSAGE: Record<string, string> = {
   LOCKED: 'Trading is locked for the rest of the trading day.',
   PASSED: 'This account has completed its programme.',
   SUSPENDED: 'This account is suspended.',
+  PENDING: 'This account has not been activated yet.',
+  DISABLED: 'This account has been disabled.',
+  ARCHIVED: 'This account has been archived.',
 };
 
 export function checkOrder(ctx: RiskContext, request: RiskRequest): RiskRejection | null {
@@ -98,6 +134,18 @@ export function checkOrder(ctx: RiskContext, request: RiskRequest): RiskRejectio
   }
 
   // --- instrument and market ---------------------------------------------
+  // What the account is SOLD, before what the instrument supports: an
+  // instrument the product does not include is not a question about order
+  // types.
+  const allowed = account.instruments?.allowed ?? null;
+  if (allowed && !allowed.includes(spec.root)) {
+    return {
+      reason: 'INSTRUMENT_NOT_PERMITTED',
+      message: `This account may not trade ${spec.root}.`,
+      detail: { root: spec.root, allowed: [...allowed] },
+    };
+  }
+
   if (!spec.supportedOrderTypes.includes(request.type as never)) {
     return {
       reason: 'UNSUPPORTED_ORDER_TYPE',
@@ -225,6 +273,24 @@ export function checkOrder(ctx: RiskContext, request: RiskRequest): RiskRejectio
         message: `This would take you to ${round2(projected)} of ${account.maxContracts} contracts.`,
         detail: { projected: round2(projected), limit: account.maxContracts },
       };
+    }
+
+    // A per-instrument cap is about THIS instrument, so it is measured against
+    // the position in it rather than against total exposure.
+    const instrumentCap = effectiveContractCap(account, spec.root);
+    if (instrumentCap < account.maxContracts) {
+      const inThis = contractWeight(
+        spec,
+        Math.abs(ctx.position.qty) + increasing,
+        account.microsCountAsFraction,
+      );
+      if (inThis > instrumentCap + 1e-9) {
+        return {
+          reason: 'MAX_CONTRACTS_EXCEEDED',
+          message: `This account may hold ${instrumentCap} ${spec.root} contracts.`,
+          detail: { projected: round2(inThis), limit: instrumentCap, root: spec.root },
+        };
+      }
     }
   }
 

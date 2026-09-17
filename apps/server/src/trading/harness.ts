@@ -217,6 +217,14 @@ export async function createFixture(options?: {
   startingBalanceMicros?: number;
   /** Programme rules. Omitted fields keep the permissive practice defaults. */
   rules?: FixtureRules;
+  /** Permitted instruments and per-instrument sizing for this account. */
+  instrumentLimits?: {
+    allowed?: readonly string[] | null;
+    maxContracts?: number | null;
+    perInstrument?: Record<string, number>;
+  } | null;
+  /** Start the account in a state other than ACTIVE. */
+  status?: string;
 }): Promise<TestFixture> {
   const url = process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
   const { db, sql } = createDb(url);
@@ -265,7 +273,7 @@ export async function createFixture(options?: {
       ruleTemplateId: template!.id,
       name: `Engine Test ${suffix}`,
       accountType: 'PRACTICE',
-      status: 'ACTIVE',
+      status: options?.status ?? 'ACTIVE',
       startingBalanceMicros: size,
       balanceMicros: size,
       highWaterMarkMicros: size,
@@ -278,6 +286,7 @@ export async function createFixture(options?: {
       // very limits the test is about to exercise.
       currentTradeDate: ACCOUNT_TRADING_DATE,
       simulationEnvironment: (options?.environment ?? null) as never,
+      instrumentLimits: (options?.instrumentLimits ?? null) as never,
     })
     .returning();
 
