@@ -408,7 +408,31 @@ export function marketDataRoutes(deps: MarketDataRouteDeps) {
        * before the market under it changes.
        */
       const exposed = await deps.engine.accountsWithExposure(request.user!.id);
-      if (exposed.length > 0) {
+      /*
+       * Going BACK to the market a position was opened in is always allowed.
+       *
+       * Without this the guard could strand a trader: a position opened inside
+       * a recording can only be closed against that recording's prices, and
+       * refusing to load it again would leave them holding something they
+       * could never close. The recording is loaded first (which prices
+       * nothing on its own), so by the time the switch is asked for, the era
+       * it would produce is known and can be compared.
+       *
+       * Working orders still block, because an order resting from another
+       * market would be matched against this one's prices. They can be
+       * cancelled without changing the market at all.
+       */
+      const targetEra = body.provider === 'replay' ? deps.replay.era() : null;
+      const returningHome =
+        targetEra !== null &&
+        exposed.length > 0 &&
+        exposed.every(
+          (account) =>
+            account.workingOrders === 0 &&
+            account.eras.length > 0 &&
+            account.eras.every((era) => era === targetEra),
+        );
+      if (exposed.length > 0 && !returningHome) {
         throw ApiError.badRequest(
           'OPEN_POSITION_BLOCKS_SWITCH',
           `Close what is open first. ${exposed

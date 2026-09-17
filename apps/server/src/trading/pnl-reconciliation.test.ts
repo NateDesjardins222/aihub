@@ -328,4 +328,48 @@ describe('a position is priced only by the market it was opened in', () => {
       .where(eq(accounts.id, fixture.accountId));
     expect(account!.highWaterMarkMicros).toBe(100_000 * D);
   });
+
+  it('records which market a position was opened in, so it can be returned to', async () => {
+    /*
+     * The way out of the guard.
+     *
+     * A position opened inside a recording can only be closed against that
+     * recording's prices. The platform refuses to change market data while
+     * anything is open - which, on its own, would strand a trader holding
+     * something they could never close. The era is recorded ON the position so
+     * that going back to the market it was opened in can be recognised and
+     * allowed; `/marketdata/provider` compares exactly these values.
+     */
+    market.setEra('replay:the-recording');
+    await market.bar('NQ', { open: 20_000, high: 20_000, low: 20_000, close: 20_000 });
+    await engine.submitOrder({
+      accountId: fixture.accountId,
+      userId: fixture.userId,
+      clientOrderId: cid('home'),
+      symbol: 'NQ',
+      side: 'BUY',
+      qty: 1,
+      type: 'MARKET',
+    });
+    await settle();
+
+    const exposure = await engine.accountsWithExposure(fixture.userId);
+    expect(exposure).toHaveLength(1);
+    expect(exposure[0]!.eras).toEqual(['replay:the-recording']);
+    expect(exposure[0]!.workingOrders).toBe(0);
+
+    // Closing it in its own market works, and then there is no exposure left.
+    await market.bar('NQ', { open: 20_010, high: 20_010, low: 20_010, close: 20_010 });
+    await engine.submitOrder({
+      accountId: fixture.accountId,
+      userId: fixture.userId,
+      clientOrderId: cid('home-close'),
+      symbol: 'NQ',
+      side: 'SELL',
+      qty: 1,
+      type: 'MARKET',
+    });
+    await settle();
+    expect(await engine.accountsWithExposure(fixture.userId)).toHaveLength(0);
+  });
 });

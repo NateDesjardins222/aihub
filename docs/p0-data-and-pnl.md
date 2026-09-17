@@ -189,3 +189,40 @@ market, crude's real negative settlement, and prices that are refused outright.
 
 `packages/core/src/candles/candles.test.ts` covers the stale print that used
 to create a bar in the past.
+
+---
+
+## 4. The way out of the guard
+
+Refusing to change market data while a position is open protects the ledger,
+and on its own it can also trap a trader: **a position opened inside a
+recording can only be closed against that recording's prices**, so a rule that
+refuses every switch would leave them holding something they could never close.
+
+The era is recorded on the position, so the platform can tell the difference
+between changing the market under a position and returning it to its own. The
+rule now is:
+
+* Switching to a market that is **not** every open position's own market:
+  refused, as before.
+* Switching **back to the market they were opened in**: allowed. Loading the
+  recording does not price anything by itself, so by the time the switch is
+  asked for the era it would produce is known and can be compared exactly.
+* Working orders still refuse either way. An order resting from another market
+  would be matched against this one's prices, and cancelling it does not
+  require changing the market at all.
+
+Verified through the API against the running server, holding one NQ opened in
+`replay:NQ-2026-09-15-hist`:
+
+```
+switch AWAY while holding:      400 OPEN_POSITION_BLOCKS_SWITCH
+                                "Close what is open first. Practice 150K is holding a position…"
+switch BACK to its own market:  200 provider=replay
+close 1 NQ, step the replay:    flat
+switch to live once flat:       200 provider=yahoo-delayed
+```
+
+`pnl-reconciliation.test.ts` covers the arithmetic side: the era is stored on
+the position, `accountsWithExposure` reports it, and closing in its own market
+leaves no exposure behind.

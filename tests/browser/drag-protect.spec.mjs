@@ -187,7 +187,17 @@ try {
   // remaining recording to reach it.
   const plot = await page.locator('.chart-canvas').boundingBox();
   await page.mouse.move(plot.x + plot.width * 0.7, plot.y + plot.height * 0.5);
-  for (let i = 0; i < 14; i += 1) {
+  /*
+   * Eight notches, not fourteen.
+   *
+   * A wheel notch is a deliberate 9.4% of the visible range since the
+   * navigation work; fourteen of them is nearly four times the zoom it used to
+   * be, and at that scale the thirty pixels below the entry that this stop is
+   * placed at is a tick or two - close enough that the replay reached it
+   * between placing it and looking at it, and the check found no stop because
+   * it had already filled.
+   */
+  for (let i = 0; i < 8; i += 1) {
     await page.mouse.wheel(0, -120);
     await page.waitForTimeout(60);
   }

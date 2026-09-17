@@ -786,15 +786,41 @@ export class TradingEngine {
    * changing the market an open position is priced against is not a display
    * change, it is a change to what the account is worth.
    */
-  async accountsWithExposure(userId: string): Promise<Array<{ accountId: string; name: string }>> {
+  async accountsWithExposure(userId: string): Promise<
+    Array<{
+      accountId: string;
+      name: string;
+      /** The market each open position was opened against. */
+      eras: string[];
+      workingOrders: number;
+    }>
+  > {
     const rows = await this.db
-      .select({ accountId: accounts.id, name: accounts.name, qty: positionsTable.qty })
+      .select({
+        accountId: accounts.id,
+        name: accounts.name,
+        qty: positionsTable.qty,
+        era: positionsTable.marketEra,
+      })
       .from(accounts)
       .leftJoin(positionsTable, eq(positionsTable.accountId, accounts.id))
       .where(eq(accounts.userId, userId));
-    const out = new Map<string, string>();
+    const out = new Map<
+      string,
+      { accountId: string; name: string; eras: string[]; workingOrders: number }
+    >();
+    const entry = (accountId: string, name: string) => {
+      const existing = out.get(accountId);
+      if (existing) return existing;
+      const created = { accountId, name, eras: [] as string[], workingOrders: 0 };
+      out.set(accountId, created);
+      return created;
+    };
     for (const row of rows) {
-      if ((row.qty ?? 0) !== 0) out.set(row.accountId, row.name);
+      if ((row.qty ?? 0) === 0) continue;
+      // A position saved before eras were recorded has no era. It is treated
+      // as belonging to no market, which keeps it on the blocking side.
+      entry(row.accountId, row.name).eras.push(row.era ?? '');
     }
     const working = await this.db
       .select({ accountId: ordersTable.accountId, name: accounts.name })
@@ -806,8 +832,8 @@ export class TradingEngine {
           inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']),
         ),
       );
-    for (const row of working) out.set(row.accountId, row.name);
-    return [...out].map(([accountId, name]) => ({ accountId, name }));
+    for (const row of working) entry(row.accountId, row.name).workingOrders += 1;
+    return [...out.values()];
   }
 
   /** Anything left that a breach has to close: a position or a working order. */
