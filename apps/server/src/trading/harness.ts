@@ -63,7 +63,7 @@ export class ScriptedMarket implements MarketView {
     };
     this.quotes.set(symbol, q);
     for (const listener of this.quoteListeners) listener(q);
-    await settle();
+    await this.drain();
   }
 
   /** Publish a settled bar, whose extremes the engine may fill against. */
@@ -86,7 +86,7 @@ export class ScriptedMarket implements MarketView {
     // A bar's close is also the latest price.
     await this.quote(symbol, ohlc.close, exchangeTs);
     for (const listener of this.barListeners) listener(bar);
-    await settle();
+    await this.drain();
   }
 
   setStale(stale: boolean): void {
@@ -126,12 +126,48 @@ export class ScriptedMarket implements MarketView {
    * A test that is about replay determinism turns this on, which switches the
    * engine's latency clock from the wall to the scripted market's own.
    */
+  private marketEra = 'scripted:test';
+  /** Set by the engine, so publishing an observation can wait for it. */
+  private idleProbe: (() => Promise<void>) | null = null;
+
   isReplay(): boolean {
     return this.replay;
   }
 
   setReplay(replay: boolean): void {
     this.replay = replay;
+  }
+
+  /**
+   * The scripted market's identity.
+   *
+   * Settable, so a test can do what the platform does to itself: change the
+   * market under an open position and check that the position is no longer
+   * marked by it.
+   */
+  era(): string {
+    return this.marketEra;
+  }
+
+  setEra(era: string): void {
+    this.marketEra = era;
+  }
+
+  attachIdleProbe(probe: () => Promise<void>): void {
+    this.idleProbe = probe;
+  }
+
+  /**
+   * Wait for the engine to finish reacting to what was just published.
+   *
+   * This is what makes these tests deterministic. They used to publish a quote
+   * and sleep for thirty milliseconds; on a busy machine the engine had not
+   * finished, and a test about limit orders failed with "expected WORKING to
+   * be FILLED" - a timing artefact that reads exactly like a real defect.
+   */
+  private async drain(): Promise<void> {
+    await settle();
+    if (this.idleProbe) await this.idleProbe();
   }
 
   freshness(symbol: string): Freshness {

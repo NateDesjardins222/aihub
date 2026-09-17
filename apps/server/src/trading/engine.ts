@@ -77,6 +77,25 @@ export interface MarketView {
    * latency. Nothing about HOW an order fills changes.
    */
   isReplay(): boolean;
+  /**
+   * Which market the feed is serving, as a stable identity.
+   *
+   * A position is marked ONLY by the era it was opened in. Market data is
+   * global and accounts are not: starting a practice replay used to re-mark
+   * every open position at the recording's prices, reporting thousands of
+   * dollars of profit or loss that no execution justified - and committing the
+   * profitable side of it into the account's high-water mark.
+   */
+  era(): string;
+  /**
+   * Optional, and only a test harness implements it.
+   *
+   * A scripted market that can ask "has the engine finished reacting?" makes
+   * an engine test deterministic. Without it the tests slept for a fixed
+   * thirty milliseconds and asserted, which passed until the machine was busy
+   * and then failed for reasons that had nothing to do with the code.
+   */
+  attachIdleProbe?(probe: () => Promise<void>): void;
 }
 import { KeyedMutex } from './mutex.js';
 import {
@@ -88,7 +107,7 @@ import {
   ruleConfigFor,
   ruleStateFor,
 } from './account-rules.js';
-import { rollTradingDay, type RuleStatus } from '@atlas/core';
+import { rollTradingDay, statusFromState, type RuleStatus } from '@atlas/core';
 import {
   checkOrder,
   increasingQty,
@@ -229,14 +248,29 @@ export interface SubmitOrderInput {
 export interface AccountValuation {
   readonly accountId: string;
   readonly balanceMicros: number;
-  readonly equityMicros: number;
-  readonly openPnlMicros: number;
+  /**
+   * NULL when the account cannot be priced.
+   *
+   * `unmarkable` says which positions are the reason. Every figure derived
+   * from a mark is null in that case rather than guessed at.
+   */
+  readonly equityMicros: number | null;
+  readonly openPnlMicros: number | null;
   readonly realizedPnlMicros: number;
   readonly feesMicros: number;
-  readonly dayPnlMicros: number;
-  readonly remainingDrawdownMicros: number;
+  readonly dayPnlMicros: number | null;
+  readonly remainingDrawdownMicros: number | null;
   readonly openContracts: number;
   readonly positions: ReturnType<typeof presentPosition>[];
+  /**
+   * Open positions the platform cannot price right now, with the market each
+   * was opened against and the one now being served. Empty in normal use.
+   */
+  readonly unmarkable: ReadonlyArray<{
+    readonly symbol: string;
+    readonly openedAgainst: string;
+    readonly nowServing: string;
+  }>;
   /**
    * Where the account stands against its programme's rules.
    *
@@ -309,6 +343,7 @@ export class TradingEngine {
   private readonly activeSymbols = new Map<string, Set<string>>();
   private marketUnsubscribe: (() => void) | null = null;
   /** Pending latency wake-ups, so a shutdown does not leave timers running. */
+  private readonly inFlight = new Set<Promise<unknown>>();
   private readonly pendingWakes = new Set<NodeJS.Timeout>();
 
   constructor(
@@ -337,6 +372,9 @@ export class TradingEngine {
    * working order to fill, so both are fed to the matcher.
    */
   async start(): Promise<void> {
+    // A scripted market can wait for the engine instead of guessing. The real
+    // market data service does not implement this.
+    this.market.attachIdleProbe?.(() => this.whenIdle());
     await this.refreshActiveSymbols();
 
     // The observation is taken HERE, synchronously, and carried into the match.
@@ -348,7 +386,7 @@ export class TradingEngine {
       if (quote.last !== null) this.observePrice(quote.symbol, quote.last);
       const spec = getInstrument(quote.symbol);
       const observed = spec ? this.snapshotFor(spec) : null;
-      void this.onMarketEvent(quote.symbol, observed).catch(() => undefined);
+      this.background(this.onMarketEvent(quote.symbol, observed));
     });
     const offBar = this.market.bus.onAnyBar((bar) => {
       if (!bar.closed) return; // a forming bar's extremes are not final
@@ -356,7 +394,7 @@ export class TradingEngine {
       this.observePrice(bar.symbol, bar.low);
       const spec = getInstrument(bar.symbol);
       const observed = spec ? this.snapshotFor(spec) : null;
-      void this.onMarketEvent(bar.symbol, observed).catch(() => undefined);
+      this.background(this.onMarketEvent(bar.symbol, observed));
     });
     this.marketUnsubscribe = () => {
       offQuote();
@@ -367,7 +405,7 @@ export class TradingEngine {
     // figure must track the market, but a push per quote per account would be
     // a lot of traffic for a number that only needs to look live.
     this.valuationTimer = setInterval(() => {
-      void this.publishValuations().catch(() => undefined);
+      this.background(this.publishValuations());
     }, VALUATION_INTERVAL_MS);
     this.valuationTimer.unref?.();
   }
@@ -472,7 +510,14 @@ export class TradingEngine {
       .from(positionsTable)
       .where(eq(positionsTable.accountId, accountId));
 
-    let openPnlMicros = 0;
+    /*
+     * `null` means UNKNOWN, and it propagates.
+     *
+     * One unmarkable position makes the account's open P&L, and therefore its
+     * equity, unknown - and an unknown equity is not a number to show, to
+     * evaluate rules against, or to raise a high-water mark with.
+     */
+    let openPnlMicros: number | null = 0;
     let openContracts = 0;
     const views: ReturnType<typeof presentPosition>[] = [];
 
@@ -480,9 +525,9 @@ export class TradingEngine {
       if (row.qty === 0) continue;
       const spec = requireInstrument(row.symbol);
       const position = toEnginePosition(row, row.symbol);
-      const markTicks = this.markTicks(spec);
-      const unrealized = unrealizedPnlMicros(spec, position, markTicks);
-      openPnlMicros += unrealized;
+      const markTicks = this.markTicksFor(spec, row);
+      const unrealized = markTicks === null ? null : unrealizedPnlMicros(spec, position, markTicks);
+      openPnlMicros = unrealized === null || openPnlMicros === null ? null : openPnlMicros + unrealized;
       openContracts += Math.abs(row.qty);
       views.push(
         presentPosition(position, spec, markTicks, unrealized, {
@@ -492,23 +537,45 @@ export class TradingEngine {
       );
     }
 
-    const equityMicros = account.balanceMicros + openPnlMicros;
+    const equityMicros = openPnlMicros === null ? null : account.balanceMicros + openPnlMicros;
 
     // Read-only: the rules are evaluated for display here, and enforced under
     // the account lock by `enforceRules`. Reporting and enforcing are the same
     // arithmetic, so the number on screen is the number that will fail you.
     const loaded = await loadAccountAndTemplate(this.db, accountId);
     const config = ruleConfigFor(account, loaded?.template);
+    const history = historyFor(account);
+    const state = ruleStateFor(account);
+
+    // Unpriceable: report the standing status and no equity figures at all.
+    if (openPnlMicros === null || equityMicros === null) {
+      return {
+        accountId,
+        balanceMicros: account.balanceMicros,
+        equityMicros: null,
+        openPnlMicros: null,
+        realizedPnlMicros: account.realizedPnlMicros,
+        feesMicros: account.feesMicros,
+        dayPnlMicros: null,
+        remainingDrawdownMicros: null,
+        openContracts,
+        positions: views,
+        rules: statusFromState(config, state, history),
+        unmarkable: await this.unmarkable(accountId),
+        at: Date.now(),
+      };
+    }
+
     const applied = applyRules(
       config,
-      ruleStateFor(account),
+      state,
       {
         balanceMicros: account.balanceMicros,
         openPnlMicros,
         equityMicros,
         tradingDate: this.accountTradingDate(),
       },
-      historyFor(account),
+      history,
     );
 
     return {
@@ -523,6 +590,7 @@ export class TradingEngine {
       openContracts,
       positions: views,
       rules: applied.status,
+      unmarkable: [],
       at: Date.now(),
     };
   }
@@ -555,6 +623,18 @@ export class TradingEngine {
     const config = ruleConfigFor(account, template);
     const state = ruleStateFor(account);
     const openPnlMicros = await this.openPnl(accountId);
+
+    /*
+     * An account whose equity is unknown is not evaluated at all.
+     *
+     * Not "evaluated optimistically", not "evaluated at zero": a drawdown
+     * breach and a high-water mark are both statements about equity, and
+     * making either from a position nobody can price is how an account ends up
+     * permanently damaged by a market it never traded in. The last persisted
+     * status stands until the account can be priced again.
+     */
+    if (openPnlMicros === null) return statusFromState(config, state, historyFor(account));
+
     const mark = {
       balanceMicros: account.balanceMicros,
       openPnlMicros,
@@ -664,8 +744,70 @@ export class TradingEngine {
    * position or a working order would move the market while the trader could
    * not react to it.
    */
+  /**
+   * Background work the engine started for itself.
+   *
+   * A market event is handled off the caller's stack: nothing waits for it in
+   * production, and it must never take a request down, so failures are
+   * swallowed here as before. What is new is that the promises are COUNTED, so
+   * a test can ask whether the engine has finished reacting instead of
+   * sleeping for a fixed number of milliseconds and hoping.
+   */
+  private background(work: Promise<unknown>): void {
+    const tracked = work.catch((err) => {
+      if (process.env['ATLAS_DEBUG_EVENTS']) console.error('engine background work failed', err);
+    });
+    this.inFlight.add(tracked);
+    void tracked.finally(() => this.inFlight.delete(tracked));
+  }
+
+  /**
+   * Resolves when the engine has no background work left.
+   *
+   * Loops, because reacting to a market event can schedule another match.
+   */
+  async whenIdle(): Promise<void> {
+    for (let pass = 0; pass < 50; pass += 1) {
+      if (this.inFlight.size === 0) return;
+      await Promise.all([...this.inFlight]);
+      // Let any continuation that schedules more work get itself queued.
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
   async openExposure(accountId: string): Promise<boolean> {
     return this.hasExposure(accountId);
+  }
+
+  /**
+   * Every account of one user that is holding something.
+   *
+   * Asked before the platform's market data is swapped out from under them:
+   * changing the market an open position is priced against is not a display
+   * change, it is a change to what the account is worth.
+   */
+  async accountsWithExposure(userId: string): Promise<Array<{ accountId: string; name: string }>> {
+    const rows = await this.db
+      .select({ accountId: accounts.id, name: accounts.name, qty: positionsTable.qty })
+      .from(accounts)
+      .leftJoin(positionsTable, eq(positionsTable.accountId, accounts.id))
+      .where(eq(accounts.userId, userId));
+    const out = new Map<string, string>();
+    for (const row of rows) {
+      if ((row.qty ?? 0) !== 0) out.set(row.accountId, row.name);
+    }
+    const working = await this.db
+      .select({ accountId: ordersTable.accountId, name: accounts.name })
+      .from(ordersTable)
+      .innerJoin(accounts, eq(accounts.id, ordersTable.accountId))
+      .where(
+        and(
+          eq(accounts.userId, userId),
+          inArray(ordersTable.status, ['WORKING', 'PARTIALLY_FILLED']),
+        ),
+      );
+    for (const row of working) out.set(row.accountId, row.name);
+    return [...out].map(([accountId, name]) => ({ accountId, name }));
   }
 
   /** Anything left that a breach has to close: a position or a working order. */
@@ -690,7 +832,15 @@ export class TradingEngine {
   }
 
   /** Unrealized P&L across every open position, marked to the live market. */
-  private async openPnl(accountId: string): Promise<number> {
+  /**
+   * Open P&L across an account, or NULL when it cannot be known.
+   *
+   * Null when a position has no mark that applies to it - which is the case
+   * while the platform is serving a different market from the one the position
+   * was opened against. Returning zero there would say "this position is
+   * flat", which is a different and false statement.
+   */
+  private async openPnl(accountId: string): Promise<number | null> {
     const rows = await this.db
       .select()
       .from(positionsTable)
@@ -700,9 +850,25 @@ export class TradingEngine {
       if (row.qty === 0) continue;
       const spec = getInstrument(row.symbol);
       if (!spec) continue;
-      total += unrealizedPnlMicros(spec, toEnginePosition(row, row.symbol), this.markTicks(spec));
+      const markTicks = this.markTicksFor(spec, row);
+      if (markTicks === null) return null;
+      total += unrealizedPnlMicros(spec, toEnginePosition(row, row.symbol), markTicks);
     }
     return total;
+  }
+
+  /** The open positions whose market is not the one now being served. */
+  private async unmarkable(
+    accountId: string,
+  ): Promise<Array<{ symbol: string; openedAgainst: string; nowServing: string }>> {
+    const rows = await this.db
+      .select()
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, accountId), sql`${positionsTable.qty} <> 0`));
+    const era = this.market.era();
+    return rows
+      .filter((row) => row.marketEra !== null && row.marketEra !== era)
+      .map((row) => ({ symbol: row.symbol, openedAgainst: row.marketEra!, nowServing: era }));
   }
 
   stop(): void {
@@ -733,7 +899,7 @@ export class TradingEngine {
     if (delay <= 0) return;
     const timer = setTimeout(() => {
       this.pendingWakes.delete(timer);
-      void this.runMatch(accountId, symbol).catch(() => undefined);
+      this.background(this.runMatch(accountId, symbol));
     }, delay + 5);
     timer.unref?.();
     this.pendingWakes.add(timer);
@@ -1045,6 +1211,34 @@ export class TradingEngine {
       return this.buildChange(input.accountId, spec, [toEngineOrder(existing)], [], []);
     }
 
+    /*
+     * An order must never be priced against a market the position was not
+     * opened in.
+     *
+     * Filling here would realise a fabricated profit or loss into the
+     * account's balance - the one number a trader can never get back. This
+     * cannot normally be reached, because switching the platform's market is
+     * refused while anything is open; it is the backstop for a position left
+     * in that state by an earlier build.
+     */
+    const [existingPosition] = await this.db
+      .select({ era: positionsTable.marketEra, qty: positionsTable.qty })
+      .from(positionsTable)
+      .where(
+        and(eq(positionsTable.accountId, input.accountId), eq(positionsTable.symbol, spec.root)),
+      );
+    if (
+      existingPosition &&
+      existingPosition.qty !== 0 &&
+      existingPosition.era !== null &&
+      existingPosition.era !== this.market.era()
+    ) {
+      throw new OrderRejectedError(
+        'POSITION_FROM_ANOTHER_MARKET',
+        `This ${spec.root} position was opened against ${existingPosition.era} and the platform is serving ${this.market.era()}. Switch back to manage it.`,
+      );
+    }
+
     const account = await this.loadRiskAccount(input.accountId);
     const position = await this.loadPosition(input.accountId, spec.root);
     const openContracts = await this.openContractWeight(input.accountId, account.microsCountAsFraction);
@@ -1329,6 +1523,9 @@ export class TradingEngine {
           .insert(positionsTable)
           .values({
             ...toPositionValues(accountId, result.position),
+            // The market these fills were priced against. Cleared when the
+            // position goes flat: there is nothing left to mark.
+            marketEra: result.position.qty === 0 ? null : this.market.era(),
             // A position that has just gone flat, or flipped, starts its
             // excursions again: they describe ONE holding, not an account.
             maeMicros: result.position.qty === 0 ? 0 : Math.round(excursion.maePerContract),
@@ -1346,6 +1543,7 @@ export class TradingEngine {
               costBasisMicros: sql`excluded.cost_basis_micros`,
               realizedPnlMicros: sql`excluded.realized_pnl_micros`,
               feesMicros: sql`excluded.fees_micros`,
+              marketEra: sql`excluded.market_era`,
               maeMicros: sql`excluded.mae_micros`,
               mfeMicros: sql`excluded.mfe_micros`,
               initialRiskMicros: sql`excluded.initial_risk_micros`,
@@ -1388,9 +1586,28 @@ export class TradingEngine {
           });
         }
 
-        // Closed round-trips
+        /*
+         * Closed round-trips, with the fees for the WHOLE round turn.
+         *
+         * The row used to carry only the closing side's fees, while the
+         * account had been charged on the way in as well. Every trade in the
+         * journal therefore looked better than it was, and the sum of the
+         * journal's net P&L never matched the account's realized change - by
+         * exactly the entry commission, on every trade.
+         *
+         * The entry side is taken from the position as it stood BEFORE this
+         * fill: its accumulated fees are what was paid to open the quantity
+         * being closed now, so a partial close pays its share and no more.
+         */
+        const openQtyBefore = Math.abs(position.qty);
+        const entryFeePerContract = openQtyBefore === 0 ? 0 : position.feesMicros / openQtyBefore;
+        const closedQty = result.closedLots.reduce((sum, lot) => sum + lot.qty, 0);
+
         for (const lot of result.closedLots) {
-          const row = this.tradeRow(accountId, spec, lot, result.feesMicros, excursion, sessionId);
+          const exitShare =
+            closedQty === 0 ? 0 : Math.round((result.feesMicros * lot.qty) / closedQty);
+          const roundTurnFees = Math.round(entryFeePerContract * lot.qty) + exitShare;
+          const row = this.tradeRow(accountId, spec, lot, roundTurnFees, excursion, sessionId);
           await tx.insert(trades).values(row as never);
           tradeRows.push(row as Record<string, unknown>);
         }
@@ -2253,6 +2470,24 @@ export class TradingEngine {
   markTicks(spec: InstrumentSpec): number | null {
     const mark = this.market.markPrice(spec.root);
     return mark === null ? null : priceToTicks(spec, mark);
+  }
+
+  /**
+   * The mark that applies to ONE position, or null when none does.
+   *
+   * A position is priced by the market it was opened against and by no other.
+   * Starting a practice replay swaps the platform's data source, and marking a
+   * live position at a recording's prices produced figures like a $5,920 loss
+   * on a position that had moved five dollars - and, when the recording's
+   * prices were higher, a high-water mark the account keeps for ever.
+   *
+   * A position stored before this rule existed has no era recorded. It is
+   * marked as before: inventing a reason not to price it would be its own
+   * defect.
+   */
+  markTicksFor(spec: InstrumentSpec, position: { marketEra: string | null }): number | null {
+    if (position.marketEra !== null && position.marketEra !== this.market.era()) return null;
+    return this.markTicks(spec);
   }
 
   /** Expose helpers the read APIs need without duplicating mapping logic. */

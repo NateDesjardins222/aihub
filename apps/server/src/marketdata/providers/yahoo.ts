@@ -257,6 +257,10 @@ export class YahooDelayedProvider implements DescribableProvider {
     return null;
   }
 
+  era(): string {
+    return `live:${this.id}`;
+  }
+
   getConnectionStatus(): ConnectionStatus {
     return {
       providerId: this.id,

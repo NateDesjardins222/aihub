@@ -169,6 +169,12 @@ export type RejectReason =
   | 'MARKET_CLOSED'
   | 'MARKET_DATA_STALE'
   | 'MARKET_DATA_UNAVAILABLE'
+  /**
+   * The open position was opened against a different market from the one being
+   * served - a practice recording rather than the live feed, or the other way
+   * round. Filling would realise a price the position never traded at.
+   */
+  | 'POSITION_FROM_ANOTHER_MARKET'
   | 'INVALID_QUANTITY'
   | 'INVALID_PRICE'
   | 'INVALID_TICK'

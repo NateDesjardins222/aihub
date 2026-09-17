@@ -191,3 +191,21 @@
     display: none;
   }
 }
+
+/*
+ * "Not priced": the account holds a position the platform cannot price, so
+ * every P&L figure beside it is a dash. Amber rather than red - nothing is
+ * broken and nothing is lost, the figures are simply unknown until the market
+ * the position was opened against is being served again.
+ */
+.abar-unpriced {
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}

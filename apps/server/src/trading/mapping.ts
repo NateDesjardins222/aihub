@@ -170,7 +170,14 @@ export function presentPosition(
   position: PositionState,
   spec: InstrumentSpec,
   markTicks: number | null,
-  unrealizedMicros: number,
+  /**
+   * NULL when no mark applies: unknown, not zero.
+   *
+   * Reporting an unmarkable position as flat P&L is how a trader ends up
+   * believing a number that reconciles to nothing. A position with no mark has
+   * no open P&L to show, and the terminal shows that rather than a figure.
+   */
+  unrealizedMicros: number | null,
   protective: { stopOrderId: string | null; targetOrderId: string | null },
 ) {
   const avg = position.qty === 0 ? null : avgEntryTicks(spec, position);

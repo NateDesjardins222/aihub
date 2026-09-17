@@ -115,7 +115,9 @@ export function RiskPanel(): JSX.Element {
 
   const tone = toneFor(rules.status);
   const drawdownUsed = Math.max(0, rules.highWaterMarkMicros - rules.equityMicros);
-  const drawdownRoom = Math.max(0, rules.remainingDrawdownMicros);
+  // Null means this account has no drawdown rule at all.
+  const drawdownRoom =
+    rules.remainingDrawdownMicros === null ? null : Math.max(0, rules.remainingDrawdownMicros);
   const dailyLimit = rules.dailyLossLimitMicros;
   const dailyUsed = dailyLimit === null ? 0 : Math.max(0, -rules.dayPnlMicros);
 
@@ -177,16 +179,19 @@ export function RiskPanel(): JSX.Element {
         </header>
         <div className="risk-row">
           <span className="risk-label">Remaining</span>
-          <span className={`num risk-big ${drawdownRoom <= 0 ? 'down' : ''}`}>
-            {money(drawdownRoom)}
+          {/* No drawdown rule: there is nothing remaining to report. */}
+          <span className={`num risk-big ${drawdownRoom !== null && drawdownRoom <= 0 ? 'down' : ''}`}>
+            {drawdownRoom === null ? 'no limit' : money(drawdownRoom)}
           </span>
         </div>
-        <Bar
-          value={drawdownUsed}
-          limit={config.maxLossMicros}
-          tone={drawdownRoom <= config.maxLossMicros * 0.25 ? 'bad' : 'ok'}
-          title={`${money(drawdownUsed)} of ${money(config.maxLossMicros)} used`}
-        />
+        {drawdownRoom === null ? null : (
+          <Bar
+            value={drawdownUsed}
+            limit={config.maxLossMicros}
+            tone={drawdownRoom <= config.maxLossMicros * 0.25 ? 'bad' : 'ok'}
+            title={`${money(drawdownUsed)} of ${money(config.maxLossMicros)} used`}
+          />
+        )}
         <div className="risk-foot">
           <span>
             floor <b className="num">{money(rules.drawdownFloorMicros)}</b>

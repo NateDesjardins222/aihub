@@ -49,6 +49,16 @@ export interface MarketDataProvider {
   getDepth(symbol: string): NormalizedDepth | null;
   getConnectionStatus(): ConnectionStatus;
 
+  /**
+   * Which market this source is, as a stable string.
+   *
+   * Identity, not description: a position is marked only by the era it was
+   * opened in, so this has to change whenever the prices change meaning - a
+   * different provider, or a different recording. It is stored on open
+   * positions, so it stays short.
+   */
+  era(): string;
+
   on(listener: ProviderListener): () => void;
 }
 

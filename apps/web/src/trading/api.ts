@@ -35,7 +35,8 @@ export interface ApiPosition {
   signedQty: number;
   avgEntryPrice: number | null;
   markPrice: number | null;
-  unrealizedPnlMicros: number;
+  /** NULL when this position cannot be priced right now. Unknown, not zero. */
+  unrealizedPnlMicros: number | null;
   realizedPnlMicros: number;
   feesMicros: number;
   openedAt: number | null;
@@ -76,17 +77,29 @@ export interface ApiAccountPnl {
   status: string;
   startingBalanceMicros: number;
   balanceMicros: number;
-  equityMicros: number;
-  openPnlMicros: number;
+  /**
+   * NULL when the account cannot be priced.
+   *
+   * Every figure derived from a mark is null together, and `marked` says so.
+   * The terminal shows a dash: a position the platform cannot price has no
+   * P&L, and printing a number for it is how a trader comes to distrust every
+   * number on the screen.
+   */
+  equityMicros: number | null;
+  openPnlMicros: number | null;
   realizedPnlMicros: number;
   feesMicros: number;
-  dayPnlMicros: number;
+  dayPnlMicros: number | null;
   drawdownFloorMicros: number;
-  remainingDrawdownMicros: number;
+  remainingDrawdownMicros: number | null;
   profitTargetProgressMicros: number;
   profitTargetMicros: number;
   openContracts: number;
   maxContracts: number;
+  /** False while a position cannot be priced. */
+  marked: boolean;
+  /** Which positions cannot be priced, and why. */
+  unmarkable: ReadonlyArray<{ symbol: string; openedAgainst: string; nowServing: string }>;
   seq: number;
 }
 
@@ -109,7 +122,8 @@ export interface ApiRuleStatus {
   dayRealizedPnlMicros: number;
   highWaterMarkMicros: number;
   drawdownFloorMicros: number;
-  remainingDrawdownMicros: number;
+  /** Null when the account has no drawdown rule: there is no limit to show. */
+  remainingDrawdownMicros: number | null;
   dailyLossLimitMicros: number | null;
   remainingDailyLossMicros: number | null;
   profitTargetMicros: number;
@@ -128,6 +142,8 @@ export interface ApiRuleStatus {
   requirements: ApiRuleRequirement[];
   breach: { code: string; message: string; status: string } | null;
   canTrade: boolean;
+  /** False when the equity figures above were not produced from a real mark. */
+  marked: boolean;
 }
 
 export interface ApiRuleConfig {

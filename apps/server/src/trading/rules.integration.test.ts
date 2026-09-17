@@ -331,11 +331,17 @@ describe('adversarial', () => {
     await submit({ qty: 1, side: 'BUY' });
     await settle(30);
 
-    // The breach arrives on a bar, and then the feed goes stale before the
-    // liquidation can be priced.
-    await market.quote('NQ', 19_940);
+    /*
+     * The feed goes stale, and THEN the breaching price arrives on it.
+     *
+     * Ordered this way on purpose. This test used to publish the price and
+     * mark the feed stale immediately afterwards, relying on the engine not
+     * having reacted yet - a race it won only because the harness slept for a
+     * fixed thirty milliseconds. A stale feed still has a last price, so the
+     * breach is still seen; what it cannot do is price a liquidation.
+     */
     market.setStale(true);
-    await settle(60);
+    await market.quote('NQ', 19_940);
     await engine.enforceRules(fixture.accountId);
 
     const a = await account();
@@ -346,7 +352,6 @@ describe('adversarial', () => {
     // When the feed recovers, the position is closed on the next evaluation.
     market.setStale(false);
     await market.quote('NQ', 19_940);
-    await settle(60);
     await engine.enforceRules(fixture.accountId);
     expect(await positionQty()).toBe(0);
   });

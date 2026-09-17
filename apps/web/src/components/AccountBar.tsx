@@ -96,6 +96,33 @@ export function AccountBar({
 
       {rules ? <Pill text={rules.status.replace('_', ' ')} tone={statusTone(rules.status)} /> : null}
 
+      {/*
+        Said out loud, not hidden behind dashes.
+
+        When a position cannot be priced - the platform is serving a practice
+        recording while the position was opened on the live feed - every P&L
+        figure here reads as unknown. A trader seeing dashes deserves to know
+        why, and what to do about it.
+      */}
+      {pnl && pnl.marked === false ? (
+        <span
+          className="abar-unpriced"
+          data-testid="unpriced-warning"
+          title={
+            pnl.unmarkable.length > 0
+              ? pnl.unmarkable
+                  .map(
+                    (p) =>
+                      `${p.symbol} was opened against ${p.openedAgainst}; the platform is serving ${p.nowServing}. Switch back to that market to manage it.`,
+                  )
+                  .join(' ')
+              : 'This account cannot be priced right now, so its P&L is unknown.'
+          }
+        >
+          NOT PRICED
+        </span>
+      ) : null}
+
       <Metric
         label="BAL"
         value={money(() =>
@@ -121,7 +148,12 @@ export function AccountBar({
         value={result(() => (rules ? formatMicros(rules.openPnlMicros, { sign: true }) : '—'))}
         tone={rules && visibility.pnl ? pnlClass(rules.openPnlMicros) : 'flat'}
       />
-      {visibility.rules && rules ? (
+      {/*
+        Shown only when there IS a drawdown rule.
+        A practice account with no maximum loss used to report its whole
+        balance here, which read as a $150,000 limit on a $100,000 account.
+      */}
+      {visibility.rules && rules && rules.remainingDrawdownMicros !== null ? (
         <Metric
           label="DD LEFT"
           value={formatCompactMicros(Math.max(0, rules.remainingDrawdownMicros))}

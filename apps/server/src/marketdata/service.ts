@@ -331,6 +331,16 @@ export class MarketDataService {
     return this.quotes.freshness(requireInstrument(root), clock);
   }
 
+  /**
+   * Which market the platform is currently serving.
+   *
+   * The engine stores this on a position when it opens and refuses to mark it
+   * with prices from anywhere else.
+   */
+  era(): string {
+    return this.provider.era();
+  }
+
   getConnectionStatus(): ConnectionStatus {
     return this.provider.getConnectionStatus();
   }

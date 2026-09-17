@@ -120,6 +120,14 @@ export class ReplayProvider implements DescribableProvider {
     return null;
   }
 
+  /**
+   * The recording IS the market here, so each one is its own era. An unloaded
+   * replay has no prices at all, which is still not the live market.
+   */
+  era(): string {
+    return `replay:${this.recordingId ?? 'none'}`;
+  }
+
   getConnectionStatus(): ConnectionStatus {
     return {
       providerId: this.id,

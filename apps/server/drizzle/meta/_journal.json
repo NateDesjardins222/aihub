@@ -64,6 +64,13 @@
       "when": 1789720000000,
       "tag": "0008_user_drawings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789730000000,
+      "tag": "0009_market_era",
+      "breakpoints": true
     }
   ]
 }

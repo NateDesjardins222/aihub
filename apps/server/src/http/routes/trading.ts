@@ -415,57 +415,46 @@ export function tradingRoutes(deps: Deps) {
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       await assertOwnership(request.user!.id, params.id);
 
-      // Through the shared loader, which resolves an account's terms from its
-      // pinned product version or, for an account that predates products, its
-      // rule template. Joining the template table directly would 404 every
-      // provisioned account - it does not have one.
+      /*
+       * ONE source of truth.
+       *
+       * This route used to re-derive equity, day P&L and the drawdown from the
+       * account row itself. Two implementations of the same arithmetic is two
+       * answers to "what is my P&L", and the trader sees whichever one the
+       * screen happens to read. It now reports the engine's valuation - the
+       * same figures the rules are enforced on.
+       */
+      const valuation = await deps.engine.valuation(params.id);
+      if (!valuation) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
       const loaded = await loadAccountAndTemplate(db, params.id);
       if (!loaded?.template) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
-      const row = { account: loaded.account, template: loaded.template };
+      const { account, template } = loaded;
 
-      const positionRows = await db
-        .select()
-        .from(positions)
-        .where(eq(positions.accountId, params.id));
-
-      let openPnlMicros = 0;
-      let openContracts = 0;
-      for (const p of positionRows) {
-        if (p.qty === 0) continue;
-        const spec = requireInstrument(p.symbol);
-        openPnlMicros += unrealizedPnlMicros(spec, toEnginePosition(p, p.symbol), deps.engine.markTicks(spec));
-        openContracts += Math.abs(p.qty);
-      }
-
-      const equityMicros = row.account.balanceMicros + openPnlMicros;
       return reply.send({
         accountId: params.id,
-        status: row.account.status,
-        startingBalanceMicros: row.account.startingBalanceMicros,
-        balanceMicros: row.account.balanceMicros,
-        equityMicros,
-        openPnlMicros,
-        realizedPnlMicros: row.account.realizedPnlMicros,
-        feesMicros: row.account.feesMicros,
-        dayPnlMicros: row.account.balanceMicros - row.account.dayStartBalanceMicros + openPnlMicros,
-        drawdownFloorMicros: row.account.drawdownFloorMicros,
-        remainingDrawdownMicros: equityMicros - row.account.drawdownFloorMicros,
-        profitTargetProgressMicros: row.account.balanceMicros - row.account.startingBalanceMicros,
-        profitTargetMicros: row.template.profitTargetMicros,
-        openContracts,
-        maxContracts: row.template.maxContracts,
-        seq: row.account.seq,
+        status: account.status,
+        startingBalanceMicros: account.startingBalanceMicros,
+        balanceMicros: valuation.balanceMicros,
+        // Null when the account holds a position the platform cannot price.
+        // The terminal shows these as unknown rather than as a number.
+        equityMicros: valuation.equityMicros,
+        openPnlMicros: valuation.openPnlMicros,
+        realizedPnlMicros: valuation.realizedPnlMicros,
+        feesMicros: valuation.feesMicros,
+        dayPnlMicros: valuation.dayPnlMicros,
+        drawdownFloorMicros: valuation.rules.drawdownFloorMicros,
+        remainingDrawdownMicros: valuation.remainingDrawdownMicros,
+        profitTargetProgressMicros: account.balanceMicros - account.startingBalanceMicros,
+        profitTargetMicros: template.profitTargetMicros,
+        openContracts: valuation.openContracts,
+        maxContracts: template.maxContracts,
+        /** False while a position cannot be priced: every P&L figure is null. */
+        marked: valuation.rules.marked,
+        unmarkable: valuation.unmarkable,
+        seq: account.seq,
       });
     });
 
-    // -- account rules ----------------------------------------------------
-
-    /**
-     * Where the account stands against its programme.
-     *
-     * The same evaluation the engine enforces with, so the dashboard cannot
-     * show a trader more room than they actually have.
-     */
     app.get('/accounts/:id/rules', async (request, reply) => {
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       await assertOwnership(request.user!.id, params.id);
@@ -652,6 +641,7 @@ export function tradingRoutes(deps: Deps) {
         .returning();
       return reply.send({ preferences: row!.preferences });
     });
+
 
     /**
      * Drawings, in storage of their own.

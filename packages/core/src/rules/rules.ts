@@ -175,7 +175,15 @@ export interface RuleStatus {
   readonly dayRealizedPnlMicros: number;
   readonly highWaterMarkMicros: number;
   readonly drawdownFloorMicros: number;
-  readonly remainingDrawdownMicros: number;
+  /**
+   * How much equity is left before the floor, or NULL when the account has no
+   * drawdown rule at all.
+   *
+   * A practice account with no maximum loss used to report its whole balance
+   * as "remaining drawdown", which reads as a limit of $150,000 on a $100,000
+   * account. There is no limit; saying so is the only honest answer.
+   */
+  readonly remainingDrawdownMicros: number | null;
   readonly dailyLossLimitMicros: number | null;
   readonly remainingDailyLossMicros: number | null;
   readonly profitTargetMicros: number;
@@ -188,6 +196,15 @@ export interface RuleStatus {
   readonly breach: Breach | null;
   /** True while the account may send orders. */
   readonly canTrade: boolean;
+  /**
+   * Whether the equity figures above were produced from a real mark.
+   *
+   * False when the account holds a position the platform cannot price - while
+   * a practice replay is serving a different market, for instance. The
+   * figures are then balance-only and must be presented as unknown rather than
+   * as P&L; no breach is claimed and no anchor is moved from them.
+   */
+  readonly marked: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +337,9 @@ export function evaluateRules(
 ): RuleStatus {
   const dayPnl = mark.equityMicros - state.dayStartEquityMicros;
   const dayRealized = mark.balanceMicros - state.dayStartBalanceMicros;
-  const remainingDrawdown = mark.equityMicros - state.drawdownFloorMicros;
+  // No maximum loss means no floor to run out of room against.
+  const remainingDrawdown =
+    config.maxLossMicros <= 0 ? null : mark.equityMicros - state.drawdownFloorMicros;
 
   const remainingDaily =
     config.dailyLossLimitMicros === null ? null : config.dailyLossLimitMicros + dayPnl;
@@ -374,6 +393,44 @@ export function evaluateRules(
     requirements,
     breach,
     canTrade: status === 'ACTIVE' || status === 'GOAL_REACHED' || status === 'PASSED',
+    marked: true,
+  };
+}
+
+/**
+ * The account's standing status when it cannot be priced.
+ *
+ * Built from the persisted state and the closed balance only: no mark, so no
+ * breach is claimed, no high-water mark moves, and every equity-derived figure
+ * is flagged unmarked for the caller to present as unknown. This is the state
+ * an account is in while the platform serves a market the account's open
+ * position was not opened against.
+ */
+export function statusFromState(
+  config: RuleConfig,
+  state: RuleState,
+  history: DailyHistory,
+): RuleStatus {
+  const balanceOnly = evaluateRules(
+    config,
+    state,
+    {
+      balanceMicros: state.balanceMicros,
+      openPnlMicros: 0,
+      equityMicros: state.balanceMicros,
+      // The day the account is already on. There is no mark to read a date
+      // from, and this evaluation must not roll a day.
+      tradingDate: state.currentTradeDate ?? '',
+    },
+    history,
+  );
+  return {
+    ...balanceOnly,
+    // The persisted status stands: a breach needs a mark to be judged on.
+    status: state.status,
+    breach: null,
+    canTrade: state.status === 'ACTIVE' || state.status === 'GOAL_REACHED' || state.status === 'PASSED',
+    marked: false,
   };
 }
 
@@ -388,7 +445,8 @@ function firstBreach(
   state: RuleState,
   mark: RuleMark,
   computed: {
-    remainingDrawdown: number;
+    /** Null when the account has no drawdown rule; there is nothing to breach. */
+    remainingDrawdown: number | null;
     remainingDaily: number | null;
     tradingDaysCount: number;
   },
@@ -407,7 +465,7 @@ function firstBreach(
   }
 
   // Drawdown first: it is the rule that ends the programme.
-  if (config.maxLossMicros > 0 && computed.remainingDrawdown <= 0) {
+  if (config.maxLossMicros > 0 && computed.remainingDrawdown !== null && computed.remainingDrawdown <= 0) {
     const trailing = config.drawdownType !== 'STATIC';
     return {
       code: trailing ? 'TRAILING_DRAWDOWN_BREACH' : 'MAX_LOSS_LIMIT',

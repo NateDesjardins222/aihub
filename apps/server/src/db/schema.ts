@@ -467,6 +467,16 @@ export const positions = pgTable(
      */
     maeMicros: micros('mae_micros').notNull().default(0),
     mfeMicros: micros('mfe_micros').notNull().default(0),
+    /**
+     * The market-data source this position was opened against.
+     *
+     * Market data is global and accounts are not: starting a practice replay
+     * used to re-mark every open position at the recording's prices, which
+     * reported losses and profits that no execution justified. A mark from a
+     * different era does not apply to this position, and its P&L reads as
+     * unknown instead.
+     */
+    marketEra: varchar('market_era', { length: 80 }),
     /** Distance to the protective stop when the position opened. Null if none. */
     initialRiskMicros: micros('initial_risk_micros'),
     openedAt: timestamp('opened_at', { withTimezone: true }),

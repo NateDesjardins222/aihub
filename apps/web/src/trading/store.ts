@@ -272,9 +272,20 @@ export const useTrading = create<TradingState>((set, get) => ({
   },
 }));
 
-/** Open P&L across every position, recomputed as marks change. */
-export function openPnlMicros(state: TradingState): number {
-  return state.positions.reduce((sum, p) => sum + p.unrealizedPnlMicros, 0);
+/**
+ * Open P&L across every position, or NULL when one of them cannot be priced.
+ *
+ * Unknown does not add up to zero. One position the platform cannot price
+ * makes the total unknown, and the terminal shows a dash for it.
+ */
+export function openPnlMicros(state: TradingState): number | null {
+  let total = 0;
+  for (const p of state.positions) {
+    if (p.qty === 0) continue;
+    if (p.unrealizedPnlMicros === null) return null;
+    total += p.unrealizedPnlMicros;
+  }
+  return total;
 }
 
 export function positionFor(state: TradingState, symbol: string): ApiPosition | null {

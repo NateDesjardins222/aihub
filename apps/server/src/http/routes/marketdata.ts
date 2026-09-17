@@ -396,6 +396,27 @@ export function marketDataRoutes(deps: MarketDataRouteDeps) {
     /** Switch the whole platform between the live delayed feed and replay. */
     app.post('/provider', async (request, reply) => {
       const body = providerSchema.parse(request.body);
+
+      /*
+       * Not while anything is open.
+       *
+       * Market data is global; accounts are not. Switching the platform to a
+       * recording re-prices every open position at that recording's market:
+       * a long opened at 29,763 was marked at 29,467 and reported a $5,920
+       * loss it had never made, and a recording priced ABOVE the entry raised
+       * the account's high-water mark for good. The position must be closed
+       * before the market under it changes.
+       */
+      const exposed = await deps.engine.accountsWithExposure(request.user!.id);
+      if (exposed.length > 0) {
+        throw ApiError.badRequest(
+          'OPEN_POSITION_BLOCKS_SWITCH',
+          `Close what is open first. ${exposed
+            .map((a) => a.name)
+            .join(', ')} ${exposed.length === 1 ? 'is' : 'are'} holding a position or a working order, and changing the market it is priced against would change what the account is worth.`,
+        );
+      }
+
       if (body.provider === 'replay') {
         await deps.market.switchProvider(deps.replay);
       } else {
