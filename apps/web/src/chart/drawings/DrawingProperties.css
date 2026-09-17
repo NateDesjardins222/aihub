@@ -216,3 +216,37 @@
   color: var(--text-muted);
   cursor: not-allowed;
 }
+
+/* --- colour with its own opacity ---------------------------------------- */
+
+.dp-colour-alpha {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dp-colour-alpha input[type='color'] {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dp-colour-alpha input[type='color']:disabled {
+  opacity: 0.4;
+}
+
+.dp-alpha {
+  flex: 1;
+  min-width: 70px;
+  accent-color: var(--accent);
+}
+
+.dp-alpha-value {
+  width: 34px;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}

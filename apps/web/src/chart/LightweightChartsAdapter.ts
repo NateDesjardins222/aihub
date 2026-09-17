@@ -1080,15 +1080,21 @@ export class LightweightChartsAdapter implements ChartAdapter {
       timeToX: (timeMs) => {
         const direct = timeScale.timeToCoordinate(toTime(timeMs));
         if (direct !== null) return direct;
-        const spacing = this.typicalSpacing();
-        if (spacing === 0 || this.bars.length === 0) return null;
-        const first = this.bars[0]!;
-        const last = this.bars[this.bars.length - 1]!;
-        const logical =
-          timeMs > last.time
-            ? this.bars.length - 1 + (timeMs - last.time) / spacing
-            : (timeMs - first.time) / spacing;
-        return timeScale.logicalToCoordinate(logical as never);
+        /*
+         * A time the series has no bar for - between two bars, or out in the
+         * empty space to the right where projections are drawn.
+         *
+         * Positioned through the bar INDEX, never by extrapolating uniform
+         * time. A chart lays bars out by index, so a uniform-time estimate
+         * disagrees with the layout by however uneven the bars are, and the
+         * disagreement CHANGES as the view moves - which is exactly the
+         * visual drift a drawing must never have. timeToIndex interpolates
+         * between the neighbouring bars and continues at the median spacing
+         * past either end, so this agrees with the layout at every zoom.
+         */
+        const index = this.timeToIndexInternal(timeMs);
+        if (index === null) return null;
+        return timeScale.logicalToCoordinate(index as never);
       },
       xToTime: (x) => {
         const time = timeScale.coordinateToTime(x);
@@ -1096,19 +1102,83 @@ export class LightweightChartsAdapter implements ChartAdapter {
         // The same arithmetic in reverse, so a drawing placed in the empty
         // space lands exactly where the cursor was.
         const logical = timeScale.coordinateToLogical(x);
-        const spacing = this.typicalSpacing();
-        const last = this.bars[this.bars.length - 1];
-        if (logical === null || spacing === 0 || !last) return null;
-        return last.time + Math.round(logical - (this.bars.length - 1)) * spacing;
+        if (logical === null) return null;
+        return this.indexToTimeInternal(logical as unknown as number);
       },
       priceToY: (price) => series.priceToCoordinate(price),
       yToPrice: (y) => series.coordinateToPrice(y),
-      // The PLOT's width, not the container's: an overlay that ran to the
-      // container edge would paint over the price axis.
+
+      /*
+       * Index conversions.
+       *
+       * Fractional on purpose: a drag of half a bar should be half a bar, and
+       * rounding belongs to whoever is using the number. Past either end of
+       * the series the index continues at the median bar spacing, which is the
+       * same rule timeToX uses, so the two agree about where a time sits.
+       */
+      xToIndex: (x) => {
+        const logical = timeScale.coordinateToLogical(x);
+        return logical === null ? null : (logical as unknown as number);
+      },
+      indexToTime: (index) => this.indexToTimeInternal(index),
+      timeToIndex: (timeMs) => this.timeToIndexInternal(timeMs),
       width: Math.max(0, container.clientWidth - this.priceScaleWidth()),
       height: container.clientHeight,
     };
     return this.projectionCache;
+  }
+
+  /** A bar index to the time of the bar it lands on. Fractional in, whole out. */
+  private indexToTimeInternal(index: number): number | null {
+    if (this.bars.length === 0) return null;
+    const first = this.bars[0]!;
+    const last = this.bars[this.bars.length - 1]!;
+    const spacing = this.typicalSpacing();
+    if (index <= 0) {
+      return spacing === 0 ? first.time : first.time + Math.round(index) * spacing;
+    }
+    if (index >= this.bars.length - 1) {
+      return spacing === 0
+        ? last.time
+        : last.time + Math.round(index - (this.bars.length - 1)) * spacing;
+    }
+    // Between two bars: the nearer one, because a drawing anchors to a bar
+    // that exists rather than to a moment between two of them.
+    const low = Math.floor(index);
+    const high = Math.ceil(index);
+    return (index - low <= 0.5 ? this.bars[low] : this.bars[high])?.time ?? null;
+  }
+
+  /**
+   * A time to a fractional bar index.
+   *
+   * Interpolated between the bars either side of it, and continued at the
+   * median spacing beyond either end. This is the function that keeps a
+   * drawing pinned: every pixel position is derived from it, so an anchor is
+   * effectively stored against the series rather than against the clock.
+   */
+  private timeToIndexInternal(timeMs: number): number | null {
+    if (this.bars.length === 0) return null;
+    const first = this.bars[0]!;
+    const last = this.bars[this.bars.length - 1]!;
+    const spacing = this.typicalSpacing();
+    if (timeMs <= first.time) {
+      return spacing === 0 ? 0 : (timeMs - first.time) / spacing;
+    }
+    if (timeMs >= last.time) {
+      return spacing === 0
+        ? this.bars.length - 1
+        : this.bars.length - 1 + (timeMs - last.time) / spacing;
+    }
+    let low = 0;
+    let high = this.bars.length - 1;
+    while (low < high - 1) {
+      const mid = (low + high) >> 1;
+      if (this.bars[mid]!.time <= timeMs) low = mid;
+      else high = mid;
+    }
+    const span = this.bars[high]!.time - this.bars[low]!.time;
+    return span === 0 ? low : low + (timeMs - this.bars[low]!.time) / span;
   }
 
   /**

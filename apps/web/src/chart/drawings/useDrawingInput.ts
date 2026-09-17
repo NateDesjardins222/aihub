@@ -25,10 +25,10 @@ import type { ChartAdapter } from '../ChartAdapter';
 import { useChartStore } from '../../state/chart-store';
 import {
   ANCHOR_COUNT,
+  applyHandle,
   hitTest,
   magnetAnchor,
-  moveAnchor,
-  translate,
+  translateByBars,
   type Anchor,
   type Drawing,
   type DrawingKind,
@@ -129,7 +129,16 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       y: event.clientY - rect.top,
     });
 
-    const anchorAt = (point: Point): Anchor | null => {
+    /**
+     * The market coordinate under a pixel.
+     *
+     * `magnetic` is false for a body drag: moving an object translates it by
+     * the pointer's own movement, and running that difference through the
+     * magnet would make the object jump between candles instead of following
+     * the hand. The magnet belongs to PLACING and RESHAPING an anchor, where
+     * the trader is choosing a price.
+     */
+    const anchorAt = (point: Point, magnetic = true): Anchor | null => {
       const adapter = adapterRef.current;
       const view = projection();
       if (!adapter || !view) return null;
@@ -138,7 +147,7 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       if (time === null || price === null) return null;
       const raw: Anchor = { time, price };
       const store = useChartStore.getState();
-      if (store.magnet === 'OFF') return raw;
+      if (!magnetic || store.magnet === 'OFF') return raw;
       // The magnet snaps to a price the bar actually printed, never between.
       // A weak magnet only reaches as far as a trader would expect it to; a
       // strong one takes the nearest of the four whatever the distance.
@@ -232,17 +241,27 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       // Mid-drag: the working copy moves, the store does not.
       const gesture = live.gesture;
       if (gesture) {
-        const anchor = anchorAt(point);
+        const view = projection();
+        if (!view) return;
+        if (gesture.kind === 'MOVE' || !gesture.role) {
+          // Bars across, and price down: the two axes a chart actually has.
+          const fromIndex = view.xToIndex(gesture.fromX);
+          const nowIndex = view.xToIndex(point.x);
+          const price = view.yToPrice(point.y);
+          if (fromIndex === null || nowIndex === null || price === null) return;
+          updateDraft(
+            translateByBars(
+              gesture.original,
+              nowIndex - fromIndex,
+              price - gesture.from.price,
+              view,
+            ),
+          );
+          return;
+        }
+        const anchor = anchorAt(point, true);
         if (!anchor) return;
-        const next =
-          gesture.kind === 'MOVE'
-            ? translate(
-                gesture.original,
-                anchor.time - gesture.from.time,
-                anchor.price - gesture.from.price,
-              )
-            : moveAnchor(gesture.original, gesture.anchorIndex, anchor);
-        updateDraft(next);
+        updateDraft(applyHandle(gesture.original, gesture.role, anchor));
         return;
       }
 
@@ -253,7 +272,15 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       }
       const found = pick(point);
       setHover(found?.drawing.id ?? null);
-      setCursor(found ? (found.hit.kind === 'HANDLE' ? 'grab' : 'pointer') : '');
+      // The cursor says what the press will DO: resize this edge, move this
+      // object, or nothing at all.
+      setCursor(
+        found
+          ? found.hit.kind === 'HANDLE'
+            ? found.hit.handle.cursor
+            : 'move'
+          : '',
+      );
     };
 
     // --- pointer events: record, decide ownership, never compute ------------
@@ -312,18 +339,23 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         return;
       }
 
-      const anchor = anchorAt(point);
+      // The grab point for a move is raw, so the translation that follows is
+      // exactly the distance the pointer travelled.
+      const anchor = anchorAt(point, found.hit.kind === 'HANDLE');
       if (!anchor) return;
       const gesture: Gesture = {
         kind: found.hit.kind === 'HANDLE' ? 'RESHAPE' : 'MOVE',
         drawingId: found.drawing.id,
-        anchorIndex: found.hit.kind === 'HANDLE' ? found.hit.index : 0,
+        role: found.hit.kind === 'HANDLE' ? found.hit.handle.role : null,
         from: anchor,
+        fromX: point.x,
         original: found.drawing,
       };
       beginGesture(gesture, found.drawing);
       stateRef.current = 'DRAGGING';
-      setCursor('grabbing');
+      // Keep the handle's own cursor through the drag: a corner stays a corner
+      // cursor while it is being pulled.
+      setCursor(found.hit.kind === 'HANDLE' ? found.hit.handle.cursor : 'grabbing');
       event.preventDefault();
       event.stopPropagation();
     };

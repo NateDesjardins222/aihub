@@ -18,17 +18,19 @@
  *   2. Nothing in a gesture reaches global state - so nothing reaches the
  *      network either - until the pointer is released.
  */
-import type { Anchor, Drawing, Point } from './model';
+import type { Anchor, Drawing, HandleRole, Point } from './model';
 
 export type GestureKind = 'MOVE' | 'RESHAPE' | 'PLACE';
 
 export interface Gesture {
   readonly kind: GestureKind;
   readonly drawingId: string;
-  /** Which anchor a reshape is moving. */
-  readonly anchorIndex: number;
+  /** What a reshape is allowed to change: a corner, an edge or a point. */
+  readonly role: HandleRole | null;
   /** Where the pointer went down, in market coordinates. */
   readonly from: Anchor;
+  /** And in pixels, which is what a bar-index translation is measured from. */
+  readonly fromX: number;
   /** The drawing as it was when the gesture started. */
   readonly original: Drawing;
 }

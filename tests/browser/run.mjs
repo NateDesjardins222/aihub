@@ -14,6 +14,7 @@ const SUITES = [
   'terminal',
   'drawing-pointer',
   'drawing-engine',
+  'rectangle',
   'drag-protect',
   'tools',
   'replay-brackets',

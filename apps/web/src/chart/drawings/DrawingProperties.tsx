@@ -201,22 +201,52 @@ function PropRow({
         </Row>
       );
 
-    case 'FILL':
+    case 'COLOR_ALPHA': {
+      /*
+       * A colour and its own opacity, side by side.
+       *
+       * They are one control because a trader thinks of them as one decision -
+       * "white border, fully opaque; grey fill, barely there" - and two
+       * separate rows an inch apart makes that decision harder than it is.
+       */
+      const alphaKey = prop.alphaKey ?? 'opacity';
+      const alpha = typeof style[alphaKey] === 'number' ? (style[alphaKey] as number) : 1;
+      const toggleKey = prop.toggleKey;
+      const on = toggleKey ? style[toggleKey] === true : true;
       return (
         <Row label={prop.label} hint={prop.hint}>
-          <div className="dp-fill">
-            <Check
-              checked={typeof value === 'string' && value.length > 0}
-              onChange={(on) =>
-                set({ [prop.key]: on ? 'rgba(91, 157, 255, 0.10)' : null })
-              }
-            />
-            {typeof value === 'string' && value.length > 0 ? (
-              <Colour value={value} onChange={(next) => set({ [prop.key]: next })} />
+          <div className="dp-colour-alpha">
+            {toggleKey ? (
+              <input
+                type="checkbox"
+                checked={on}
+                aria-label={`${prop.label} on`}
+                onChange={(event) => set({ [toggleKey]: event.target.checked })}
+              />
             ) : null}
+            <input
+              type="color"
+              value={/^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : '#4d8dff'}
+              aria-label={`${prop.label} colour`}
+              disabled={!on}
+              onChange={(event) => set({ [prop.key]: event.target.value })}
+            />
+            <input
+              className="dp-alpha"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(alpha * 100)}
+              aria-label={`${prop.label} opacity`}
+              disabled={!on}
+              onChange={(event) => set({ [alphaKey]: Number(event.target.value) / 100 })}
+            />
+            <span className="num dp-alpha-value">{Math.round(alpha * 100)}%</span>
           </div>
         </Row>
       );
+    }
 
     case 'NUMBER':
       return (

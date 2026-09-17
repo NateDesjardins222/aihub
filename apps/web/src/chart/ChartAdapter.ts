@@ -59,6 +59,17 @@ export interface ChartProjection {
   readonly xToTime: (x: number) => number | null;
   readonly priceToY: (price: number) => number | null;
   readonly yToPrice: (y: number) => number | null;
+  /**
+   * Bar INDEX conversions, fractional, extrapolated past either end.
+   *
+   * A chart lays bars out by index, not by the clock: a weekend is no wider
+   * than a minute. So moving a drawing "three bars to the right" is an index
+   * operation, and doing it in milliseconds instead makes an object jump
+   * whenever it crosses a session gap.
+   */
+  readonly xToIndex: (x: number) => number | null;
+  readonly indexToTime: (index: number) => number | null;
+  readonly timeToIndex: (timeMs: number) => number | null;
   readonly width: number;
   readonly height: number;
 }

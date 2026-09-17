@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import type { ChartAdapter } from '../ChartAdapter';
 import { useChartStore } from '../../state/chart-store';
-import { drawingBounds } from './model';
+import { drawingBounds, withAlpha } from './model';
 import { toolDef } from './registry';
 import { Icon } from '../../ui/Icon';
 import './DrawingMenus.css';
@@ -51,7 +51,7 @@ export function DrawingStyleBar({
   const commitHistory = useChartStore((s) => s.commitHistory);
   const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
-  const [expanded, setExpanded] = useState<'COLOUR' | 'WIDTH' | 'DASH' | null>(null);
+  const [expanded, setExpanded] = useState<'COLOUR' | 'WIDTH' | 'DASH' | 'FILL' | null>(null);
 
   // The selection is read by the frame loop, which must not wait for a render.
   const liveRef = useRef<{ id: string | null }>({ id: null });
@@ -172,6 +172,69 @@ export function DrawingStyleBar({
                   {width}px
                 </button>
               ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {drawing && supports('fillColor') ? (
+        <div className="dsb-group">
+          <button
+            className="dsb-btn"
+            onClick={() => setExpanded(expanded === 'FILL' ? null : 'FILL')}
+            title="Fill and opacity"
+            aria-label="Fill"
+          >
+            <span
+              className="dsb-swatch dsb-swatch-fill"
+              style={{
+                background: drawing.style.filled
+                  ? withAlpha(drawing.style.fillColor, Math.max(0.25, drawing.style.fillOpacity))
+                  : 'transparent',
+              }}
+            />
+          </button>
+          {expanded === 'FILL' ? (
+            <div className="dsb-pop dsb-pop-fill">
+              <label className="dsb-check">
+                <input
+                  type="checkbox"
+                  checked={drawing.style.filled}
+                  aria-label="Filled"
+                  onChange={(event) => setDrawingStyle(drawing.id, { filled: event.target.checked })}
+                />
+                Fill
+              </label>
+              <div className="dsb-swatches">
+                {SWATCHES.map((colour) => (
+                  <button
+                    key={colour}
+                    className="dsb-swatch-btn"
+                    style={{ background: colour }}
+                    aria-label={`Fill ${colour}`}
+                    onClick={() =>
+                      setDrawingStyle(drawing.id, { fillColor: colour, filled: true })
+                    }
+                  />
+                ))}
+              </div>
+              <div className="dsb-alpha-row">
+                <input
+                  type="range"
+                  min={0}
+                  max={60}
+                  step={1}
+                  value={Math.round(drawing.style.fillOpacity * 100)}
+                  aria-label="Fill opacity"
+                  onChange={(event) =>
+                    setDrawingStyle(drawing.id, {
+                      fillOpacity: Number(event.target.value) / 100,
+                      filled: true,
+                    })
+                  }
+                />
+                <span className="num">{Math.round(drawing.style.fillOpacity * 100)}%</span>
+              </div>
             </div>
           ) : null}
         </div>

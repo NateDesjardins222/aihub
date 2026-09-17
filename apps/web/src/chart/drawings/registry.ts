@@ -23,7 +23,8 @@ import {
 
 export type PropType =
   | 'COLOR'
-  | 'FILL'
+  /** A colour and its own opacity, as one control. */
+  | 'COLOR_ALPHA'
   | 'NUMBER'
   | 'DASH'
   | 'BOOLEAN'
@@ -43,6 +44,10 @@ export interface PropDef {
   readonly step?: number;
   readonly options?: ReadonlyArray<{ id: string; label: string }>;
   readonly hint?: string;
+  /** For COLOR_ALPHA: the style key holding this colour's opacity. */
+  readonly alphaKey?: string;
+  /** For COLOR_ALPHA: the style key that turns the fill on and off. */
+  readonly toggleKey?: string;
 }
 
 export type ToolFamily =
@@ -64,6 +69,25 @@ export interface ToolDef {
 }
 
 const COLOR: PropDef = { key: 'color', label: 'Colour', type: 'COLOR', on: 'STYLE', group: 'Appearance' };
+/** Border colour and border opacity, which are separate settings. */
+const BORDER: PropDef = {
+  key: 'color',
+  label: 'Border',
+  type: 'COLOR_ALPHA',
+  on: 'STYLE',
+  group: 'Appearance',
+  alphaKey: 'opacity',
+};
+const FILL_COLOR: PropDef = {
+  key: 'fillColor',
+  label: 'Fill',
+  type: 'COLOR_ALPHA',
+  on: 'STYLE',
+  group: 'Appearance',
+  alphaKey: 'fillOpacity',
+  toggleKey: 'filled',
+  hint: 'Keep this low: the candles underneath have to stay readable',
+};
 const WIDTH: PropDef = {
   key: 'width',
   label: 'Thickness',
@@ -75,7 +99,6 @@ const WIDTH: PropDef = {
   step: 1,
 };
 const DASH: PropDef = { key: 'dash', label: 'Line style', type: 'DASH', on: 'STYLE', group: 'Appearance' };
-const FILL: PropDef = { key: 'fill', label: 'Fill', type: 'FILL', on: 'STYLE', group: 'Appearance' };
 const SHOW_PRICE: PropDef = {
   key: 'showPrice',
   label: 'Price label',
@@ -165,9 +188,20 @@ export const TOOLS: readonly ToolDef[] = [
     name: KIND_LABEL.RECTANGLE,
     family: 'SHAPES',
     anchors: ANCHOR_COUNT.RECTANGLE,
-    style: { fill: 'rgba(91, 157, 255, 0.10)' },
-    options: {},
-    props: [COLOR, WIDTH, DASH, FILL],
+    // Filled by default, at an opacity that leaves every candle inside it
+    // readable. A default that hides price action is a broken default.
+    style: { filled: true, fillColor: '#5b9dff', fillOpacity: 0.08 },
+    options: { extendLeft: false, extendRight: false },
+    props: [
+      BORDER,
+      WIDTH,
+      DASH,
+      FILL_COLOR,
+      EXTEND_LEFT,
+      EXTEND_RIGHT,
+      { key: 'text', label: 'Text', type: 'TEXT', on: 'TEXT', group: 'Text' },
+      SHOW_PRICE,
+    ],
   },
   {
     kind: 'FIB_RETRACEMENT',

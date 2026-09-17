@@ -4,14 +4,19 @@ import {
   FIB_LEVELS,
   distanceToLine,
   drawingBounds,
+  normalizeStyle,
+  withAlpha,
   distanceToRay,
   distanceToSegment,
   fibLevels,
+  applyHandle,
   handlePoints,
+  handlesFor,
   hitTest,
   magnetAnchor,
   moveAnchor,
   translate,
+  translateByBars,
   type Drawing,
   type DrawingKind,
   type Projection,
@@ -34,6 +39,12 @@ const projection: Projection = {
   // price 100 -> y 0, falling one pixel per unit
   priceToY: (price) => 100 - price,
   yToPrice: (y) => 100 - y,
+  // One bar a second, so an index is a time in seconds: enough for the
+  // geometry under test, and the bar-index translation is exercised against a
+  // series with a GAP in its own test below.
+  xToIndex: (x) => x,
+  indexToTime: (index) => index * 1000,
+  timeToIndex: (time) => time / 1000,
   width: 400,
   height: 200,
 };
@@ -118,7 +129,9 @@ describe('hitTest', () => {
       [100_000, 0],
     ]);
     // right on the first anchor: the body would also match here
-    expect(hitTest(line, projection, { x: 0, y: 0 }, true)).toEqual({ kind: 'HANDLE', index: 0 });
+    const hit = hitTest(line, projection, { x: 0, y: 0 }, true);
+    expect(hit?.kind).toBe('HANDLE');
+    expect(hit?.kind === 'HANDLE' ? hit.handle.role : null).toEqual({ kind: 'POINT', index: 0 });
     expect(hitTest(line, projection, { x: 0, y: 0 }, false)).toEqual({ kind: 'BODY' });
   });
 
@@ -143,21 +156,51 @@ describe('hitTest', () => {
         [0, 100],
         [100_000, 0],
       ],
-      { style: { ...DEFAULT_STYLE, fill: 'rgba(0,0,0,0.2)' } },
+      { style: { ...DEFAULT_STYLE, filled: true } },
     );
     expect(hitTest(filled, projection, { x: 50, y: 50 }, false)).toEqual({ kind: 'BODY' });
   });
 
-  it('maps a rectangle corner back to the anchor it moves', () => {
+  it('gives a rectangle four corners and four edges, each with its own job', () => {
     const rect = drawing('RECTANGLE', [
       [0, 100],
       [100_000, 0],
     ]);
-    const handles = handlePoints(rect, projection);
-    expect(handles).toHaveLength(4);
-    // corner 1 is (100, 0): the x comes from anchor 1, so it moves anchor 1
-    expect(hitTest(rect, projection, handles[1]!, true)).toEqual({ kind: 'HANDLE', index: 1 });
-    expect(hitTest(rect, projection, handles[3]!, true)).toEqual({ kind: 'HANDLE', index: 0 });
+    // timeToX is time/1000 and priceToY is 100 - price, so anchor 0 is the
+    // top-left of the shape and anchor 1 the bottom-right.
+    const handles = handlesFor(rect, projection);
+    expect(handles).toHaveLength(8);
+
+    const roles = handles.map((handle) => handle.role);
+    expect(roles).toContainEqual({ kind: 'CORNER', timeIndex: 0, priceIndex: 0 });
+    expect(roles).toContainEqual({ kind: 'CORNER', timeIndex: 1, priceIndex: 1 });
+    // The top edge moves the price of whichever anchor is at the top.
+    expect(roles).toContainEqual({ kind: 'PRICE', index: 0 });
+    expect(roles).toContainEqual({ kind: 'PRICE', index: 1 });
+    // The left edge moves the time of whichever anchor is on the left.
+    expect(roles).toContainEqual({ kind: 'TIME', index: 0 });
+    expect(roles).toContainEqual({ kind: 'TIME', index: 1 });
+
+    const topLeft = handles.find(
+      (handle) =>
+        handle.role.kind === 'CORNER' &&
+        handle.role.timeIndex === 0 &&
+        handle.role.priceIndex === 0,
+    )!;
+    const hit = hitTest(rect, projection, { x: topLeft.x, y: topLeft.y }, true);
+    expect(hit?.kind === 'HANDLE' ? hit.handle.role : null).toEqual(topLeft.role);
+  });
+
+  it('follows the shape when a rectangle is drawn backwards', () => {
+    // Dragged from the bottom-right to the top-left: anchor 1 now holds the
+    // left edge and the top price, and the handles must say so.
+    const rect = drawing('RECTANGLE', [
+      [100_000, 0],
+      [0, 100],
+    ]);
+    const roles = handlesFor(rect, projection).map((handle) => handle.role);
+    expect(roles).toContainEqual({ kind: 'TIME', index: 1 });
+    expect(roles).toContainEqual({ kind: 'PRICE', index: 1 });
   });
 
   it('never matches a hidden drawing', () => {
@@ -181,8 +224,10 @@ describe('magnet', () => {
     expect(magnetAnchor({ time: 61_000, price: 8.6 }, bar, 1)).toEqual({ time: 60_000, price: 9 });
   });
 
-  it('leaves the price alone when nothing printed is close, but still pins the bar', () => {
-    expect(magnetAnchor({ time: 61_000, price: 40 }, bar, 1)).toEqual({ time: 60_000, price: 40 });
+  it('leaves the anchor completely alone when nothing printed is close', () => {
+    // Not the time either: a magnet that quantises a placement the trader did
+    // not ask to quantise is what made moving an object jump a bar at a time.
+    expect(magnetAnchor({ time: 61_000, price: 40 }, bar, 1)).toEqual({ time: 61_000, price: 40 });
   });
 
   it('never invents a price between the ones the bar printed', () => {
@@ -290,6 +335,48 @@ describe('fib levels', () => {
   });
 });
 
+describe('dragging a handle', () => {
+  const rect = drawing('RECTANGLE', [
+    [0, 100],
+    [100_000, 0],
+  ]);
+
+  it('moves one time and one price for a corner', () => {
+    const next = applyHandle(
+      rect,
+      { kind: 'CORNER', timeIndex: 1, priceIndex: 0 },
+      { time: 50_000, price: 80 },
+    );
+    expect(next.anchors[0]).toEqual({ time: 0, price: 80 });
+    expect(next.anchors[1]).toEqual({ time: 50_000, price: 0 });
+  });
+
+  it('moves only the price for a top or bottom edge', () => {
+    const next = applyHandle(rect, { kind: 'PRICE', index: 0 }, { time: 999, price: 60 });
+    expect(next.anchors[0]).toEqual({ time: 0, price: 60 });
+    expect(next.anchors[1]).toEqual({ time: 100_000, price: 0 });
+  });
+
+  it('moves only the time for a left or right edge', () => {
+    const next = applyHandle(rect, { kind: 'TIME', index: 1 }, { time: 30_000, price: 999 });
+    expect(next.anchors[0]).toEqual({ time: 0, price: 100 });
+    expect(next.anchors[1]).toEqual({ time: 30_000, price: 0 });
+  });
+
+  it('moves both for a point handle', () => {
+    const line = drawing('TREND_LINE', [
+      [0, 100],
+      [100_000, 0],
+    ]);
+    const next = applyHandle(line, { kind: 'POINT', index: 1 }, { time: 7, price: 7 });
+    expect(next.anchors[1]).toEqual({ time: 7, price: 7 });
+  });
+
+  it('leaves the drawing alone when the handle points at nothing', () => {
+    expect(applyHandle(rect, { kind: 'POINT', index: 9 }, { time: 1, price: 1 })).toBe(rect);
+  });
+});
+
 describe('drawing bounds', () => {
   it('covers every handle of a rectangle', () => {
     const rect = drawing('RECTANGLE', [
@@ -311,5 +398,113 @@ describe('drawing bounds', () => {
   it('has no bounds when nothing projects', () => {
     const nowhere: Projection = { ...projection, timeToX: () => null, priceToY: () => null };
     expect(drawingBounds(drawing('TREND_LINE', [[0, 100], [1000, 90]]), nowhere)).toBeNull();
+  });
+});
+
+describe('styles', () => {
+  it('applies alpha to a hex colour', () => {
+    expect(withAlpha('#4d8dff', 0.08)).toBe('rgba(77, 141, 255, 0.08)');
+    expect(withAlpha('#fff', 0.5)).toBe('rgba(255, 255, 255, 0.5)');
+  });
+
+  it('leaves a fully opaque colour alone', () => {
+    expect(withAlpha('#4d8dff', 1)).toBe('#4d8dff');
+  });
+
+  it('passes through a colour it cannot parse rather than mangling it', () => {
+    expect(withAlpha('rgba(1, 2, 3, 0.4)', 0.2)).toBe('rgba(1, 2, 3, 0.4)');
+  });
+
+  it('defaults to a fill that price action shows through', () => {
+    expect(DEFAULT_STYLE.fillOpacity).toBeLessThanOrEqual(0.12);
+    expect(DEFAULT_STYLE.opacity).toBe(1);
+  });
+
+  describe('normalising a stored style', () => {
+    it('recovers the colour and alpha from an old rgba fill', () => {
+      const style = normalizeStyle({ color: '#ffffff', fill: 'rgba(91, 157, 255, 0.10)' });
+      expect(style.filled).toBe(true);
+      expect(style.fillColor).toBe('#5b9dff');
+      expect(style.fillOpacity).toBeCloseTo(0.1, 5);
+      // A drawing made before border opacity existed was fully opaque.
+      expect(style.opacity).toBe(1);
+    });
+
+    it('treats a drawing with no fill as unfilled', () => {
+      expect(normalizeStyle({ color: '#ffffff', fill: null }).filled).toBe(false);
+    });
+
+    it('clamps nonsense', () => {
+      const style = normalizeStyle({ opacity: 4, fillOpacity: -2, width: 99, fontSize: 900 });
+      expect(style.opacity).toBe(1);
+      expect(style.fillOpacity).toBe(0);
+      expect(style.width).toBe(10);
+      expect(style.fontSize).toBe(32);
+    });
+
+    it('falls back to the defaults for junk', () => {
+      expect(normalizeStyle(null)).toEqual(DEFAULT_STYLE);
+      expect(normalizeStyle('nonsense')).toEqual(DEFAULT_STYLE);
+    });
+  });
+});
+
+describe('moving a drawing by bars', () => {
+  /*
+   * A series with a hole in it: bars every minute, then a four-hour gap, then
+   * bars every minute again. This is what a session break looks like, and it
+   * is where translating by milliseconds goes wrong.
+   */
+  const times = [0, 60_000, 120_000, 180_000, 4 * 3_600_000, 4 * 3_600_000 + 60_000, 4 * 3_600_000 + 120_000];
+  const barred: Pick<Projection, 'timeToIndex' | 'indexToTime'> = {
+    timeToIndex: (time) => {
+      const exact = times.indexOf(time);
+      if (exact >= 0) return exact;
+      let index = 0;
+      while (index < times.length - 1 && times[index + 1]! <= time) index += 1;
+      return index;
+    },
+    indexToTime: (index) => times[Math.max(0, Math.min(times.length - 1, Math.round(index)))] ?? null,
+  };
+
+  it('moves each anchor the same number of bars', () => {
+    const line = drawing('TREND_LINE', [
+      [0, 100],
+      [60_000, 90],
+    ]);
+    const moved = translateByBars(line, 2, 5, barred);
+    expect(moved.anchors[0]).toEqual({ time: 120_000, price: 105 });
+    expect(moved.anchors[1]).toEqual({ time: 180_000, price: 95 });
+  });
+
+  it('keeps its width in bars across a session gap', () => {
+    const line = drawing('TREND_LINE', [
+      [120_000, 100],
+      [180_000, 90],
+    ]);
+    // Three bars right takes the first anchor over the gap; the second follows
+    // it, and the two stay one bar apart - which is what the trader dragged.
+    const moved = translateByBars(line, 3, 0, barred);
+    const first = barred.timeToIndex(moved.anchors[0]!.time)!;
+    const second = barred.timeToIndex(moved.anchors[1]!.time)!;
+    expect(second - first).toBe(1);
+  });
+
+  it('rounds to whole bars, so an object never sits between two candles', () => {
+    const line = drawing('TREND_LINE', [
+      [0, 100],
+      [60_000, 90],
+    ]);
+    expect(translateByBars(line, 1.4, 0, barred).anchors[0]!.time).toBe(60_000);
+    expect(translateByBars(line, 1.6, 0, barred).anchors[0]!.time).toBe(120_000);
+  });
+
+  it('still moves the price when an anchor is off the end of the series', () => {
+    const line = drawing('TREND_LINE', [[0, 100]]);
+    const nowhere: Pick<Projection, 'timeToIndex' | 'indexToTime'> = {
+      timeToIndex: () => null,
+      indexToTime: () => null,
+    };
+    expect(translateByBars(line, 5, -10, nowhere).anchors[0]).toEqual({ time: 0, price: 90 });
   });
 });

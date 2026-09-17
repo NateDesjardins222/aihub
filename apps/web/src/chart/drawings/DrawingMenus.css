@@ -194,3 +194,44 @@
 .dsb-item-on {
   background: var(--accent-bg);
 }
+
+.dsb-swatch-fill {
+  border-style: dashed;
+}
+
+.dsb-pop-fill {
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.dsb-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.dsb-swatches {
+  display: flex;
+  gap: 3px;
+}
+
+.dsb-alpha-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dsb-alpha-row input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.dsb-alpha-row span {
+  width: 32px;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}

@@ -19,6 +19,7 @@ import { indicatorDef, type IndicatorInstance, type ParamValues } from '../chart
 import {
   ANCHOR_COUNT,
   DEFAULT_STYLE,
+  normalizeStyle,
   type Drawing,
   type DrawingKind,
   type DrawingStyle,
@@ -526,7 +527,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
         Array.isArray(stored.favouriteTools) && stored.favouriteTools.length > 0
           ? stored.favouriteTools.filter((kind) => kind in ANCHOR_COUNT)
           : DEFAULT_FAVOURITE_TOOLS,
-      defaultStyle: { ...DEFAULT_STYLE, ...(stored.defaultStyle ?? {}) },
+      defaultStyle: normalizeStyle(stored.defaultStyle),
       magnet: readMagnet(stored.magnet),
       templates: sanitizeTemplates(stored.templates),
       toolDefaults: sanitizeToolDefaults(stored.toolDefaults),
@@ -570,7 +571,10 @@ function sanitizeTemplates(raw: unknown): readonly DrawingTemplate[] {
       id: typeof candidate.id === 'string' ? candidate.id : id('tpl'),
       kind: candidate.kind as DrawingKind,
       name: candidate.name,
-      style: { ...DEFAULT_STYLE, ...(candidate.style ?? {}) },
+      // Through the normaliser, so a workspace saved before border and fill
+      // were separate comes back as the drawing the trader made rather than as
+      // a shape with no interior.
+      style: normalizeStyle(candidate.style),
       options: sanitizeOptions(candidate.options),
     });
   }
@@ -584,7 +588,7 @@ function sanitizeToolDefaults(raw: unknown): Record<string, ToolDefault> {
     if (!toolDef(kind as DrawingKind)) continue;
     const candidate = value as Partial<ToolDefault>;
     out[kind] = {
-      style: { ...DEFAULT_STYLE, ...(candidate?.style ?? {}) },
+      style: normalizeStyle(candidate?.style),
       options: sanitizeOptions(candidate?.options),
     };
   }
@@ -642,7 +646,10 @@ function sanitizeDrawings(raw: unknown): readonly Drawing[] {
       kind: candidate.kind as DrawingKind,
       symbol: candidate.symbol,
       anchors,
-      style: { ...DEFAULT_STYLE, ...(candidate.style ?? {}) },
+      // Through the normaliser, so a workspace saved before border and fill
+      // were separate comes back as the drawing the trader made rather than as
+      // a shape with no interior.
+      style: normalizeStyle(candidate.style),
       options: sanitizeOptions(candidate.options),
       text: typeof candidate.text === 'string' ? candidate.text : '',
       locked: candidate.locked === true,

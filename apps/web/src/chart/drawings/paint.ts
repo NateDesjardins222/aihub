@@ -7,6 +7,7 @@
  */
 import {
   HANDLE_RADIUS,
+  withAlpha,
   fibLevels,
   handlePoints,
   project,
@@ -46,13 +47,22 @@ export function drawDrawing(
     }
   }
 
+  /*
+   * The border carries its own alpha, and so does the fill.
+   *
+   * globalAlpha is reserved for the PAINT STATE - the ghost of an object being
+   * placed - so that a trader's own opacity settings and the renderer's
+   * feedback never multiply into something neither of them asked for.
+   */
   ctx.save();
-  ctx.strokeStyle = drawing.style.color;
-  ctx.fillStyle = drawing.style.color;
+  const border = withAlpha(drawing.style.color, drawing.style.opacity);
+  ctx.strokeStyle = border;
+  ctx.fillStyle = border;
   ctx.lineWidth = drawing.style.width + (state === 'HOVER' ? 1 : 0);
   ctx.globalAlpha = state === 'PENDING' ? 0.7 : 1;
   ctx.setLineDash(state === 'PENDING' ? [4, 3] : dashPattern(drawing.style.dash));
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
   const a = points[0];
   const b = points[1];
@@ -83,17 +93,40 @@ export function drawDrawing(
     }
     case 'RECTANGLE': {
       if (!a || !b) break;
-      const x = Math.min(a.x, b.x);
+      const extendLeft = option(drawing, 'extendLeft', false);
+      const extendRight = option(drawing, 'extendRight', false);
+      const x = extendLeft ? 0 : Math.min(a.x, b.x);
+      const right = extendRight ? projection.width : Math.max(a.x, b.x);
       const y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x);
+      const w = Math.max(0, right - x);
       const h = Math.abs(b.y - a.y);
-      if (drawing.style.fill) {
+
+      if (drawing.style.filled && drawing.style.fillOpacity > 0) {
         ctx.save();
-        ctx.fillStyle = drawing.style.fill;
+        ctx.fillStyle = withAlpha(drawing.style.fillColor, drawing.style.fillOpacity);
         ctx.fillRect(x, y, w, h);
         ctx.restore();
       }
-      ctx.strokeRect(x, y, w, h);
+      // A border of zero width is a deliberate choice - a zone with no edge -
+      // and must not be drawn as a hairline anyway.
+      if (drawing.style.width > 0 && drawing.style.opacity > 0) ctx.strokeRect(x, y, w, h);
+
+      if (drawing.style.showPrice) {
+        const top = Math.max(drawing.anchors[0]!.price, drawing.anchors[1]!.price);
+        const low = Math.min(drawing.anchors[0]!.price, drawing.anchors[1]!.price);
+        priceTag(ctx, projection, y, top, drawing.style.color, pricePrecision);
+        priceTag(ctx, projection, y + h, low, drawing.style.color, pricePrecision);
+      }
+
+      if (drawing.text) {
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = border;
+        ctx.fillText(drawing.text, x + 5, y + 4);
+        ctx.restore();
+      }
       break;
     }
     case 'FIB_RETRACEMENT': {
@@ -191,20 +224,27 @@ export function drawDrawing(
     }
   }
 
-  // Handles, on the selected drawing only. Hollow squares: they read as grab
-  // points and stay visible over any candle colour.
+  /*
+   * Handles, on the SELECTED drawing only.
+   *
+   * Small white squares with the object's own colour around them: visible
+   * against a candle of any colour, and small enough that a selected object
+   * still reads as the line or the zone it is rather than as a row of blobs.
+   * An unselected drawing shows none of this, which is what keeps a chart with
+   * thirty objects on it legible.
+   */
   if (state === 'SELECTED') {
     ctx.setLineDash([]);
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     for (const handle of handlePoints(drawing, projection)) {
-      ctx.fillStyle = '#0b0e14';
+      ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = drawing.style.color;
       ctx.beginPath();
       ctx.rect(
-        handle.x - HANDLE_RADIUS,
-        handle.y - HANDLE_RADIUS,
-        HANDLE_RADIUS * 2,
-        HANDLE_RADIUS * 2,
+        Math.round(handle.x) - HANDLE_RADIUS + 0.5,
+        Math.round(handle.y) - HANDLE_RADIUS + 0.5,
+        HANDLE_RADIUS * 2 - 1,
+        HANDLE_RADIUS * 2 - 1,
       );
       ctx.fill();
       ctx.stroke();
@@ -239,15 +279,24 @@ function priceTag(
   color: string,
   pricePrecision: number,
 ): void {
+  /*
+   * Sized to the number it carries, against the price axis.
+   *
+   * A price label is read at a glance next to the scale it belongs to; an
+   * oversized chip with generous padding is a worse label, not a better one.
+   */
   const text = price.toFixed(pricePrecision);
   ctx.save();
   ctx.setLineDash([]);
-  ctx.font = '10px ui-monospace, monospace';
-  const width = ctx.measureText(text).width + 8;
+  ctx.globalAlpha = 1;
+  ctx.font = '10px ui-monospace, SFMono-Regular, monospace';
+  const width = ctx.measureText(text).width + 7;
   ctx.fillStyle = color;
-  ctx.fillRect(projection.width - width - 2, y - 7, width, 14);
+  ctx.beginPath();
+  ctx.roundRect(projection.width - width - 1, Math.round(y) - 6.5, width, 13, 2);
+  ctx.fill();
   ctx.fillStyle = '#07090d';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, projection.width - width + 2, y);
+  ctx.fillText(text, projection.width - width + 2.5, Math.round(y));
   ctx.restore();
 }

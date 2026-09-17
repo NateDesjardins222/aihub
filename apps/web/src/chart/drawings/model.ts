@@ -27,23 +27,126 @@ export interface Anchor {
   readonly price: number;
 }
 
+/**
+ * How a drawing looks.
+ *
+ * The border and the fill are SEPARATE, each with its own colour and its own
+ * alpha. That is not a refinement: a zone drawn on a price chart is only
+ * useful if the candles inside it are still readable, and the way to get a
+ * crisp edge over a barely-there interior is a solid border colour and a fill
+ * at eight per cent - not one colour chosen dark enough to look transparent.
+ *
+ * Colours are stored as plain hex. Alpha is applied at paint time, so a
+ * trader can change either without the other being re-derived.
+ */
 export interface DrawingStyle {
+  /** Border and line colour, as #rrggbb. */
   readonly color: string;
+  /** Border alpha, 0-1. */
+  readonly opacity: number;
   readonly width: number;
   readonly dash: 'SOLID' | 'DASHED' | 'DOTTED';
-  readonly fill: string | null;
+  /** Whether the shape has an interior at all. */
+  readonly filled: boolean;
+  readonly fillColor: string;
+  /** Fill alpha, 0-1. Deliberately low by default. */
+  readonly fillOpacity: number;
   readonly fontSize: number;
   readonly showPrice: boolean;
 }
 
 export const DEFAULT_STYLE: DrawingStyle = {
   color: '#4d8dff',
+  opacity: 1,
   width: 1,
   dash: 'SOLID',
-  fill: null,
+  filled: false,
+  fillColor: '#4d8dff',
+  // Eight per cent: enough to read the zone, not enough to hide a candle.
+  fillOpacity: 0.08,
   fontSize: 11,
   showPrice: false,
 };
+
+/**
+ * A colour with an alpha applied.
+ *
+ * Accepts #rgb, #rrggbb and anything already carrying its own alpha - a stored
+ * rgba() from before border and fill were separate is passed through rather
+ * than mangled.
+ */
+export function withAlpha(color: string, alpha: number): string {
+  const a = Math.max(0, Math.min(1, alpha));
+  if (a >= 1) return color;
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!hex) return color;
+  const digits = hex[1]!;
+  const full =
+    digits.length === 3
+      ? digits
+          .split('')
+          .map((d) => d + d)
+          .join('')
+      : digits;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.round(a * 1000) / 1000})`;
+}
+
+/**
+ * Bring a style written by an older build up to date.
+ *
+ * The previous shape carried a single `fill` string - an rgba() or null - and
+ * no border alpha. The colour inside it is recovered where it can be, so a
+ * rectangle a trader drew last week keeps looking like the rectangle they
+ * drew, and the alpha is capped so a stored opaque fill cannot survive as
+ * something that hides price action.
+ */
+export function normalizeStyle(raw: unknown): DrawingStyle {
+  const style = (raw ?? {}) as Partial<DrawingStyle> & { fill?: unknown };
+  const legacyFill = typeof style.fill === 'string' ? parseRgba(style.fill) : null;
+
+  const clamp01 = (value: unknown, fallback: number): number =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.max(0, Math.min(1, value))
+      : fallback;
+
+  return {
+    color: typeof style.color === 'string' ? style.color : DEFAULT_STYLE.color,
+    opacity: clamp01(style.opacity, DEFAULT_STYLE.opacity),
+    width:
+      typeof style.width === 'number' && Number.isFinite(style.width)
+        ? Math.max(1, Math.min(10, Math.round(style.width)))
+        : DEFAULT_STYLE.width,
+    dash:
+      style.dash === 'DASHED' || style.dash === 'DOTTED' || style.dash === 'SOLID'
+        ? style.dash
+        : DEFAULT_STYLE.dash,
+    filled:
+      typeof style.filled === 'boolean' ? style.filled : legacyFill !== null,
+    fillColor:
+      typeof style.fillColor === 'string'
+        ? style.fillColor
+        : (legacyFill?.color ?? DEFAULT_STYLE.fillColor),
+    fillOpacity: clamp01(style.fillOpacity, legacyFill?.alpha ?? DEFAULT_STYLE.fillOpacity),
+    fontSize:
+      typeof style.fontSize === 'number' && Number.isFinite(style.fontSize)
+        ? Math.max(8, Math.min(32, Math.round(style.fontSize)))
+        : DEFAULT_STYLE.fontSize,
+    showPrice: style.showPrice === true,
+  };
+}
+
+function parseRgba(value: string): { color: string; alpha: number } | null {
+  const match = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/i.exec(value);
+  if (!match) return /^#[0-9a-f]{3,6}$/i.test(value.trim()) ? { color: value.trim(), alpha: 0.08 } : null;
+  const hex = (n: string): string => Number(n).toString(16).padStart(2, '0');
+  return {
+    color: `#${hex(match[1]!)}${hex(match[2]!)}${hex(match[3]!)}`,
+    alpha: match[4] === undefined ? 0.08 : Math.max(0, Math.min(1, Number(match[4]))),
+  };
+}
 
 /**
  * Tool-specific settings.
@@ -122,6 +225,10 @@ export interface Projection {
   readonly xToTime: (x: number) => number | null;
   readonly priceToY: (price: number) => number | null;
   readonly yToPrice: (y: number) => number | null;
+  /** Bar-index conversions; see ChartProjection for why they exist. */
+  readonly xToIndex: (x: number) => number | null;
+  readonly indexToTime: (index: number) => number | null;
+  readonly timeToIndex: (time: number) => number | null;
   readonly width: number;
   readonly height: number;
 }
@@ -164,26 +271,148 @@ export function distanceToLine(p: Point, a: Point, b: Point): number {
 export const HANDLE_RADIUS = 4;
 export const HIT_TOLERANCE = 6;
 
-/** Where the grab handles sit for a drawing, in screen space. */
-export function handlePoints(drawing: Drawing, projection: Projection): Point[] {
-  const points: Point[] = [];
-  for (const anchor of drawing.anchors) {
-    const point = project(projection, anchor);
-    if (!point) continue;
-    if (drawing.kind === 'HORIZONTAL_LINE') points.push({ x: projection.width / 2, y: point.y });
-    else if (drawing.kind === 'VERTICAL_LINE') points.push({ x: point.x, y: projection.height / 2 });
-    else points.push(point);
-  }
-  if (drawing.kind === 'RECTANGLE' && points.length === 2) {
+/**
+ * What dragging a handle is allowed to change.
+ *
+ * A rectangle's corner moves a time and a price; its top edge moves only a
+ * price; its left edge moves only a time. Expressing that as a role - rather
+ * than as "anchor 0" and a pile of special cases in the input machine - is
+ * what makes the interaction match what a trader expects from any charting
+ * package, and it generalises: every tool describes its handles, and one
+ * reshape function applies them.
+ */
+export type HandleRole =
+  /** Move both coordinates of one anchor. */
+  | { readonly kind: 'POINT'; readonly index: number }
+  /** A corner: the time of one anchor and the price of another. */
+  | { readonly kind: 'CORNER'; readonly timeIndex: number; readonly priceIndex: number }
+  /** An edge that moves time only. */
+  | { readonly kind: 'TIME'; readonly index: number }
+  /** An edge that moves price only. */
+  | { readonly kind: 'PRICE'; readonly index: number };
+
+export interface Handle {
+  readonly x: number;
+  readonly y: number;
+  readonly role: HandleRole;
+  /** The cursor to show over it. */
+  readonly cursor: string;
+}
+
+/**
+ * Where a drawing's grab handles are, and what each one does.
+ *
+ * A rectangle gets four corners AND four edge midpoints, because resizing one
+ * side of a zone without touching the other three is the commonest edit there
+ * is. Everything else gets a handle per anchor.
+ */
+export function handlesFor(drawing: Drawing, projection: Projection): Handle[] {
+  const points = drawing.anchors.map((anchor) => project(projection, anchor));
+
+  if (drawing.kind === 'RECTANGLE' && points[0] && points[1]) {
     const [a, b] = points as [Point, Point];
-    return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
+    // Which anchor holds the left edge, and which the top, depends on how the
+    // trader dragged it out; the handles must follow the shape, not the order.
+    const leftIndex = a.x <= b.x ? 0 : 1;
+    const rightIndex = leftIndex === 0 ? 1 : 0;
+    const topIndex = a.y <= b.y ? 0 : 1;
+    const bottomIndex = topIndex === 0 ? 1 : 0;
+    const left = Math.min(a.x, b.x);
+    const right = Math.max(a.x, b.x);
+    const top = Math.min(a.y, b.y);
+    const bottom = Math.max(a.y, b.y);
+    const midX = (left + right) / 2;
+    const midY = (top + bottom) / 2;
+
+    return [
+      { x: left, y: top, cursor: 'nwse-resize', role: { kind: 'CORNER', timeIndex: leftIndex, priceIndex: topIndex } },
+      { x: right, y: top, cursor: 'nesw-resize', role: { kind: 'CORNER', timeIndex: rightIndex, priceIndex: topIndex } },
+      { x: right, y: bottom, cursor: 'nwse-resize', role: { kind: 'CORNER', timeIndex: rightIndex, priceIndex: bottomIndex } },
+      { x: left, y: bottom, cursor: 'nesw-resize', role: { kind: 'CORNER', timeIndex: leftIndex, priceIndex: bottomIndex } },
+      { x: midX, y: top, cursor: 'ns-resize', role: { kind: 'PRICE', index: topIndex } },
+      { x: midX, y: bottom, cursor: 'ns-resize', role: { kind: 'PRICE', index: bottomIndex } },
+      { x: left, y: midY, cursor: 'ew-resize', role: { kind: 'TIME', index: leftIndex } },
+      { x: right, y: midY, cursor: 'ew-resize', role: { kind: 'TIME', index: rightIndex } },
+    ];
   }
-  return points;
+
+  const handles: Handle[] = [];
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    if (!point) continue;
+    if (drawing.kind === 'HORIZONTAL_LINE') {
+      handles.push({
+        x: projection.width / 2,
+        y: point.y,
+        cursor: 'ns-resize',
+        role: { kind: 'PRICE', index },
+      });
+    } else if (drawing.kind === 'VERTICAL_LINE') {
+      handles.push({
+        x: point.x,
+        y: projection.height / 2,
+        cursor: 'ew-resize',
+        role: { kind: 'TIME', index },
+      });
+    } else {
+      handles.push({ x: point.x, y: point.y, cursor: 'grab', role: { kind: 'POINT', index } });
+    }
+  }
+  return handles;
+}
+
+/** Where the grab handles sit, as plain points. Used by the painter. */
+export function handlePoints(drawing: Drawing, projection: Projection): Point[] {
+  return handlesFor(drawing, projection).map((handle) => ({ x: handle.x, y: handle.y }));
+}
+
+/**
+ * Apply a dragged handle.
+ *
+ * The role decides what may change: a corner moves one time and one price, an
+ * edge moves one of them, a point moves both. Nothing else about the drawing
+ * is touched.
+ */
+export function applyHandle(drawing: Drawing, role: HandleRole, anchor: Anchor): Drawing {
+  const anchors = drawing.anchors.map((existing) => ({ ...existing }));
+  const at = (index: number): { time: number; price: number } | undefined => anchors[index];
+
+  switch (role.kind) {
+    case 'POINT': {
+      const target = at(role.index);
+      if (!target) return drawing;
+      target.time = anchor.time;
+      target.price = anchor.price;
+      break;
+    }
+    case 'CORNER': {
+      const timeTarget = at(role.timeIndex);
+      const priceTarget = at(role.priceIndex);
+      if (!timeTarget || !priceTarget) return drawing;
+      timeTarget.time = anchor.time;
+      priceTarget.price = anchor.price;
+      break;
+    }
+    case 'TIME': {
+      const target = at(role.index);
+      if (!target) return drawing;
+      target.time = anchor.time;
+      break;
+    }
+    case 'PRICE': {
+      const target = at(role.index);
+      if (!target) return drawing;
+      target.price = anchor.price;
+      break;
+    }
+  }
+
+  return { ...drawing, anchors };
 }
 
 export type HitTarget =
   | { readonly kind: 'BODY' }
-  | { readonly kind: 'HANDLE'; readonly index: number };
+  | { readonly kind: 'HANDLE'; readonly handle: Handle };
 
 /**
  * What, if anything, is under the cursor.
@@ -201,13 +430,12 @@ export function hitTest(
   if (drawing.hidden) return null;
 
   if (selected) {
-    const handles = handlePoints(drawing, projection);
-    for (let i = 0; i < handles.length; i += 1) {
-      if (Math.hypot(cursor.x - handles[i]!.x, cursor.y - handles[i]!.y) <= HANDLE_RADIUS + 3) {
-        // A rectangle exposes four corners but stores two anchors; the corner
-        // index maps back to the anchor it actually moves.
-        const index = drawing.kind === 'RECTANGLE' ? (i === 0 || i === 3 ? 0 : 1) : i;
-        return { kind: 'HANDLE', index };
+    // Handles are only grabbable on a SELECTED object, which is what keeps an
+    // unselected chart clean and stops a stray click resizing something the
+    // trader had not chosen.
+    for (const handle of handlesFor(drawing, projection)) {
+      if (Math.hypot(cursor.x - handle.x, cursor.y - handle.y) <= HANDLE_RADIUS + 4) {
+        return { kind: 'HANDLE', handle };
       }
     }
   }
@@ -246,7 +474,7 @@ export function hitTest(
       if (!insideX || !insideY) return null;
       // A filled shape is grabbable anywhere inside; an unfilled one only on
       // its edges, so it does not swallow clicks meant for the chart.
-      if (drawing.kind === 'FIB_RETRACEMENT' || drawing.style.fill) return { kind: 'BODY' };
+      if (drawing.kind === 'FIB_RETRACEMENT' || drawing.style.filled) return { kind: 'BODY' };
       const onEdge =
         Math.abs(cursor.x - left) <= HIT_TOLERANCE ||
         Math.abs(cursor.x - right) <= HIT_TOLERANCE ||
@@ -297,7 +525,47 @@ export function magnetAnchor(
       best = candidate;
     }
   }
-  return bestDistance <= tolerance ? { time: bar.time, price: best } : { ...anchor, time: bar.time };
+  /*
+   * Within reach: take the bar's price AND its time, which is what makes an
+   * anchor sit exactly on a candle.
+   *
+   * Out of reach: leave the anchor completely alone. An earlier version still
+   * snapped the TIME in this case, which meant a weak magnet quietly
+   * quantised every placement to a bar boundary and - because a body drag
+   * translates by the difference between two anchors - made moving an object
+   * jump a whole bar at a time. A magnet that moves something the trader did
+   * not point at is not help.
+   */
+  return bestDistance <= tolerance ? { time: bar.time, price: best } : anchor;
+}
+
+/**
+ * Move a drawing by a number of BARS and a price delta.
+ *
+ * Moving by milliseconds looks right until the object crosses a session gap:
+ * a chart gives a weekend no more width than a minute, so a drag measured in
+ * time either overshoots or stalls the moment it passes one. Measured in bars,
+ * the object follows the pointer exactly and keeps its width, which is what a
+ * trader sees in any charting package.
+ *
+ * Anchors beyond either end of the series are carried at the median bar
+ * spacing, the same rule the projection uses, so a drawing in the empty space
+ * to the right of the last bar moves with the hand too.
+ */
+export function translateByBars(
+  drawing: Drawing,
+  deltaIndex: number,
+  deltaPrice: number,
+  projection: Pick<Projection, 'timeToIndex' | 'indexToTime'>,
+): Drawing {
+  const steps = Math.round(deltaIndex);
+  const anchors = drawing.anchors.map((anchor) => {
+    const index = projection.timeToIndex(anchor.time);
+    if (index === null) return { ...anchor, price: anchor.price + deltaPrice };
+    const time = projection.indexToTime(index + steps);
+    return { time: time ?? anchor.time, price: anchor.price + deltaPrice };
+  });
+  return { ...drawing, anchors };
 }
 
 /** Move every anchor of a drawing by a time and price delta. */
