@@ -21,11 +21,39 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 const now = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 
 /** bigint columns come back as strings from postgres.js; this keeps them numeric. */
 const micros = (name: string) => bigint(name, { mode: 'number' });
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+/**
+ * The firm a user, a product and an account belong to.
+ *
+ * Atlas is one row in this table, not the assumption behind every other one.
+ * Nothing in this milestone builds a white-label customisation surface; the
+ * point is that adding the second organisation later is a row, not a rewrite.
+ */
+export const organizations = pgTable(
+  'organizations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Stable machine name, e.g. `atlas`. */
+    slug: varchar('slug', { length: 40 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    /** Opaque presentation settings. Never read by the engine. */
+    branding: jsonb('branding').notNull().default({}),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('organizations_slug_key').on(t.slug)],
+);
 
 // ---------------------------------------------------------------------------
 // Identity
@@ -38,11 +66,27 @@ export const users = pgTable(
     email: varchar('email', { length: 254 }).notNull(),
     passwordHash: text('password_hash').notNull(),
     displayName: varchar('display_name', { length: 60 }).notNull(),
+    /**
+     * Mirrors `role` for tokens issued before roles existed.
+     *
+     * Authorization reads `role`. This column is kept in step so a session that
+     * is already open does not lose its access mid-flight, and is dropped once
+     * every issued token has expired.
+     */
     isAdmin: boolean('is_admin').notNull().default(false),
+    /** TRADER | SUPPORT | ADMIN | SUPER_ADMIN. */
+    role: varchar('role', { length: 16 }).notNull().default('TRADER'),
+    /** ACTIVE | DISABLED. A disabled user cannot sign in or trade. */
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('users_email_key').on(t.email)],
+  (t) => [
+    uniqueIndex('users_email_key').on(t.email),
+    index('users_org_idx').on(t.organizationId),
+  ],
 );
 
 /** Rotating refresh tokens. Only the hash is stored, never the token itself. */
@@ -101,16 +145,93 @@ export const ruleTemplates = pgTable('rule_templates', {
   createdAt: now(),
 });
 
+/**
+ * A product an account can be provisioned from: "Practice 150K",
+ * "Evaluation A", or whatever a firm decides to sell.
+ *
+ * The profile is the NAME. Its terms live in versions, because a firm that
+ * edits a product must not thereby edit the terms of the accounts already
+ * trading it.
+ */
+export const accountProfiles = pgTable(
+  'account_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    /** Stable machine name used by provisioning callers, e.g. `practice-150k`. */
+    key: varchar('key', { length: 60 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    accountType: varchar('account_type', { length: 20 }).notNull(),
+    /** ACTIVE | RETIRED. Retiring stops new provisioning, never existing accounts. */
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    description: text('description'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('account_profiles_org_key').on(t.organizationId, t.key)],
+);
+
+/**
+ * One immutable version of a product's terms.
+ *
+ * `config` holds the whole configuration - rules, execution environment,
+ * permitted instruments and sizing - and an account is pinned to a VERSION.
+ * Editing a product publishes version N+1; accounts on version N keep their
+ * terms for ever. That is the requirement stated as a foreign key.
+ *
+ * Rows are never updated once published. The table is append-only by
+ * convention here and by trigger in the migration.
+ */
+export const accountProfileVersions = pgTable(
+  'account_profile_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => accountProfiles.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    /** { rules, execution, instruments, display } - see the plan document. */
+    config: jsonb('config').notNull(),
+    notes: text('notes'),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('account_profile_versions_key').on(t.profileId, t.version)],
+);
+
 export const accounts = pgTable(
   'accounts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * The number a trader and a support agent say out loud: `SIM-000284`.
+     *
+     * Public, stable and unique. The primary key is a UUID and stays out of
+     * sight; nobody reads a UUID down a telephone.
+     */
+    publicId: varchar('public_id', { length: 24 })
+      .notNull()
+      // Generated by the database from a sequence, so two concurrent
+      // provisioning calls cannot produce the same number and no application
+      // code has to remember to set one.
+      .default(sql`'SIM-' || lpad(nextval('account_public_id_seq')::text, 6, '0')`),
+    organizationId: uuid('organization_id').references(() => organizations.id),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    ruleTemplateId: uuid('rule_template_id')
-      .notNull()
-      .references(() => ruleTemplates.id),
+    /**
+     * The programme this account was provisioned from, before profiles existed.
+     *
+     * Nullable now: an account provisioned from a profile version carries its
+     * terms there instead. Accounts created before profiles keep pointing here
+     * and the rule loader falls back to it, so no existing account changes.
+     */
+    ruleTemplateId: uuid('rule_template_id').references(() => ruleTemplates.id),
+    /** The pinned version of the product. Preferred over the template. */
+    profileVersionId: uuid('profile_version_id').references(() => accountProfileVersions.id),
     name: varchar('name', { length: 80 }).notNull(),
     accountType: varchar('account_type', { length: 20 }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('ACTIVE'),
@@ -139,11 +260,66 @@ export const accounts = pgTable(
      * different assumptions from another without a code change.
      */
     simulationEnvironment: jsonb('simulation_environment'),
+    /**
+     * Permitted instruments and sizing for THIS account, over the profile's.
+     * `{ allowed: ['NQ'], maxContracts: 5, perInstrument: { NQ: 3 } }`.
+     */
+    instrumentLimits: jsonb('instrument_limits'),
+    /**
+     * Whatever the provisioning caller wanted to keep with the account - an
+     * external order id, a customer reference. Opaque: Atlas stores it, shows
+     * it to admins, and never interprets it.
+     */
+    externalMetadata: jsonb('external_metadata'),
+    /** When the account first became tradeable, which is not when it was created. */
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    /** The lifecycle a reset opens. History before it is preserved, not erased. */
+    currentLifecycleId: uuid('current_lifecycle_id'),
     failedReason: text('failed_reason'),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('accounts_user_idx').on(t.userId)],
+  (t) => [
+    index('accounts_user_idx').on(t.userId),
+    index('accounts_org_idx').on(t.organizationId),
+    uniqueIndex('accounts_public_id_key').on(t.publicId),
+    index('accounts_status_idx').on(t.status),
+  ],
+);
+
+/**
+ * One life of an account: from provisioning, or from a reset, to the next
+ * reset.
+ *
+ * A reset must not destroy what happened before it, so it closes the current
+ * lifecycle and opens another. Orders, fills and trades are attributed to a
+ * lifecycle by TIME - `started_at <= t < ended_at` - rather than by stamping a
+ * column on every execution, which keeps the reset entirely out of the
+ * matching path.
+ */
+export const accountLifecycles = pgTable(
+  'account_lifecycles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    /** 1 for the first life, 2 after the first reset, and so on. */
+    seq: integer('seq').notNull(),
+    profileVersionId: uuid('profile_version_id').references(() => accountProfileVersions.id),
+    startingBalanceMicros: micros('starting_balance_micros').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    /** RESET | PASSED | FAILED | ARCHIVED - why this life ended. */
+    endReason: varchar('end_reason', { length: 24 }),
+    finalBalanceMicros: micros('final_balance_micros'),
+    finalStatus: varchar('final_status', { length: 20 }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('account_lifecycles_seq_key').on(t.accountId, t.seq),
+    index('account_lifecycles_account_idx').on(t.accountId, t.startedAt),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -458,6 +634,136 @@ export const accountEvents = pgTable(
   (t) => [
     uniqueIndex('account_events_seq_key').on(t.accountId, t.seq),
     index('account_events_type_idx').on(t.accountId, t.type),
+  ],
+);
+
+/**
+ * The platform's audit record.
+ *
+ * Distinct from `account_events`, which is the engine's sequenced state stream
+ * for WebSocket recovery. This one spans users, accounts, profiles and admin
+ * actions, and it is APPEND-ONLY: a migration installs a trigger that raises on
+ * UPDATE and DELETE, so ordinary application code cannot rewrite history even
+ * by mistake.
+ *
+ * Each row also carries the hash of the previous row for its organisation, so a
+ * row removed out of band breaks a chain that can be verified.
+ */
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    /** USER | ADMIN | SYSTEM | SERVICE - what kind of actor did this. */
+    actorType: varchar('actor_type', { length: 16 }).notNull(),
+    actorUserId: uuid('actor_user_id'),
+    /** A human-readable actor for the admin UI, captured at write time. */
+    actorLabel: varchar('actor_label', { length: 120 }),
+    /** ACCOUNT | USER | PROFILE | ORDER | ORGANIZATION. */
+    subjectType: varchar('subject_type', { length: 24 }).notNull(),
+    subjectId: uuid('subject_id'),
+    accountId: uuid('account_id'),
+    userId: uuid('user_id'),
+    /** `account.reset`, `admin.account.locked`, `order.filled`, ... */
+    action: varchar('action', { length: 60 }).notNull(),
+    prevState: jsonb('prev_state'),
+    newState: jsonb('new_state'),
+    reason: text('reason'),
+    context: jsonb('context'),
+    requestId: varchar('request_id', { length: 64 }),
+    ip: varchar('ip', { length: 64 }),
+    /** Hash of the previous audit row for this organisation; null for the first. */
+    prevHash: varchar('prev_hash', { length: 64 }),
+    hash: varchar('hash', { length: 64 }).notNull(),
+    createdAt: now(),
+  },
+  (t) => [
+    index('audit_log_org_idx').on(t.organizationId, t.createdAt),
+    index('audit_log_account_idx').on(t.accountId, t.createdAt),
+    index('audit_log_user_idx').on(t.userId, t.createdAt),
+    index('audit_log_action_idx').on(t.action, t.createdAt),
+  ],
+);
+
+/**
+ * The outbox.
+ *
+ * Something important happened; whoever cares can find out later. Payments,
+ * e-mail, Discord, a CRM and a payout system all attach HERE, never inside the
+ * matching engine - which is what keeps the execution path unaware of them.
+ */
+export const domainEvents = pgTable(
+  'domain_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    /** `account.created`, `account.passed`, `order.filled`, ... */
+    type: varchar('type', { length: 60 }).notNull(),
+    accountId: uuid('account_id'),
+    userId: uuid('user_id'),
+    payload: jsonb('payload').notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Delivery bookkeeping for the subscriber that will exist later. */
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('domain_events_type_idx').on(t.type, t.occurredAt),
+    index('domain_events_undelivered_idx').on(t.deliveredAt, t.occurredAt),
+    index('domain_events_account_idx').on(t.accountId, t.occurredAt),
+  ],
+);
+
+/**
+ * Provisioning idempotency.
+ *
+ * A purchase webhook that fires twice must not hand a customer two accounts.
+ * The key is the caller's; the hash is of the request, so the same key with a
+ * different body is a conflict rather than a silent second account.
+ */
+export const provisioningRequests = pgTable(
+  'provisioning_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    idempotencyKey: varchar('idempotency_key', { length: 120 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('provisioning_requests_key').on(t.organizationId, t.idempotencyKey)],
+);
+
+/**
+ * Machine credentials for the provisioning endpoint.
+ *
+ * Stored as a hash, like a refresh token: a leaked database row must not be a
+ * usable key. This is the seam an external firm's purchase flow authenticates
+ * with. No payment provider is implemented in this milestone.
+ */
+export const provisioningKeys = pgTable(
+  'provisioning_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    name: varchar('name', { length: 80 }).notNull(),
+    /** First characters of the key, so an admin can tell two keys apart. */
+    prefix: varchar('prefix', { length: 16 }).notNull(),
+    keyHash: text('key_hash').notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('provisioning_keys_hash_key').on(t.keyHash),
+    index('provisioning_keys_org_idx').on(t.organizationId),
   ],
 );
 
