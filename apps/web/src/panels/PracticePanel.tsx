@@ -353,7 +353,7 @@ export function PracticePanel(): JSX.Element {
           <>
             <div className="practice-sessions">
               {sessions.length === 0 ? (
-                <div className="practice-empty">No sessions captured for {symbol} yet.</div>
+                <div className="practice-empty">No {symbol} days ready yet. Pick one below.</div>
               ) : (
                 sessions.map((session) => (
                   <button
@@ -362,19 +362,20 @@ export function PracticePanel(): JSX.Element {
                     disabled={busy}
                     onClick={() => void startSession({ recordingId: session.id })}
                   >
-                    <span className="practice-session-date">{session.tradingDate}</span>
-                    <span className="num practice-session-events">
-                      {session.events.toLocaleString('en-US')} events
-                    </span>
-                    <span className="practice-session-method">
-                      {session.captureMethod === 'LIVE_STREAM' ? 'live capture' : 'historical'}
-                    </span>
+                    {/*
+                      A day, described the way a trader would describe it. The
+                      event count and the capture method were dataset
+                      bookkeeping: they belong to whoever is debugging the feed,
+                      not to whoever is about to trade the day.
+                    */}
+                    <span className="practice-session-date">{sessionDayLabel(session.tradingDate)}</span>
+                    <span className="practice-session-method">{session.tradingDate}</span>
                   </button>
                 ))
               )}
             </div>
 
-            <div className="label practice-sub">Capture another date</div>
+            <div className="label practice-sub">Another day</div>
             <div className="practice-dates">
               {dates.map((date) => (
                 <button
@@ -383,8 +384,8 @@ export function PracticePanel(): JSX.Element {
                   disabled={busy}
                   title={
                     date.captured
-                      ? 'Already captured - start it above'
-                      : 'Fetch this session from the feed'
+                      ? 'Ready to trade - start it above'
+                      : 'Prepare this day for practice'
                   }
                   onClick={() =>
                     void run(async () => {
@@ -405,10 +406,10 @@ export function PracticePanel(): JSX.Element {
         )}
       </section>
 
-      {/* --- transport ---------------------------------------------------- */}
+      {/* --- playback ------------------------------------------------------ */}
       {loaded ? (
         <section className="practice-section">
-          <div className="label">Transport</div>
+          <div className="label">Playback</div>
           <div className="practice-row">
             <button
               className="chip chip-on"
@@ -423,7 +424,7 @@ export function PracticePanel(): JSX.Element {
               className="chip"
               disabled={busy}
               onClick={() => void run(() => replayApi.step(1))}
-              title="Advance by a single market event"
+              title="Move forward one market update"
             >
               ⏭ Step
             </button>
@@ -431,7 +432,7 @@ export function PracticePanel(): JSX.Element {
               className="chip"
               disabled={busy}
               onClick={() => void run(() => replayApi.step(30))}
-              title="Advance by thirty events"
+              title="Move forward thirty market updates"
             >
               +30
             </button>
@@ -439,7 +440,7 @@ export function PracticePanel(): JSX.Element {
               className="chip"
               disabled={busy}
               onClick={() => void run(() => replayApi.restart())}
-              title="Start the session again from its first event"
+              title="Start this day again from the beginning"
             >
               ⏮ Restart
             </button>
@@ -509,14 +510,18 @@ export function PracticePanel(): JSX.Element {
             disabled={busy}
             onChange={(e) => void run(() => replayApi.seek(Number(e.target.value) / 1000))}
           />
+          {/*
+            Where the day has got to, in the terms a trader thinks in: the
+            market's clock and how much of the session is left. The raw event
+            cursor was a progress bar for a dataset.
+          */}
           <div className="practice-status num">
-            {(state?.cursor ?? 0).toLocaleString('en-US')} /{' '}
-            {(state?.total ?? 0).toLocaleString('en-US')} events
             {blind
-              ? ` · ${formatElapsed(state?.elapsedMs ?? null)} in`
+              ? `${formatElapsed(state?.elapsedMs ?? null)} in`
               : state?.clock
-                ? ` · ${new Date(state.clock).toISOString().slice(11, 16)}Z`
-                : ''}
+                ? `${new Date(state.clock).toISOString().slice(11, 16)}Z`
+                : '—'}
+            {` · ${Math.round((state?.progress ?? 0) * 100)}% through the day`}
           </div>
           {loaded && !playing ? (
             <p className="practice-note practice-emphasis">
@@ -555,6 +560,23 @@ export function PracticePanel(): JSX.Element {
 async function captureSession(symbol: string, date: string): Promise<string> {
   const summary = await captureRecording(symbol, date, '1m');
   return summary.id;
+}
+
+/**
+ * A trading date as a person would say it: "Tue 15 Sep".
+ *
+ * The panel used to list a date and an event count, which is how a dataset is
+ * described rather than how a day is.
+ */
+function sessionDayLabel(tradingDate: string): string {
+  const parsed = new Date(`${tradingDate}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return tradingDate;
+  return parsed.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
 }
 
 function formatElapsed(ms: number | null): string {

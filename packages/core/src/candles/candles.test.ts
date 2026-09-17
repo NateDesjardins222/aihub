@@ -526,3 +526,32 @@ describe('missing-interval detection', () => {
     });
   });
 });
+
+describe('a stale print does not invent a bar in the past', () => {
+  it('ignores a price stamped before the newest bucket', () => {
+    const spec = requireInstrument('NQ');
+    const agg = new CandleAggregator(spec, { baseTimeframe: '1m' });
+    const minute = 60_000;
+    const t0 = Date.UTC(2026, 8, 17, 15, 0, 0);
+
+    agg.ingestBar(
+      { symbol: 'NQ', time: t0, open: 20_000, high: 20_010, low: 19_990, close: 20_005, volume: 10, closed: true },
+      'HISTORY',
+    );
+    agg.ingestBar(
+      { symbol: 'NQ', time: t0 + minute, open: 20_005, high: 20_020, low: 20_000, close: 20_015, volume: 12, closed: false },
+      'STREAM',
+    );
+
+    // A print from an hour ago, re-published by the feed. It used to create a
+    // bar of its own - one price, no volume - in the middle of the history.
+    const before = agg.fineSeries().length;
+    expect(agg.ingestPrice(19_500, t0 - 60 * minute)).toBe(false);
+    expect(agg.fineSeries().length).toBe(before);
+    expect(agg.fineSeries().some((b) => b.close === 19_500)).toBe(false);
+
+    // A print for the bucket that is still forming is still welcome.
+    expect(agg.ingestPrice(20_018, t0 + minute + 30_000)).toBe(true);
+    expect(agg.latest('1m')!.close).toBe(20_018);
+  });
+});

@@ -111,6 +111,14 @@ export interface InstrumentSpec {
   /** Symbol used by the Phase 1 delayed market-data provider. */
   readonly providerSymbols: Readonly<Record<string, string>>;
 
+  /**
+   * Whether this instrument can legitimately print at or below zero.
+   *
+   * WTI crude settled at -$37.63 on 20 April 2020, and Atlas still serves that
+   * day, so "a price must be positive" is not a universal rule. The price
+   * integrity gate asks the instrument rather than assuming.
+   */
+  readonly allowsNegativePrice?: boolean;
   /** True if this is a micro-sized contract (used by risk sizing helpers). */
   readonly isMicro: boolean;
   /** Root of the full-size sibling, if this is a micro. */

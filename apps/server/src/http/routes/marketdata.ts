@@ -435,6 +435,20 @@ export function marketDataRoutes(deps: MarketDataRouteDeps) {
       return reply.send({
         connection: status,
         busStats: deps.market.bus.getStats(),
+        /*
+         * What the price integrity gate has seen.
+         *
+         * `quarantined` counts prices held back as uncorroborated outliers -
+         * the mechanism that used to put an isolated candle far away from the
+         * surrounding price action, and mark every open position with it.
+         * `released` counts the ones a second observation confirmed, which is
+         * a genuine fast move arriving one observation late. `recent` is the
+         * evidence, newest last.
+         */
+        integrity: {
+          bySymbol: deps.market.bus.integrity.all(),
+          recent: deps.market.bus.integrity.recent(),
+        },
         cache: await deps.market.bars.cacheStats(),
         symbols: deps.market.subscribedSymbols().map((s) => {
           const spec = requireInstrument(s);

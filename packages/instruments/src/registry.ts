@@ -274,6 +274,8 @@ export const INSTRUMENTS: readonly InstrumentSpec[] = [
     minOrderQty: 1,
     maxOrderQty: 100,
     providerSymbols: { yahoo: 'CL=F' },
+    // Crude settled below zero on 20 April 2020; that print is real.
+    allowsNegativePrice: true,
     isMicro: false,
   },
   {
@@ -300,6 +302,8 @@ export const INSTRUMENTS: readonly InstrumentSpec[] = [
     minOrderQty: 1,
     maxOrderQty: 1000,
     providerSymbols: { yahoo: 'CL=F' },
+    // Crude settled below zero on 20 April 2020; that print is real.
+    allowsNegativePrice: true,
     isMicro: true,
     fullSizeRoot: 'CL',
   },

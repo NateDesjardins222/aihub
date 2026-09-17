@@ -13,6 +13,8 @@
  * the CURRENT bucket legitimately repeats its own open time.
  */
 import { EventEmitter } from 'node:events';
+import { getInstrument } from '@atlas/instruments';
+import { PriceIntegrity } from './price-integrity.js';
 import type {
   ConnectionStatus,
   NormalizedBar,
@@ -33,6 +35,9 @@ export interface BusStats {
   published: number;
   droppedOutOfOrder: number;
   droppedDuplicate: number;
+  /** Prices held back as uncorroborated outliers, and ones refused outright. */
+  droppedQuarantined: number;
+  droppedRejected: number;
   bySymbol: Record<string, number>;
 }
 
@@ -50,8 +55,20 @@ export class MarketEventBus {
     published: 0,
     droppedOutOfOrder: 0,
     droppedDuplicate: 0,
+    droppedQuarantined: 0,
+    droppedRejected: 0,
     bySymbol: {},
   };
+
+  /**
+   * The price integrity gate.
+   *
+   * Every quote and bar passes through here, which is the only place that can
+   * see a symbol's whole stream. A price that cannot be corroborated is not
+   * published at all: it never reaches the aggregator that would draw a candle
+   * at it, nor the quote store that would mark a position with it.
+   */
+  readonly integrity = new PriceIntegrity();
 
   constructor() {
     // Many charts and many accounts can watch one symbol.
@@ -88,6 +105,18 @@ export class MarketEventBus {
       this.stats.droppedDuplicate += 1;
       return false;
     }
+    const spec = getInstrument(quote.symbol);
+    if (spec && quote.last != null) {
+      const verdict = this.integrity.check(spec, quote.last, quote.exchangeTs);
+      if (verdict !== 'ACCEPT') {
+        if (verdict === 'QUARANTINE') this.stats.droppedQuarantined += 1;
+        else this.stats.droppedRejected += 1;
+        // The clock is NOT advanced: a held price must not make the next,
+        // believable one look out of order.
+        return false;
+      }
+    }
+
     c.lastQuoteTs = quote.exchangeTs;
     this.record(quote.symbol);
     this.emitter.emit('quote', quote);
@@ -119,6 +148,15 @@ export class MarketEventBus {
    * forming candle rather than an out-of-order event.
    */
   publishBar(bar: NormalizedBar): boolean {
+    const spec = getInstrument(bar.symbol);
+    if (spec) {
+      const verdict = this.integrity.checkBar(spec, bar);
+      if (verdict !== 'ACCEPT') {
+        if (verdict === 'QUARANTINE') this.stats.droppedQuarantined += 1;
+        else this.stats.droppedRejected += 1;
+        return false;
+      }
+    }
     this.record(bar.symbol);
     this.emitter.emit('bar', bar);
     this.emitter.emit(`bar:${bar.symbol}`, bar);
@@ -178,6 +216,7 @@ export class MarketEventBus {
   }
 
   resetAll(): void {
+    this.integrity.clear();
     this.clocks.clear();
   }
 }

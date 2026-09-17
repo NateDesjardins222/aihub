@@ -1,7 +1,8 @@
 /** Server entrypoint. */
 import { buildApp } from './http/app.js';
 import { env } from './config/env.js';
-import { closeDb } from './db/client.js';
+import { closeDb, getDb } from './db/client.js';
+import { reportLedgerAudit } from './platform/ledger-audit.js';
 import { listInstruments } from '@atlas/instruments';
 
 async function main(): Promise<void> {
@@ -30,6 +31,18 @@ async function main(): Promise<void> {
   // The engine follows the market only once data is flowing, so a restart does
   // not evaluate stops against an empty quote store.
   await engine.start();
+
+  /*
+   * Say whether the books add up.
+   *
+   * An account's ledger and its product are written by different code paths,
+   * and when they disagree the terminal shows figures nobody can reconcile.
+   * Reported, never repaired: fixing an account is an administrative act with
+   * an audit trail.
+   */
+  await reportLedgerAudit(getDb().db).catch((err: unknown) => {
+    app.log.warn({ err }, 'ledger audit failed');
+  });
 
   const status = stack.market.getConnectionStatus();
   console.log(`atlas server listening on http://${env().HOST}:${env().PORT}`);

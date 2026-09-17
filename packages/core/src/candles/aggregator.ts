@@ -204,6 +204,19 @@ export class CandleAggregator {
     // A bucket the feed has already settled is not ours to reopen.
     if (existing?.closed) return false;
 
+    /*
+     * A stale print does not open a bar in the past.
+     *
+     * A last price arrives with its own exchange timestamp, and feeds
+     * re-publish old ones - a warm-up poll, a reconnect. Without this check a
+     * single print stamped hours ago CREATED a bar in the middle of the
+     * history: one price, no volume, drawn as an isolated candle wherever that
+     * minute sat on the chart. A print older than the newest bucket is only
+     * allowed to revise a bar that already exists; it never invents one.
+     */
+    const newest = this.fine.last();
+    if (!existing && newest && time < newest.time) return false;
+
     const next: NormalizedBar = existing
       ? {
           ...existing,
