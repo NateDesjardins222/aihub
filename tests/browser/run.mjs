@@ -27,6 +27,7 @@ const SUITES = [
   'drag-protect',
   'execution-interaction',
   'stress',
+  'perf-panes',
   'visual',
   'tools',
   'replay-brackets',
