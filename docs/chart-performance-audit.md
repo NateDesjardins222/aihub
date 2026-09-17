@@ -170,8 +170,14 @@ What is left, and why:
 * **Development builds are roughly four times slower** than production and
   double every render through StrictMode. Profile the production build.
 
-## Still outstanding from this audit
+## Closed since this audit
 
-* Finding 6: a workspace with 250 drawings still cannot be saved. Drawings
-  belong in their own storage rather than in a 64KB preferences blob, and a
-  failed save has to be visible to the trader.
+* **Finding 6 is fixed.** Drawings have their own table and their own endpoint
+  (`GET`/`PUT /api/v1/drawings`, migration `0008_user_drawings`) with a 1 MB
+  limit and a body limit to match, so a marked-up chart no longer takes the
+  motion settings and the training mode down with it. A save that is refused
+  is now SAID: the terminal shows the server's own reason until it is
+  dismissed or a save succeeds, instead of swallowing the response. Covered by
+  `apps/server/src/http/journal.test.ts` (250 real drawings, 85KB, stored and
+  read back; a refusal that leaves the previous save intact; one trader's
+  drawings invisible to another) and by `tests/browser/stress.spec.mjs`.

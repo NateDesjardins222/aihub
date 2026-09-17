@@ -115,8 +115,8 @@ try {
 
   /*
    * Load the chart up the way a trader's saved workspace does: written to
-   * their preferences and restored on boot. Placing them by hand through the
-   * toolbar would measure the toolbar.
+   * their stored drawings and restored on boot. Placing them by hand through
+   * the toolbar would measure the toolbar.
    */
   if (DRAWINGS > 0) {
     console.log(`seeding ${DRAWINGS} drawings through the trader's saved workspace…`);
@@ -171,16 +171,15 @@ try {
           createdAt: now,
         });
       }
-      const current = await fetch('/api/v1/preferences', { headers: auth }).then((r) => r.json());
-      const preferences = current.preferences ?? {};
-      preferences.chart = { ...(preferences.chart ?? {}), drawings };
-      const body = JSON.stringify(preferences);
-      const response = await fetch('/api/v1/preferences', { method: 'PUT', headers: auth, body });
+      // Drawings have storage of their own now: the preference blob is capped
+      // at 64 KB, which two hundred and fifty objects pass on their own.
+      const body = JSON.stringify({ drawings });
+      const response = await fetch('/api/v1/drawings', { method: 'PUT', headers: auth, body });
       return { status: response.status, bytes: body.length };
     }, DRAWINGS);
     console.log(`  saved workspace: ${seeded.bytes} bytes, HTTP ${seeded.status}`);
     if (seeded.status !== 200) {
-      console.log('  !! the workspace could not be saved - see the report on the 64 KB limit');
+      console.log(`  !! the drawings could not be saved (HTTP ${seeded.status})`);
     }
 
     await page.reload({ waitUntil: 'domcontentloaded' });

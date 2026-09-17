@@ -203,6 +203,20 @@ export const journalApi = {
 };
 
 /** Preferences: display choices that survive a reload. Never trading state. */
+/**
+ * Drawings, stored on their own.
+ *
+ * Kept apart from the preferences because they are the one part of a
+ * workspace with no natural size: a marked-up chart is hundreds of objects,
+ * and a save that fails has to fail visibly rather than take the rest of the
+ * workspace down with it.
+ */
+export const drawingsApi = {
+  read: () => api.get<{ drawings: unknown[] | null }>('/api/v1/drawings'),
+  write: (drawings: readonly unknown[]) =>
+    api.put<{ drawings: unknown[] }>('/api/v1/drawings', { drawings }),
+};
+
 export const preferencesApi = {
   read: () => api.get<{ preferences: Record<string, unknown> }>('/api/v1/preferences'),
   write: (preferences: Record<string, unknown>) =>

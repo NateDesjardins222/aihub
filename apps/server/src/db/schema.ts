@@ -608,6 +608,22 @@ export const userPreferences = pgTable('user_preferences', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * A trader's drawings.
+ *
+ * Separate from `user_preferences` because they are the one thing in that blob
+ * with no upper bound: a marked-up chart can carry hundreds of objects, and a
+ * shared 64 KB budget meant the drawings eventually took the rest of the
+ * preferences down with them.
+ */
+export const userDrawings = pgTable('user_drawings', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  drawings: jsonb('drawings').notNull().default([]),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const dailyAccountStats = pgTable(
   'daily_account_stats',
   {

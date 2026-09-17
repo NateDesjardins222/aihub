@@ -21,6 +21,7 @@ import { useTraining } from '../state/training';
 import { useReplayStatus } from '../state/replay-status';
 import { resolveZone, timeFormatter } from '../chart/appearance';
 import { Icon } from '../ui/Icon';
+import { saveError, usePersistence } from '../state/persistence-status';
 import './ChartPanel.css';
 
 const INITIAL_BARS = 1_200;
@@ -45,6 +46,7 @@ export function ChartPanel(): JSX.Element {
   );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const persistError = usePersistence(saveError);
   const [barCount, setBarCount] = useState(0);
   const [historyNote, setHistoryNote] = useState<string | null>(null);
   const [freshness, setFreshness] = useState<FreshnessInfo | null>(null);
@@ -612,6 +614,24 @@ export function ChartPanel(): JSX.Element {
         {loading ? <div className="chart-overlay">Loading real market history…</div> : null}
         {loadError ? <div className="chart-overlay chart-overlay-error">{loadError}</div> : null}
         {historyNote ? <div className="chart-history-note">{historyNote}</div> : null}
+
+        {/*
+          A failed save is said out loud.
+
+          Everything on this chart is presentation, so a save that does not
+          happen breaks nothing immediately - it breaks the next reload, which
+          is far too late to find out. The notice stays until it is dismissed
+          or until a save succeeds.
+        */}
+        {persistError ? (
+          <div className="chart-save-error" role="alert" data-testid="save-error">
+            <Icon name="close" size={10} />
+            <span>{persistError}</span>
+            <button onClick={() => usePersistence.getState().dismiss()} aria-label="Dismiss">
+              <Icon name="close" size={9} />
+            </button>
+          </div>
+        ) : null}
 
         {contextMenu?.drawingId ? (
           <DrawingContextMenu

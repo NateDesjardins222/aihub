@@ -57,6 +57,13 @@
       "when": 1789710000000,
       "tag": "0007_admin_hold",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789720000000,
+      "tag": "0008_user_drawings",
+      "breakpoints": true
     }
   ]
 }

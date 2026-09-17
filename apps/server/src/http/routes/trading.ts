@@ -30,6 +30,7 @@ import {
   positions,
   ruleTemplates,
   trades,
+  userDrawings,
   userPreferences,
 } from '../../db/schema.js';
 import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
@@ -650,6 +651,54 @@ export function tradingRoutes(deps: Deps) {
         })
         .returning();
       return reply.send({ preferences: row!.preferences });
+    });
+
+    /**
+     * Drawings, in storage of their own.
+     *
+     * Presentation, like the preferences, and just as opaque to the server -
+     * but with a limit that matches what it holds. A marked-up chart is
+     * hundreds of objects and passes the preference budget on its own; sharing
+     * one meant a trader who drew a lot lost their motion settings too.
+     *
+     * The limit is still a limit, and exceeding it is an ERROR the client is
+     * told about rather than a save that quietly does not happen.
+     */
+    app.get('/drawings', async (request, reply) => {
+      const [row] = await db
+        .select()
+        .from(userDrawings)
+        .where(eq(userDrawings.userId, request.user!.id));
+      return reply.send({ drawings: row?.drawings ?? null });
+    });
+
+    /*
+     * Its own body limit, above the application's.
+     *
+     * The app allows 512 KB, which is generous for a request that carries an
+     * order and far too little for a marked-up chart. Without this the server
+     * would answer a large save with a bare 413 from the framework instead of
+     * the message below, and the trader would never learn what to do about it.
+     */
+    app.put('/drawings', { bodyLimit: 1_100_000 }, async (request, reply) => {
+      const body = z.object({ drawings: z.array(z.unknown()).max(2_000) }).parse(request.body);
+      const encoded = JSON.stringify(body.drawings);
+      if (encoded.length > 1_000_000) {
+        throw ApiError.badRequest(
+          'DRAWINGS_TOO_LARGE',
+          'This chart has more drawings than can be saved. Remove some objects.',
+        );
+      }
+
+      const [row] = await db
+        .insert(userDrawings)
+        .values({ userId: request.user!.id, drawings: body.drawings as never })
+        .onConflictDoUpdate({
+          target: userDrawings.userId,
+          set: { drawings: body.drawings as never, updatedAt: new Date() },
+        })
+        .returning();
+      return reply.send({ drawings: row!.drawings });
     });
 
     // -- environment settings ---------------------------------------------

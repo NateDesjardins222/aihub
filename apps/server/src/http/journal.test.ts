@@ -93,6 +93,33 @@ function tradeRow(overrides: Record<string, unknown> = {}): Record<string, unkno
   };
 }
 
+/**
+ * A second trader, created on demand.
+ *
+ * Used to prove that one trader's stored workspace is invisible to another -
+ * which a single-user test cannot show at all.
+ */
+let secondUserId: string | null = null;
+async function tokenForSecondUser(): Promise<string> {
+  const { db } = getDb();
+  const email = `journal-other-${Math.random().toString(36).slice(2, 10)}@test.local`;
+  const [user] = await db
+    .insert(users)
+    .values({
+      email,
+      passwordHash: await hashPassword('journal-other-password'),
+      displayName: 'Journal Other',
+    })
+    .returning();
+  secondUserId = user!.id;
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/login',
+    payload: { email, password: 'journal-other-password' },
+  });
+  return safeJson(login.body).accessToken;
+}
+
 beforeAll(async () => {
   process.env['DATABASE_URL'] =
     process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
@@ -155,6 +182,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const { db } = getDb();
+  if (secondUserId) await db.delete(users).where(eq(users.id, secondUserId));
   await db.delete(accounts).where(eq(accounts.id, accountId));
   await db.delete(ruleTemplates).where(eq(ruleTemplates.id, templateId));
   await db.delete(users).where(eq(users.id, userId));
@@ -371,5 +399,98 @@ describe('preferences', () => {
     const read = await get('/api/v1/preferences');
     expect(read.json.preferences.training.modeId).toBe('BLIND');
     expect(read.json.preferences.motion.smoothing).toBe(0.7);
+  });
+
+  it('refuses a blob past the limit rather than storing part of it', async () => {
+    const tooBig = await put('/api/v1/preferences', { junk: 'x'.repeat(70_000) });
+    expect(tooBig.status).toBe(400);
+    expect(tooBig.json.error.code).toBe('PREFERENCES_TOO_LARGE');
+
+    // And the previous, valid preferences are untouched.
+    const read = await get('/api/v1/preferences');
+    expect(read.json.preferences.training.modeId).toBe('BLIND');
+  });
+});
+
+describe('drawings', () => {
+  it('has nothing until something is saved', async () => {
+    const read = await get('/api/v1/drawings');
+    expect(read.status).toBe(200);
+    // Null, not an empty array: the client can tell "never saved" - where the
+    // old preference blob is still the source - from "saved, and empty".
+    expect(read.json.drawings).toBeNull();
+  });
+
+  it('stores a marked-up chart that would not fit in the preferences', async () => {
+    /*
+     * The size that found the bug: two hundred and fifty rectangles is about
+     * eighty-five kilobytes, which is more than the whole preference budget.
+     * Storing them used to fail with a 400 the client swallowed, taking the
+     * motion settings and the training mode down with them.
+     */
+    const drawings = Array.from({ length: 250 }, (_, i) => ({
+      id: `drawing-${i}`,
+      kind: 'RECTANGLE',
+      symbol: 'NQ',
+      anchors: [
+        { time: 1_700_000_000_000 + i * 60_000, price: 20_000 + i },
+        { time: 1_700_000_600_000 + i * 60_000, price: 20_050 + i },
+      ],
+      style: {
+        color: '#5b9dff',
+        opacity: 1,
+        width: 1,
+        dash: 'SOLID',
+        filled: true,
+        fillColor: '#5b9dff',
+        fillOpacity: 0.08,
+        fontSize: 12,
+        showPrice: true,
+      },
+      options: { extendLeft: false, extendRight: false },
+      text: `zone ${i}`,
+      locked: false,
+      hidden: false,
+      timeframes: [],
+    }));
+    expect(JSON.stringify(drawings).length).toBeGreaterThan(64_000);
+
+    const written = await put('/api/v1/drawings', { drawings });
+    expect(written.status).toBe(200);
+
+    const read = await get('/api/v1/drawings');
+    expect(read.json.drawings).toHaveLength(250);
+    expect(read.json.drawings[249].text).toBe('zone 249');
+
+    // The preferences, which are saved separately, are still there.
+    const preferences = await get('/api/v1/preferences');
+    expect(preferences.json.preferences.training.modeId).toBe('BLIND');
+  });
+
+  it('refuses more than it can hold, and says so', async () => {
+    // Past the route's own limit but inside its body limit, so the answer is
+    // the platform's message and not a bare 413 from the framework.
+    const drawings = Array.from({ length: 350 }, (_, i) => ({
+      id: `fat-${i}`,
+      note: 'x'.repeat(3_000),
+    }));
+    expect(JSON.stringify(drawings).length).toBeGreaterThan(1_000_000);
+    const written = await put('/api/v1/drawings', { drawings });
+    expect(written.status).toBe(400);
+    expect(written.json.error.code).toBe('DRAWINGS_TOO_LARGE');
+
+    // Refused, not half-applied: what was there is what is still there.
+    const read = await get('/api/v1/drawings');
+    expect(read.json.drawings).toHaveLength(250);
+  });
+
+  it('keeps one trader\u2019s drawings out of another\u2019s', async () => {
+    const other = await app.inject({
+      method: 'GET',
+      url: '/api/v1/drawings',
+      headers: { authorization: `Bearer ${await tokenForSecondUser()}` },
+    });
+    expect(other.statusCode).toBe(200);
+    expect(safeJson(other.body).drawings).toBeNull();
   });
 });

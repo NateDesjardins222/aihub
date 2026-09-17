@@ -193,3 +193,43 @@
 .chart-canvas.chart-arming {
   cursor: crosshair;
 }
+
+/*
+ * A save that did not happen.
+ *
+ * Top-centre, above the chart but not over the price action a trader is
+ * reading, and it does not block the pointer: the chart still works, the work
+ * just is not being kept.
+ */
+.chart-save-error {
+  position: absolute;
+  top: 38px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 62ch;
+  padding: 5px 6px 5px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--short);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  color: var(--short-bright);
+  font-size: var(--fs-xs);
+}
+
+.chart-save-error button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.chart-save-error button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
