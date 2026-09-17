@@ -120,10 +120,28 @@ export function PriceMarkers({
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   /** Set while a protective level is being pulled off the position marker. */
-  const [creating, setCreating] = useState<{ leg: 'STOP' | 'TARGET'; price: number; pnl: number | null } | null>(null);
+  /**
+   * The level being pulled off the position marker.
+   *
+   * React holds only WHICH leg is being created, because that decides the
+   * element's colour and label. The price, the tick distance and the money
+   * change on every pointer move and are written straight into the mounted
+   * element - a React render per pointer move is what made this gesture feel
+   * heavy, and the numbers a trader reads while dragging have to be immediate.
+   */
+  const [creating, setCreating] = useState<{ leg: 'STOP' | 'TARGET' } | null>(null);
 
   const dragRef = useRef<{ key: string; startPrice: number; price: number } | null>(null);
-  const createRef = useRef<{ startY: number; active: boolean } | null>(null);
+  /** The live pull-off-the-marker gesture. Written per pointer move. */
+  const createRef = useRef<{
+    startY: number;
+    active: boolean;
+    /** Null until the first move decides which side of entry the pointer is. */
+    leg: 'STOP' | 'TARGET' | null;
+    price: number;
+    pnl: number | null;
+    ticks: number;
+  } | null>(null);
   const nodesRef = useRef(new Map<string, HTMLElement>());
   const overlayRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -313,16 +331,64 @@ export function PriceMarkers({
       if (!position || position.avgEntryPrice === null) return;
       event.preventDefault();
       event.stopPropagation();
-      createRef.current = { startY: event.clientY, active: false };
+      createRef.current = {
+        startY: event.clientY,
+        active: false,
+        // Null, not a guess: the first move decides, and starting at STOP
+        // meant a downward drag matched it and never mounted the preview.
+        leg: null,
+        price: position.avgEntryPrice,
+        pnl: 0,
+        ticks: 0,
+      };
       (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     },
     [position],
+  );
+
+  /**
+   * Write the dragged level's numbers into the element.
+   *
+   * Price, distance in ticks and money, updated continuously: that is what a
+   * trader reads while deciding where the stop goes, and it has to be the
+   * current number rather than one a render cycle behind.
+   */
+  const paintPreview = useCallback(
+    (create: {
+      leg: 'STOP' | 'TARGET' | null;
+      price: number;
+      pnl: number | null;
+      ticks: number;
+    }): void => {
+      const node = previewRef.current;
+      if (!node || !create.leg) return;
+      node.dataset['price'] = String(create.price);
+      const price = node.querySelector<HTMLElement>('[data-preview-price]');
+      if (price) price.textContent = create.price.toFixed(pricePrecision);
+      const ticks = node.querySelector<HTMLElement>('[data-preview-ticks]');
+      if (ticks) {
+        ticks.textContent = `${create.leg === 'TARGET' ? '+' : '-'}${create.ticks} ticks`;
+      }
+      const pnl = node.querySelector<HTMLElement>('[data-preview-pnl]');
+      if (pnl) {
+        pnl.textContent = create.pnl === null ? '—' : money(create.pnl);
+        pnl.classList.toggle('pos', (create.pnl ?? 0) >= 0);
+        pnl.classList.toggle('neg', (create.pnl ?? 0) < 0);
+      }
+    },
+    [pricePrecision],
   );
 
   useEffect(() => {
     if (!position || position.avgEntryPrice === null) return;
     const container = containerRef.current;
     if (!container) return;
+
+    let rect = container.getBoundingClientRect();
+    const remeasure = (): void => {
+      rect = container.getBoundingClientRect();
+    };
+    window.addEventListener('resize', remeasure);
 
     const onMove = (event: PointerEvent): void => {
       const create = createRef.current;
@@ -332,17 +398,24 @@ export function PriceMarkers({
       if (!create.active && Math.abs(event.clientY - create.startY) < DRAG_THRESHOLD_PX) return;
       create.active = true;
 
-      const rect = container.getBoundingClientRect();
       const raw = adapter.yToPrice(event.clientY - rect.top);
       if (raw === null) return;
       const price = snap(raw, tickSize);
       const leg = legFor(position, price);
       if (!leg) return;
-      setCreating({
-        leg,
-        price,
-        pnl: estimatePnlMicros(position, price, tickSize, tickValueMicros),
-      });
+
+      create.price = price;
+      create.pnl = estimatePnlMicros(position, price, tickSize, tickValueMicros);
+      create.ticks = Math.round(Math.abs(price - (position.avgEntryPrice ?? price)) / tickSize);
+
+      // Only a change of LEG needs React: the element's colour and its SL/TP
+      // label come from it. Everything else is written directly.
+      if (create.leg !== leg) {
+        create.leg = leg;
+        setCreating({ leg });
+        return;
+      }
+      paintPreview(create);
     };
 
     const onUp = (): void => {
@@ -352,22 +425,23 @@ export function PriceMarkers({
         setCreating(null);
         return;
       }
-      setCreating((current) => {
-        if (current && accountId) {
-          void act(() =>
-            tradingApi.protect(accountId, symbol, {
-              [current.leg === 'STOP' ? 'stopPrice' : 'targetPrice']: current.price,
-            }),
-          );
-        }
-        return null;
-      });
+      setCreating(null);
+      // ONE request, on release: nothing about this gesture reached the server
+      // while the pointer was moving.
+      if (accountId && create.leg) {
+        void act(() =>
+          tradingApi.protect(accountId, symbol, {
+            [create.leg === 'STOP' ? 'stopPrice' : 'targetPrice']: create.price,
+          }),
+        );
+      }
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
     return () => {
+      window.removeEventListener('resize', remeasure);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -379,6 +453,9 @@ export function PriceMarkers({
   useEffect(() => {
     if (!ready) return;
     let frame = 0;
+    let lastSignature = '';
+    let lastHeight = 0;
+    let heightAt = 0;
 
     const place = (): void => {
       frame = requestAnimationFrame(place);
@@ -386,8 +463,33 @@ export function PriceMarkers({
       const container = containerRef.current;
       if (!adapter || !container) return;
 
-      const height = container.clientHeight;
+      /*
+       * Nothing is written unless something moved.
+       *
+       * This loop used to re-measure the container, re-measure the axis, run
+       * the label layout and write to every marker on every frame whether or
+       * not a price or the scale had changed - which a CPU profile showed as
+       * one of the largest pieces of application JavaScript while the mouse
+       * moved. The signature below is everything that can change what the
+       * markers look like: where two reference prices land, the prices
+       * themselves, and the size of the plot.
+       */
       const drag = dragRef.current;
+      const now = performance.now();
+      if (now - heightAt > 250) {
+        heightAt = now;
+        lastHeight = container.clientHeight;
+      }
+      const height = lastHeight;
+
+      let signature = `${adapter.priceToY(0) ?? 'x'}:${adapter.priceToY(1_000) ?? 'x'}:${height}`;
+      for (const [key, node] of nodesRef.current) {
+        signature += `|${key}=${node.dataset['price'] ?? ''}`;
+      }
+      signature += `|drag=${drag ? `${drag.key}:${drag.price}` : '-'}`;
+      signature += `|preview=${previewRef.current?.dataset['price'] ?? '-'}`;
+      if (signature === lastSignature) return;
+      lastSignature = signature;
 
       // Keep the whole layer clear of the price axis.
       const overlay = overlayRef.current;
@@ -446,6 +548,12 @@ export function PriceMarkers({
     return () => cancelAnimationFrame(frame);
   }, [adapterRef, containerRef, pricePrecision, ready]);
 
+  // A leg change re-renders the preview element, which arrives empty; the
+  // numbers are written back into it as soon as it is on the page.
+  useEffect(() => {
+    if (creating && createRef.current) paintPreview(createRef.current);
+  }, [creating, paintPreview]);
+
   const register = useCallback((key: string, node: HTMLElement | null): void => {
     if (node) nodesRef.current.set(key, node);
     else nodesRef.current.delete(key);
@@ -466,17 +574,15 @@ export function PriceMarkers({
       {creating ? (
         <div
           className={`pm-line pm-preview pm-${creating.leg.toLowerCase()}`}
-          data-price={creating.price}
           data-testid="marker-preview"
           ref={previewRef}
         >
           <div className="pm-rule" />
           <div className="pm-tag">
             <span className="pm-kind">{creating.leg === 'STOP' ? 'SL' : 'TP'}</span>
-            <span className={`num pm-pnl ${(creating.pnl ?? 0) >= 0 ? 'pos' : 'neg'}`}>
-              {creating.pnl === null ? '—' : `~ ${money(creating.pnl)}`}
-            </span>
-            <span className="num pm-price">{creating.price.toFixed(pricePrecision)}</span>
+            <span className="num pm-ticks" data-preview-ticks />
+            <span className="num pm-pnl" data-preview-pnl />
+            <span className="num pm-price" data-preview-price />
           </div>
         </div>
       ) : null}

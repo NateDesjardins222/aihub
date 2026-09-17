@@ -253,3 +253,16 @@
   font-weight: 700;
   pointer-events: none;
 }
+
+/*
+ * The tick distance on a dragged level.
+ *
+ * A trader placing a stop reads three things - where, how far, how much - so
+ * the distance sits between the label and the money rather than replacing
+ * either.
+ */
+.pm-ticks {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

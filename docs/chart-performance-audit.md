@@ -133,3 +133,45 @@ component twice in development. The production build is what to judge.
    and a failed save must be visible.
 7. **The style model needs border and fill as separate colours with separate
    alpha**, with defaults that leave price action visible.
+
+
+---
+
+## After the fixes
+
+Same production build, same gestures, same fifty drawings, median of three
+runs, with an unmeasured warm-up gesture first (the first sweep after a page
+load pays for compiling the paths it touches, which was landing on whichever
+gesture ran first and made the comparison between gestures meaningless).
+
+| Gesture | Before | After |
+|---|---|---|
+| idle, 3s | 196ms | 95-229ms |
+| crosshair sweep, 120 moves | **763ms**, 8 jank frames | **125ms**, 0 jank |
+| crosshair across the drawings | 513ms | 81-307ms |
+| pan, 80 moves | 327ms | 205ms |
+| zoom, 40 wheel events | 326ms | 79ms |
+| place a rectangle | 149ms | 83ms |
+| drag a drawing, 80 moves | 132ms, **92 commits** | 125ms, **14 commits** |
+| settling after a drag | 65ms | 18ms |
+
+A CPU profile of a crosshair sweep now shows no Atlas function in the top
+twenty: the remaining time is the chart library's own crosshair rendering and
+native canvas work. Before the fixes the top entries were
+`Intl.DateTimeFormat` construction, `projection`, the marker placement loop,
+and the chart library re-validating every point of every indicator series.
+
+What is left, and why:
+
+* **The live market costs what it costs.** A quote arriving redraws the
+  candle, and a run that happens to catch several bursts measures them. It is
+  why every figure here is a median of three and why two runs of the same
+  gesture can differ by a factor of three.
+* **Development builds are roughly four times slower** than production and
+  double every render through StrictMode. Profile the production build.
+
+## Still outstanding from this audit
+
+* Finding 6: a workspace with 250 drawings still cannot be saved. Drawings
+  belong in their own storage rather than in a 64KB preferences blob, and a
+  failed save has to be visible to the trader.

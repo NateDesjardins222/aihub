@@ -188,6 +188,24 @@ try {
     await page.waitForTimeout(6_000);
   }
 
+  /*
+   * A warm-up gesture, not measured.
+   *
+   * The first sweep after a page load pays for compiling the paths it touches,
+   * which is real for a trader loading the terminal but is not the steady
+   * state the rest of this is about - and it was landing on whichever gesture
+   * happened to run first, which made the comparison between gestures
+   * meaningless.
+   */
+  for (let i = 0; i < 60; i += 1) {
+    const fx = 0.25 + (i / 60) * 0.5;
+    await page.mouse.move(at(fx, 0.4).x, at(fx, 0.4).y);
+  }
+  await page.mouse.move(at(0.5, 0.5).x, at(0.5, 0.5).y);
+  await page.mouse.wheel(0, -120);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(800);
+
   console.log(`\n=== Atlas chart profile — ${DRAWINGS} drawings on the chart ===\n`);
 
   // --- idle ----------------------------------------------------------------

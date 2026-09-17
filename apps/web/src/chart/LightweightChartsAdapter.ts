@@ -313,6 +313,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (!this.chart || !this.container) return;
     const { clientWidth, clientHeight } = this.container;
     if (clientWidth > 0 && clientHeight > 0) this.chart.resize(clientWidth, clientHeight);
+    // The overlays measure the plot through the projection, so the new size
+    // has to be there before the next frame paints.
+    this.refreshGeometry();
   }
 
   // -- series construction -------------------------------------------------
@@ -625,10 +628,19 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (this.volumeVisible && this.volumeSeries) {
       this.volumeSeries.update(this.toVolumePoint(bar));
     }
-    // Indicators are recomputed from the bars, so the newest one has to reach
-    // them. Only when something is actually drawn: with no indicators on the
-    // chart this costs nothing, which is the common case.
-    if (this.indicatorSeries.size > 0) this.renderIndicators();
+    /*
+     * Indicators are recomputed from the bars, so the newest one has to reach
+     * them - but only its newest POINT has to reach the renderer.
+     *
+     * Replacing the whole series on every live bar made the chart library
+     * re-validate every point it held, which a CPU profile showed as the
+     * largest cost of a live market: setSeriesData, checkItemsAreOrdered and
+     * checkSeriesValuesType at the top of the profile while the trader was
+     * only moving the mouse. The arithmetic is still done over the full
+     * series - so the value is exact, not a tail approximation - and only the
+     * last point is handed over.
+     */
+    if (this.indicatorSeries.size > 0) this.renderIndicators({ tailOnly: true });
   }
 
   private reindex(): void {
@@ -710,7 +722,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * which is what keeps a moving average from turning every tick into a React
    * render. It reads bars and writes series; it can never write a bar.
    */
-  private renderIndicators(): void {
+  private renderIndicators(options: { tailOnly?: boolean } = {}): void {
     if (!this.chart || this.bars.length === 0) return;
 
     for (const instance of this.indicators) {
@@ -734,6 +746,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
       for (const plot of output.plots) {
         const key = `${instance.id}:${plot.id}`;
         let entry = this.indicatorSeries.get(key);
+        // A series created in this pass has no data yet, so it needs the whole
+        // set however this method was called.
+        const fresh = entry === undefined;
 
         if (!entry) {
           const series =
@@ -775,13 +790,20 @@ export class LightweightChartsAdapter implements ChartAdapter {
           entry.plot = plot;
         }
 
-        entry.series.setData(
-          plot.points.map((point) => ({
-            time: toTime(point.time),
-            value: point.value,
-            ...(point.color ? { color: point.color } : {}),
-          })) as never,
-        );
+        const asPoint = (point: (typeof plot.points)[number]) => ({
+          time: toTime(point.time),
+          value: point.value,
+          ...(point.color ? { color: point.color } : {}),
+        });
+
+        const newest = plot.points[plot.points.length - 1];
+        if (options.tailOnly && !fresh && newest) {
+          // The renderer takes a point at or after the last one it holds,
+          // which is exactly what a live bar produces.
+          entry.series.update(asPoint(newest) as never);
+        } else {
+          entry.series.setData(plot.points.map(asPoint) as never);
+        }
 
         const last = plot.points[plot.points.length - 1];
         this.legendValues.set(
@@ -1050,6 +1072,18 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * chart; the two values that are not closures are refreshed on each call.
    */
   private projectionCache: ChartProjection | null = null;
+  private geometryAt = 0;
+
+  /** Re-read the plot's size now. Called when the container resizes. */
+  private refreshGeometry(): void {
+    const cached = this.projectionCache;
+    const container = this.container;
+    if (!cached || !container) return;
+    this.geometryAt = performance.now();
+    const mutable = cached as { width: number; height: number };
+    mutable.width = Math.max(0, container.clientWidth - this.priceScaleWidth());
+    mutable.height = container.clientHeight;
+  }
 
   projection(): ChartProjection | null {
     const chart = this.chart;
@@ -1059,9 +1093,23 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
     const cached = this.projectionCache;
     if (cached) {
-      const mutable = cached as { width: number; height: number };
-      mutable.width = Math.max(0, container.clientWidth - this.priceScaleWidth());
-      mutable.height = container.clientHeight;
+      /*
+       * The plot's size is re-read at most every quarter second.
+       *
+       * clientWidth and clientHeight force layout, and priceScaleWidth asks
+       * the renderer to measure its axis; four animation-frame loops call this
+       * every frame, which showed up in a CPU profile as one of the largest
+       * pieces of application JavaScript during a mouse sweep. A resize
+       * refreshes it immediately (see the observer in mount); the timer is
+       * only there to notice the axis widening when a price gains a digit.
+       */
+      const now = performance.now();
+      if (now - this.geometryAt > 250) {
+        this.geometryAt = now;
+        const mutable = cached as { width: number; height: number };
+        mutable.width = Math.max(0, container.clientWidth - this.priceScaleWidth());
+        mutable.height = container.clientHeight;
+      }
       return cached;
     }
 
