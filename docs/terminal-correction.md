@@ -319,3 +319,45 @@ Each one was found by using the terminal, not by reading the code.
 9. **The price pane shrank to 40% of the chart** with four oscillators under it.
 10. **The order ticket grew past its height budget** because the preset row
     wrapped at the default panel width.
+
+---
+
+## Test results, as run on this machine
+
+Workspace suites (`pnpm test`): unit and integration, including the P0
+arithmetic and the drawing geometry.
+
+Browser suites (`pnpm test:browser`), each against the real server, the real
+database and the real delayed market data:
+
+| Suite | Result |
+|---|---|
+| terminal | 20/20 |
+| responsive | 15/15 |
+| chart-navigation | 23/23 |
+| indicators | 22/22 |
+| drawing-pointer | 16/16 |
+| drawing-engine | 36/36 |
+| position-tools | 30/30 |
+| fib-levels | 16/16 |
+| multi-chart | 25/25 |
+| journal-calendar | 18/18 |
+| rectangle | 43/43 |
+| line-tools | 68/68 |
+| remaining-tools | 56/56 |
+| drag-protect | 25/25 |
+| execution-interaction | 30/30 |
+| stress | 61/62, then 62/62 after the interval check was corrected |
+| visual | 22/22 |
+| tools | 26/26 |
+| replay-brackets | 12/12 |
+| layout | 8/8 |
+| admin | 28/28 |
+| acceptance | 20/20 |
+
+Three of those runs failed first and were fixed rather than explained away:
+the drag-protect stop-leg disagreement (a product defect, fixed in the
+product), the execution suites being handed a recording by a crashed
+predecessor (a harness defect, fixed in the harness), and the stress interval
+check looking for an object where the terminal no longer opens (a test
+expectation, corrected).
