@@ -94,7 +94,7 @@ describe('per-instrument sizing', () => {
   beforeEach(async () => {
     // The programme allows fifteen contracts; this product allows two of NQ.
     await setup({
-      rules: { maxContracts: 15 },
+      maxContracts: 15,
       instrumentLimits: { allowed: null, maxContracts: null, perInstrument: { NQ: 2 } },
     });
   });
