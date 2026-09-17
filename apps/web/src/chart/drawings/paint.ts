@@ -81,6 +81,31 @@ export function drawDrawing(
       line(ctx, { x: a.x, y: 0 }, { x: a.x, y: projection.height });
       break;
     }
+    case 'TREND_LINE': {
+      if (!a || !b) break;
+      /*
+       * A trend line can be extended from either end without becoming a ray
+       * or an extended line: the object a trader drew between two swings is
+       * still that object, and turning the extension off has to bring it back
+       * exactly where it was.
+       */
+      const from = option(drawing, 'extendLeft', false) ? extend(b, a, projection) : a;
+      const to = option(drawing, 'extendRight', false) ? extend(a, b, projection) : b;
+      line(ctx, from, to);
+      if (drawing.style.showPrice) {
+        priceTag(ctx, projection, b.y, drawing.anchors[1]!.price, drawing.style.color, pricePrecision);
+      }
+      if (drawing.text) {
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = border;
+        ctx.fillText(drawing.text, Math.min(a.x, b.x) + 4, Math.min(a.y, b.y) - 4);
+        ctx.restore();
+      }
+      break;
+    }
     case 'RAY': {
       if (!a || !b) break;
       line(ctx, a, extend(a, b, projection));
@@ -171,16 +196,20 @@ export function drawDrawing(
         const level = levels[i]!;
         const y = ys[i];
         if (y === null || y === undefined) continue;
-        ctx.strokeStyle = level.color;
-        ctx.fillStyle = level.color;
-        ctx.globalAlpha = state === 'PENDING' ? 0.5 : 0.9;
+        // Each level carries its own colour AND its own opacity, so one level
+        // can be the one that matters and the rest can sit back.
+        ctx.strokeStyle = withAlpha(level.color, level.opacity);
+        ctx.fillStyle = withAlpha(level.color, level.opacity);
+        ctx.globalAlpha = state === 'PENDING' ? 0.5 : 1;
         line(ctx, { x: left, y }, { x: right, y });
         ctx.globalAlpha = 1;
         if (!showPercents && !showPrices) continue;
         ctx.font = `${drawing.style.fontSize}px ui-monospace, monospace`;
         ctx.textBaseline = 'bottom';
         const parts: string[] = [];
-        if (showPercents) parts.push(`${(level.fraction * 100).toFixed(1)}%`);
+        // A level named by the trader is shown by that name: "OTE" says more
+        // than 70.5% to whoever wrote it.
+        if (showPercents) parts.push(level.label || `${(level.fraction * 100).toFixed(1)}%`);
         if (showPrices) parts.push(level.price.toFixed(pricePrecision));
         ctx.fillText(parts.join('  '), left + 4, y - 2);
       }

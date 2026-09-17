@@ -144,8 +144,16 @@ export const TOOLS: readonly ToolDef[] = [
     family: 'LINES',
     anchors: ANCHOR_COUNT.TREND_LINE,
     style: {},
-    options: {},
-    props: [COLOR, WIDTH, DASH, SHOW_PRICE],
+    options: { extendLeft: false, extendRight: false },
+    props: [
+      COLOR,
+      WIDTH,
+      DASH,
+      EXTEND_LEFT,
+      EXTEND_RIGHT,
+      { key: 'text', label: 'Text', type: 'TEXT', on: 'TEXT', group: 'Text' },
+      SHOW_PRICE,
+    ],
   },
   {
     kind: 'RAY',

@@ -322,6 +322,45 @@ describe('fib levels', () => {
     expect(reversed[reversed.length - 1]!.price).toBe(200);
   });
 
+  it('gives a level saved before opacity and names existed the old defaults', () => {
+    const fib = drawing(
+      'FIB_RETRACEMENT',
+      [
+        [0, 100],
+        [60_000, 200],
+      ],
+      { options: { levels: [{ value: 0.5, color: '#444444', visible: true }] } },
+    );
+    const [level] = fibLevels(fib);
+    // Opaque and shown as its percentage: exactly how it looked when it was
+    // saved, which is what makes adding a level property safe.
+    expect(level!.opacity).toBe(1);
+    expect(level!.label).toBe('');
+  });
+
+  it('carries a level\u2019s own opacity and name, clamped to a real alpha', () => {
+    const fib = drawing(
+      'FIB_RETRACEMENT',
+      [
+        [0, 100],
+        [60_000, 200],
+      ],
+      {
+        options: {
+          levels: [
+            { value: 0.5, color: '#444444', visible: true, opacity: 0.35, label: 'OTE' },
+            { value: 0.705, color: '#555555', visible: true, opacity: 4, label: 7 },
+          ],
+        },
+      },
+    );
+    const levels = fibLevels(fib);
+    expect(levels[0]!.opacity).toBeCloseTo(0.35, 10);
+    expect(levels[0]!.label).toBe('OTE');
+    expect(levels[1]!.opacity).toBe(1);
+    expect(levels[1]!.label).toBe('');
+  });
+
   it('falls back to the classic set when the levels are junk', () => {
     const fib = drawing(
       'FIB_RETRACEMENT',

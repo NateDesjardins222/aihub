@@ -275,7 +275,11 @@ function PropRow({
     case 'BOOLEAN':
       return (
         <Row label={prop.label} hint={prop.hint}>
-          <Check checked={value === true} onChange={(next) => set({ [prop.key]: next })} />
+          <Check
+            checked={value === true}
+            name={prop.label}
+            onChange={(next) => set({ [prop.key]: next })}
+          />
         </Row>
       );
 
@@ -366,6 +370,37 @@ function LevelEditor({
               write(levels.map((item, i) => (i === index ? { ...item, color: event.target.value } : item)))
             }
           />
+          {/* Each level's own opacity: the level that matters stays solid and
+              the rest can sit back without being hidden altogether. */}
+          <input
+            className="dp-level-alpha"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={level.opacity ?? 1}
+            aria-label={`Opacity of ${(level.value * 100).toFixed(1)}%`}
+            onChange={(event) =>
+              write(
+                levels.map((item, i) =>
+                  i === index ? { ...item, opacity: Number(event.target.value) } : item,
+                ),
+              )
+            }
+          />
+          <input
+            className="dp-level-label"
+            type="text"
+            value={level.label ?? ''}
+            placeholder="%"
+            aria-label={`Name for ${(level.value * 100).toFixed(1)}%`}
+            title="A name shown instead of the percentage"
+            onChange={(event) =>
+              write(
+                levels.map((item, i) => (i === index ? { ...item, label: event.target.value } : item)),
+              )
+            }
+          />
           <button
             className="dp-level-del"
             aria-label={`Remove ${(level.value * 100).toFixed(1)}%`}
@@ -380,7 +415,10 @@ function LevelEditor({
         className="dp-btn dp-level-add"
         onClick={() => {
           const highest = levels.reduce((max, level) => Math.max(max, level.value), 0);
-          write([...levels, { value: highest + 0.1, color: '#6b7a94', visible: true }]);
+          write([
+            ...levels,
+            { value: highest + 0.1, color: '#6b7a94', visible: true, opacity: 1, label: '' },
+          ]);
         }}
       >
         Add level

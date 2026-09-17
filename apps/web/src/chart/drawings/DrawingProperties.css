@@ -114,6 +114,24 @@
   border-radius: var(--radius);
 }
 
+/* Narrow on purpose: five controls on one row have to fit a compact dialog. */
+.dp-level-alpha {
+  width: 46px;
+  accent-color: var(--accent);
+}
+
+.dp-level-label {
+  width: 54px;
+  min-width: 0;
+  height: var(--h-dense);
+  padding: 0 5px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+}
+
 .dp-level-del {
   margin-left: auto;
   width: 20px;

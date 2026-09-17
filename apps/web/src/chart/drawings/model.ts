@@ -164,6 +164,15 @@ export interface FibLevel {
   readonly value: number;
   readonly color: string;
   readonly visible: boolean;
+  /**
+   * The level's own opacity, and its own name.
+   *
+   * Both OPTIONAL, and both filled in by readLevels: a level saved before
+   * either existed is a fully opaque level shown as its percentage, which is
+   * what it looked like when it was saved.
+   */
+  readonly opacity?: number;
+  readonly label?: string;
 }
 
 export interface Drawing {
@@ -598,7 +607,14 @@ export function moveAnchor(drawing: Drawing, index: number, anchor: Anchor): Dra
  */
 export function fibLevels(
   drawing: Drawing,
-): Array<{ fraction: number; price: number; color: string; visible: boolean }> {
+): Array<{
+  fraction: number;
+  price: number;
+  color: string;
+  visible: boolean;
+  opacity: number;
+  label: string;
+}> {
   const [a, b] = drawing.anchors;
   if (!a || !b) return [];
   const levels = readLevels(drawing);
@@ -611,6 +627,8 @@ export function fibLevels(
     price: from.price + span * (1 - level.value),
     color: level.color,
     visible: level.visible,
+    opacity: level.opacity ?? 1,
+    label: level.label ?? '',
   }));
 }
 
@@ -627,9 +645,20 @@ export function readLevels(drawing: Drawing): readonly FibLevel[] {
         value: level.value,
         color: typeof level.color === 'string' ? level.color : drawing.style.color,
         visible: level.visible !== false,
+        opacity:
+          typeof level.opacity === 'number' && Number.isFinite(level.opacity)
+            ? Math.min(1, Math.max(0, level.opacity))
+            : 1,
+        label: typeof level.label === 'string' ? level.label : '',
       }));
   }
-  return FIB_LEVELS.map((value) => ({ value, color: drawing.style.color, visible: true }));
+  return FIB_LEVELS.map((value) => ({
+    value,
+    color: drawing.style.color,
+    visible: true,
+    opacity: 1,
+    label: '',
+  }));
 }
 
 export interface Bounds {

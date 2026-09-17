@@ -37,14 +37,27 @@ export function Check({
   checked,
   onChange,
   label,
+  name,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   label?: string;
+  /**
+   * An accessible name for a checkbox with no visible text of its own.
+   *
+   * A checkbox whose only label is a table cell beside it has no name at all
+   * to a screen reader, and nothing for a test to address it by either.
+   */
+  name?: string;
 }): JSX.Element {
   return (
     <label className="st-check">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input
+        type="checkbox"
+        checked={checked}
+        aria-label={label ? undefined : name}
+        onChange={(event) => onChange(event.target.checked)}
+      />
       {label ? <span>{label}</span> : null}
     </label>
   );
