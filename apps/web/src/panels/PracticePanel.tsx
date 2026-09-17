@@ -14,7 +14,7 @@ import { journalApi, type ApiPracticeSession } from '../trading/journal-api';
 import { tradingApi } from '../trading/api';
 import { captureSession as captureRecording, replayApi, type ReplayState } from '../market/api';
 import { formatMicros } from '../state/format';
-import { useReplayStatus } from '../state/replay-status';
+import { refreshReplayStatus } from '../state/replay-status';
 import './PracticePanel.css';
 
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50, 100] as const;
@@ -61,12 +61,11 @@ export function PracticePanel(): JSX.Element {
       ]);
       setState(replayState);
       setAnchors(anchorList.anchors);
-      // Shared so the chart can explain why an order is not filling.
-      useReplayStatus.getState().set({
-        isReplay: replayState.loaded,
-        replayPaused: replayState.loaded && !replayState.playing,
-        blind: replayState.blind,
-      });
+      // The shared badge is derived from the market's MODE, not from whether a
+      // recording happens to be loaded, so it is refreshed rather than written
+      // here. Refreshed immediately, so pressing Play clears "REPLAY PAUSED"
+      // at once instead of on the next poll.
+      void refreshReplayStatus();
     } catch {
       /* the panel shows its own error on the next action */
     }

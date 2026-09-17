@@ -15,7 +15,7 @@ import { useFreshness } from '../market/useFreshness';
 import { useTrading } from '../trading/store';
 import { useWorkspace } from '../state/workspace';
 import { useChartStore } from '../state/chart-store';
-import { useReplayStatus } from '../state/replay-status';
+import { useReplayStatus, useReplayStatusPolling } from '../state/replay-status';
 import { timeFormatter } from '../chart/appearance';
 import { MASK, useTraining } from '../state/training';
 import { Icon } from '../ui/Icon';
@@ -46,6 +46,9 @@ export function AccountBar({
   const openSettings = useWorkspace((s) => s.openSettings);
   const appearance = useChartStore((s) => s.appearance);
   const replay = useReplayStatus((s) => s);
+  // The bar is always mounted, so it is what keeps the mode current: the badge
+  // must be right whether or not the practice drawer is open.
+  useReplayStatusPolling();
 
   // Training modes hide information; they never change it.
   const visibility = useTraining((s) => s.visibility);
