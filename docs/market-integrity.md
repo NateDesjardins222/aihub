@@ -11,7 +11,7 @@ can be re-run rather than by a claim:
 ```
 pnpm audit:candles NQ 15:30 20     # the 1-minute timeline against the vendor
 pnpm audit:latency 240             # the whole latency path at p50/p95/p99
-pnpm audit:drawings                # 11 drawing tools x 19 lifecycle steps
+pnpm audit:drawings                # 11 drawing tools x 20 lifecycle steps
 ```
 
 Three words are used below and are not interchangeable:
