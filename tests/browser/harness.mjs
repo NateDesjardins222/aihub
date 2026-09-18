@@ -54,11 +54,21 @@ export function createReport(suite) {
   return { say, finish, results, watch };
 }
 
-export async function launch({ width = 1680, height = 950 } = {}) {
+/**
+ * `args` and `initScript` exist for the performance harness.
+ *
+ * Precise heap numbers need a Chromium flag, and the probe has to be installed
+ * before the application script runs or it misses everything up to the first
+ * paint. Neither is on by default: an ordinary suite should launch the browser
+ * a trader would have.
+ */
+export async function launch({ width = 1680, height = 950, args = [], initScript = null } = {}) {
   const browser = await chromium.launch({
     executablePath: process.env.ATLAS_CHROMIUM ?? '/opt/pw-browsers/chromium',
+    ...(args.length > 0 ? { args } : {}),
   });
   const page = await browser.newPage({ viewport: { width, height } });
+  if (initScript) await page.addInitScript(initScript);
   const errors = [];
   page.on('pageerror', (error) => errors.push(`PAGEERROR: ${String(error).slice(0, 300)}`));
   page.on('console', (message) => {
