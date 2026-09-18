@@ -100,10 +100,14 @@ export function IndicatorRows({
     if (!settling) return undefined;
     const wake = (): void => setSettling(false);
     window.addEventListener('pointermove', wake, { once: true });
+    // A keyboard is deliberate by definition: Tab or an arrow key means the
+    // next control is being aimed at on purpose, so the wait is over.
+    window.addEventListener('keydown', wake, { once: true });
     // A pointer that never moves again must not leave the legend inert.
     const timer = window.setTimeout(wake, 1_200);
     return () => {
       window.removeEventListener('pointermove', wake);
+      window.removeEventListener('keydown', wake);
       window.clearTimeout(timer);
     };
   }, [settling]);
