@@ -92,7 +92,16 @@
   --h-primary: 34px;
 
   --row-h: 26px;
-  --header-h: 36px;
+  /*
+   * The account bar, 36px -> 42px.
+   *
+   * The brief asked for the top panel and its metric boxes to be "JUST A BIT
+   * BIGGER and easier to read... Do not make them huge. Do not sacrifice
+   * significant chart space." Six pixels is 0.6% of a 1000px window and buys a
+   * 30px box with a 15px figure in it, which is the difference between
+   * glancing at a number and reading it.
+   */
+  --header-h: 42px;
   --tab-h: 30px;
   --radius: 5px;
   --radius-lg: 8px;
