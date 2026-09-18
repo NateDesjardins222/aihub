@@ -91,7 +91,7 @@ export async function signIn(page) {
  */
 export async function returnToLive(page) {
   if (await page.locator('.abar-pill-warn').count()) {
-    await page.click('.abar-icon[aria-label=Practice]');
+    await page.click('[data-testid=apprail-practice]');
     await page.waitForTimeout(2_000);
     if (await page.locator('.practice-active .chip').count()) {
       await page.locator('.practice-active .chip').first().click();

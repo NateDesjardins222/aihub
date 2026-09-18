@@ -9,7 +9,7 @@
   top: 30px;
   left: 8px;
   z-index: 20;
-  width: 268px;
+  width: 300px;
   max-height: calc(100% - 60px);
   display: flex;
   flex-direction: column;

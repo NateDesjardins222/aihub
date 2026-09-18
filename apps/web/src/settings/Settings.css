@@ -122,25 +122,39 @@
   font-weight: 600;
 }
 
+/*
+ * A settings row: label on the left, its control on the right.
+ *
+ * The row is the constraint, not the control. A seven-way segmented control
+ * asks for 373px of buttons, and in a 268px indicator panel it used to push
+ * its own label off the edge - so the row wraps, and the control shrinks and
+ * wraps inside it, rather than the panel spilling.
+ */
 .st-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 4px 10px;
   min-height: 26px;
   padding: 1px 0;
 }
 
 .st-row-label {
   flex: 1 1 auto;
+  min-width: 0;
   font-size: var(--fs-md);
   color: var(--text-secondary);
 }
 
 .st-row-control {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
 }
 
 .st-check {
@@ -172,8 +186,14 @@
   border-radius: var(--radius);
 }
 
+/*
+ * Wide enough for the longest value it can hold: "rgba(77, 141, 255, 0.34)"
+ * is 24 characters, and at 132px it was clipped at "rgba(77, 141, 25" - a
+ * colour field that will not show you its own colour. The row above wraps, so
+ * this is allowed to take the width it needs.
+ */
 .st-colour-text {
-  width: 132px;
+  width: 192px;
   height: 22px;
   font-size: var(--fs-sm);
 }
@@ -195,8 +215,14 @@
   color: var(--text-muted);
 }
 
+/*
+ * A segmented control. It wraps: the alternative is a row that is wider than
+ * the panel it is in, and a trader who cannot see that "OHLC/4" is an option.
+ */
 .st-choice {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 2px;
 }
 
