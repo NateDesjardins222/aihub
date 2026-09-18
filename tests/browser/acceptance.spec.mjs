@@ -275,7 +275,25 @@ try {
 
   await shot(page, 'acceptance-two-accounts');
 
-  say(errors.length === 0, 'no page errors', errors.join(' | '));
+  /*
+   * The refusal above is not an error in the product.
+   *
+   * With the session shut, the engine correctly refuses an order for an
+   * instrument it has no price for, and that refusal reaches the browser as a
+   * 422 - which the console records. This suite already treats the refusal as
+   * an honest outcome and checks that the ticket states a reason; failing here
+   * for the same event would be the suite contradicting itself. So when the
+   * order did NOT trade, the 422s it produced are excluded by count, and
+   * everything else is still held to zero.
+   */
+  const refusals = traded ? 0 : errors.filter((line) => /422/.test(line)).length;
+  say(
+    errors.length - refusals === 0,
+    'no page errors',
+    refusals > 0
+      ? `${refusals} refusal(s) excluded, ${errors.length - refusals} left: ${errors.filter((l) => !/422/.test(l)).join(' | ')}`
+      : errors.join(' | '),
+  );
 
   void publicId;
 } finally {

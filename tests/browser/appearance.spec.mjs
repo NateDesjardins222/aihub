@@ -203,30 +203,41 @@ try {
    * the controls take them, and then the page is reloaded and every one is
    * read back.
    */
+  /*
+   * What is compared is the SCREEN before against the screen after.
+   *
+   * Not "each click stuck": some of these settings are mutually exclusive on
+   * purpose - a price scale can be logarithmic or percentage but not both, so
+   * turning Percent on turns Logarithmic off - and a test that expected every
+   * click to survive independently would be asserting a bug. The honest
+   * question is whether the state the trader is looking at comes back.
+   */
+  const readToggles = async (limit) => {
+    const boxes = page.locator('.st-content .st-row input[type=checkbox]');
+    const count = Math.min(limit, await boxes.count());
+    const out = [];
+    for (let i = 0; i < count; i += 1) out.push(await boxes.nth(i).isChecked());
+    return out;
+  };
+
   await openSettings('Status line');
   const toggles = page.locator('.st-content .st-row input[type=checkbox]');
   const toggleCount = Math.min(8, await toggles.count());
-  const wanted = [];
   for (let i = 0; i < toggleCount; i += 1) {
-    const box = toggles.nth(i);
-    const was = await box.isChecked();
-    await box.click();
+    await toggles.nth(i).click();
     await page.waitForTimeout(90);
-    wanted.push(!was);
   }
+  const wanted = await readToggles(8);
   say(toggleCount >= 6, 'the status line has enough switches to stress', `${toggleCount} toggles`);
 
   await openSettings('Scales and lines');
   const scaleToggles = page.locator('.st-content .st-row input[type=checkbox]');
   const scaleCount = Math.min(6, await scaleToggles.count());
-  const scaleWanted = [];
   for (let i = 0; i < scaleCount; i += 1) {
-    const box = scaleToggles.nth(i);
-    const was = await box.isChecked();
-    await box.click();
+    await scaleToggles.nth(i).click();
     await page.waitForTimeout(90);
-    scaleWanted.push(!was);
   }
+  const scaleWanted = await readToggles(6);
 
   await openSettings('Canvas');
   const fontSize = page.locator('.st-row:has-text("Font size") input[type=number]').first();
@@ -251,10 +262,7 @@ try {
   await page.waitForTimeout(6_000);
 
   await openSettings('Status line');
-  const afterStatus = [];
-  for (let i = 0; i < toggleCount; i += 1) {
-    afterStatus.push(await page.locator('.st-content .st-row input[type=checkbox]').nth(i).isChecked());
-  }
+  const afterStatus = await readToggles(8);
   say(
     JSON.stringify(afterStatus) === JSON.stringify(wanted),
     'every status-line switch came back the way it was left',
@@ -262,10 +270,7 @@ try {
   );
 
   await openSettings('Scales and lines');
-  const afterScales = [];
-  for (let i = 0; i < scaleCount; i += 1) {
-    afterScales.push(await page.locator('.st-content .st-row input[type=checkbox]').nth(i).isChecked());
-  }
+  const afterScales = await readToggles(6);
   say(
     JSON.stringify(afterScales) === JSON.stringify(scaleWanted),
     'and so did every scale switch',

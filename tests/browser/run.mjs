@@ -38,6 +38,7 @@ const SUITES = [
   'tablet',
   'visual',
   'polish',
+  'first-run',
   'tools',
   'replay-brackets',
   'layout',

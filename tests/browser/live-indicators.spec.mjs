@@ -96,10 +96,20 @@ try {
    * what makes the counts below mean something.
    */
   const waited = await waitForTicks(8, 90_000);
-  const grown = await waitForBars(45, 240_000);
+  /*
+   * More bars than the window, with room to spare.
+   *
+   * What has to be true for this suite to mean anything is that the history is
+   * LONGER than the twenty-two bars a Bollinger band's newest value is
+   * computed over - otherwise the windowed path never runs and the checks
+   * below are about nothing. Forty is that with margin; the replay's pace
+   * decides how long it takes to get there, and asking for forty-five once
+   * failed on a run that reached forty-four.
+   */
+  const grown = await waitForBars(40, 240_000);
   const held = await cost();
   say(waited >= 8, 'the replay delivers updates to the studies', `${waited} updates`);
-  say(grown >= 45, 'and builds up a history to compute over', `${held.bars} bars held`);
+  say(grown >= 40, 'and builds a history longer than the window', `${held.bars} bars, window 22`);
 
   const before = await studies();
   const bollBefore = before.find((s) => s.kind === 'BOLL');

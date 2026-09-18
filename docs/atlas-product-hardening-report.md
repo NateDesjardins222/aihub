@@ -291,11 +291,12 @@ tail** (31.7ms at p95), which was investigated rather than guessed at:
 
 ## 15. Drawing feel
 
-The drawing matrix from the previous milestone — 11 tools × 20 steps including
-a symbol change — still passes, and the drawing suites in this milestone
-(`drawing-pointer`, `line-tools`, `rectangle`, `remaining-tools`, `fib-levels`,
-`position-tools`) pass unchanged after the colour control was replaced under
-them.
+The drawing suites pass unchanged after the colour control was replaced under
+them: `drawing-pointer` 16/16, `drawing-engine` 36/36, `line-tools` 68/68,
+`rectangle` 43/43, `remaining-tools` 56/56, `fib-levels` 16/16,
+`position-tools` 30/30. The 11-tool × 20-step matrix from the previous
+milestone (`tools/drawing-matrix.mjs`) was re-run for this report; its result is
+recorded below.
 
 One finding from the previous milestone is **withdrawn as false**: "hovering a
 drawing does not change the cursor" was read off `.draw-canvas` while the code
