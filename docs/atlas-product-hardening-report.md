@@ -553,6 +553,39 @@ because exact-pixel comparison over live market data would be dishonest.
 run twice. Every one performs a real click, drag, keystroke or wheel and reads
 back something that would be different if it had not worked.
 
+### The new-user pass, and the trader who is still here at hour six
+
+The mechanical half is `first-run.spec.mjs`, 19 checks: every button on the
+rail, the tool rail, the chart header, the ticket and the account bar has a
+name; no raw enum reaches the screen; the entry buttons say how much they will
+trade; the close buttons are unavailable when there is nothing to close; an
+empty panel says it is empty and an unbuilt one names itself. All pass.
+
+The half that cannot be automated is a judgement, and here it is, from using
+the terminal to write the 159-check pass:
+
+**What a newcomer gets right without being told.** The four figures on the
+account bar read at a glance. BUY and SELL carry the size on the button, so
+there is no question what is about to happen. The five destinations are on the
+rail and stay there at every width. The indicator catalogue names studies in
+words rather than initials. Escape closes everything.
+
+**Three pieces of friction, found by hitting them myself.**
+
+1. **The drawing tool list opens one category at a time.** Finding Ray means
+   expanding a group first. I wrote a test that failed on this before I
+   understood it, which is a fair proxy for a new trader hunting for a tool.
+2. **A replay starts paused, and nothing says so where the eye is.** The
+   account bar carries a REPLAY PAUSED pill, but the chart looks like a chart
+   that has stopped updating. I assumed twice, in two different scripts, that a
+   replay I had started was running.
+3. **Keyboard shortcuts are only discoverable through a right-click.** Delete,
+   Ctrl+C/V/D and Ctrl+Z all work and are listed in the object's context menu.
+   Nothing lists them anywhere else.
+
+None of the three is a defect and none was changed: they are design decisions
+someone should make deliberately rather than have me churn on a hunch.
+
 ### Everything, run end to end
 
 | suite | | suite | |
