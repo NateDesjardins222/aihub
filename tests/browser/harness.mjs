@@ -318,13 +318,27 @@ export async function paintedBounds(page, selector = '.draw-canvas', region = nu
  * design, so "the browser closed" is not a cleanup.
  */
 export async function clearIndicators(page) {
-  for (let i = 0; i < 24; i += 1) {
-    const remove = page.locator('[data-testid=indicator-row] .ind-btn-danger').first();
+  for (let i = 0; i < 40; i += 1) {
+    const row = page.locator('[data-testid=indicator-row]').first();
+    if ((await row.count()) === 0) return i;
+    /*
+     * Hover the ROW first, the way a hand does.
+     *
+     * The row's controls are revealed on hover with an opacity transition, so
+     * reaching straight for the button asks to click something that is still
+     * fading in - which is not actionable, and retrying restarts the fade. A
+     * trader hovers the row and then aims; so does this.
+     */
+    await row.hover().catch(() => {});
+    await page.waitForTimeout(160);
+    const remove = row.locator('.ind-btn-danger').first();
     if ((await remove.count()) === 0) return i;
-    await remove.click();
-    await page.waitForTimeout(350);
+    await remove.click({ timeout: 5_000 }).catch(async () => {
+      await remove.click({ force: true }).catch(() => {});
+    });
+    await page.waitForTimeout(400);
   }
-  return 24;
+  return 40;
 }
 
 export async function clearDrawings(page) {

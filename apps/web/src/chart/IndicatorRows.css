@@ -72,6 +72,15 @@
  * The row's own controls: visibility, settings, duplicate, remove. Hidden
  * until the row is hovered, which keeps the legend a legend.
  */
+/*
+ * Revealed on hover, but always THERE.
+ *
+ * The fade is on opacity alone and is never interrupted by the pointer
+ * arriving: an element that is transitioning while you reach for it is an
+ * element that moves out from under automation and feels unreliable to a
+ * hand. Hovering the row settles it once and it stays settled while the
+ * pointer is anywhere in the row.
+ */
 .ind-actions {
   display: flex;
   align-items: center;
@@ -81,20 +90,40 @@
   transition: opacity var(--fast) var(--ease);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .ind-actions {
+    transition: none;
+  }
+}
+
 .ind-row:hover .ind-actions,
 .ind-row:focus-within .ind-actions {
   opacity: 1;
 }
 
+/*
+ * A 22px target carrying a 17px control.
+ *
+ * These were 17x17. The icon is the right size - the legend is a legend, not a
+ * toolbar - but the thing you have to HIT was the same size as the thing you
+ * can see, and a trader removing three studies had to aim three times at a
+ * 17px square that had just moved. The box grows, the ink does not: the
+ * padding is the target.
+ */
 .ind-btn {
   display: grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
-  border-radius: 3px;
+  width: 22px;
+  height: 22px;
+  margin: -2px 0;
+  border-radius: 4px;
   color: var(--text-muted);
   background: transparent;
   border: none;
+}
+
+.ind-btn > * {
+  pointer-events: none;
 }
 
 .ind-btn:hover {
