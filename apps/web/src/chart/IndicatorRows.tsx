@@ -22,12 +22,22 @@ import './IndicatorRows.css';
 /** One frozen empty list, so a pane with no indicators is a stable selector. */
 const EMPTY: readonly IndicatorInstance[] = [];
 
+/** Where the status line itself starts - `.chart-status { top: 4px }`. */
+const STATUS_TOP = 4;
+
 export interface IndicatorRowsProps {
   /** The pane whose indicators these are. */
   readonly paneId: string;
   readonly adapterRef: React.RefObject<ChartAdapter | null>;
   /** The crosshair's bar time, or null when the pointer is off the plot. */
   readonly hoverTimeRef: React.RefObject<number | null>;
+  /**
+   * The status line above the plot. Its height is READ rather than assumed,
+   * because it wraps: a narrow pane puts the OHLC, and then the bar countdown,
+   * on rows of their own, and a legend pinned to a fixed offset lands on top
+   * of them.
+   */
+  readonly statusRef: React.RefObject<HTMLElement | null>;
   readonly onOpenSettings: (instanceId: string) => void;
 }
 
@@ -60,6 +70,7 @@ export function IndicatorRows({
   paneId,
   adapterRef,
   hoverTimeRef,
+  statusRef,
   onOpenSettings,
 }: IndicatorRowsProps): JSX.Element | null {
   const indicators = useLayout(
@@ -89,11 +100,14 @@ export function IndicatorRows({
       }
 
       // Each group rides its own pane. Pane heights change with the window
-      // and with every indicator added, so the offset is read, not cached.
+      // and with every indicator added, so the offset is read, not cached -
+      // and so is the status line's height, which changes when it wraps.
+      const status = statusRef.current?.offsetHeight ?? 0;
       for (const entry of adapter.indicatorPanes()) {
         const group = root.querySelector<HTMLElement>(`[data-pane="${entry.pane}"]`);
         if (!group) continue;
-        const top = entry.top + (entry.pane === 0 ? 0 : 4);
+        const top =
+          entry.pane === 0 ? entry.top + STATUS_TOP + Math.max(status, 20) + 2 : entry.top + 30;
         const key = `pane:${entry.pane}`;
         if (written.get(key) === String(top)) continue;
         group.style.transform = `translateY(${top}px)`;
@@ -102,7 +116,7 @@ export function IndicatorRows({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [adapterRef, hoverTimeRef, indicators]);
+  }, [adapterRef, hoverTimeRef, statusRef, indicators]);
 
   if (indicators.length === 0) return null;
 

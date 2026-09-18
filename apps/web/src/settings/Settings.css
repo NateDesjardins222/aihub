@@ -12,7 +12,13 @@
   display: flex;
   flex-direction: column;
   width: min(760px, 100%);
-  height: min(620px, 100%);
+  /*
+   * A fixed height, so moving between sections does not resize the dialog -
+   * but tall enough that the longest section ("scales and lines", which runs
+   * price scale, time scale, scale text, grid and crosshair) is not cut off
+   * mid-heading on a normal desktop.
+   */
+  height: min(800px, 100%);
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);

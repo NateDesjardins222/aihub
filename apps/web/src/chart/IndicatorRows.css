@@ -7,7 +7,12 @@
  */
 .ind-rows {
   position: absolute;
-  top: 26px;
+  /*
+   * Zero, not an offset: every group is placed by the frame in IndicatorRows,
+   * which puts the price pane's rows below the status line's MEASURED height
+   * and each oscillator's rows below its own pane's top.
+   */
+  top: 0;
   left: 8px;
   right: 0;
   bottom: 0;

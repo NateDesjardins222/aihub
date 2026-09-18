@@ -250,9 +250,37 @@ select:focus {
   }
 }
 
+@keyframes atlas-pop-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/*
+ * A colour well shows its colour.
+ *
+ * Chromium's own swatch sits inside a 4px wrapper with a light grey border of
+ * its own, which at a 26px control left a dark theme colour as a pale rounded
+ * box: every well in the settings dialog looked the same shade whatever value
+ * it held.
+ */
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
 }

@@ -18,7 +18,13 @@
   display: flex;
   flex-direction: column;
   width: min(380px, 100%);
-  max-height: min(640px, 100%);
+  /*
+   * Tall enough for the longest panel - a position tool's, which carries
+   * appearance, labels, text, three coordinates and visibility - so that on a
+   * normal desktop the whole thing is on screen rather than ending halfway
+   * through a checkbox row. Shorter windows still scroll.
+   */
+  max-height: min(780px, 100%);
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
@@ -274,6 +280,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/*
+ * A price needs more room than the 66px a contract count or a text size is
+ * given: "29700.50" plus the stepper arrows was clipping to "2970(".
+ */
+.dp-coord .st-num input {
+  width: 96px;
 }
 
 .dp-coord-time {

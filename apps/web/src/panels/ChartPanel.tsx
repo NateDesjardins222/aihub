@@ -186,6 +186,12 @@ export function ChartPanel({
   const exchangeZone = instrument?.sessionTimezone ?? 'America/Chicago';
   const timeZone = resolveZone(appearance, exchangeZone);
   const statusLine = appearance.statusLine;
+  /*
+   * The status line wraps when the pane is narrow - two charts side by side
+   * with the journal open puts the OHLC on its own row - and the indicator
+   * legend has to start below whatever height that turned out to be.
+   */
+  const statusRef = useRef<HTMLDivElement>(null);
 
   // -- mount the chart once ------------------------------------------------
   useEffect(() => {
@@ -619,7 +625,7 @@ export function ChartPanel({
       />
 
       <div className="chart-stage">
-        <div className="chart-status" data-testid="status-line">
+        <div className="chart-status" data-testid="status-line" ref={statusRef}>
           {statusLine.symbolVisible ? (
             <>
               <span className="sl-symbol">{activeSymbol}</span>
@@ -731,6 +737,7 @@ export function ChartPanel({
           paneId={paneId}
           adapterRef={adapterRef}
           hoverTimeRef={hoverTimeRef}
+          statusRef={statusRef}
           onOpenSettings={setIndicatorSettings}
         />
 

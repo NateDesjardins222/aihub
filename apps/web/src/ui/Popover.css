@@ -65,3 +65,11 @@
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
+
+/*
+ * A panel that opened upwards grows from its own bottom edge, so the motion
+ * still reads as coming out of the button rather than dropping onto it.
+ */
+.popover[data-side='above'] {
+  animation-name: atlas-pop-in-up;
+}

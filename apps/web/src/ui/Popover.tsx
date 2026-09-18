@@ -39,7 +39,7 @@ export function Popover({
   label,
 }: PopoverProps): JSX.Element | null {
   const ref = useRef<HTMLDivElement>(null);
-  const [style, setStyle] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [style, setStyle] = useState<Placement | null>(null);
 
   useLayoutEffect(() => {
     if (!open || !anchor) return;
@@ -49,8 +49,7 @@ export function Popover({
       align === 'right'
         ? Math.max(6, Math.min(rect.right - panelWidth, window.innerWidth - panelWidth - 6))
         : Math.max(6, Math.min(rect.left, window.innerWidth - panelWidth - 6));
-    const top = rect.bottom + 3;
-    setStyle({ top, left, maxHeight: Math.max(160, window.innerHeight - top - 10) });
+    setStyle({ left, ...verticalPlacement(rect, window.innerHeight) });
   }, [open, anchor, align, width]);
 
   /*
@@ -96,8 +95,10 @@ export function Popover({
       ref={ref}
       role="dialog"
       aria-label={label}
+      data-side={style.side}
       style={{
-        top: style.top,
+        top: style.side === 'below' ? style.offset : undefined,
+        bottom: style.side === 'above' ? style.offset : undefined,
         left: style.left,
         width: width ?? undefined,
         maxHeight: style.maxHeight,
@@ -106,6 +107,51 @@ export function Popover({
       {children}
     </div>
   );
+}
+
+interface Placement {
+  readonly left: number;
+  readonly side: 'above' | 'below';
+  /** Distance from the viewport's top (below) or bottom (above). */
+  readonly offset: number;
+  readonly maxHeight: number;
+}
+
+/** The gap between the anchor and the panel, and between the panel and the edge. */
+const GAP = 3;
+const EDGE = 10;
+/**
+ * Below this, a menu is cramped enough that it is worth flipping. It is two
+ * rows plus a heading: less than that and the panel is a scroll bar with a
+ * list inside it.
+ */
+const COMFORTABLE = 220;
+
+/**
+ * Choose the side to open on.
+ *
+ * Menus open downwards, which is what a reader expects. The exception is a
+ * button near the bottom of the window - the object tree's, at the foot of the
+ * drawing rail - where opening downwards leaves a list of eleven objects in a
+ * 169px slot with its "remove all" action below the fold. When the space below
+ * is cramped AND there is more of it above, the panel opens upwards instead.
+ *
+ * Exported for the unit test; not part of the component's public surface.
+ */
+export function verticalPlacement(
+  rect: { readonly top: number; readonly bottom: number },
+  viewportHeight: number,
+): Omit<Placement, 'left'> {
+  const below = viewportHeight - rect.bottom - GAP - EDGE;
+  const above = rect.top - GAP - EDGE;
+  if (below < COMFORTABLE && above > below) {
+    return {
+      side: 'above',
+      offset: viewportHeight - rect.top + GAP,
+      maxHeight: Math.max(160, above),
+    };
+  }
+  return { side: 'below', offset: rect.bottom + GAP, maxHeight: Math.max(160, below) };
 }
 
 /** A hook for the anchor/open pair every popover needs. */

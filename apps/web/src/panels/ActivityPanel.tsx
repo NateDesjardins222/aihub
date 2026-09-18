@@ -363,7 +363,15 @@ function AccountsTable(): JSX.Element {
                 {formatMicros(live?.profitTargetProgressMicros ?? a.profitTargetProgressMicros, {
                   sign: true,
                 })}{' '}
-                / {formatMicros(a.ruleTemplate.profitTargetMicros)}
+                {/*
+                  A practice account's template carries an unreachable
+                  placeholder target rather than none at all, and printing it
+                  as "$1,000,000.00" reads as a goal the account is 0.01% of
+                  the way towards. It has no target; the column says so.
+                */}
+                {a.ruleTemplate.accountType === 'PRACTICE'
+                  ? '/ no target'
+                  : `/ ${formatMicros(a.ruleTemplate.profitTargetMicros)}`}
               </td>
               <td className="right num">
                 {live?.openContracts ?? 0}/{a.ruleTemplate.maxContracts}

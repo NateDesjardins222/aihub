@@ -563,6 +563,21 @@ function Trades({
   const [draft, setDraft] = useState('');
   const [newTag, setNewTag] = useState('');
   const setChartFocus = useSession((s) => s.focusTrade);
+  const instruments = useSession((s) => s.instruments);
+
+  /*
+   * A price is printed at its instrument's precision, not at whatever
+   * JavaScript makes of the number: an NQ exit at 29455.50 printed itself as
+   * "29455.5" beside an entry of "29460.75", and a column of prices that do
+   * not line up is read as a different price rather than as a lost zero.
+   */
+  const price = useCallback(
+    (value: number, root: string): string => {
+      const digits = instruments.find((i) => i.root === root)?.pricePrecision ?? 2;
+      return value.toFixed(digits);
+    },
+    [instruments],
+  );
 
   const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
 
@@ -617,7 +632,7 @@ function Trades({
                 <span className="journal-trade-symbol">{trade.symbol}</span>
                 <span className="num">{trade.qty}</span>
                 <span className="num journal-trade-price">
-                  {trade.entryPrice} → {trade.exitPrice}
+                  {price(trade.entryPrice, trade.symbol)} → {price(trade.exitPrice, trade.symbol)}
                 </span>
                 <span className={`num journal-trade-pnl ${trade.netPnlMicros >= 0 ? 'up' : 'down'}`}>
                   {masked ? MASK : formatMicros(trade.netPnlMicros, { sign: true })}
