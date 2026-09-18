@@ -117,6 +117,29 @@ export class MarketDataService {
   private attach(): void {
     this.detach?.();
     this.detach = this.provider.on((event) => {
+      /*
+       * Open the latency measurement before anything is done with the event.
+       *
+       * The provider stamped the moment its payload was parsed; from here to
+       * the socket is the only part of the path Atlas is responsible for, and
+       * it is measured against that stamp rather than against a clock read
+       * later, so a slow normalization cannot hide inside a fast publish.
+       */
+      if (event.kind !== 'status' && event.observedAt !== undefined) {
+        const payload =
+          event.kind === 'quote'
+            ? event.quote
+            : event.kind === 'bar'
+              ? event.bar
+              : event.kind === 'trade'
+                ? event.trade
+                : event.depth;
+        const exchangeTs =
+          event.kind === 'bar' ? event.bar.time : (payload as { exchangeTs?: number }).exchangeTs ?? 0;
+        this.bus.latency.begin(payload, exchangeTs, event.observedAt);
+        this.bus.latency.markNormalized(payload);
+      }
+
       switch (event.kind) {
         case 'quote': {
           if (!this.bus.publishQuote(event.quote)) return;
@@ -204,6 +227,15 @@ export class MarketDataService {
 
     this.warmups.set(spec.root, task);
     return task;
+  }
+
+  /** Per-symbol aggregator counters, for the latency report. */
+  aggregatorCounters(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [root, agg] of this.aggregators) {
+      out[root] = { ...agg.counters, listeners: agg.listenerCount(), fineBars: agg.fineBarCount };
+    }
+    return out;
   }
 
   aggregatorFor(spec: InstrumentSpec): CandleAggregator {

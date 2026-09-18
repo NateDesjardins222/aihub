@@ -4,6 +4,7 @@ import type { NormalizedBar, Timeframe } from '@atlas/contracts';
 import { useSession, activeInstrument } from '../state/session';
 import { LightweightChartsAdapter } from '../chart/LightweightChartsAdapter';
 import { marketStream } from '../market/stream';
+import { clientLatency } from '../market/latency';
 import { fetchBars, fetchSymbolStatus, type FreshnessInfo } from '../market/api';
 import { ChartLegend } from './ChartLegend';
 import { ChartHeader } from '../chart/ChartHeader';
@@ -501,11 +502,54 @@ export function ChartPanel({
       frame = requestAnimationFrame(draw);
       if (seriesTimeframeRef.current !== timeframe) return;
       const next = motion.sample(now);
-      if (next) adapterRef.current?.applyLiveBar(next);
+      if (!next) return;
+      adapterRef.current?.applyLiveBar(next);
+      // Inside the writing frame, so the paint measurement is taken from the
+      // frame callback after this one - the first moment it could be seen.
+      clientLatency.applied(activeSymbol);
     });
 
     const offQuote = marketStream.subscribeQuote(activeSymbol, (quote) => {
       if (quote.last === null) return;
+
+      /*
+       * THE PRICE STREAM MOVES THE CANDLE.
+       *
+       * The forming candle used to follow the bar stream alone, and a
+       * WebSocket capture is what exposed what that cost: in ninety-five
+       * seconds the feed delivered nineteen prices on `md.quote.NQ` and one
+       * bar on `md.bar.NQ.1m`, and the chart drew the one. Sampling the
+       * displayed price twenty times a second for two and a half minutes found
+       * it changed ONCE. That is the whole of "it feels like price is barely
+       * moving": the price was arriving and the chart was not being told.
+       *
+       * A quote is a genuine observation - the vendor's last traded price with
+       * its own exchange timestamp - so it is exactly as real as a bar's
+       * close, and the server's own aggregator already builds the forming
+       * bucket from it. This does the same thing on the client, against the
+       * bar the chart is holding, and only ever the CLOSE: the open, the high,
+       * the low and the volume stay the feed's own numbers, and the high and
+       * low are widened only when the genuine price has actually been outside
+       * them.
+       *
+       * Nothing here reaches the engine. Fills, triggers, marks and P&L are
+       * server-side and are computed from the same observation by the same
+       * authority they always were.
+       */
+      const genuine = motion.genuine();
+      if (genuine && !genuine.closed && quote.exchangeTs >= genuine.time) {
+        motion.observe(
+          {
+            ...genuine,
+            high: Math.max(genuine.high, quote.last),
+            low: Math.min(genuine.low, quote.last),
+            close: quote.last,
+          },
+          performance.now(),
+        );
+        legendRef.current?.setLive(motion.genuine() ?? genuine);
+      }
+
       if (!updatedRef.current) return;
       updatedRef.current.textContent = timeFormatter(
         useChartStore.getState().appearance,

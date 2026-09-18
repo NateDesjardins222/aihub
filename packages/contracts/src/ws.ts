@@ -110,6 +110,14 @@ export interface ServerDelta<T = unknown> {
   readonly stream: string;
   readonly seq: number;
   readonly serverTime: number;
+  /**
+   * When the vendor response carrying this observation was parsed by the
+   * server, for measuring the wire-to-paint half of the latency path against
+   * the same instant the server measured its own half against.
+   *
+   * Absent on frames that carry no market observation.
+   */
+  readonly observedAt?: number;
   readonly data: T;
 }
 

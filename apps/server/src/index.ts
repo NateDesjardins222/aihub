@@ -4,8 +4,12 @@ import { env } from './config/env.js';
 import { closeDb, getDb } from './db/client.js';
 import { reportLedgerAudit } from './platform/ledger-audit.js';
 import { listInstruments } from '@atlas/instruments';
+import { reportEgress } from './marketdata/egress.js';
 
 async function main(): Promise<void> {
+  // Before anything tries to reach the vendor, say whether it can.
+  reportEgress();
+
   const { app, stack, engine } = await buildApp();
 
   const shutdown = async (signal: string): Promise<void> => {

@@ -46,6 +46,27 @@ export class CandleAggregator {
    */
   private readonly lastPrint = new Map<number, number>();
   private readonly maxFineBars: number;
+  /**
+   * Why prices did and did not reach the chart.
+   *
+   * Counted because "the chart barely moves" was a real complaint that took a
+   * WebSocket capture to explain: the feed was delivering twelve prices a
+   * minute and the chart was drawing one. Whichever of these refusals is
+   * large is the answer, and without the counters it is guesswork.
+   */
+  readonly counters = {
+    pricesIn: 0,
+    priceRefusedClosedBucket: 0,
+    priceRefusedStale: 0,
+    priceRefusedUnchanged: 0,
+    priceAccepted: 0,
+    barsIn: 0,
+    barRefusedUnchanged: 0,
+    barAccepted: 0,
+    emits: 0,
+    emitNoListeners: 0,
+    emitNoBar: 0,
+  };
 
   constructor(
     readonly spec: InstrumentSpec,
@@ -61,6 +82,13 @@ export class CandleAggregator {
 
   get fineBarCount(): number {
     return this.fine.size;
+  }
+
+  /** How many live subscribers there are, across all timeframes. */
+  listenerCount(): number {
+    let n = 0;
+    for (const set of this.listeners.values()) n += set.size;
+    return n;
   }
 
   subscribe(tf: Timeframe, listener: BarListener): () => void {
@@ -95,9 +123,14 @@ export class CandleAggregator {
    * timeframe whose bucket the bar touches.
    */
   ingestBar(bar: NormalizedBar, source: BarSource = 'STREAM'): boolean {
+    this.counters.barsIn += 1;
     const aligned = this.merge(this.align(bar));
     const result = this.fine.upsert(aligned, source);
-    if (!result.changed) return false;
+    if (!result.changed) {
+      this.counters.barRefusedUnchanged += 1;
+      return false;
+    }
+    this.counters.barAccepted += 1;
     this.fine.trimTo(this.maxFineBars);
     this.emitFor(aligned.time);
     return true;
@@ -198,11 +231,15 @@ export class CandleAggregator {
    */
   ingestPrice(price: number, exchangeTs: number): boolean {
     if (!Number.isFinite(price)) return false;
+    this.counters.pricesIn += 1;
     const time = bucketStart(this.spec, exchangeTs, this.options.baseTimeframe);
     const existing = this.fine.get(time);
 
     // A bucket the feed has already settled is not ours to reopen.
-    if (existing?.closed) return false;
+    if (existing?.closed) {
+      this.counters.priceRefusedClosedBucket += 1;
+      return false;
+    }
 
     /*
      * A stale print does not open a bar in the past.
@@ -215,7 +252,10 @@ export class CandleAggregator {
      * allowed to revise a bar that already exists; it never invents one.
      */
     const newest = this.fine.last();
-    if (!existing && newest && time < newest.time) return false;
+    if (!existing && newest && time < newest.time) {
+      this.counters.priceRefusedStale += 1;
+      return false;
+    }
 
     const next: NormalizedBar = existing
       ? {
@@ -236,7 +276,11 @@ export class CandleAggregator {
         };
 
     this.lastPrint.set(time, price);
-    if (!this.fine.upsert(next, 'STREAM').changed) return false;
+    if (!this.fine.upsert(next, 'STREAM').changed) {
+      this.counters.priceRefusedUnchanged += 1;
+      return false;
+    }
+    this.counters.priceAccepted += 1;
     this.emitFor(time);
     return true;
   }
@@ -292,23 +336,34 @@ export class CandleAggregator {
   }
 
   private emitFor(fineTime: number): void {
+    if (this.listeners.size === 0) {
+      this.counters.emitNoListeners += 1;
+      return;
+    }
     for (const tf of this.listeners.keys()) this.emitTimeframe(tf, fineTime);
   }
 
   private emitTimeframe(tf: Timeframe, fineTime: number): void {
     const listeners = this.listeners.get(tf);
-    if (!listeners || listeners.size === 0) return;
+    if (!listeners || listeners.size === 0) {
+      this.counters.emitNoListeners += 1;
+      return;
+    }
 
     const time = bucketStart(this.spec, fineTime, tf);
     const end = bucketEnd(this.spec, fineTime, tf);
     const bar = refoldBucket(this.spec, this.fine.range(time, end), time, end);
-    if (!bar) return;
+    if (!bar) {
+      this.counters.emitNoBar += 1;
+      return;
+    }
 
     const previous = this.lastBucket.get(tf);
     const rolled = previous !== undefined && previous !== time;
     this.lastBucket.set(tf, time);
 
     const update: BarUpdate = { symbol: this.spec.root, timeframe: tf, bar, rolled };
+    this.counters.emits += 1;
     for (const listener of listeners) listener(update);
   }
 }

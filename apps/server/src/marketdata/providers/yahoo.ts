@@ -36,6 +36,14 @@ import type {
 import { emptyStats, isPlausibleExchangeTs, normalizeBar, type NormalizationStats } from '../normalize.js';
 
 const BASE_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
+/** Never poll faster than this, whatever the cadence estimate says. */
+const MIN_POLL_MS = 1_000;
+/** How long after a reading is due to wake up, so it has actually landed. */
+const POLL_OVERSHOOT_MS = 700;
+/** Ceiling on the failure backoff. A feed must always be able to come back. */
+const MAX_BACKOFF_MS = 60_000;
+/** A request that has not answered in this long is not going to. */
+const REQUEST_TIMEOUT_MS = 8_000;
 const USER_AGENT = 'Mozilla/5.0 (compatible; AtlasFuturesTerminal/0.1; simulation)';
 
 /** Vendor granularities, with the history depth each one actually serves. */
@@ -163,6 +171,22 @@ export class YahooDelayedProvider implements DescribableProvider {
   private lastError: string | undefined;
   /** Measured, not assumed: updated from every successful poll. */
   private measuredDelaySeconds: number;
+  /** When the payload currently being published was parsed. */
+  private observedAt = 0;
+  /** Parse time per vendor symbol, for the concurrent poll. */
+  private readonly observedAtByUrl = new Map<string, number>();
+  /**
+   * The observed interval between distinct readings, smoothed.
+   *
+   * Measured rather than configured: the vendor's cadence is a property of the
+   * vendor, and the poll schedule follows it. Seeded from the configured
+   * interval so the first few polls behave as before.
+   */
+  private observedCadenceMs = 0;
+  private lastNewReadingAt: number | null = null;
+  private lastReadingTs = 0;
+  private consecutiveFailures = 0;
+  private stopped = false;
   readonly normalizationStats: NormalizationStats = emptyStats();
 
   private readonly doFetch: typeof fetch;
@@ -205,17 +229,15 @@ export class YahooDelayedProvider implements DescribableProvider {
     await this.pollOnce();
     this.emitStatus();
 
-    this.timer = setInterval(() => {
-      void this.pollOnce().catch(() => {
-        /* handled inside pollOnce */
-      });
-    }, this.options.pollIntervalMs);
-    this.timer.unref?.();
+    this.observedCadenceMs = this.options.pollIntervalMs;
+    this.stopped = false;
+    this.schedule();
   }
 
   async disconnect(): Promise<void> {
+    this.stopped = true;
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
     this.state = 'DISCONNECTED';
@@ -259,6 +281,19 @@ export class YahooDelayedProvider implements DescribableProvider {
 
   era(): string {
     return `live:${this.id}`;
+  }
+
+  /** What the poll schedule currently believes, for diagnostics. */
+  pollDiagnostics(): {
+    observedCadenceMs: number;
+    nextDelayMs: number;
+    consecutiveFailures: number;
+  } {
+    return {
+      observedCadenceMs: Math.round(this.observedCadenceMs),
+      nextDelayMs: this.nextDelayMs(),
+      consecutiveFailures: this.consecutiveFailures,
+    };
   }
 
   getConnectionStatus(): ConnectionStatus {
@@ -305,6 +340,32 @@ export class YahooDelayedProvider implements DescribableProvider {
   /** Deepest history this provider can serve for a timeframe, in days. */
   maxLookbackDays(tf: Timeframe): number {
     return chooseVendorInterval(tf, Number.POSITIVE_INFINITY).maxLookbackDays;
+  }
+
+  /** The vendor symbol a request URL was for. */
+  private vendorSymbolOfUrl(url: string): string {
+    const after = url.slice(BASE_URL.length + 1);
+    return decodeURIComponent(after.split('?')[0] ?? '');
+  }
+
+  /**
+   * Note that this payload carried a reading we had not seen, and update the
+   * cadence estimate the poll schedule is derived from.
+   */
+  private noteReading(exchangeTs: number): void {
+    if (exchangeTs <= this.lastReadingTs) return;
+    const now = Date.now();
+    if (this.lastNewReadingAt !== null) {
+      const gap = now - this.lastNewReadingAt;
+      // Smoothed, and bounded: one long gap over a market break must not make
+      // the schedule sleep through the reopen.
+      if (gap >= MIN_POLL_MS && gap <= 120_000) {
+        this.observedCadenceMs =
+          this.observedCadenceMs > 0 ? this.observedCadenceMs * 0.7 + gap * 0.3 : gap;
+      }
+    }
+    this.lastReadingTs = exchangeTs;
+    this.lastNewReadingAt = now;
   }
 
   private vendorSymbol(spec: InstrumentSpec): string {
@@ -371,16 +432,40 @@ export class YahooDelayedProvider implements DescribableProvider {
       else byVendorSymbol.set(vs, [spec]);
     }
 
+    /*
+     * CONCURRENTLY, not one after another.
+     *
+     * Eight subscribed instruments share four underlying series, and fetching
+     * them in sequence made a poll take as long as the sum of four round trips
+     * instead of the longest one. With the interval shorter than that sum, each
+     * poll started before the last had finished, which is how a feed that
+     * answers in 300ms ended up timing out at fifteen seconds and reporting
+     * nineteen failed reconnects while a plain curl to the same URL returned in
+     * a third of a second.
+     */
+    const groups = [...byVendorSymbol];
+    const results = await Promise.all(
+      groups.map(([vendorSymbol]) =>
+        this.request(
+          `${BASE_URL}/${encodeURIComponent(vendorSymbol)}?interval=1m&range=1d&includePrePost=true`,
+        ),
+      ),
+    );
+
     let anySuccess = false;
-    for (const [vendorSymbol, specs] of byVendorSymbol) {
-      const url = `${BASE_URL}/${encodeURIComponent(vendorSymbol)}?interval=1m&range=1d&includePrePost=true`;
-      const result = await this.request(url);
+    for (let i = 0; i < groups.length; i += 1) {
+      const result = results[i];
       if (!result) continue;
       anySuccess = true;
+      const [, specs] = groups[i]!;
+      // One observedAt per payload, so the latency measurement is against the
+      // response that carried this price and not against a sibling's.
+      this.observedAt = this.observedAtByUrl.get(groups[i]![0]) ?? Date.now();
       for (const spec of specs) this.publishFrom(spec, result);
     }
 
     if (anySuccess) {
+      this.consecutiveFailures = 0;
       if (this.state !== 'CONNECTED') {
         this.state = 'CONNECTED';
         this.reconnectAttempts = 0;
@@ -388,8 +473,63 @@ export class YahooDelayedProvider implements DescribableProvider {
         this.emitStatus();
       }
     } else if (this.subscribed.size > 0) {
+      this.consecutiveFailures += 1;
       this.markReconnecting('No symbol returned data');
     }
+  }
+
+  /**
+   * When to poll next.
+   *
+   * The vendor publishes a new price about every ten and a half seconds,
+   * measured. Polling every five seconds therefore asked twice and learned
+   * once, and polling faster would only have raised the request rate that got
+   * the feed throttled in the first place. So the schedule follows the OBSERVED
+   * cadence: wake up shortly after the next reading is due, which cuts the
+   * detection delay to about a second while making FEWER requests than a fixed
+   * five-second interval did.
+   *
+   * On failure it backs off, because hammering a feed that is refusing is what
+   * turns a hiccup into the wedged state described above. The cap is deliberate
+   * - a feed must always come back on its own.
+   */
+  private nextDelayMs(): number {
+    if (this.consecutiveFailures > 0) {
+      /*
+       * Exponential, and deliberately without jitter.
+       *
+       * Jitter exists to stop many independent clients retrying in lockstep,
+       * and there is exactly one provider here polling a grouped set of
+       * symbols on one schedule - so it would buy nothing, and `Math.random`
+       * has no business in a file that carries prices. The repository has a
+       * test that enforces that, and it is right to.
+       */
+      return Math.min(
+        MAX_BACKOFF_MS,
+        this.options.pollIntervalMs * 2 ** Math.min(6, this.consecutiveFailures),
+      );
+    }
+
+    const cadence = this.observedCadenceMs;
+    // Nothing observed yet: fall back to the configured interval rather than
+    // to the minimum, which would poll once a second until the first reading.
+    if (cadence <= 0 || this.lastNewReadingAt === null) return this.options.pollIntervalMs;
+
+    const due = cadence - (Date.now() - this.lastNewReadingAt);
+    // Just after it is due, never longer than the cadence, never a busy loop.
+    return Math.max(MIN_POLL_MS, Math.min(cadence, due + POLL_OVERSHOOT_MS));
+  }
+
+  /** Reschedule the next poll from the current cadence estimate. */
+  private schedule(): void {
+    if (this.stopped) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      void this.pollOnce()
+        .catch(() => {})
+        .finally(() => this.schedule());
+    }, this.nextDelayMs());
+    this.timer.unref?.();
   }
 
   private markReconnecting(message: string): void {
@@ -401,13 +541,20 @@ export class YahooDelayedProvider implements DescribableProvider {
 
   private async request(url: string): Promise<YahooChartResult | null> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.requestTimeoutMs ?? 15_000);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
+    );
     try {
       const response = await this.doFetch(url, {
         headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
         signal: controller.signal,
       });
       this.lastMessageAt = Date.now();
+      // The instant this payload became ours. Everything after it is Atlas's
+      // own latency and is measured against it; see marketdata/latency.ts.
+      this.observedAt = this.lastMessageAt;
+      this.observedAtByUrl.set(this.vendorSymbolOfUrl(url), this.lastMessageAt);
       if (!response.ok) {
         this.markReconnecting(`HTTP ${response.status}`);
         return null;
@@ -444,6 +591,7 @@ export class YahooDelayedProvider implements DescribableProvider {
     if (price != null && Number.isFinite(price) && isPlausibleExchangeTs(marketTs)) {
       this.measuredDelaySeconds = Math.max(0, (Date.now() - marketTs) / 1000);
       this.lastEventAt = marketTs;
+      this.noteReading(marketTs);
 
       const seq = (this.seqBySymbol.get(spec.root) ?? 0) + 1;
       this.seqBySymbol.set(spec.root, seq);
@@ -462,11 +610,11 @@ export class YahooDelayedProvider implements DescribableProvider {
         synthesizedBook: false,
       };
       this.quotes.set(spec.root, quote);
-      this.emit({ kind: 'quote', quote });
+      this.emit({ kind: 'quote', quote, observedAt: this.observedAt });
     }
 
     for (const bar of this.newBars(spec.root, this.extractBars(spec, result, { marketTs, barMs: 60_000 }))) {
-      this.emit({ kind: 'bar', bar });
+      this.emit({ kind: 'bar', bar, observedAt: this.observedAt });
     }
   }
 

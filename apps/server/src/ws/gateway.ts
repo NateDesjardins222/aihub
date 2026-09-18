@@ -390,11 +390,21 @@ export class MarketDataGateway {
 
   private publish(stream: string, data: unknown): void {
     const frame = this.registry.next(stream, data);
+    /*
+     * `observedAt` rides on the frame so the browser can measure the half of
+     * the path the server cannot see - wire, store, render, paint - against
+     * the same instant the server measured its own half against. Without it
+     * the client could only compare against its own clock, which is not the
+     * server's.
+     */
+    const timing =
+      data !== null && typeof data === 'object' ? this.market.bus.latency.timingFor(data) : null;
     const payload: ServerFrame = {
       t: 'delta',
       stream,
       seq: frame.seq,
       serverTime: Date.now(),
+      ...(timing ? { observedAt: timing.observedAt } : {}),
       data,
     };
     const encoded = JSON.stringify(payload);
@@ -402,6 +412,7 @@ export class MarketDataGateway {
       if (!client.streams.has(stream)) continue;
       this.raw(client, encoded);
     }
+    if (data !== null && typeof data === 'object') this.market.bus.latency.markSent(data);
   }
 
   private tick(): void {

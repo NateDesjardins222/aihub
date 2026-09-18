@@ -15,11 +15,22 @@ import type {
   NormalizedTrade,
 } from '@atlas/contracts';
 
+/**
+ * When the vendor response that produced this event was parsed.
+ *
+ * Optional because a provider is not obliged to measure itself, and absent on
+ * status events, which carry no market observation. It is the start of the only
+ * half of the latency path Atlas controls, so it is worth threading.
+ */
+interface Observed {
+  readonly observedAt?: number;
+}
+
 export type ProviderEvent =
-  | { readonly kind: 'quote'; readonly quote: NormalizedQuote }
-  | { readonly kind: 'trade'; readonly trade: NormalizedTrade }
-  | { readonly kind: 'bar'; readonly bar: NormalizedBar }
-  | { readonly kind: 'depth'; readonly depth: NormalizedDepth }
+  | ({ readonly kind: 'quote'; readonly quote: NormalizedQuote } & Observed)
+  | ({ readonly kind: 'trade'; readonly trade: NormalizedTrade } & Observed)
+  | ({ readonly kind: 'bar'; readonly bar: NormalizedBar } & Observed)
+  | ({ readonly kind: 'depth'; readonly depth: NormalizedDepth } & Observed)
   | { readonly kind: 'status'; readonly status: ConnectionStatus };
 
 export type ProviderListener = (event: ProviderEvent) => void;

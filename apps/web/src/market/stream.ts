@@ -20,6 +20,7 @@ import type {
   Timeframe,
 } from '@atlas/contracts';
 import { getAccessToken } from '../api/client';
+import { clientLatency } from './latency';
 
 type Listener<T> = (value: T) => void;
 
@@ -39,6 +40,16 @@ export interface StreamDiagnostics {
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 15_000;
 const PING_INTERVAL_MS = 10_000;
+
+/**
+ * The symbol a market stream is about, or null for a stream that is not about
+ * one. `md.quote.NQ` -> `NQ`.
+ */
+function symbolOfStream(stream: string): string | null {
+  if (!stream.startsWith('md.')) return null;
+  const parts = stream.split('.');
+  return parts.length >= 3 ? (parts[2] ?? null) : null;
+}
 
 export class MarketStream {
   private socket: WebSocket | null = null;
@@ -194,6 +205,10 @@ export class MarketStream {
           this.send({ t: 'resume', stream: frame.stream, lastSeq: previous });
         }
         this.lastSeq.set(frame.stream, frame.seq);
+        // Start the browser's half of the latency measurement before the
+        // payload is dispatched, so the dispatch itself is inside it.
+        const symbol = symbolOfStream(frame.stream);
+        if (symbol) clientLatency.received(symbol, frame.observedAt);
         this.dispatch(frame.stream, frame.data);
         return;
       }

@@ -12,6 +12,14 @@ import { getInstrument, listInstruments, requireInstrument, tradingDate } from '
 import { anchorsWithin, secondsToBucketClose } from '@atlas/core';
 import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
+import { env } from '../../config/env.js';
+import type { MarketDataProvider } from '../../marketdata/provider.js';
+
+/** The poll schedule, when the active provider keeps one. */
+function describePoll(provider: MarketDataProvider): unknown {
+  const p = provider as { pollDiagnostics?: () => unknown };
+  return typeof p.pollDiagnostics === 'function' ? p.pollDiagnostics() : null;
+}
 import type { MarketDataService } from '../../marketdata/service.js';
 import type { SessionRecorder } from '../../marketdata/recorder.js';
 import type { TradingEngine } from '../../trading/engine.js';
@@ -108,6 +116,42 @@ export function marketDataRoutes(deps: MarketDataRouteDeps) {
           page.bars.length > 0
             ? secondsToBucketClose(spec, Date.now(), query.timeframe)
             : null,
+      });
+    });
+
+    /**
+     * The latency path, at p50/p95/p99.
+     *
+     * `vendor` is the feed's own delay and is not ours to fix; `atlas` is the
+     * part this server is responsible for. They are reported separately so an
+     * improvement in one can never be claimed as an improvement in the other.
+     */
+    app.get('/latency', async (_request, reply) => {
+      const report = deps.market.bus.latency.report();
+      return reply.send({
+        ...report,
+        aggregators: deps.market.aggregatorCounters(),
+        /*
+         * How long this process has been up.
+         *
+         * Every counter below is since start-up, so a reading without this is
+         * uninterpretable: two samples of a restarted server look like counters
+         * that went backwards, which cost an hour of chasing a defect that was
+         * a development file-watcher doing its job.
+         */
+        uptimeMs: Math.round(process.uptime() * 1000),
+        /**
+         * What the poll schedule currently believes.
+         *
+         * `pollIntervalMs` is only the seed: the live provider follows the
+         * cadence it MEASURES, so this is what it is actually doing.
+         */
+        poll: describePoll(deps.market.currentProvider),
+        pollIntervalMs: env().MARKET_DATA_POLL_MS,
+        note:
+          'vendor = exchange timestamp to the poll response landing. atlas = that ' +
+          'response landing to the frame leaving the socket. The browser measures ' +
+          'wire to paint and reports it in window.__atlasLatency.',
       });
     });
 

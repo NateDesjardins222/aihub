@@ -15,6 +15,7 @@
 import { EventEmitter } from 'node:events';
 import { getInstrument } from '@atlas/instruments';
 import { PriceIntegrity } from './price-integrity.js';
+import { LatencyRecorder } from './latency.js';
 import type {
   ConnectionStatus,
   NormalizedBar,
@@ -70,6 +71,15 @@ export class MarketEventBus {
    */
   readonly integrity = new PriceIntegrity();
 
+  /**
+   * How long each observation took to get here, and to get out again.
+   *
+   * On the bus because the bus is the one place every observation passes
+   * through, and because the socket gateway needs to close the measurement out
+   * on the same object the provider opened it on.
+   */
+  readonly latency = new LatencyRecorder();
+
   constructor() {
     // Many charts and many accounts can watch one symbol.
     this.emitter.setMaxListeners(0);
@@ -119,6 +129,7 @@ export class MarketEventBus {
 
     c.lastQuoteTs = quote.exchangeTs;
     this.record(quote.symbol);
+    this.latency.markPublished(quote);
     this.emitter.emit('quote', quote);
     this.emitter.emit(`quote:${quote.symbol}`, quote);
     return true;
@@ -158,6 +169,7 @@ export class MarketEventBus {
       }
     }
     this.record(bar.symbol);
+    this.latency.markPublished(bar);
     this.emitter.emit('bar', bar);
     this.emitter.emit(`bar:${bar.symbol}`, bar);
     return true;
