@@ -553,7 +553,20 @@ try {
   );
 
   // --- 15. volume is an indicator, not furniture ---------------------------
-  const paneHeightBefore = (await page.locator('[data-pane=p1] .chart-canvas').boundingBox()).height;
+  /*
+   * Measured on the PRICE pane, not on the chart container.
+   *
+   * The container holds every pane and its height never changes; what volume
+   * takes and gives back is the price plot's share of it. Measuring the
+   * container reported "812px -> 812px" and said nothing.
+   */
+  const pricePaneHeight = () =>
+    page.evaluate(() => {
+      const table = document.querySelector('[data-pane=p1] table');
+      const row = table?.querySelector('tr');
+      return row ? row.getBoundingClientRect().height : null;
+    });
+  const paneHeightBefore = await pricePaneHeight();
   await page.click('[data-pane=p1] .chdr-btn:has-text("Indicators")');
   await page.waitForTimeout(600);
   await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Volume")');
@@ -566,8 +579,10 @@ try {
     await page.waitForTimeout(1_400);
   }
   await record('volume-removed', 1_200);
-  const paneHeightAfter = (await page.locator('[data-pane=p1] .chart-canvas').boundingBox()).height;
-  console.log(`  chart height ${Math.round(paneHeightBefore)}px -> ${Math.round(paneHeightAfter)}px after removing volume`);
+  const paneHeightAfter = await pricePaneHeight();
+  console.log(
+    `  price pane ${paneHeightBefore === null ? '?' : Math.round(paneHeightBefore)}px with volume -> ${paneHeightAfter === null ? '?' : Math.round(paneHeightAfter)}px without it`,
+  );
 
   // --- 16. panel resizing, and the left rail -------------------------------
   const splitter = await page.locator('.splitter-v').boundingBox();
@@ -607,7 +622,10 @@ try {
   await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
   await page.waitForTimeout(3_000);
   await clearDrawings(page);
-  for (let i = 0; i < 8; i += 1) {
+  // Every one of them: the walkthrough adds indicators in four sections, and a
+  // loop that stops at eight leaves three RSI panes squeezing the price plot
+  // in the frame this pass exists to produce.
+  for (let i = 0; i < 30; i += 1) {
     const remove = page.locator('[data-testid=indicator-row] .ind-btn-danger').first();
     if ((await remove.count()) === 0) break;
     await remove.click();
