@@ -4,3 +4,4 @@ export * from './fold.js';
 export * from './aggregator.js';
 export * from './gaps.js';
 export * from './anchors.js';
+export * from './invariants.js';

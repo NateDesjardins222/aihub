@@ -11,7 +11,15 @@
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import type { InstrumentSpec, NormalizedBar, Timeframe } from '@atlas/contracts';
 import { priceToTicks, requireInstrument, ticksToPrice } from '@atlas/instruments';
-import { TIMEFRAME_MS, findMarketGaps, foldBars, hasTailGap, isCalendarTimeframe } from '@atlas/core';
+import {
+  TIMEFRAME_MS,
+  checkBars,
+  describeViolations,
+  findMarketGaps,
+  foldBars,
+  hasTailGap,
+  isCalendarTimeframe,
+} from '@atlas/core';
 import type { Database } from '../db/client.js';
 import { historicalBars } from '../db/schema.js';
 import type { MarketDataProvider } from './provider.js';
@@ -35,6 +43,14 @@ export interface BarPage {
   /** Set when the provider, not the cache, is what limits the depth. */
   readonly limitReason: string | null;
   readonly source: 'CACHE' | 'PROVIDER' | 'MIXED';
+  /**
+   * How many of this page's bars broke an invariant, and the first one.
+   *
+   * Reported rather than repaired. A page that violates its own contract is a
+   * fact the client should be able to see and a test should be able to assert,
+   * not something a trader is left to notice on a chart.
+   */
+  readonly integrity: { readonly violations: number; readonly first: string | null };
 }
 
 export interface BarQuery {
@@ -114,7 +130,23 @@ export class BarService {
         ? `Development feed serves at most ${providerLimit} days of ${tf} history.`
         : null,
       source,
+      integrity: this.integrity(spec, tf, cached),
     };
+  }
+
+  /** Check a page against the invariants and log anything it breaks. */
+  private integrity(
+    spec: InstrumentSpec,
+    tf: Timeframe,
+    bars: readonly NormalizedBar[],
+  ): BarPage['integrity'] {
+    const violations = checkBars(spec, tf, bars);
+    const first = describeViolations(violations);
+    if (first) {
+      // Loud, because there is no benign explanation for one of these.
+      console.error(`[bar-integrity] ${spec.root} ${tf}: ${first}`);
+    }
+    return { violations: violations.length, first };
   }
 
   /** Serve directly from the provider, bypassing the live-data cache entirely. */
@@ -138,6 +170,7 @@ export class BarService {
           ? 'The replay has not emitted any bars yet. Press play.'
           : 'Replaying a recorded session: history is limited to what the replay has emitted.',
       source: 'PROVIDER',
+      integrity: this.integrity(spec, tf, bars),
     };
   }
 

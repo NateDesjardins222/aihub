@@ -10,6 +10,8 @@ export interface BarsResponse {
   nextCursor: number | null;
   limitReason: string | null;
   source: 'CACHE' | 'PROVIDER' | 'MIXED';
+  /** How many bars in this page broke an invariant. Should always be zero. */
+  integrity: { violations: number; first: string | null };
   provider: string;
   mode: 'DELAYED' | 'REALTIME' | 'REPLAY';
   pricePrecision: number;

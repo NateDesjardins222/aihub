@@ -555,3 +555,57 @@ describe('a stale print does not invent a bar in the past', () => {
     expect(agg.latest('1m')!.close).toBe(20_018);
   });
 });
+
+describe('the forming bar\'s open belongs to the feed', () => {
+  const spec = requireInstrument('GC');
+
+  it('a print opens the bucket when the feed has not published one', () => {
+    const agg = new CandleAggregator(spec, { baseTimeframe: '1m' });
+    agg.ingestPrice(4388.3, 1789700885000);
+    expect(agg.latest('1m')).toMatchObject({ open: 4388.3, close: 4388.3 });
+  });
+
+  it("but the feed's bar takes the open back the moment it arrives", () => {
+    /*
+     * The defect this proves fixed, measured on the live feed at 22:08 CT:
+     * gold's real open for the minute was 4387.50 and Atlas was showing
+     * 4388.30 - the first price it happened to see - eight ticks away on a
+     * candle a trader was looking at.
+     */
+    const agg = new CandleAggregator(spec, { baseTimeframe: '1m' });
+    agg.ingestPrice(4388.3, 1789700885000);
+    agg.ingestBar({
+      symbol: 'GC',
+      time: 1789700880000,
+      open: 4387.5,
+      high: 4388.3,
+      low: 4385.9,
+      close: 4385.9,
+      volume: 0,
+      closed: false,
+    });
+    const bar = agg.latest('1m')!;
+    expect(bar.open).toBe(4387.5);
+    // The print is still newer than the feed's snapshot, so it keeps the close,
+    // and the range covers everything either source saw.
+    expect(bar.close).toBe(4388.3);
+    expect(bar.high).toBe(4388.3);
+    expect(bar.low).toBe(4385.9);
+  });
+
+  it('a later print cannot move the open again', () => {
+    const agg = new CandleAggregator(spec, { baseTimeframe: '1m' });
+    agg.ingestBar({
+      symbol: 'GC',
+      time: 1789700880000,
+      open: 4387.5,
+      high: 4387.6,
+      low: 4387.4,
+      close: 4387.5,
+      volume: 10,
+      closed: false,
+    });
+    agg.ingestPrice(4390.0, 1789700890000);
+    expect(agg.latest('1m')).toMatchObject({ open: 4387.5, high: 4390, close: 4390 });
+  });
+});

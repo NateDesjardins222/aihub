@@ -254,6 +254,17 @@ export class CandleAggregator {
    * so a fresh vendor snapshot must never shrink the range we have already
    * observed. Volume likewise only accumulates; taking the larger of the two
    * protects against a vendor republishing a partial count.
+   *
+   * THE OPEN IS THE FEED'S, NOT OURS. A price print can reach us before the
+   * feed's bar for that minute does, and `ingestPrice` has to open a bucket
+   * from it or the live candle would not move at all. But that open is the
+   * first price ATLAS happened to see, not the minute's first trade, and the
+   * audit caught the difference: at 22:08 gold's real open was 4387.50 and
+   * Atlas was showing 4388.30, eight ticks away, on a candle a trader was
+   * looking at. It corrected itself when the minute closed, which is why every
+   * closed bar reconciles - and "wrong until it is too late to matter" is not
+   * a standard. As soon as the feed has a bar for the bucket, that bar owns the
+   * open and the print stream is left with the high, the low and the close.
    */
   private merge(bar: NormalizedBar): NormalizedBar {
     if (bar.closed) {
@@ -272,7 +283,7 @@ export class CandleAggregator {
 
     return {
       ...bar,
-      open: existing.open,
+      open: bar.open,
       high: Math.max(existing.high, bar.high, close),
       low: Math.min(existing.low, bar.low, close),
       close,

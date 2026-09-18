@@ -100,6 +100,7 @@ export function marketDataRoutes(deps: MarketDataRouteDeps) {
         nextCursor: page.nextCursor,
         limitReason: page.limitReason,
         source: page.source,
+        integrity: page.integrity,
         provider: deps.market.currentProvider.id,
         mode: deps.market.currentProvider.mode,
         pricePrecision: spec.pricePrecision,
