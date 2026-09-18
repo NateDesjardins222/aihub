@@ -41,6 +41,9 @@ import './ChartPanel.css';
 /** One frozen empty list, so a pane with no indicators is a stable reference. */
 const EMPTY_INDICATORS: readonly IndicatorInstance[] = [];
 
+/** How often an empty chart may ask for history again, in milliseconds. */
+const EMPTY_RELOAD_MS = 1_500;
+
 const INITIAL_BARS = 1_200;
 const PAGE_BARS = 1_000;
 
@@ -129,6 +132,7 @@ export function ChartPanel({
    * into them.
    */
   const routedToReplay = useReplayStatus((s) => s.isReplay);
+  const replayCursor = useReplayStatus((s) => s.cursor);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const adapterRef = useRef<LightweightChartsAdapter | null>(null);
@@ -145,8 +149,23 @@ export function ChartPanel({
    * and the stream agree on what they are showing.
    */
   const seriesTimeframeRef = useRef<Timeframe | null>(null);
-  /** What the series currently holds, so an empty reload can be recognised. */
-  const loadedSeriesRef = useRef<{ symbol: string; timeframe: Timeframe } | null>(null);
+  /**
+   * Bumped to ask for history again - see the stream handler, which does it
+   * when a source that answered empty starts producing bars.
+   */
+  const [historyEpoch, setHistoryEpoch] = useState(0);
+  const emptyReloadRef = useRef(-Infinity);
+  /**
+   * What the series currently holds, so an empty reload can be recognised -
+   * INCLUDING which market data source it came from, because an empty reload
+   * from a different source is not the same event as an empty reload from the
+   * same one.
+   */
+  const loadedSeriesRef = useRef<{
+    symbol: string;
+    timeframe: Timeframe;
+    provider: string;
+  } | null>(null);
   /**
    * The visual motion layer.
    *
@@ -368,13 +387,28 @@ export function ChartPanel({
 
         adapter.setTimeframe(timeframe);
 
-        // An EMPTY response over the same instrument leaves the series alone.
-        // Switching to a replay that has not emitted anything yet would
-        // otherwise wipe the chart, and with no series there is no price scale:
-        // every order marker loses its coordinate and disappears.
+        /*
+         * An EMPTY response over the same instrument AND THE SAME SOURCE
+         * leaves the series alone: a momentary empty page is not a reason to
+         * wipe the chart, and with no series there is no price scale, so every
+         * order marker loses its coordinate.
+         *
+         * An empty response from a DIFFERENT source is the opposite case, and
+         * it used to be treated as the same one. Loading a replay that has not
+         * emitted a bar yet left the live session's candles on the screen while
+         * the account was priced against the recording: NQ read 29720 in the
+         * status line, the position was marked at 29458, and the position
+         * marker sat clamped to the bottom edge because its price was nowhere
+         * near the range being displayed. Dragging a stop off it then produced
+         * a target, because the level the pointer was over was on the other
+         * side of a market that was not the market being traded.
+         *
+         * An empty chart that says why is honest. The old behaviour was not.
+         */
         const sameSeries =
           loadedSeriesRef.current?.symbol === activeSymbol &&
-          loadedSeriesRef.current?.timeframe === timeframe;
+          loadedSeriesRef.current?.timeframe === timeframe &&
+          loadedSeriesRef.current?.provider === page.provider;
         if (page.bars.length === 0 && sameSeries && adapter.barCount > 0) {
           setHistoryNote(page.limitReason);
           seriesTimeframeRef.current = timeframe;
@@ -382,7 +416,7 @@ export function ChartPanel({
         }
 
         adapter.applyHistory(page.bars);
-        loadedSeriesRef.current = { symbol: activeSymbol, timeframe };
+        loadedSeriesRef.current = { symbol: activeSymbol, timeframe, provider: page.provider };
         seriesTimeframeRef.current = timeframe;
         // The recent session at a readable spacing, not every bar ever loaded.
         adapter.showRecent();
@@ -403,7 +437,23 @@ export function ChartPanel({
         if (token === loadTokenRef.current) setLoading(false);
       }
     })();
-  }, [activeSymbol, timeframe, instrument, routedToReplay]);
+  }, [activeSymbol, timeframe, instrument, routedToReplay, historyEpoch]);
+
+  /*
+   * An empty chart asks again once the recording has something.
+   *
+   * Restart, Step, Skip and Seek all move a PAUSED replay, and a paused replay
+   * puts nothing on the stream to say so. Without this, loading a recording and
+   * skipping half an hour into it left the chart on the empty state it was
+   * correctly given at cursor zero, for the rest of the session. The condition
+   * is deliberately narrow - only while the chart holds nothing - so a replay
+   * that is playing normally re-fetches nothing.
+   */
+  useEffect(() => {
+    if (!routedToReplay || replayCursor === 0) return;
+    if ((adapterRef.current?.barCount ?? 0) > 0) return;
+    setHistoryEpoch((epoch) => epoch + 1);
+  }, [routedToReplay, replayCursor]);
 
   // -- live bars, straight from the stream into the chart ------------------
   useEffect(() => {
@@ -425,6 +475,25 @@ export function ChartPanel({
       if (!sawLiveBarRef.current) {
         sawLiveBarRef.current = true;
         setHistoryNote(null);
+      }
+      /*
+       * The first bar of a source that had nothing to show brings its history
+       * with it.
+       *
+       * A replay that has not been played yet answers the history request with
+       * an empty page, and the chart correctly shows nothing. What it must not
+       * do is stay empty for the rest of the session: the moment the recording
+       * emits, everything it has emitted so far is worth asking for again. The
+       * timestamp keeps a source that is genuinely empty from asking once per
+       * bar.
+       */
+      const adapter = adapterRef.current;
+      if (adapter && adapter.barCount === 0) {
+        const now = performance.now();
+        if (now - emptyReloadRef.current > EMPTY_RELOAD_MS) {
+          emptyReloadRef.current = now;
+          setHistoryEpoch((epoch) => epoch + 1);
+        }
       }
     });
 

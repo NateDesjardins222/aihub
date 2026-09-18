@@ -14,6 +14,7 @@ import { createReport, launch, shot, signIn, useAccount, useSymbol, waitFor } fr
 const { say, finish } = createReport('drag-protect');
 const { browser, page, errors } = await launch();
 
+
 const positionText = async () =>
   ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');
 
@@ -36,6 +37,46 @@ async function dragOffMarker(dy) {
   await page.mouse.up();
   await page.waitForTimeout(3500);
   return preview;
+}
+
+/** Drag from the position marker to an absolute page y. */
+async function dragToY(y) {
+  const marker = await page.locator('[data-testid=marker-position]').boundingBox();
+  const from = { x: marker.x + marker.width / 2, y: marker.y + marker.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  const half = from.y + (y - from.y) / 2;
+  await page.mouse.move(from.x - 60, half, { steps: 6 });
+  await page.mouse.move(from.x - 60, y, { steps: 6 });
+  const preview = await page.locator('[data-testid=marker-preview]').count();
+  await page.mouse.up();
+  await page.waitForTimeout(3500);
+  return preview;
+}
+
+/**
+ * The price the POSITION is marked at.
+ *
+ * Not the chart's last close, which can be a few ticks away from it while a
+ * paused replay is being stepped - and a few ticks is a long way once the
+ * chart is zoomed in. Which leg a drag creates is decided against the mark, so
+ * the mark is what the gesture is aimed at.
+ */
+async function markPrice() {
+  await page.click('.tab:text-is("Positions")');
+  await page.waitForTimeout(500);
+  const cell = ((await page.locator('.data-table tbody tr td').nth(4).textContent()) ?? '').trim();
+  const value = Number(cell.replace(/,/g, ''));
+  if (!Number.isFinite(value)) throw new Error(`no mark price in the blotter: ${cell}`);
+  return value;
+}
+
+/** Where a price sits on the page, in absolute pixels. */
+async function priceY(price) {
+  const box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+  const y = await page.evaluate((p) => window.__atlasChartView?.(undefined, p)?.yAtPrice ?? null, price);
+  if (y === null) throw new Error(`the chart cannot place ${price}`);
+  return box.y + y;
 }
 
 /** Advance the paused replay by one market event. */
@@ -205,19 +246,29 @@ try {
 
   say(await openPosition('buy'), 'a fresh long for the execution check');
 
-  // A STOP just below the entry, created by the gesture and then dragged up
-  // to within a few points of the market. At 100x the replay advances about
-  // one bar every 0.6s, so a level twenty points away is not reached inside a
-  // test; a level a few points away is reached almost at once.
-  const previewClose = await dragOffMarker(30);
+  /*
+   * A STOP, created by the gesture and then moved to within a few points of
+   * the market. At 100x the replay advances about one bar every 0.6s, so a
+   * level twenty points away is not reached inside a test; a level a few
+   * points away is reached almost at once.
+   *
+   * Both the release and the later move are measured from the MARKET, not from
+   * the position marker. Which leg a drag creates is decided by which side of
+   * the market it lands on - that is the engine's rule, and the chart follows
+   * it - so a gesture anchored to the entry asks for a stop and gets a target
+   * whenever the position happens to be underwater at that moment. The market
+   * is the thing the answer depends on, so the gesture is aimed at it.
+   */
+  const previewClose = await dragToY((await priceY(await markPrice())) + 46);
   say(previewClose === 1, 'a stop previews');
   say((await page.locator('[data-marker=stop]').count()) === 1, 'the stop is created by the drag');
 
-  const marker = await page.locator('[data-testid=marker-position]').boundingBox();
   const stopTag = await page.locator('[data-testid=marker-stop]').boundingBox();
   await page.mouse.move(stopTag.x + stopTag.width / 2, stopTag.y + stopTag.height / 2);
   await page.mouse.down();
-  await page.mouse.move(stopTag.x + stopTag.width / 2, marker.y + marker.height + 4, { steps: 10 });
+  await page.mouse.move(stopTag.x + stopTag.width / 2, (await priceY(await markPrice())) + 6, {
+    steps: 10,
+  });
   await page.mouse.up();
   await page.waitForTimeout(3500);
   const level = ((await page.locator('[data-testid=marker-stop] .pm-price').textContent()) ?? '').trim();

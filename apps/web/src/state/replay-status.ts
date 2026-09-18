@@ -23,6 +23,15 @@ interface ReplayStatusState {
   /** True when a replay is routed AND not advancing. */
   replayPaused: boolean;
   blind: boolean;
+  /**
+   * How many events the recording has emitted.
+   *
+   * Published because a chart that has nothing to draw needs to know whether
+   * the recording has anything to give it yet: a replay is moved by Restart,
+   * Step, Skip and Seek as well as by Play, and a paused one sends no bars
+   * over the stream to announce that it moved.
+   */
+  cursor: number;
   set: (patch: Partial<Omit<ReplayStatusState, 'set'>>) => void;
 }
 
@@ -30,6 +39,7 @@ export const useReplayStatus = create<ReplayStatusState>((set) => ({
   isReplay: false,
   replayPaused: false,
   blind: false,
+  cursor: 0,
   set: (patch) => set(patch),
 }));
 
@@ -48,6 +58,7 @@ export async function refreshReplayStatus(): Promise<void> {
       isReplay: routed,
       replayPaused: routed && status.replay.loaded && !status.replay.playing,
       blind: status.replay.blind,
+      cursor: status.replay.cursor,
     });
   } catch {
     // The badge simply keeps its last value; it is chrome.

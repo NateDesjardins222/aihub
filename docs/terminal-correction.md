@@ -287,6 +287,21 @@ day drilldown and a trade's detail, practice, the ticket's presets, all five
 blotter tabs, the blotter collapsed, every settings section, and back to a
 clean single chart.
 
+I ran it, opened every one of the thirty-nine screenshots and looked at them.
+Five things were visibly wrong and are fixed; the pass was then re-run and each
+fix re-checked in the same shot that had shown the fault.
+
+| what the screenshot showed | why | fix |
+| --- | --- | --- |
+| The object tree opened downwards from a button 20px clear of the bottom edge, so eleven objects and the "remove all" action shared a 169px slot | every popover opened downwards, unconditionally | a popover flips above its anchor when the space below is cramped and there is more of it above (`verticalPlacement`, unit-tested) |
+| "MA 20 close" printed through the OHLC in a narrow pane | the legend was pinned 26px down, which is right only while the status line is one line - two charts and the journal wrap it onto three | the legend reads the status line's height each frame and starts below it |
+| A position tool's coordinates clipped "29700.50" to "2970(", and the dialog ended halfway through a checkbox row | a price was given the 66px width a contract count gets, and the dialog was capped at 640px in a 1050px window | wider price fields; both dialogs tall enough for their longest panel |
+| Every colour well in the settings dialog looked the same pale grey | Chromium's swatch sits inside its own 4px wrapper with a light border of its own | the wrapper's padding and the swatch's border are zeroed |
+| The journal printed an exit of "29455.5" beside an entry of "29460.75" | the number was rendered raw rather than at the instrument's precision | prices are formatted at the instrument's `pricePrecision` |
+| A practice account's profit target read "$1,000,000.00", a goal it was 0.01% of the way towards | the practice template carries an unreachable placeholder rather than no target | the blotter prints "no target" for a practice account |
+
+The screenshots behind these are `docs/milestones/terminal-correction/`.
+
 ---
 
 ## What is NOT finished
@@ -343,6 +358,11 @@ Each one was found by using the terminal, not by reading the code.
 9. **The price pane shrank to 40% of the chart** with four oscillators under it.
 10. **The order ticket grew past its height budget** because the preset row
     wrapped at the default panel width.
+11. **The object tree was unusable at the bottom of the rail** - see the manual
+    pass table above, along with the legend collision, the clipped coordinate
+    fields, the pale colour wells, the unpadded journal price and the practice
+    account's fictional profit target. Those six were found by looking at the
+    screenshots, which is what the screenshots are for.
 
 ---
 

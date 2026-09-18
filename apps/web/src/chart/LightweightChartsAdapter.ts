@@ -838,7 +838,31 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * render. It reads bars and writes series; it can never write a bar.
    */
   private renderIndicators(options: { tailOnly?: boolean } = {}): void {
-    if (!this.chart || this.bars.length === 0) return;
+    if (!this.chart) return;
+
+    /*
+     * No bars, no indicators.
+     *
+     * Returning early here used to leave every indicator series holding what
+     * it last computed, which is fine while the chart is merely waiting and
+     * wrong the moment the bars were cleared because the MARKET changed. A
+     * replay that has not emitted yet would clear the candles and keep the
+     * live session's moving average on the screen - and the price scale it
+     * implied, which put a replay-era position marker off the bottom of the
+     * chart. The series are kept, because their panes are the layout; what
+     * they hold is emptied.
+     */
+    if (this.bars.length === 0) {
+      for (const [key, entry] of this.indicatorSeries) {
+        entry.series.setData([]);
+        // The legend says "no value", not the value from the market that was
+        // being shown a moment ago.
+        this.legendValues.set(key, '—');
+      }
+      // A pane guide - RSI's 30 and 70 - is a reference level rather than a
+      // reading, so it stays where it is.
+      return;
+    }
 
     for (const instance of this.indicators) {
       if (!instance.visible) continue;
