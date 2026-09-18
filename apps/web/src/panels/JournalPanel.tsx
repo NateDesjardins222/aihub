@@ -72,6 +72,12 @@ export function JournalPanel(): JSX.Element {
    * row is requested than is shown, which is how the list knows there is more
    * without the server having to count anything.
    */
+  /**
+   * The server will not serve more than five thousand trades in one request,
+   * so the page size stops one short of it: asking for 5,001 is a rejected
+   * request and a journal that shows nothing at all.
+   */
+  const MAX_TRADES = 4_999;
   const [limit, setLimit] = useState(500);
   const [more, setMore] = useState(false);
 
@@ -81,7 +87,7 @@ export function JournalPanel(): JSX.Element {
     try {
       const [a, t, g, s] = await Promise.all([
         journalApi.analytics(accountId),
-        journalApi.trades(accountId, { limit: limit + 1 }),
+        journalApi.trades(accountId, { limit: Math.min(limit + 1, MAX_TRADES + 1) }),
         journalApi.tags(),
         journalApi.sessions(accountId),
       ]);
@@ -95,7 +101,7 @@ export function JournalPanel(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [accountId, limit]);
+  }, [accountId, limit, MAX_TRADES]);
 
   useEffect(() => {
     void load();
@@ -169,7 +175,7 @@ export function JournalPanel(): JSX.Element {
           day={dayFilter}
           onClearDay={() => setDayFilter(null)}
           more={more && !dayFilter}
-          onMore={() => setLimit((was) => Math.min(5_000, was + 1_000))}
+          onMore={() => setLimit((was) => Math.min(MAX_TRADES, was + 1_000))}
         />
       ) : null}
       {tab === 'SESSIONS' ? (
