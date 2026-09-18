@@ -69,7 +69,20 @@ export function ThemePicker(): JSX.Element {
       <p className="st-note">
         Hover to try one on the real terminal. Nothing is saved until you pick one.
       </p>
-      <div className="th-grid" data-testid="theme-grid">
+      {/*
+        The pointer leaving is a property of the GRID, not of a card.
+
+        Moving from one card to the next fires a leave and an enter in the same
+        gesture, and restoring on the card's own leave makes the result depend
+        on which of the two the browser dispatches first. The grid only sees a
+        leave when the pointer is really gone, which is the moment the trader's
+        own theme should come back.
+      */}
+      <div
+        className="th-grid"
+        data-testid="theme-grid"
+        onMouseLeave={restore}
+      >
         {THEMES.map((theme) => (
           <button
             key={theme.id}
@@ -79,7 +92,6 @@ export function ThemePicker(): JSX.Element {
             aria-pressed={themeId === theme.id}
             onMouseEnter={() => preview(theme.id)}
             onFocus={() => preview(theme.id)}
-            onMouseLeave={restore}
             onBlur={restore}
             onClick={() => commit(theme.id)}
           >
