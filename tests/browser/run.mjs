@@ -29,6 +29,7 @@ const SUITES = [
   'stress',
   'perf-panes',
   'pane-resize',
+  'abuse',
   'visual',
   'tools',
   'replay-brackets',
