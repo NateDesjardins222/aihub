@@ -34,6 +34,7 @@ const SUITES = [
   'abuse',
   'live-indicators',
   'recovery',
+  'reconnect',
   'appearance',
   'tablet',
   'visual',

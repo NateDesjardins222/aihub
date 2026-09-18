@@ -12,6 +12,7 @@ import { useSession, selectedAccount, activeInstrument } from '../state/session'
 import { formatMicros } from '../state/format';
 import { useClock } from './usePersistentSize';
 import { useFreshness } from '../market/useFreshness';
+import { useStreamHealth } from '../market/useStreamHealth';
 import { useTrading } from '../trading/store';
 import { useWorkspace } from '../state/workspace';
 import { useChartStore } from '../state/chart-store';
@@ -35,6 +36,7 @@ export function AccountBar({
   const selectAccount = useSession((s) => s.selectAccount);
   const now = useClock();
   const freshness = useFreshness(instrument?.root ?? null);
+  const stream = useStreamHealth();
 
   // Live account figures, all computed server-side and pushed here.
   const pnl = useTrading((s) => s.pnl);
@@ -208,9 +210,32 @@ export function AccountBar({
             ? timeFormatter(appearance, exchangeZone, { seconds: true }).format(now)
             : MASK}
         </span>
+        {/*
+          The socket, when it is not there.
+
+          A dropped stream is the one failure a trader cannot see for
+          themselves: the chart keeps its last candle, the numbers keep their
+          last value, and everything looks fine until it matters. So it is
+          said plainly, once, in the place the feed is already described - and
+          only after the drop has outlived the reconnect that usually fixes it
+          within half a second.
+        */}
+        {stream.down ? (
+          <Pill text="RECONNECTING" tone="bad" testId="stream-down" />
+        ) : null}
         <Pill text={marketState} tone={marketState === 'OPEN' ? 'ok' : 'bad'} />
+        {/*
+          The feed's state, unless it is the session's state said twice.
+
+          Out of hours the bar read "CLOSED  MARKET CLOSED" - two pills, one
+          fact. The feed pill is for what the SESSION does not already
+          explain: a feed that has gone stale or silent while the market is
+          open, which is the case a trader has to know about.
+        */}
         {freshness && freshness.state !== 'FRESH' ? (
-          <Pill text={freshness.state.replace('_', ' ')} tone="warn" />
+          freshness.state === 'MARKET_CLOSED' && marketState !== 'OPEN' ? null : (
+            <Pill text={freshness.state.replace('_', ' ')} tone="warn" />
+          )
         ) : (
           <Pill text="DELAYED" tone="neutral" />
         )}
