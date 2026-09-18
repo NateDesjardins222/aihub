@@ -63,9 +63,24 @@ try {
   const labels = await page
     .locator('[data-testid=indicator-settings] .st-row-label')
     .allTextContents();
-  for (const wanted of ['Length', 'Source', 'Colour', 'Thickness', 'Line style', 'Opacity']) {
+  for (const wanted of [
+    'Length',
+    'Source',
+    'Smoothing',
+    'Colour',
+    'Thickness',
+    'Line style',
+    'Opacity',
+  ]) {
     say(labels.includes(wanted), `EMA exposes a real ${wanted.toLowerCase()} input`);
   }
+  const visibility = await page
+    .locator('[data-testid=indicator-settings] .st-row-label')
+    .allTextContents();
+  say(
+    visibility.some((label) => /shown on the chart/i.test(label)),
+    'and a visibility control in the same place as every other setting',
+  );
 
   await setNumber('Length', 9);
   let rows = await rowTexts();
@@ -81,6 +96,28 @@ try {
   say(
     rows.some((row) => /EMA 21/.test(row)) && !rows.some((row) => /EMA 9/.test(row)),
     'changing the length changes the indicator, not a copy of it',
+    rows.join(' / '),
+  );
+
+  // --- smoothing, on and off ----------------------------------------------
+  /*
+   * Smoothing is a second average applied to the LINE, and 1 means off. The
+   * legend has to say so when it is on and say nothing when it is not: a
+   * default that prints itself in the legend teaches a trader to ignore the
+   * legend.
+   */
+  await setNumber('Smoothing', 5);
+  rows = await rowTexts();
+  say(
+    rows.some((row) => /smoothed 5/.test(row)),
+    'turning smoothing on says so in the legend',
+    rows.join(' / '),
+  );
+  await setNumber('Smoothing', 1);
+  rows = await rowTexts();
+  say(
+    !rows.some((row) => /smoothed/.test(row)) && rows.some((row) => /EMA 21/.test(row)),
+    'and turning it off takes the word back out again',
     rows.join(' / '),
   );
 

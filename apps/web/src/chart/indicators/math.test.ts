@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { NormalizedBar } from '@atlas/contracts';
-import { atr, bollinger, ema, macd, rsi, sma, sourceValue, stdev, trueRange, vwap } from './math';
+import {
+  atr,
+  bollinger,
+  ema,
+  macd,
+  rsi,
+  sma,
+  smooth,
+  sourceValue,
+  stdev,
+  trueRange,
+  vwap,
+} from './math';
 
 /**
  * Indicator maths, checked against numbers worked out by hand.
@@ -174,5 +186,47 @@ describe('sourceValue', () => {
     expect(sourceValue(b, 'hl2')).toBe(7);
     expect(sourceValue(b, 'hlc3')).toBeCloseTo((10 + 4 + 8) / 3, 10);
     expect(sourceValue(b, 'ohlc4')).toBe(6);
+  });
+});
+
+describe('smooth', () => {
+  it('returns the series untouched when smoothing is off', () => {
+    const line = [null, 1, 2, 3];
+    expect(smooth(line, 1)).toEqual(line);
+    expect(smooth(line, 0)).toEqual(line);
+  });
+
+  it('averages the indicator output over its window', () => {
+    // [1,2,3,4] smoothed by 2 -> [null, 1.5, 2.5, 3.5]
+    expect(smooth([1, 2, 3, 4], 2)).toEqual([null, 1.5, 2.5, 3.5]);
+  });
+
+  it('emits nothing until the whole window is real', () => {
+    /*
+     * An indicator's output begins with nulls, and averaging across that
+     * boundary would produce a number from fewer samples than were asked for.
+     * A 3-wide window over [null, null, 4, 6, 8] can first speak at index 4.
+     */
+    expect(smooth([null, null, 4, 6, 8], 3)).toEqual([null, null, null, null, 6]);
+  });
+
+  it('smooths an EMA without inventing a value the EMA had not reached', () => {
+    const values = [10, 11, 12, 13, 14, 15, 16, 17];
+    const line = ema(values, 3);
+    const smoothed = smooth(line, 2);
+    for (let i = 0; i < values.length; i += 1) {
+      const point = smoothed[i];
+      if (point === null || point === undefined) continue;
+      const a = line[i - 1];
+      const b = line[i];
+      expect(a).not.toBeNull();
+      expect(b).not.toBeNull();
+      // Every smoothed point is the mean of two points the EMA actually had.
+      expect(point).toBeCloseTo(((a as number) + (b as number)) / 2, 10);
+    }
+    // And it never runs ahead of the line it is smoothing.
+    expect(smoothed.filter((v) => v !== null).length).toBeLessThan(
+      line.filter((v) => v !== null).length,
+    );
   });
 });

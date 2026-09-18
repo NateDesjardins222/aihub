@@ -11,7 +11,7 @@
  * has a gap - which is the truth about a window that is not full yet.
  */
 import type { NormalizedBar } from '@atlas/contracts';
-import { atr, bollinger, ema, macd, rsi, sma, sourceValue, vwap, type Source } from './math';
+import { atr, bollinger, ema, macd, rsi, sma, smooth, sourceValue, vwap, type Source } from './math';
 
 export type PlotKind = 'LINE' | 'HISTOGRAM';
 
@@ -141,6 +141,23 @@ const SOURCE: ParamDef = { key: 'source', label: 'Source', type: 'SOURCE' };
 const COLOUR: ParamDef = { key: 'color', label: 'Colour', type: 'COLOR' };
 
 /*
+ * Smoothing: a second average applied to the line itself.
+ *
+ * 1 means off, and off is the default - a moving average that silently
+ * averages itself again is not the indicator the trader asked for. It is here
+ * because the brief listed it among the settings an EMA must expose, and
+ * because a smoothed fast MA is a real technique rather than a decoration.
+ */
+const SMOOTHING: ParamDef = {
+  key: 'smoothing',
+  label: 'Smoothing',
+  type: 'NUMBER',
+  min: 1,
+  max: 200,
+  step: 1,
+};
+
+/*
  * Appearance, for every indicator that draws a line.
  *
  * These were fixed in code: an indicator could be given a colour and nothing
@@ -166,14 +183,17 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Moving averages',
     overlay: true,
     description: 'The mean of the last N values of the chosen source.',
-    params: [PERIOD, SOURCE, COLOUR, ...STYLE],
-    defaults: { ...STYLE_DEFAULTS, period: 20, source: 'close', color: '#4d8dff' },
+    params: [PERIOD, SOURCE, SMOOTHING, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, period: 20, source: 'close', smoothing: 1, color: '#4d8dff' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
         plot(
           bars,
-          sma(bars.map((b) => sourceValue(b, src(params, 'source'))), num(params, 'period', 20)),
+          smooth(
+            sma(bars.map((b) => sourceValue(b, src(params, 'source'))), num(params, 'period', 20)),
+            num(params, 'smoothing', 1),
+          ),
           {
             id: 'sma',
             label: `MA ${num(params, 'period', 20)}`,
@@ -190,14 +210,17 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Moving averages',
     overlay: true,
     description: 'Weights recent values more heavily. Seeded from the simple average.',
-    params: [PERIOD, SOURCE, COLOUR, ...STYLE],
-    defaults: { ...STYLE_DEFAULTS, period: 21, source: 'close', color: '#f5a524' },
+    params: [PERIOD, SOURCE, SMOOTHING, COLOUR, ...STYLE],
+    defaults: { ...STYLE_DEFAULTS, period: 21, source: 'close', smoothing: 1, color: '#f5a524' },
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
         plot(
           bars,
-          ema(bars.map((b) => sourceValue(b, src(params, 'source'))), num(params, 'period', 21)),
+          smooth(
+            ema(bars.map((b) => sourceValue(b, src(params, 'source'))), num(params, 'period', 21)),
+            num(params, 'smoothing', 1),
+          ),
           {
             id: 'ema',
             label: `EMA ${num(params, 'period', 21)}`,
@@ -428,6 +451,11 @@ export function indicatorTitle(kind: string, params: ParamValues): string {
     if (param.key === 'lineWidth' || param.key === 'opacity') continue;
     const value = params[param.key];
     if (value === undefined || value === '') continue;
+    // Smoothing off is the default and says nothing; smoothing on has to show.
+    if (param.key === 'smoothing') {
+      if (Number(value) > 1) parts.push(`smoothed ${value}`);
+      continue;
+    }
     parts.push(String(value));
   }
   const name = indicatorShortName(kind);
