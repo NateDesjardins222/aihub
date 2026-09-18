@@ -72,6 +72,41 @@ export function ema(values: readonly number[], period: number): Array<number | n
   return out;
 }
 
+/**
+ * A moving average OF AN INDICATOR'S OUTPUT.
+ *
+ * Smoothing is a second average applied to a line that has already been
+ * computed, so unlike `sma` its input has a null head: a 21-period EMA has
+ * nothing to say about its first twenty bars. Averaging across that boundary
+ * would produce a number from fewer samples than were asked for, which is a
+ * value the data does not support - so the whole window must be real before
+ * anything is emitted.
+ *
+ * A length of 1 or less returns the series untouched, because the setting has
+ * to be able to be off.
+ */
+export function smooth(
+  values: ReadonlyArray<number | null>,
+  period: number,
+): Array<number | null> {
+  if (period <= 1) return values.slice();
+  const out: Array<number | null> = new Array(values.length).fill(null);
+  for (let i = period - 1; i < values.length; i += 1) {
+    let sum = 0;
+    let complete = true;
+    for (let j = i - period + 1; j <= i; j += 1) {
+      const value = values[j];
+      if (value === null || value === undefined) {
+        complete = false;
+        break;
+      }
+      sum += value;
+    }
+    if (complete) out[i] = sum / period;
+  }
+  return out;
+}
+
 /** Population standard deviation over a rolling window. */
 export function stdev(values: readonly number[], period: number): Array<number | null> {
   const out: Array<number | null> = new Array(values.length).fill(null);
