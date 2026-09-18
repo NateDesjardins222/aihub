@@ -49,7 +49,9 @@ const at = (box, fx, fy) => ({ x: box.x + box.width * fx, y: box.y + box.height 
 async function markPrice() {
   await page.click('.tab:text-is("Positions")');
   await page.waitForTimeout(600);
-  const cell = ((await page.locator('.data-table tbody tr td').nth(4).textContent()) ?? '').trim();
+  const cells = page.locator('.data-table tbody tr td');
+  if ((await cells.count()) < 5) return null;
+  const cell = ((await cells.nth(4).textContent()) ?? '').trim();
   const value = Number(cell.replace(/,/g, ''));
   return Number.isFinite(value) ? value : null;
 }
@@ -329,12 +331,17 @@ try {
     await record('target-placed', 1_200);
     await dragFromMark(150);
     await record('stop-and-target', 1_200);
-    console.log(
-      `  stop label at rest: "${((await page.textContent('[data-testid=marker-stop]')) ?? '—').replace(/\s+/g, ' ').trim()}"`,
-    );
-    console.log(
-      `  target label at rest: "${((await page.textContent('[data-testid=marker-target]')) ?? '—').replace(/\s+/g, ' ').trim()}"`,
-    );
+    // count() first: textContent on a missing selector waits out the whole
+    // default timeout before it throws, and a leg that filled is legitimately
+    // not there any more.
+    for (const leg of ['stop', 'target']) {
+      const label = page.locator(`[data-testid=marker-${leg}]`);
+      const text =
+        (await label.count()) > 0
+          ? ((await label.first().textContent()) ?? '').replace(/\s+/g, ' ').trim()
+          : 'not on the chart';
+      console.log(`  ${leg} label at rest: "${text}"`);
+    }
     await page.click('.tab:text-is("Orders")');
     await record('protective-orders-on-the-server', 1_200);
   }
