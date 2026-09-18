@@ -11,8 +11,9 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('indicators');
+const { say, finish, watch } = createReport('indicators');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 const rowTexts = async () =>
   (await page.locator('[data-testid=indicator-row]').allTextContents()).map((t) =>

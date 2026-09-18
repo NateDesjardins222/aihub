@@ -18,8 +18,9 @@ import {
   signIn,
 } from './harness.mjs';
 
-const { say, finish } = createReport('rectangle');
+const { say, finish, watch } = createReport('rectangle');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 /** Alpha values the drawing canvas painted, sampled across a region. */
 async function alphaProfile(region) {

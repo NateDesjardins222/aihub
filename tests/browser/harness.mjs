@@ -19,18 +19,39 @@ export const PASSWORD = process.env.ATLAS_PASSWORD ?? 'atlas-demo-2026';
 export const SHOTS = process.env.ATLAS_SHOTS ?? '/tmp/atlas-shots';
 
 /** A suite's running tally. */
+/**
+ * A suite's report, and its camera.
+ *
+ * `watch(page)` makes a failing check photograph the terminal. A suite that
+ * fails only when it runs after five others is otherwise diagnosed by guesswork
+ * - which market the chart was showing, and where the position marker had been
+ * pushed to, was exactly the information the log did not carry.
+ */
 export function createReport(suite) {
   const results = [];
+  let watched = null;
+  let shots = 0;
   const say = (ok, name, detail = '') => {
     results.push({ ok, name, detail });
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
+    if (!ok && watched && shots < 4) {
+      shots += 1;
+      const file = `fail-${suite}-${shots}`;
+      // Fire and forget: a report must not become async for every caller.
+      void shot(watched, file)
+        .then(() => console.log(`      photographed as ${file}.png`))
+        .catch(() => {});
+    }
+  };
+  const watch = (page) => {
+    watched = page;
   };
   const finish = () => {
     const failed = results.filter((r) => !r.ok);
     console.log(`\n${suite}: ${results.length - failed.length}/${results.length} passed`);
     return failed.length;
   };
-  return { say, finish, results };
+  return { say, finish, results, watch };
 }
 
 export async function launch({ width = 1680, height = 950 } = {}) {

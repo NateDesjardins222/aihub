@@ -11,8 +11,9 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('perf-panes');
+const { say, finish, watch } = createReport('perf-panes');
 const { browser, page, errors } = await launch({ width: 1680, height: 950 });
+watch(page);
 
 /** Frames during a gesture, counted inside the page by requestAnimationFrame. */
 async function duringGesture(gesture) {

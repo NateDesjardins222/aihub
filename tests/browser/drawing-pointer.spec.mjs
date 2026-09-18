@@ -11,8 +11,9 @@
  */
 import { clearDrawings, createReport, launch, litPixels, paintedBounds, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('drawing-pointer');
+const { say, finish, watch } = createReport('drawing-pointer');
 const { browser, page, errors } = await launch();
+watch(page);
 
 /** The OHLC the status line reports for whatever is under the cursor. */
 async function barUnder(x, y) {

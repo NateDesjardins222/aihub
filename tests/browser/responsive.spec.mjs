@@ -19,8 +19,9 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('responsive');
+const { say, finish, watch } = createReport('responsive');
 const { browser, page, errors } = await launch({ width: 1680, height: 1000 });
+watch(page);
 
 /**
  * Every element whose text does not fit, or which overlaps a sibling.

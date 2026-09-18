@@ -10,8 +10,9 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('chart-navigation');
+const { say, finish, watch } = createReport('chart-navigation');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 /** The chart's visible logical range and bar spacing, read from the page. */
 const view = () =>

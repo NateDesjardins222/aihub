@@ -18,8 +18,9 @@ import {
   signIn,
 } from './harness.mjs';
 
-const { say, finish } = createReport('drawing-engine');
+const { say, finish, watch } = createReport('drawing-engine');
 const { browser, page, errors } = await launch();
+watch(page);
 
 /** The OHLC the status line reports for whatever is under the cursor. */
 async function barUnder(x, y) {

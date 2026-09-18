@@ -11,8 +11,9 @@
  */
 import { createReport, launch, shot, signIn, useAccount, useSymbol, waitFor } from './harness.mjs';
 
-const { say, finish } = createReport('drag-protect');
+const { say, finish, watch } = createReport('drag-protect');
 const { browser, page, errors } = await launch();
+watch(page);
 
 
 const positionText = async () =>

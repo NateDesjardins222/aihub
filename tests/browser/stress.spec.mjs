@@ -13,8 +13,9 @@
  */
 import { createReport, launch, litPixels, shot, signIn, useSymbol } from './harness.mjs';
 
-const { say, finish } = createReport('stress');
+const { say, finish, watch } = createReport('stress');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 const COUNTS = [1, 10, 50, 100, 250];
 

@@ -6,8 +6,9 @@
  */
 import { clearDrawings, createReport, launch, litPixels, shot, signIn, useSymbol } from './harness.mjs';
 
-const { say, finish } = createReport('tools');
+const { say, finish, watch } = createReport('tools');
 const { browser, page, errors } = await launch();
+watch(page);
 
 try {
   await signIn(page);

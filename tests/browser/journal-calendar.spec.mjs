@@ -11,8 +11,9 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('journal-calendar');
+const { say, finish, watch } = createReport('journal-calendar');
 const { browser, page, errors } = await launch({ width: 1680, height: 950 });
+watch(page);
 
 /** Pick the account with the most trades: the journal needs something to show. */
 async function useBusiestAccount() {

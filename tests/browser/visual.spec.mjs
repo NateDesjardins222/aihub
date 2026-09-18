@@ -24,8 +24,9 @@ const BASELINE = join(here, 'baselines', 'visual-states.json');
 /** How far a state's painted area may move before it is a regression. */
 const TOLERANCE = 0.45;
 
-const { say, finish } = createReport('visual');
+const { say, finish, watch } = createReport('visual');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : null;
 const captured = {};

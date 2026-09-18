@@ -20,8 +20,9 @@ import {
   signIn,
 } from './harness.mjs';
 
-const { say, finish } = createReport('line-tools');
+const { say, finish, watch } = createReport('line-tools');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 /**
  * The horizontal lines the canvas painted, in canvas rows.

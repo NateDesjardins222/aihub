@@ -12,8 +12,9 @@
  */
 import { clearDrawings, createReport, launch, litPixels, shot, signIn, useSymbol } from './harness.mjs';
 
-const { say, finish } = createReport('position-tools');
+const { say, finish, watch } = createReport('position-tools');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 /** Arm a tool from the rail's full catalogue. */
 async function pick(name) {

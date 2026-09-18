@@ -15,8 +15,9 @@
  */
 import { clearDrawings, createReport, launch, litPixels, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('remaining-tools');
+const { say, finish, watch } = createReport('remaining-tools');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 /** Arm a tool from the full catalogue rather than the rail's favourites. */
 async function arm(category, label) {

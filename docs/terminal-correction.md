@@ -363,6 +363,52 @@ Each one was found by using the terminal, not by reading the code.
     fields, the pale colour wells, the unpadded journal price and the practice
     account's fictional profit target. Those six were found by looking at the
     screenshots, which is what the screenshots are for.
+12. **The chart showed one market while the account traded another.** The worst
+    of them, and the last one found. See below.
+
+---
+
+## The chart showing the wrong market
+
+This one is worth its own section, because it is the exact failure mode the
+brief exists to prevent and because of how it was found.
+
+A protective-drag check started failing: dragging DOWN from a long's marker
+produced a TARGET. Screenshotting the moment showed why. The account held
+`NQ LONG 1 @ 29459.75`, marked at `29458.75`, and the chart above it was
+showing NQ at **29720** - the live session - with "REPLAY PAUSED" over it and
+a note reading "The replay has not emitted any bars yet. Press play." The
+position marker was clamped to the bottom edge of the plot because its price
+was nowhere near the range being drawn, and a drag "below" it landed on the far
+side of a market that was not the market being traded. The blotter was right
+the whole time; only the candles were lying.
+
+Three separate causes, all in the browser and none in the engine:
+
+1. **An empty bars response was treated as "nothing new".** The rule was "an
+   empty response over the same instrument leaves the series alone", added so
+   that loading a replay that has not emitted anything would not wipe the chart
+   and take the price scale (and every order marker's coordinate) with it. It
+   did not ask whether the response came from the same SOURCE. A new source with
+   nothing to show is the opposite case, and it was being handled as the same
+   one. The comparison now includes the provider, and an empty page from a new
+   provider clears the chart. An empty chart that says why is honest; the old
+   behaviour was not.
+2. **Clearing the bars left the indicators drawn.** `renderIndicators` returned
+   early when there were no bars, so a moving average computed from the live
+   session kept its line - and the price scale that line implied - over an
+   emptied chart. No bars now means no indicator values.
+3. **A paused replay that is moved announces nothing.** Restart, Step, Skip and
+   Seek all advance the recording without putting a bar on the stream, so a
+   chart correctly emptied at cursor zero stayed empty for the rest of the
+   session even after the recording had half an hour of bars to give it. The
+   chart now asks again when the recording's cursor has moved and it is holding
+   nothing - only then, so a replay that is playing normally re-fetches nothing.
+
+What made this hard to see is that every honest signal was already there: the
+mode badge said REPLAY PAUSED, the note said the replay had emitted nothing,
+the blotter showed the real mark. The candles were the one thing that was
+wrong, and candles are the thing a trader reads.
 
 ---
 

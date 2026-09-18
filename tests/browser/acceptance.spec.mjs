@@ -18,8 +18,9 @@
  */
 import { createReport, launch, shot, waitFor, WEB } from './harness.mjs';
 
-const { say, finish } = createReport('acceptance');
+const { say, finish, watch } = createReport('acceptance');
 const { browser, page, errors } = await launch({ width: 1600, height: 1000 });
+watch(page);
 
 const stamp = Date.now().toString(36);
 const TRADER_EMAIL = `acceptance-${stamp}@atlas.test`;

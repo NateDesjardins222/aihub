@@ -7,8 +7,9 @@
  */
 import { createReport, launch, reset, shot, signIn, useAccount, useSymbol } from './harness.mjs';
 
-const { say, finish } = createReport('terminal');
+const { say, finish, watch } = createReport('terminal');
 const { browser, page, errors } = await launch();
+watch(page);
 
 try {
   await signIn(page);

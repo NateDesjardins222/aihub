@@ -19,8 +19,9 @@
  */
 import { createReport, launch, shot, signIn, useAccount, useSymbol } from './harness.mjs';
 
-const { say, finish } = createReport('execution-interaction');
+const { say, finish, watch } = createReport('execution-interaction');
 const { browser, page, errors } = await launch();
+watch(page);
 
 const positionText = async () =>
   ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');

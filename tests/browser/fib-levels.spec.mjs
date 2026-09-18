@@ -10,8 +10,9 @@
  */
 import { clearDrawings, createReport, launch, litPixels, paintedBounds, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('fib-levels');
+const { say, finish, watch } = createReport('fib-levels');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
+watch(page);
 
 /** Lit pixels, and their mean alpha, inside a fraction of the drawing canvas. */
 function ink(page, x0, x1) {

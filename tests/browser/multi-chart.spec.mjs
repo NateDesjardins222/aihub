@@ -12,8 +12,9 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('multi-chart');
+const { say, finish, watch } = createReport('multi-chart');
 const { browser, page, errors } = await launch({ width: 1680, height: 950 });
+watch(page);
 
 async function chooseLayout(kind) {
   await page.click('[data-testid=layout-button]');

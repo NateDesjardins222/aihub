@@ -10,8 +10,9 @@
  */
 import { createReport, launch, shot, signIn, WEB } from './harness.mjs';
 
-const { say, finish } = createReport('admin');
+const { say, finish, watch } = createReport('admin');
 const { browser, page, errors } = await launch({ width: 1600, height: 1000 });
+watch(page);
 
 async function go(path) {
   await page.goto(`${WEB}${path}`, { waitUntil: 'domcontentloaded' });

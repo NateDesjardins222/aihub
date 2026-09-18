@@ -7,7 +7,7 @@
  */
 import { createReport, launch, shot, signIn } from './harness.mjs';
 
-const { say, finish } = createReport('layout');
+const { say, finish, watch } = createReport('layout');
 
 const STYLES = [
   'Hollow candles',
@@ -29,6 +29,7 @@ const RESOLUTIONS = [
 ];
 
 const { browser, page, errors } = await launch();
+watch(page);
 
 try {
   await signIn(page);
