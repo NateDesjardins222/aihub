@@ -195,7 +195,11 @@ export function AccountBar({
       <div className="hdr-spacer" />
 
       {replay.isReplay ? (
-        <Pill text={replay.replayPaused ? 'REPLAY PAUSED' : 'REPLAY'} tone="warn" />
+        <Pill
+          text={replay.replayPaused ? 'REPLAY PAUSED' : 'REPLAY'}
+          tone="warn"
+          testId="replay-pill"
+        />
       ) : null}
 
       <span className="abar-session">
@@ -286,6 +290,18 @@ function MoneyBox({
   );
 }
 
-function Pill({ text, tone }: { text: string; tone: string }): JSX.Element {
-  return <span className={`abar-pill abar-pill-${tone}`}>{text}</span>;
+function Pill({
+  text,
+  tone,
+  testId,
+}: {
+  text: string;
+  tone: string;
+  testId?: string;
+}): JSX.Element {
+  return (
+    <span className={`abar-pill abar-pill-${tone}`} data-testid={testId}>
+      {text}
+    </span>
+  );
 }

@@ -268,10 +268,32 @@
 
 /* --------------------------------------------------------------- tables --- */
 
+/*
+ * A blotter is READ, not admired.
+ *
+ * The table used to divide the panel's whole width between its columns, so a
+ * one-contract position had its symbol at the far left and its Close button
+ * fourteen hundred pixels away, with the numbers scattered between. The eye
+ * had to travel the width of the screen to read one row, and two rows did not
+ * line up with each other in any useful way.
+ *
+ * Now every data column takes the width of its content and an empty spacer
+ * column at the end absorbs the slack. The figures end up packed together on
+ * the left, in columns that line up vertically, which is what makes a blotter
+ * scannable. The spacer rather than the last real column, because the last
+ * column is a number in half the tables, and stretching it stranded Net P&L
+ * on its own at the far right.
+ */
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--fs-sm);
+}
+
+.data-table th.pad,
+.data-table td.pad {
+  width: 100%;
+  padding: 0;
 }
 .data-table th {
   position: sticky;
@@ -289,10 +311,20 @@
   white-space: nowrap;
 }
 .data-table td {
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 4px 14px 4px 10px;
+  /*
+   * No line under every row.
+   *
+   * Twelve rows of a blotter drew twelve full-width rules, which is twelve
+   * lines of furniture in a panel whose whole job is the figures. The rhythm
+   * of the rows and the hover are enough to tell them apart.
+   */
   white-space: nowrap;
   height: var(--row-h);
+}
+
+.data-table tbody tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 55%, transparent);
 }
 .data-table tbody tr:hover {
   background: var(--bg-hover);

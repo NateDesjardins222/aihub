@@ -135,12 +135,13 @@ function PositionsTable(): JSX.Element {
           <th>Stop</th>
           <th>Target</th>
           <th />
+          <th className="pad" />
         </tr>
       </thead>
       <tbody>
         {positions.length === 0 ? (
           <tr className="empty-row">
-            <td colSpan={11}>No open positions.</td>
+            <td colSpan={12}>No open positions.</td>
           </tr>
         ) : (
           positions.map((p) => {
@@ -166,6 +167,7 @@ function PositionsTable(): JSX.Element {
                     Close
                   </button>
                 </td>
+                <td className="pad" />
               </tr>
             );
           })
@@ -209,12 +211,13 @@ function OrdersTable(): JSX.Element {
           <th className="right">Avg fill</th>
           <th>Role</th>
           <th />
+          <th className="pad" />
         </tr>
       </thead>
       <tbody>
         {orders.length === 0 ? (
           <tr className="empty-row">
-            <td colSpan={12}>No orders yet.</td>
+            <td colSpan={13}>No orders yet.</td>
           </tr>
         ) : (
           orders.map((o) => {
@@ -240,6 +243,7 @@ function OrdersTable(): JSX.Element {
                     </button>
                   ) : null}
                 </td>
+                <td className="pad" />
               </tr>
             );
           })
@@ -270,12 +274,13 @@ function TradesTable(): JSX.Element {
           <th className="right">Gross P&L</th>
           <th className="right">Fees</th>
           <th className="right">Net P&L</th>
+          <th className="pad" />
         </tr>
       </thead>
       <tbody>
         {trades.length === 0 ? (
           <tr className="empty-row">
-            <td colSpan={10}>No closed trades yet.</td>
+            <td colSpan={11}>No closed trades yet.</td>
           </tr>
         ) : (
           trades.map((t) => {
@@ -298,6 +303,7 @@ function TradesTable(): JSX.Element {
                 <td className={`right num ${showResults ? pnlClass(t.netPnlMicros) : ''}`}>
                   {showResults ? formatMicros(t.netPnlMicros, { sign: true }) : MASK}
                 </td>
+                <td className="pad" />
               </tr>
             );
           })
@@ -329,6 +335,7 @@ function AccountsTable(): JSX.Element {
           <th>Drawdown type</th>
           <th className="right">Profit target</th>
           <th className="right">Contracts</th>
+          <th className="pad" />
         </tr>
       </thead>
       <tbody>
@@ -376,6 +383,7 @@ function AccountsTable(): JSX.Element {
               <td className="right num">
                 {live?.openContracts ?? 0}/{a.ruleTemplate.maxContracts}
               </td>
+              <td className="pad" />
             </tr>
           );
         })}

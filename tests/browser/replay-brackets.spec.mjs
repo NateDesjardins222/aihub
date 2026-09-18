@@ -60,7 +60,10 @@ try {
   await page.locator('.practice-session').first().click();
   await page.waitForTimeout(9_000);
   say((await page.locator('.practice-active').count()) > 0, 'a replay session starts');
-  say((await page.locator('.abar-pill-warn').count()) > 0, 'the account bar marks the terminal as replaying');
+  say(
+    (await page.locator('[data-testid=replay-pill]').count()) > 0,
+    'the account bar marks the terminal as replaying',
+  );
 
   await page.click('.practice-row .chip:has-text("Restart")');
   await page.waitForTimeout(2_500);
@@ -129,7 +132,7 @@ try {
   await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
   await page.waitForTimeout(1_500);
   say(
-    (await page.locator('.abar-pill-warn:text-is("REPLAY")').count()) === 0,
+    (await page.locator('[data-testid=replay-pill]').count()) === 0,
     'ending the session returns the terminal to the live feed',
   );
 

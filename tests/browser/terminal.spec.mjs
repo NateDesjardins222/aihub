@@ -5,7 +5,16 @@
  * leaves the old controls behind is not a redesign, and a test that only
  * checks the new ones would not notice.
  */
-import { createReport, launch, reset, shot, signIn, useAccount, useSymbol } from './harness.mjs';
+import {
+  createReport,
+  launch,
+  reset,
+  shot,
+  signIn,
+  tradableMarket,
+  useAccount,
+  useSymbol,
+} from './harness.mjs';
 
 const { say, finish, watch } = createReport('terminal');
 const { browser, page, errors } = await launch();
@@ -78,11 +87,21 @@ try {
   );
 
   // --- order, marker, bracket ---------------------------------------------
-  // Wide levels: this is a live delayed feed and NQ can travel ten points while
-  // the test is typing, which would fill a close stop mid-run.
+  /*
+   * Trade whichever market is open.
+   *
+   * The delayed live feed when the exchange is trading; a paused recording
+   * when it is not, because the platform refuses entry on a shut market and
+   * this workflow is worth checking at four in the afternoon as well as at
+   * ten in the morning.
+   */
+  const market = await tradableMarket(page);
+  say(true, `the order workflow runs against the ${market.mode} market`);
+  // Wide levels: on the live delayed feed NQ can travel ten points while the
+  // test is typing, which would fill a close stop mid-run.
   await page.click('.tk-preset:text-is("3")');
   await page.click('[data-testid=buy]');
-  await page.waitForTimeout(6_000);
+  await market.fill();
 
   const position = ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');
   say(/LONG 3/.test(position), 'a market order opens a position', position.slice(0, 50));
@@ -117,7 +136,7 @@ try {
 
   // --- close up ------------------------------------------------------------
   await page.click('.tk-grid2 button:has-text("Close")');
-  await page.waitForTimeout(5_000);
+  await market.fill();
   const flat = ((await page.textContent('[data-testid=ticket-position]')) ?? '').replace(/\s+/g, ' ');
   say(/No active position/.test(flat), 'closing flattens the position');
   await page.waitForTimeout(2_500);

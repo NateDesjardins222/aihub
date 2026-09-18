@@ -13,7 +13,15 @@
  *
  *   node tests/browser/manual-pass.mjs
  */
-import { SHOTS, launch, signIn, shot, clearDrawings } from './harness.mjs';
+import {
+  SHOTS,
+  launch,
+  signIn,
+  shot,
+  clearDrawings,
+  stepReplay,
+  tradableMarket,
+} from './harness.mjs';
 
 const { browser, page, errors } = await launch({ width: 1680, height: 1050 });
 let step = 0;
@@ -104,6 +112,10 @@ async function flatten() {
   if (await close.isEnabled().catch(() => false)) {
     await close.click();
     await page.waitForTimeout(3_000);
+    // A closing market order needs a market to fill in. On a paused recording
+    // that means events; on the live feed the step is refused and ignored.
+    await stepReplay(page, 12);
+    await page.waitForTimeout(1_500);
   }
   const cancel = page.locator('.tk-grid2 button:has-text("Cancel orders")');
   if (await cancel.isEnabled().catch(() => false)) {
@@ -373,8 +385,10 @@ try {
     t.replace(/\s+/g, ' ').trim(),
   );
   console.log(`  account bar before: ${boxesBefore.join('  |  ')}`);
+  const market = await tradableMarket(page);
+  console.log(`  trading the ${market.mode} market`);
   await page.click('[data-testid=buy]');
-  await page.waitForTimeout(6_000);
+  await market.fill();
   await record('position-open');
   const boxesOpen = (await page.locator('.abar-box').allTextContents()).map((t) =>
     t.replace(/\s+/g, ' ').trim(),

@@ -118,7 +118,10 @@ export async function signIn(page) {
  * every later suite a chart with three bars on it.
  */
 export async function returnToLive(page) {
-  if (await page.locator('.abar-pill-warn').count()) {
+  // The REPLAY pill, not merely a warn-toned one: outside trading hours the
+  // feed's own MARKET CLOSED pill is warn too, and reading that as "a previous
+  // run left us in a replay" sent every sign-in through the practice drawer.
+  if (await page.locator('[data-testid=replay-pill]').count()) {
     await page.click('[data-testid=apprail-practice]');
     await page.waitForTimeout(2_000);
     if (await page.locator('.practice-active .chip').count()) {
@@ -388,4 +391,99 @@ export async function waitFor(page, read, until, { tries = 40, every = 1_500 } =
     if (until(value)) return { ok: true, value, waitedMs: (i + 1) * every };
   }
   return { ok: false, value, waitedMs: tries * every };
+}
+
+/**
+ * Call the API from inside the page, as the signed-in user.
+ *
+ * Some checks need to ask the server something the UI does not show, or to
+ * nudge a paused recording. The access token lives in memory in the app, so
+ * the refresh token in storage is exchanged for a fresh one here - and stored
+ * back, because the exchange rotates it.
+ */
+export async function apiFetch(page, path, init = {}) {
+  return page
+    .evaluate(
+      async ({ path, init }) => {
+        const refreshToken = window.localStorage.getItem('atlas.refreshToken');
+        if (!refreshToken) return null;
+        const session = await fetch('/api/v1/auth/refresh', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        }).then((r) => (r.ok ? r.json() : null));
+        if (!session?.accessToken) return null;
+        window.localStorage.setItem('atlas.refreshToken', session.refreshToken);
+        const response = await fetch(path, {
+          method: init.method ?? 'GET',
+          headers: {
+            authorization: `Bearer ${session.accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: init.body ? JSON.stringify(init.body) : undefined,
+        });
+        const text = await response.text();
+        try {
+          return { ok: response.ok, status: response.status, body: JSON.parse(text) };
+        } catch {
+          return { ok: response.ok, status: response.status, body: text };
+        }
+      },
+      { path, init },
+    )
+    .catch(() => null);
+}
+
+/**
+ * A market that will actually fill an order, whatever the hour.
+ *
+ * The platform refuses order entry when the feed is closed or stale, which is
+ * correct and is not something a test should route around. But it means that
+ * every suite which opens a position - the terminal workflow, the new-user
+ * walkthrough, the manual pass - could only run while the exchange was open,
+ * and outside those hours failed with "No active position", which reads like a
+ * broken product rather than a shut market.
+ *
+ * So: if the live feed blocks entry, load a paused recording and trade that
+ * instead. The returned `fill` is what a caller waits on after sending an
+ * order - a few seconds of real market, or a nudge of the recording.
+ */
+export async function tradableMarket(page, { symbol = 'NQ' } = {}) {
+  const status = await apiFetch(page, `/api/v1/marketdata/quote?symbol=${encodeURIComponent(symbol)}`);
+  const blocked = status?.body?.freshness?.blocksOrderEntry === true;
+
+  if (!blocked) {
+    return { mode: 'live', fill: async () => page.waitForTimeout(6_000) };
+  }
+
+  await page.click('[data-testid=apprail-practice]');
+  await page.waitForSelector('[data-testid=drawer-practice]', { timeout: 15_000 });
+  await page.waitForTimeout(2_500);
+  if (await page.locator('.practice-active').count()) {
+    await page.click('.practice-active .chip');
+    await page.waitForTimeout(6_000);
+  }
+  await page.locator('.practice-session').first().click();
+  await page.waitForTimeout(9_000);
+  await page.click('.practice-row .chip:has-text("Restart")').catch(() => undefined);
+  await page.waitForTimeout(2_500);
+  await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
+  await page.waitForTimeout(1_000);
+
+  return {
+    mode: 'replay',
+    fill: async (count = 12) => {
+      await stepReplay(page, count);
+      await page.waitForTimeout(1_500);
+    },
+  };
+}
+
+/** Advance a paused recording by `count` market events. */
+export async function stepReplay(page, count = 10) {
+  await apiFetch(page, '/api/v1/marketdata/replay/step', {
+    method: 'POST',
+    body: { count },
+  });
+  await page.waitForTimeout(900);
 }
