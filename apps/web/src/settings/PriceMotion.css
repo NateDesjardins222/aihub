@@ -1,0 +1,94 @@
+.pm-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pm-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Substantial enough to be the answer to "where do I choose this". */
+.pm-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 13px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--fast) var(--ease),
+    background var(--fast) var(--ease);
+}
+
+.pm-choice:hover {
+  border-color: var(--border-strong);
+}
+
+.pm-choice-on {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.pm-choice-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pm-choice-body {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.pm-note {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: rgba(77, 141, 255, 0.07);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.pm-note b {
+  color: var(--text-primary);
+}
+
+.pm-tuning {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pm-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 64px;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+}
+
+.pm-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.pm-value {
+  text-align: right;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .pm-choices {
+    grid-template-columns: 1fr;
+  }
+}

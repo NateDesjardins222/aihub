@@ -22,6 +22,7 @@ export type Surface = 'PRACTICE' | 'JOURNAL' | null;
 /** Which section of the settings dialog is showing. */
 export type SettingsTab =
   | 'SYMBOL'
+  | 'PRICE_MOTION'
   | 'STATUS_LINE'
   | 'SCALES'
   | 'CANVAS'

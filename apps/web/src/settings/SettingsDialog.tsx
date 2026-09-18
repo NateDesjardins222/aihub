@@ -19,11 +19,13 @@ import { RiskPanel } from '../panels/RiskPanel';
 import { EnvironmentPanel } from '../panels/EnvironmentPanel';
 import { TrainingSettings } from '../panels/TrainingSettings';
 import { Check, Choice, Colour, Group, Num, Pick, Row, Slider } from './Controls';
+import { PriceMotionSettings } from './PriceMotion';
 import { Icon } from '../ui/Icon';
 import './Settings.css';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; group: string }> = [
   { id: 'SYMBOL', label: 'Symbol', group: 'Chart' },
+  { id: 'PRICE_MOTION', label: 'Price motion', group: 'Chart' },
   { id: 'STATUS_LINE', label: 'Status line', group: 'Chart' },
   { id: 'SCALES', label: 'Scales and lines', group: 'Chart' },
   { id: 'CANVAS', label: 'Canvas', group: 'Chart' },
@@ -252,6 +254,8 @@ export function SettingsDialog(): JSX.Element | null {
                 */}
               </>
             ) : null}
+
+            {tab === 'PRICE_MOTION' ? <PriceMotionSettings /> : null}
 
             {tab === 'STATUS_LINE' ? (
               <Group title="What the status line shows">
