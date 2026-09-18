@@ -45,6 +45,51 @@ async function tool(name) {
 
 const at = (box, fx, fy) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy });
 
+/** The mark price the open position is valued at, from the blotter. */
+async function markPrice() {
+  await page.click('.tab:text-is("Positions")');
+  await page.waitForTimeout(600);
+  const cell = ((await page.locator('.data-table tbody tr td').nth(4).textContent()) ?? '').trim();
+  const value = Number(cell.replace(/,/g, ''));
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Drag the position marker to a pixel offset from the mark: +down, -up. */
+async function dragFromMark(dy) {
+  const price = await markPrice();
+  if (price === null) return false;
+  const chart = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+  const y = await page.evaluate((v) => window.__atlasChartView?.(undefined, v)?.yAtPrice ?? null, price);
+  if (y === null) return false;
+  const target = chart.y + y + dy;
+  const marker = await page.locator('[data-testid=marker-position]').boundingBox();
+  if (!marker) return false;
+  const from = { x: marker.x + marker.width / 2, y: marker.y + marker.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x - 60, from.y + (target - from.y) / 2, { steps: 6 });
+  await page.mouse.move(from.x - 60, target, { steps: 6 });
+  await page.waitForTimeout(400);
+  await shot(page, `manual-${String(step).padStart(2, '0')}x-dragging-protective`);
+  await page.mouse.up();
+  await page.waitForTimeout(3_000);
+  return true;
+}
+
+/** Flatten and cancel, so the walkthrough leaves the account as it found it. */
+async function flatten() {
+  const close = page.locator('.tk-grid2 button:has-text("Close")');
+  if (await close.isEnabled().catch(() => false)) {
+    await close.click();
+    await page.waitForTimeout(3_000);
+  }
+  const cancel = page.locator('.tk-grid2 button:has-text("Cancel orders")');
+  if (await cancel.isEnabled().catch(() => false)) {
+    await cancel.click();
+    await page.waitForTimeout(2_500);
+  }
+}
+
 try {
   await signIn(page);
   await page.waitForTimeout(4_500);
@@ -220,7 +265,205 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
 
-  // --- 10. back to a clean single chart ------------------------------------
+  // --- 10. the price motion setting ----------------------------------------
+  /*
+   * The brief asked for this by name and said twice that it could not be
+   * found, so both states are photographed: RAW with the smoothing controls
+   * gone, SMOOTH with them, and the presentation-only guarantee in the panel.
+   */
+  await page.click('[data-testid=apprail-settings]');
+  await page.waitForTimeout(900);
+  await page.click('.st-nav-item:text-is("Price motion")');
+  await page.waitForTimeout(500);
+  await page.click('[data-testid=motion-raw]');
+  await record('price-motion-raw', 700);
+  await page.click('[data-testid=motion-smooth]');
+  await record('price-motion-smooth', 700);
+  console.log(
+    `  guarantee: ${((await page.textContent('[data-testid=motion-guarantee]')) ?? '').replace(/\s+/g, ' ').trim().slice(0, 120)}`,
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
+
+  // --- 11. the micro contracts ---------------------------------------------
+  // NQ and ES were walked above; MNQ and MES are the ones whose tick VALUE
+  // differs by a factor of ten, which is where a P&L error would show.
+  for (const root of ['MNQ', 'MES']) {
+    await page.click('[data-pane=p1] .chdr-symbol');
+    await page.waitForTimeout(600);
+    await page.click(`.popover .pop-item:has(.chdr-pop-root:text-is("${root}"))`);
+    await page.waitForTimeout(4_000);
+    await record(`symbol-${root.toLowerCase()}`);
+    console.log(
+      `  ${root}: ${((await page.textContent('[data-pane=p1] [data-testid=status-line]')) ?? '').replace(/\s+/g, ' ').trim().slice(0, 110)}`,
+    );
+  }
+  await page.click('[data-pane=p1] .chdr-symbol');
+  await page.waitForTimeout(600);
+  await page.click('.popover .pop-item:has(.chdr-pop-root:text-is("NQ"))');
+  await page.waitForTimeout(4_000);
+
+  // --- 12. a real trade, with a stop and a target --------------------------
+  /*
+   * The four account boxes, the position marker, and the protective labels -
+   * at rest showing only their dollars, and widened while a leg is being
+   * placed. Server-side throughout: every order here exists in the blotter.
+   */
+  await flatten();
+  await page.click('.tk-preset:text-is("1")');
+  await page.waitForTimeout(400);
+  const boxesBefore = (await page.locator('.abar-box').allTextContents()).map((t) =>
+    t.replace(/\s+/g, ' ').trim(),
+  );
+  console.log(`  account bar before: ${boxesBefore.join('  |  ')}`);
+  await page.click('[data-testid=buy]');
+  await page.waitForTimeout(6_000);
+  await record('position-open');
+  const boxesOpen = (await page.locator('.abar-box').allTextContents()).map((t) =>
+    t.replace(/\s+/g, ' ').trim(),
+  );
+  console.log(`  account bar with a position: ${boxesOpen.join('  |  ')}`);
+
+  if ((await page.locator('[data-testid=marker-position]').count()) > 0) {
+    await dragFromMark(-150);
+    await record('target-placed', 1_200);
+    await dragFromMark(150);
+    await record('stop-and-target', 1_200);
+    console.log(
+      `  stop label at rest: "${((await page.textContent('[data-testid=marker-stop]')) ?? '—').replace(/\s+/g, ' ').trim()}"`,
+    );
+    console.log(
+      `  target label at rest: "${((await page.textContent('[data-testid=marker-target]')) ?? '—').replace(/\s+/g, ' ').trim()}"`,
+    );
+    await page.click('.tab:text-is("Orders")');
+    await record('protective-orders-on-the-server', 1_200);
+  }
+  await flatten();
+  await page.click('.tab:text-is("Trades")');
+  await record('trade-recorded', 1_500);
+  const boxesAfter = (await page.locator('.abar-box').allTextContents()).map((t) =>
+    t.replace(/\s+/g, ' ').trim(),
+  );
+  console.log(`  account bar after closing: ${boxesAfter.join('  |  ')}`);
+
+  // --- 13. a deliberately unusual Fibonacci set ----------------------------
+  await clearDrawings(page);
+  box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+  await tool('Fib retracement');
+  await page.mouse.click(at(box, 0.3, 0.68).x, at(box, 0.3, 0.68).y);
+  await page.waitForTimeout(300);
+  await page.mouse.click(at(box, 0.6, 0.3).x, at(box, 0.6, 0.3).y);
+  await page.waitForTimeout(900);
+  await page.keyboard.press('Escape');
+  await page.mouse.dblclick(at(box, 0.45, 0.49).x, at(box, 0.45, 0.49).y);
+  await page.waitForTimeout(900);
+  const levelEditor = page.locator('[data-testid=level-editor]');
+  if ((await levelEditor.count()) > 0) {
+    // Nothing standard: 11.1, 33.3 and 88.8, named by hand. The default set
+    // is not hard-coded anywhere the editor can reach, which is the point.
+    const values = levelEditor.locator('.dp-level-value');
+    const labels = levelEditor.locator('.dp-level-label');
+    const custom = [
+      ['11.1', 'first'],
+      ['33.3', 'third'],
+      ['88.8', 'late'],
+    ];
+    for (let i = 0; i < custom.length && i < (await values.count()); i += 1) {
+      await values.nth(i).fill(custom[i][0]);
+      await values.nth(i).press('Enter');
+      await labels.nth(i).fill(custom[i][1]);
+      await labels.nth(i).press('Enter');
+      await page.waitForTimeout(250);
+    }
+    await levelEditor.locator('.dp-level-add').click();
+    await page.waitForTimeout(400);
+    await values.last().fill('261.8');
+    await values.last().press('Enter');
+    await labels.last().fill('stretch');
+    await labels.last().press('Enter');
+    await page.waitForTimeout(600);
+    await record('fib-custom-levels', 900);
+    console.log(
+      `  fib levels: ${(await values.allTextContents()).join(' ')} / inputs ${(await values.evaluateAll((n) => n.map((i) => i.value))).join(' ')}`,
+    );
+  }
+  const closeProps = page.locator('[data-testid=drawing-properties] button[aria-label="Close object settings"]');
+  if ((await closeProps.count()) > 0) await closeProps.click();
+  await page.waitForTimeout(600);
+  await record('fib-on-the-chart', 900);
+
+  // --- 14. four EMAs, independently set ------------------------------------
+  for (const length of [9, 21, 50, 200]) {
+    await page.click('[data-pane=p1] .chdr-btn:has-text("Indicators")');
+    await page.waitForTimeout(600);
+    await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Exponential moving")');
+    await page.waitForTimeout(1_400);
+    const lengthInput = page
+      .locator('[data-testid=indicator-settings] .st-row:has(.st-row-label:text-is("Length")) input[type=number]')
+      .first();
+    if ((await lengthInput.count()) > 0) {
+      await lengthInput.fill(String(length));
+      await lengthInput.press('Enter');
+      await page.waitForTimeout(900);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+  }
+  await record('four-emas', 1_500);
+  console.log(
+    `  legend: ${(await page.locator('[data-testid=indicator-row]').allTextContents()).map((t) => t.replace(/\s+/g, ' ').trim()).join(' / ')}`,
+  );
+
+  // --- 15. volume is an indicator, not furniture ---------------------------
+  const paneHeightBefore = (await page.locator('[data-pane=p1] .chart-canvas').boundingBox()).height;
+  await page.click('[data-pane=p1] .chdr-btn:has-text("Indicators")');
+  await page.waitForTimeout(600);
+  await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Volume")');
+  await page.waitForTimeout(1_600);
+  await page.keyboard.press('Escape');
+  await record('volume-added', 1_200);
+  const volumeRow = page.locator('[data-testid=indicator-row][data-kind=VOLUME]');
+  if ((await volumeRow.count()) > 0) {
+    await volumeRow.locator('.ind-btn-danger').click();
+    await page.waitForTimeout(1_400);
+  }
+  await record('volume-removed', 1_200);
+  const paneHeightAfter = (await page.locator('[data-pane=p1] .chart-canvas').boundingBox()).height;
+  console.log(`  chart height ${Math.round(paneHeightBefore)}px -> ${Math.round(paneHeightAfter)}px after removing volume`);
+
+  // --- 16. panel resizing, and the left rail -------------------------------
+  const splitter = await page.locator('.splitter-v').boundingBox();
+  await page.mouse.move(splitter.x + splitter.width / 2, splitter.y + splitter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(splitter.x + 500, splitter.y + splitter.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await record('order-panel-narrow', 900);
+  await page.mouse.move(splitter.x + 500, splitter.y + splitter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(splitter.x - 60, splitter.y + splitter.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await record('order-panel-restored', 900);
+  const rail = await page.locator('.apprail').boundingBox();
+  console.log(`  left navigation: ${Math.round(rail.width)}px wide, ${await page.locator('.apprail-btn').count()} destinations`);
+  await record('left-navigation', 600);
+
+  // --- 17. a reload, and what survives it ----------------------------------
+  const beforeReload = {
+    drawings: await page.evaluate(() => window.__atlasDrawings?.().length ?? null),
+    indicators: await page.locator('[data-testid=indicator-row]').count(),
+  };
+  await page.reload();
+  await page.waitForTimeout(8_000);
+  const afterReload = {
+    drawings: await page.evaluate(() => window.__atlasDrawings?.().length ?? null),
+    indicators: await page.locator('[data-testid=indicator-row]').count(),
+  };
+  console.log(
+    `  across a reload: drawings ${beforeReload.drawings} -> ${afterReload.drawings}, indicators ${beforeReload.indicators} -> ${afterReload.indicators}`,
+  );
+  await record('after-a-reload', 1_500);
+
+  // --- 18. back to a clean single chart ------------------------------------
   await page.click('[data-testid=layout-button]');
   await page.waitForTimeout(400);
   await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
@@ -232,7 +475,7 @@ try {
     await remove.click();
     await page.waitForTimeout(300);
   }
-  await record('clean-again', 1_500);
+  await record('final-terminal', 2_000);
 
   console.log(`\npage errors: ${errors.length === 0 ? 'none' : errors.join(' | ')}`);
 } finally {

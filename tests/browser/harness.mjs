@@ -299,6 +299,24 @@ export async function paintedBounds(page, selector = '.draw-canvas', region = nu
  * that the rail stays a TOOL bar. Suites clear through this helper so the
  * control can move again without rewriting five of them.
  */
+/**
+ * Remove every indicator from every pane.
+ *
+ * A suite that adds indicators must take them away again: an RSI in its own
+ * pane moves the price plot, and the next suite's crosshair and price-axis
+ * gestures are aimed at pixels. Workspace state persists across a reload by
+ * design, so "the browser closed" is not a cleanup.
+ */
+export async function clearIndicators(page) {
+  for (let i = 0; i < 24; i += 1) {
+    const remove = page.locator('[data-testid=indicator-row] .ind-btn-danger').first();
+    if ((await remove.count()) === 0) return i;
+    await remove.click();
+    await page.waitForTimeout(350);
+  }
+  return 24;
+}
+
 export async function clearDrawings(page) {
   const tree = page.locator('.rail .rail-btn[aria-label="Object tree"]');
   if ((await tree.count()) === 0) return false;

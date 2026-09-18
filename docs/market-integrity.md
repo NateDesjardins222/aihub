@@ -344,6 +344,70 @@ already built and working.
 
 ---
 
+## P4 — the journal, responsiveness and the workspace
+
+### The journal calendar
+
+**It was built and correct, and it was not the first thing you saw.** The
+monthly grid — Sunday to Saturday columns, every day of the month in its own
+square whether or not it was traded, date and net P&L and trade count in each
+traded cell, green or red by the day's result, a total on every week and on the
+month, arrows that only walk to months the account actually traded in, a click
+on a day opening that day's trades, a click on a trade opening its full detail
+with MAE, MFE, R multiple, hold time and fees, and "Show on chart" putting the
+instrument and the window back — all of that already worked. The journal simply
+*opened* on the analytics page, so the calendar the brief called the primary
+interface was the second chip in a row.
+
+Calendar is now the default tab and the first chip. The suite asserts it the
+only way that means anything: open the journal, look at what is on screen
+before anything is clicked.
+
+AUTOMATED TESTED: `journal-calendar` (21), including three new checks for
+which tab the journal lands on.
+MANUALLY BROWSER VERIFIED: September 2026 on the Practice 100K account —
+2 traded days of 7 trades, +$3,435.22 for the month, five weekly totals, and a
+short ES trade opening to `MAE −$200.00 / MFE $2,300.00 / 2.99R / held 5h 00m`.
+
+### Responsiveness
+
+`responsive` walks every visible control in the terminal and asks the browser
+two questions — *is your content wider than your box*, and *do you overlap a
+sibling* — then does it again at every size. It now covers the surfaces the
+brief named rather than the ones that were already passing: the order ticket
+from widest to narrowest and back, the bottom panel from tallest to shortest
+and back, seven window widths from 1920 down to **900px** (past anything a
+trader would choose), the left navigation rail, the indicator legend with two
+studies on the chart, the chart toolbar and timeframe selector, two charts side
+by side at three widths, the settings dialog at three sizes, and the journal
+calendar at three widths — each with a restore afterwards. **38/38.**
+
+**Two real defects, both found by widening the sweep:**
+
+1. A settings row never shrank (`flex: 0 0 auto`), so the seven-way **Source**
+   control asked for 373px of buttons inside a 268px indicator panel and pushed
+   its own label off the edge. `OHLC/4` could not be reached. Rows and controls
+   now wrap; the row is the constraint, not the control.
+2. A colour field was 132px wide holding a 24-character value, clipping
+   `rgba(77, 141, 255, 0.34)` at `rgba(77, 141, 25` — a colour input that would
+   not show you its own colour.
+
+Neither was reachable from the checks that existed, which is the argument for
+sweeping every element rather than listing places to look.
+
+### The workspace
+
+The direction of travel this milestone: **six metrics and five pills became
+four boxes**, a second order toolbar and a VOL/LOG/RESET/NOW/PNG strip were
+removed, four icons left the account bar for a 44px rail, volume stopped being
+permanent furniture, and a protective label went from six pieces of information
+to one number. Every one of those is chart area or attention given back.
+
+What has not been done is a typography and spacing pass across every panel. The
+terminal is consistent within itself and the numbers are tabular, but the
+bottom blotter and the settings dialog have more borders than they need.
+
+
 ## P5 — backtesting
 
 Removed, and verified removed: **zero occurrences of "backtest"** in any source
@@ -368,3 +432,6 @@ the charts need, and the journal and trade history are all intact.
   nineteen lifecycle steps, and the measure's readout and text styling have not
   had the attention the rectangle and the position tools got.
 * **Alerts, watchlist and a hotkey editor** are not in this milestone.
+* **A typography and spacing pass** across the bottom blotter and the settings
+  dialog. Both are consistent and neither spills, and both carry more borders
+  than they need.

@@ -170,12 +170,25 @@ console.log(`duplicate timestamps                  ${dupes}`);
 console.log(`out-of-order timestamps               ${unordered}`);
 console.log(`timestamps off the 1-minute grid      ${offGrid}`);
 
-// The requested window, minute by minute.
-const day = ymd(atlas.bars[atlas.bars.length - 1]?.time ?? Date.now());
+/*
+ * The requested window, minute by minute.
+ *
+ * The hour is asked for without a date, and the overlap regularly straddles
+ * midnight - 23:09 on one day to 01:05 on the next. So the day of the LAST bar
+ * is only the first place to look: if that day has no such minute, take the
+ * most recent one that does, and say which day it came from. Printing "no data
+ * at 23:30" for a minute that is sitting in both columns is the audit lying
+ * about its own inputs.
+ */
 const [fh, fm] = fromArg.split(':').map(Number);
-const startTs = [...vByTime.keys(), ...aByTime.keys()]
+const wanted = `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
+const lastDay = ymd(atlas.bars[atlas.bars.length - 1]?.time ?? Date.now());
+const candidates = [...vByTime.keys(), ...aByTime.keys()]
   .sort((a, b) => a - b)
-  .find((t) => ymd(t) === day && hhmm(t) === `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`);
+  .filter((t) => hhmm(t) === wanted);
+const startTs =
+  candidates.find((t) => ymd(t) === lastDay) ?? candidates[candidates.length - 1];
+const day = startTs === undefined ? lastDay : ymd(startTs);
 
 console.log(`\n## ${fromArg} onwards, ${MINUTES} minutes (${day} ${ZONE})`);
 console.log('| minute | vendor O/H/L/C | vendor V | atlas O/H/L/C | atlas V | verdict |');
