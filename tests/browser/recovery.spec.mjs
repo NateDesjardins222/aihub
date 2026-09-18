@@ -112,22 +112,36 @@ try {
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(4_000);
 
-  // --- ten reloads --------------------------------------------------------
+  // --- twenty-five reloads -------------------------------------------------
+  /*
+   * The brief asks for ten, then twenty-five, then reloads that interrupt each
+   * other. Twenty-five is not ten with more patience: a leak of one canvas or
+   * one listener per load is invisible at ten and obvious at twenty-five, and
+   * so is a workspace write that loses a race with the next navigation.
+   */
   const times = [];
   const before = await resources();
   let intact = 0;
   const errorsAtStart = errors.length;
-  for (let i = 0; i < 10; i += 1) {
+  const RELOADS = 25;
+  for (let i = 0; i < RELOADS; i += 1) {
     times.push(await reloadToUsable());
-    await page.waitForTimeout(2_500);
+    await page.waitForTimeout(1_500);
     if ((await objectsInTree()) === 1) intact += 1;
   }
   const after = await resources();
+  const firstTen = times.slice(0, 10).sort((a, b) => a - b);
+  const lastTen = times.slice(-10).sort((a, b) => a - b);
   times.sort((a, b) => a - b);
   const median = times[Math.floor(times.length / 2)];
   const worst = times[times.length - 1];
-  say(worst < median * 3, 'ten reloads stay as quick as the first', `median ${median}ms, worst ${worst}ms`);
-  say(intact === 10, 'and the workspace comes back every single time', `${intact}/10`);
+  say(worst < median * 3, `${RELOADS} reloads stay as quick as the first`, `median ${median}ms, worst ${worst}ms`);
+  say(
+    lastTen[5] < firstTen[5] * 1.5,
+    'and the last ten are no slower than the first ten',
+    `${firstTen[5]}ms → ${lastTen[5]}ms at the median`,
+  );
+  say(intact === RELOADS, 'and the workspace comes back every single time', `${intact}/${RELOADS}`);
   say(
     after.dom < before.dom * 1.25 && after.canvases === before.canvases,
     'with no drift in nodes or canvases',

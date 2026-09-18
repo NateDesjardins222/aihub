@@ -142,6 +142,43 @@ try {
   say(worst >= 4.5, 'the light theme keeps its text readable', JSON.stringify(light));
   await shot(page, 'theme-clean-light');
 
+  // --- a theme decides colours and nothing else ---------------------------
+  /*
+   * Found by reading the diff, not by a failure: a theme used to carry a whole
+   * appearance, so picking one also put the crosshair back to a cross and the
+   * price scale back to linear - settings that are none of a theme's business.
+   */
+  await openSettings('Scales and lines');
+  const dot = page
+    .locator('.st-group:has(.st-group-title:text-is("Crosshair")) .st-row:has(.st-row-label:text-is("Style")) .st-choice-btn')
+    .filter({ hasText: 'Dot' })
+    .first();
+  await dot.click();
+  await page.waitForTimeout(600);
+  const logScale = page.locator('.st-row:has(.st-row-label:text-is("Logarithmic")) input[type=checkbox]').first();
+  const logWas = await logScale.isChecked();
+  if (!logWas) await logScale.click();
+  await page.waitForTimeout(600);
+  say(await logScale.isChecked(), 'the scale is set to logarithmic and the crosshair to a dot');
+
+  await openSettings('Theme');
+  await page.click('[data-theme-card=GRAPHITE]');
+  await page.waitForTimeout(1_000);
+  await openSettings('Scales and lines');
+  say(
+    ((await dot.getAttribute('class')) ?? '').includes('st-choice-on'),
+    'changing the theme leaves the crosshair shape alone',
+  );
+  say(await logScale.isChecked(), 'and leaves the scale logarithmic');
+  if (!logWas) await logScale.click();
+  await page.waitForTimeout(400);
+  await page
+    .locator('.st-group:has(.st-group-title:text-is("Crosshair")) .st-row:has(.st-row-label:text-is("Style")) .st-choice-btn')
+    .filter({ hasText: 'Cross' })
+    .first()
+    .click();
+  await page.waitForTimeout(600);
+
   // --- the colour control --------------------------------------------------
   await openSettings('Symbol');
   say(

@@ -40,6 +40,41 @@ export interface SurfaceTokens {
   readonly '--hairline': string;
 }
 
+/**
+ * The chart half of a theme: COLOURS, and nothing else.
+ *
+ * Deliberately a partial rather than a whole appearance. A theme decides what
+ * the terminal looks like; the trader decides whether the scale is logarithmic,
+ * which shape the crosshair is, whether the volume is shown and how much
+ * breathing room the price has. Carrying a full appearance here meant picking
+ * Midnight also put the crosshair back to a cross and the scale back to linear,
+ * which is a theme reaching into settings that are none of its business.
+ */
+export interface ThemeChart {
+  readonly symbol: {
+    readonly upColor: string;
+    readonly downColor: string;
+    readonly borderUpColor: string;
+    readonly borderDownColor: string;
+    readonly wickUpColor: string;
+    readonly wickDownColor: string;
+  };
+  readonly scales: {
+    readonly gridColor: string;
+    readonly scaleLineColor: string;
+    readonly scaleTextColor: string;
+    readonly paneSeparatorColor: string;
+    readonly crosshairColor: string;
+    readonly crosshairLabelBackground: string;
+    readonly sessionBreakColor: string;
+  };
+  readonly canvas: {
+    readonly background: string;
+    readonly backgroundGradientTo: string | null;
+    readonly textColor: string;
+  };
+}
+
 export interface ThemePreset {
   readonly id: ThemeId;
   readonly name: string;
@@ -47,7 +82,7 @@ export interface ThemePreset {
   /** Light themes need different contrast rules in a few places. */
   readonly light: boolean;
   readonly surface: SurfaceTokens;
-  readonly chart: ChartAppearance;
+  readonly chart: ThemeChart;
 }
 
 /** A theme's chart half, expressed as the differences from the defaults. */
@@ -63,11 +98,9 @@ function chart(patch: {
   crosshair: string;
   crosshairLabel: string;
   sessionBreak: string;
-}): ChartAppearance {
+}): ThemeChart {
   return {
-    ...DEFAULT_APPEARANCE,
     symbol: {
-      ...DEFAULT_APPEARANCE.symbol,
       upColor: patch.up,
       downColor: patch.down,
       borderUpColor: patch.up,
@@ -76,7 +109,6 @@ function chart(patch: {
       wickDownColor: patch.down,
     },
     scales: {
-      ...DEFAULT_APPEARANCE.scales,
       gridColor: patch.grid,
       scaleLineColor: patch.scaleLine,
       scaleTextColor: patch.scaleText,
@@ -86,11 +118,21 @@ function chart(patch: {
       sessionBreakColor: patch.sessionBreak,
     },
     canvas: {
-      ...DEFAULT_APPEARANCE.canvas,
       background: patch.background,
       backgroundGradientTo: patch.gradientTo ?? null,
       textColor: patch.text,
     },
+  };
+}
+
+/** A theme's colours over a full appearance, leaving everything else alone. */
+export function withTheme(appearance: ChartAppearance, id: ThemeId): ChartAppearance {
+  const theme = themeById(id);
+  return {
+    ...appearance,
+    symbol: { ...appearance.symbol, ...theme.chart.symbol },
+    scales: { ...appearance.scales, ...theme.chart.scales },
+    canvas: { ...appearance.canvas, ...theme.chart.canvas },
   };
 }
 

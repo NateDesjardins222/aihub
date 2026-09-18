@@ -14,7 +14,7 @@ import {
   normalizeAppearance,
   type ChartAppearance,
 } from '../chart/appearance';
-import { applyTheme, DEFAULT_THEME, themeById, type ThemeId } from '../chart/themes';
+import { applyTheme, DEFAULT_THEME, themeById, withTheme, type ThemeId } from '../chart/themes';
 import type { ChartType } from '../chart/ChartAdapter';
 import { indicatorDef, type IndicatorInstance, type ParamValues } from '../chart/indicators/registry';
 import {
@@ -245,7 +245,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
     // Midnight who resets wants Midnight, not the default blue-grey.
     const theme = themeById(get().themeId);
     applyTheme(theme.id);
-    set({ appearance: theme.chart });
+    set({ appearance: withTheme(DEFAULT_APPEARANCE, theme.id) });
   },
 
   /**
@@ -259,12 +259,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
     applyTheme(theme.id);
     set({
       themeId: theme.id,
-      appearance: normalizeAppearance({
-        ...get().appearance,
-        symbol: { ...get().appearance.symbol, ...theme.chart.symbol },
-        scales: { ...get().appearance.scales, ...theme.chart.scales },
-        canvas: { ...get().appearance.canvas, ...theme.chart.canvas },
-      }),
+      appearance: normalizeAppearance(withTheme(get().appearance, theme.id)),
     });
   },
 

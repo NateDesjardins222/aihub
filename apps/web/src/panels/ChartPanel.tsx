@@ -123,7 +123,6 @@ export function ChartPanel({
   const chartType = pane?.chartType ?? 'CANDLES';
   const indicators = pane?.indicators ?? EMPTY_INDICATORS;
   const paneSplit = pane?.paneSplit ?? null;
-  const setPaneSplit = useLayout((s) => s.setPaneSplit);
   const showDates = useTraining((s) => s.visibility.dateTime);
   const chartFocus = useSession((s) => s.chartFocus);
   /*
