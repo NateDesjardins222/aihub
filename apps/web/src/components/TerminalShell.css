@@ -1,15 +1,26 @@
 /*
  * The terminal layout.
  *
- * The chart is the application: the rail is 34px, the ticket defaults to 224px,
- * and everything else is a drawer or a dialog. Nothing between the account bar
- * and the blotter competes with the plot for width.
+ * A ROW: the 44px application rail, then everything else in a column - the
+ * account bar, the charts with their own rails and the ticket, the blotter.
+ *
+ * The chart is the application. The drawing rail is 40px, the ticket defaults
+ * to 224px, and everything else is a drawer or a dialog. Nothing between the
+ * account bar and the blotter competes with the plot for width.
  */
 .terminal {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   background: var(--bg-base);
+}
+
+.terminal-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .terminal-body {

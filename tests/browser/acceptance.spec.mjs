@@ -116,7 +116,7 @@ try {
   );
   say(options.length === 1, 'and it is the only one they have', `${options.length} accounts`);
 
-  const balance = await page.locator('.abar-metric:has-text("BAL") .abar-metric-value').innerText();
+  const balance = await page.locator('[data-testid=account-box-bal] .abar-box-value').innerText();
   say(/150/.test(balance.replace(/[^0-9.]/g, '')), 'with the balance it was provisioned with', balance);
   await shot(page, 'acceptance-first-login');
 
@@ -184,11 +184,11 @@ try {
   // --- restart -------------------------------------------------------------
   // The BALANCE, not the equity: equity moves with the market, and a test that
   // demands an unchanging equity is testing that the market stopped.
-  const before = await page.locator('.abar-metric:has-text("BAL") .abar-metric-value').innerText();
+  const before = await page.locator('[data-testid=account-box-bal] .abar-box-value').innerText();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(5_000);
-  const after = await page.locator('.abar-metric:has-text("BAL") .abar-metric-value').innerText();
+  const after = await page.locator('[data-testid=account-box-bal] .abar-box-value').innerText();
   say(before === after, 'everything is where they left it after a restart', `${before} -> ${after}`);
   if (traded) {
     const stillOpen = await page
@@ -227,7 +227,7 @@ try {
   );
 
   const secondBalance = await page
-    .locator('.abar-metric:has-text("BAL") .abar-metric-value')
+    .locator('[data-testid=account-box-bal] .abar-box-value')
     .innerText();
   say(
     secondBalance !== balance || !traded,

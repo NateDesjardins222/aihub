@@ -51,7 +51,7 @@ async function faults() {
 
     const controls = [];
     for (const el of document.querySelectorAll(
-      'button, .label, .chip, .num, .abar-metric, .tk-label, select, input, .pill, .metric',
+      'button, .label, .chip, .num, .abar-box, .tk-label, select, input, .pill, .metric',
     )) {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;

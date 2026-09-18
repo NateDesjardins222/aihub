@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { useSession, activeInstrument } from '../state/session';
 import { AccountBar } from './AccountBar';
+import { AppRail } from './AppRail';
 import { DrawingRail } from '../panels/DrawingRail';
 import { ChartGrid } from '../panels/ChartGrid';
 import { OrderTicket } from '../panels/OrderTicket';
@@ -51,9 +52,18 @@ export function TerminalShell(): JSX.Element {
 
   return (
     <div className="terminal">
-      <AccountBar onToggleRail={() => setRailOpen(!railOpen)} railOpen={railOpen} />
+      {/*
+        The application rail is OUTSIDE the account bar and runs the full
+        height, so the bar and the charts both begin to the right of it. That
+        is what makes it read as navigation for the product rather than as one
+        more group of icons inside the chart's chrome.
+      */}
+      <AppRail />
 
-      <div className="terminal-body">
+      <div className="terminal-column">
+        <AccountBar onToggleRail={() => setRailOpen(!railOpen)} railOpen={railOpen} />
+
+        <div className="terminal-body">
         <div className="terminal-main" style={{ paddingBottom: bottomOpen ? bottomHeight : 22 }}>
           {railOpen ? (
             <DrawingRail symbol={instrument?.root ?? ''} />
@@ -141,6 +151,7 @@ export function TerminalShell(): JSX.Element {
             onToggle={() => setBottomOpen(!bottomOpen)}
             instrument={instrument}
           />
+          </div>
         </div>
       </div>
 

@@ -33,7 +33,6 @@ export function AccountBar({
   const account = useSession(selectedAccount);
   const instrument = useSession(activeInstrument);
   const selectAccount = useSession((s) => s.selectAccount);
-  const signOut = useSession((s) => s.signOut);
   const now = useClock();
   const freshness = useFreshness(instrument?.root ?? null);
 
@@ -42,8 +41,6 @@ export function AccountBar({
   const rules = useTrading((s) => s.rules);
   const attach = useTrading((s) => s.attach);
 
-  const surface = useWorkspace((s) => s.surface);
-  const openSurface = useWorkspace((s) => s.openSurface);
   const openSettings = useWorkspace((s) => s.openSettings);
   const appearance = useChartStore((s) => s.appearance);
   const replay = useReplayStatus((s) => s);
@@ -215,25 +212,16 @@ export function AccountBar({
         )}
       </span>
 
-      <nav className="abar-nav" aria-label="Sections">
+      {/*
+        Practice, Journal, Settings and Sign out have moved to the application
+        rail on the far left, which is where application navigation belongs.
+        What stays here is the CHART's own layout control, because how many
+        charts there are is a property of this workspace rather than a place to
+        navigate to - and Settings, because a trader adjusting the chart should
+        not have to travel to the other side of the window to do it.
+      */}
+      <nav className="abar-nav" aria-label="Chart layout">
         <LayoutMenu />
-        <button
-          className={`abar-icon ${surface === 'PRACTICE' ? 'abar-icon-on' : ''}`}
-          onClick={() => openSurface('PRACTICE')}
-          title="Practice, historical sessions and the replay transport"
-          aria-label="Practice"
-        >
-          <Icon name="practice" size={13} />
-        </button>
-        <button
-          className={`abar-icon ${surface === 'JOURNAL' ? 'abar-icon-on' : ''}`}
-          onClick={() => openSurface('JOURNAL')}
-          title="Journal and analytics"
-          aria-label="Journal"
-          disabled={!visibility.journal}
-        >
-          <Icon name="journal" size={13} />
-        </button>
         <button
           className="abar-icon"
           onClick={() => openSettings('SYMBOL')}
@@ -243,10 +231,6 @@ export function AccountBar({
           <Icon name="gear" size={13} />
         </button>
       </nav>
-
-      <button className="abar-user" onClick={() => void signOut()} title="Sign out">
-        <Icon name="close" size={11} />
-      </button>
     </header>
   );
 }
