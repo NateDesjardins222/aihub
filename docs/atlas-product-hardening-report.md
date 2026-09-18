@@ -30,7 +30,7 @@ which was written before any UI was changed, exactly as the brief asked.
 | P0 drawing stress to 1000 | no degradation, verified by painted pixels |
 | P0 indicator stress to 30 | the one real defect of the milestone; fixed |
 | P0 multi-chart stress | linear and cheap |
-| P0 endurance / memory | 18 minutes, 236 cycles, no leak |
+| P0 endurance / memory | 18 minutes then 60 minutes, 1,020 cycles, no node or canvas leak |
 | P0 rapid input abuse | 19 checks, all passing |
 | P0 race conditions | covered by the same suite |
 | P0 zero console errors | held as a check in every suite |
@@ -234,10 +234,29 @@ The heap saw-tooths between collections, so the number that matters for a leak
 is the floor: it moved 1.4MB in eighteen minutes with no trend. DOM nodes and
 canvases are flat. **No leak, zero page errors.**
 
-**Said plainly:** the brief's "6-hour trader" test was run as eighteen minutes
-of continuous use, not six hours. The shape of the curve is flat and the DOM
-and canvas counts do not move, which is what a leak would show up in first, but
-six hours was not observed and is not claimed.
+### And then an hour of it
+
+The eighteen-minute run was the working one. For this report it was run again
+for **sixty minutes and 784 cycles**:
+
+| | heap floor | heap mean | DOM | canvases |
+| --- | --- | --- | --- | --- |
+| first third | 9.5MB | 14.8MB | 288 | 8 |
+| second third | 11.6MB | 16.6MB | 288 | 8 |
+| last third | 12.2MB | 17.6MB | 288 | 8 |
+
+Peak 24.9MB, no page errors, and **DOM nodes and canvases do not move at all**
+— 288 and 8 in 783 of 784 samples, which rules out the leaks that actually
+break a terminal left open all day: detached nodes and orphaned canvases.
+
+**What is not flat.** The heap FLOOR — the low-water mark after a collection,
+which is the honest measure — rose 2.7MB across the hour, and it rose in each
+third rather than wandering. At that rate a six-hour session ends about 16MB
+above where it started, against a 4GB limit, so it is not a problem; it is also
+not nothing, and rounding it to "no leak" would be the kind of reporting this
+milestone is supposed to be against. It may equally be V8 growing its own
+budget rather than anything the terminal is holding on to. Six hours was not
+observed and is not claimed.
 
 ---
 
@@ -519,9 +538,11 @@ screen, seven in the engine. Flatten leaves nothing working. A reload agrees.
 
 `recovery.spec.mjs`, 14 checks.
 
-* **Ten reloads:** median 304ms to a chart with candles on it, worst 382ms, the
-  workspace back all ten times, no drift in DOM nodes or canvases, nothing on
-  the console.
+* **Twenty-five reloads:** median 271ms to a chart with candles on it, worst
+  438ms, the workspace back all twenty-five times, no drift in DOM nodes or
+  canvases, nothing on the console — **and the last ten are no slower than the
+  first ten** (296ms → 275ms at the median), which is the question twenty-five
+  asks and ten cannot.
 * **Five reloads that interrupt each other:** comes up in 325ms with the
   workspace whole.
 * **The bars endpoint dead:** the terminal still draws its chrome and says what
@@ -592,8 +613,8 @@ someone should make deliberately rather than have me churn on a hunch.
 | --- | --- | --- | --- |
 | terminal | 20/20 | abuse | 19/19 |
 | responsive | 50/50 | live-indicators | 9/9 |
-| chart-navigation | 32/32 | recovery | 14/14 |
-| indicators | 37/37 | appearance | 26/26 |
+| chart-navigation | 32/32 | recovery | 15/15 |
+| indicators | 37/37 | appearance | 29/29 |
 | drawing-pointer | 16/16 | tablet | 15/15 |
 | drawing-engine | 36/36 | visual | 22/22 |
 | position-tools | 30/30 | polish | 25/25 |
@@ -611,7 +632,7 @@ someone should make deliberately rather than have me churn on a hunch.
 | perf-panes | 11/11 | | |
 | pane-resize | 14/14 | | |
 
-**1,025 browser checks and 700 unit tests, all passing.**
+**1,029 browser checks and 700 unit tests, all passing.**
 
 The full run came back three checks down out of about eight hundred, and
 **none of the three was the product** — each is written up in the commit that
