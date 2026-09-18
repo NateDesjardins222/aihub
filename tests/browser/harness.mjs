@@ -62,12 +62,30 @@ export function createReport(suite) {
  * paint. Neither is on by default: an ordinary suite should launch the browser
  * a trader would have.
  */
-export async function launch({ width = 1680, height = 950, args = [], initScript = null } = {}) {
+export async function launch({
+  width = 1680,
+  height = 950,
+  args = [],
+  initScript = null,
+  /**
+   * A touch screen, for the tablet pass.
+   *
+   * Not the same question as a narrow window: a pointer that cannot hover has
+   * no way to reach a control that only appears on hover, and a 44px target is
+   * a different requirement from a 22px one.
+   */
+  touch = false,
+  deviceScaleFactor = 1,
+} = {}) {
   const browser = await chromium.launch({
     executablePath: process.env.ATLAS_CHROMIUM ?? '/opt/pw-browsers/chromium',
     ...(args.length > 0 ? { args } : {}),
   });
-  const page = await browser.newPage({ viewport: { width, height } });
+  const page = await browser.newPage({
+    viewport: { width, height },
+    ...(touch ? { hasTouch: true } : {}),
+    ...(deviceScaleFactor !== 1 ? { deviceScaleFactor } : {}),
+  });
   if (initScript) await page.addInitScript(initScript);
   const errors = [];
   page.on('pageerror', (error) => errors.push(`PAGEERROR: ${String(error).slice(0, 300)}`));

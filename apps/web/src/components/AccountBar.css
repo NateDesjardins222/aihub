@@ -100,6 +100,23 @@
 .abar-clock {
   font-size: var(--fs-md);
   color: var(--text-secondary);
+  /* One line. The bar's height is the chart's height, so it may not wrap. */
+  white-space: nowrap;
+}
+
+/*
+ * A tablet-width window sheds the session cluster.
+ *
+ * At 820px - an iPad held upright - the clock wrapped onto two lines and the
+ * DELAYED chip was cut in half by the bar's own overflow. Half a word is worse
+ * than no word: the four figures and the layout control are what the bar is
+ * for, and the clock and the session chips are on the chart's status line as
+ * well. They come back the moment there is room.
+ */
+@media (max-width: 1000px) {
+  .abar-session {
+    display: none;
+  }
 }
 
 .abar-nav {

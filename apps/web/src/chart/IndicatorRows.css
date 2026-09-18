@@ -96,6 +96,21 @@
   }
 }
 
+/*
+ * A finger cannot hover.
+ *
+ * On a touch screen the hover that reveals these controls never happens, so a
+ * study could be added and then neither configured nor removed. Where there is
+ * no pointer the controls are simply always there - the legend gives up a
+ * little of its quiet, which is the right trade when the alternative is a
+ * control that cannot be reached at all.
+ */
+@media (hover: none) {
+  .ind-actions {
+    opacity: 1;
+  }
+}
+
 .ind-row:hover .ind-actions,
 .ind-row:focus-within .ind-actions {
   opacity: 1;

@@ -33,6 +33,7 @@ const SUITES = [
   'live-indicators',
   'recovery',
   'appearance',
+  'tablet',
   'visual',
   'tools',
   'replay-brackets',

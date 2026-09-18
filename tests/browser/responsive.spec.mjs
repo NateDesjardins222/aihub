@@ -220,6 +220,39 @@ try {
   );
   await report('nothing spills after a reload');
 
+  // --- the wide end --------------------------------------------------------
+  /*
+   * A terminal is as often too WIDE as too narrow: a 27-inch panel at 2560 is
+   * an ordinary trading desk. The failure at this end is not spilling, it is
+   * stranding - a chart that stops growing and leaves a band of empty
+   * workspace, or a column that stretches a control to the width of a door.
+   */
+  for (const size of [
+    { width: 2560, height: 1440 },
+    { width: 2304, height: 1296 },
+    { width: 2048, height: 1152 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(1_200);
+    await report(`nothing spills or overlaps at ${size.width}x${size.height}`);
+    const filled = await page.evaluate(() => {
+      const chart = document.querySelector('.chart-canvas')?.getBoundingClientRect();
+      const right = document.querySelector('.terminal-right')?.getBoundingClientRect();
+      const rail = document.querySelector('.apprail')?.getBoundingClientRect();
+      return {
+        chart: chart ? Math.round(chart.width) : 0,
+        right: right ? Math.round(right.width) : 0,
+        rail: rail ? Math.round(rail.width) : 0,
+        window: window.innerWidth,
+      };
+    });
+    say(
+      filled.chart + filled.right + filled.rail > filled.window - 60,
+      `and the workspace is filled rather than stranded at ${size.width}px`,
+      JSON.stringify(filled),
+    );
+  }
+
   // --- window sizes a trader actually uses ---------------------------------
   for (const size of [
     { width: 1920, height: 1080 },
