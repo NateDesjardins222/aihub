@@ -164,44 +164,70 @@ try {
   );
 
   // --- the crosshair is customisable, and the setting reaches the canvas ---
-  /** How many pixels of the crosshair's own colour a column of the plot has. */
-  const crosshairInk = async () =>
+  /**
+   * How many pixels of the crosshair's own colour each ROW of a slice of the
+   * plot holds.
+   *
+   * A row profile rather than a total. Counting every crosshair-coloured pixel
+   * made "three times as thick" read as about 1.4 times as much ink - the
+   * dashes, the antialiased edges and the price label all dilute it - and a
+   * threshold of 1.4 on a measurement of 1.40 is not a check. The THICKNESS is
+   * what the setting controls, so the thickness is what is measured.
+   */
+  const rowProfile = async () =>
     page.evaluate(() => {
-      // The renderer's own canvas, not the drawing overlay.
-      const canvases = [...document.querySelectorAll('.chart-canvas canvas')];
-      let count = 0;
+      // Layered canvases: the crosshair is not drawn on the same one as the
+      // candles, so every canvas of the plot contributes to the profile.
+      const canvases = [...document.querySelectorAll('.chart-canvas canvas')].filter(
+        (c) => c.width > 400 && c.height > 200,
+      );
+      const rows = Math.min(...canvases.map((c) => c.height), 600);
+      if (!Number.isFinite(rows) || rows <= 0) return { profile: [], slice: 0 };
+      const slice = Math.floor(Math.min(...canvases.map((c) => c.width)) * 0.2);
+      const profile = new Array(rows).fill(0);
       for (const canvas of canvases) {
         const ctx = canvas.getContext('2d');
         if (!ctx) continue;
-        const { width, height } = canvas;
-        if (width === 0 || height === 0) continue;
-        const data = ctx.getImageData(0, 0, width, Math.min(height, 400)).data;
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          // The default crosshair blue, loosely: blue dominant, mid-bright.
-          if (b > 120 && b - r > 40 && b - g > 30) count += 1;
+        // A slice well left of the pointer, so the VERTICAL line is not in it.
+        const data = ctx.getImageData(Math.floor(canvas.width * 0.1), 0, slice, rows).data;
+        for (let y = 0; y < rows; y += 1) {
+          for (let x = 0; x < slice; x += 1) {
+            const i = (y * slice + x) * 4;
+            // The default crosshair blue, loosely: blue dominant, mid-bright.
+            if (data[i + 2] > 120 && data[i + 2] - data[i] > 40 && data[i + 2] - data[i + 1] > 30) {
+              profile[y] += 1;
+            }
+          }
         }
       }
-      return count;
+      return { profile, slice };
     });
 
   /*
-   * The crosshair's own contribution, isolated.
+   * The thickness of the crosshair's horizontal line, in pixels.
    *
-   * A moving average and the RSI are blue too, so a raw count of blue pixels
-   * is mostly indicators. Reading the canvas with the pointer OFF the chart
-   * and again with it ON gives the difference the crosshair itself makes.
+   * A moving average and the RSI are blue too, so the profile is read with the
+   * pointer OFF the chart and again with it ON: a row that gains most of the
+   * slice is a row the crosshair line occupies, and nothing else in the chart
+   * spans a fifth of its width horizontally.
    */
-  const crosshairContribution = async () => {
+  const crosshairThickness = async () => {
     await page.mouse.move(at(0.5, 0.02).x, box.y - 30);
     await page.waitForTimeout(450);
-    const without = await crosshairInk();
+    const without = await rowProfile();
     await page.mouse.move(at(0.5, 0.5).x, at(0.5, 0.5).y);
     await page.waitForTimeout(450);
-    const withIt = await crosshairInk();
-    return withIt - without;
+    const withIt = await rowProfile();
+    if (withIt.profile.length === 0) return 0;
+    // A third of the slice: the line is dashed, so it fills about half of any
+    // row it crosses, and a third is comfortably below that and far above what
+    // anything else in the chart puts on one row.
+    const enough = Math.max(4, Math.floor(withIt.slice / 3));
+    let gained = 0;
+    for (let y = 0; y < withIt.profile.length; y += 1) {
+      if (withIt.profile[y] - (without.profile[y] ?? 0) >= enough) gained += 1;
+    }
+    return gained;
   };
 
   /** Set the crosshair thickness through the settings dialog. */
@@ -226,8 +252,8 @@ try {
   // proves nothing.
   const closedByEscape = await setThickness(1);
   say(closedByEscape, 'Escape closes the settings dialog');
-  const thin = await crosshairContribution();
-  say(thin > 200, 'the crosshair paints when the pointer is over the plot', `${thin} px`);
+  const thin = await crosshairThickness();
+  say(thin >= 1, 'the crosshair paints when the pointer is over the plot', `${thin} px thick`);
 
   await page.click('.abar-icon[aria-label=Settings]');
   await page.waitForTimeout(900);
@@ -241,11 +267,11 @@ try {
   await page.waitForTimeout(400);
 
   await setThickness(3);
-  const thick = await crosshairContribution();
+  const thick = await crosshairThickness();
   say(
-    thick > thin * 1.4,
+    thick >= thin + 2,
     'and thickening it actually paints a thicker crosshair',
-    `${thin} px -> ${thick} px of crosshair ink`,
+    `${thin} px -> ${thick} px thick`,
   );
 
   // Put it back, since appearance persists for this trader.
