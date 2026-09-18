@@ -13,10 +13,30 @@
  *
  *   node tests/browser/manual-pass.mjs
  */
-import { launch, signIn, shot, clearDrawings } from './harness.mjs';
+import { SHOTS, launch, signIn, shot, clearDrawings } from './harness.mjs';
 
 const { browser, page, errors } = await launch({ width: 1680, height: 1050 });
 let step = 0;
+
+/** Photograph ONE element, tightly, for a report that asks for that thing. */
+async function closeUp(selector, name, pad = 8) {
+  const box = await page.locator(selector).first().boundingBox();
+  if (!box) {
+    console.log(`  (no ${selector} to photograph)`);
+    return;
+  }
+  const size = page.viewportSize();
+  await page.screenshot({
+    path: `${SHOTS}/${name}.png`,
+    clip: {
+      x: Math.max(0, box.x - pad),
+      y: Math.max(0, box.y - pad),
+      width: Math.min(size.width - Math.max(0, box.x - pad), box.width + pad * 2),
+      height: Math.min(size.height - Math.max(0, box.y - pad), box.height + pad * 2),
+    },
+  });
+  console.log(`${name}`);
+}
 
 async function record(name, ms = 900) {
   step += 1;
@@ -325,6 +345,7 @@ try {
     t.replace(/\s+/g, ' ').trim(),
   );
   console.log(`  account bar with a position: ${boxesOpen.join('  |  ')}`);
+  await closeUp('.abar', 'manual-account-bar', 4);
 
   if ((await page.locator('[data-testid=marker-position]').count()) > 0) {
     await dragFromMark(-150);
@@ -390,6 +411,19 @@ try {
     await labels.last().press('Enter');
     await page.waitForTimeout(600);
     await record('fib-custom-levels', 900);
+    await closeUp('[data-testid=drawing-properties]', 'manual-fib-level-editor');
+
+    // Save it as a template, and prove it comes back after a reload.
+    const nameField = page.locator('[data-testid=drawing-properties] .dp-save-name');
+    if ((await nameField.count()) > 0) {
+      await nameField.fill('Unusual set');
+      await page.click('[data-testid=drawing-properties] .dp-btn:has-text("Save template")');
+      await page.waitForTimeout(800);
+      await closeUp('[data-testid=drawing-properties]', 'manual-fib-template-saved');
+      console.log(
+        `  templates for this tool: ${(await page.locator('[data-testid=drawing-properties] .dp-template-apply').allTextContents()).join(' / ')}`,
+      );
+    }
     console.log(
       `  fib levels: ${(await values.allTextContents()).join(' ')} / inputs ${(await values.evaluateAll((n) => n.map((i) => i.value))).join(' ')}`,
     );
@@ -398,6 +432,68 @@ try {
   if ((await closeProps.count()) > 0) await closeProps.click();
   await page.waitForTimeout(600);
   await record('fib-on-the-chart', 900);
+
+  // --- 13b. Bollinger bands, edited -----------------------------------------
+  await page.click('[data-pane=p1] .chdr-btn:has-text("Indicators")');
+  await page.waitForTimeout(600);
+  await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Bollinger")');
+  await page.waitForTimeout(1_600);
+  const bbSections = await page
+    .locator('[data-testid=indicator-settings] .st-group-title')
+    .allTextContents();
+  console.log(`  Bollinger sections: ${bbSections.join(' / ')}`);
+  await closeUp('[data-testid=indicator-settings]', 'manual-bollinger-settings');
+  const bbRow = (label) =>
+    page
+      .locator('[data-testid=indicator-settings] .st-row')
+      .filter({ has: page.locator(`.st-row-label:text-is("${label}")`) });
+  // A deliberately obvious edit: the upper band on its own.
+  const bbUpper = bbRow('Colour').nth(1).locator('.st-colour-text');
+  await bbUpper.fill('#2ec4a6');
+  await bbUpper.press('Enter');
+  const bbWidth = bbRow('Thickness').nth(1).locator('input[type=number]');
+  await bbWidth.fill('3');
+  await bbWidth.press('Enter');
+  const bbFill = bbRow('Opacity').last().locator('input[type=number]');
+  await bbFill.fill('18');
+  await bbFill.press('Enter');
+  await page.waitForTimeout(1_200);
+  await page.keyboard.press('Escape');
+  await record('bollinger-edited', 1_200);
+
+  // --- 13c. the scales, by hand ---------------------------------------------
+  box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+  const scaleOf = () => page.evaluate(() => window.__atlasChartView?.()?.priceRange ?? null);
+  const spanOf = () => page.evaluate(() => window.__atlasChartView?.()?.span ?? null);
+  const priceAxis = { x: box.x + box.width - 26, y: box.y + box.height * 0.45 };
+  const timeAxis = { x: box.x + box.width * 0.5, y: box.y + box.height - 10 };
+  const scale0 = await scaleOf();
+  await page.mouse.move(priceAxis.x, priceAxis.y);
+  await page.mouse.down();
+  await page.mouse.move(priceAxis.x, priceAxis.y + 140, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  const scale1 = await scaleOf();
+  await page.mouse.dblclick(priceAxis.x, priceAxis.y);
+  await page.waitForTimeout(900);
+  const scale2 = await scaleOf();
+  console.log(
+    `  price axis: ${scale0?.toFixed(1)} -> dragged ${scale1?.toFixed(1)} -> double-clicked ${scale2?.toFixed(1)}`,
+  );
+  const span0 = await spanOf();
+  await page.mouse.move(timeAxis.x, timeAxis.y);
+  await page.mouse.down();
+  await page.mouse.move(timeAxis.x - 200, timeAxis.y, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  const span1 = await spanOf();
+  await page.mouse.dblclick(timeAxis.x, timeAxis.y);
+  await page.waitForTimeout(900);
+  const span2 = await spanOf();
+  console.log(
+    `  time axis: ${span0?.toFixed(1)} -> dragged ${span1?.toFixed(1)} -> double-clicked ${span2?.toFixed(1)} bars`,
+  );
+  await record('scales-by-hand', 900);
 
   // --- 14. four EMAs, independently set ------------------------------------
   for (const length of [9, 21, 50, 200]) {
