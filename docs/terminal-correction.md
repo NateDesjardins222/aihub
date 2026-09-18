@@ -440,20 +440,54 @@ Three separate causes, all in the browser and none in the engine:
    chart now asks again when the recording's cursor has moved and it is holding
    nothing - only then, so a replay that is playing normally re-fetches nothing.
 
+Two more causes surfaced once the first three were fixed, and they were found
+the same way. A suite that failed only when it ran seventh in a sequence now
+photographs its own failures (`fail-<suite>-<n>.png`), and the photograph
+showed a chart holding exactly ONE candle at 29673 with the price scale
+auto-fitted to a six-point range around it, while the position on it was marked
+at 29462. A drag across that chart priced a target 842 ticks and $4,210 away,
+and the server accepted it, because the level was a real price on a real -
+wrong - scale.
+
+4. **A streamed bar could create the series.** `applyLiveBar` pushed onto an
+   empty series, so one bar left over from the previous feed rebuilt the chart
+   around itself. History decides what the chart holds, including that it holds
+   nothing; a streamed bar now only updates what history put there. Dropping it
+   costs nothing, because the panel re-asks for history as soon as a source
+   that had nothing starts producing, and that history contains the bar.
+5. **The motion layer survived the switch.** It holds the last bar it observed
+   and interpolates from it on every frame, so it kept feeding the old market's
+   price to a chart that had just been cleared for the new one. It is torn down
+   with the rest of the stream when the source changes.
+
 What made this hard to see is that every honest signal was already there: the
 mode badge said REPLAY PAUSED, the note said the replay had emitted nothing,
 the blotter showed the real mark. The candles were the one thing that was
 wrong, and candles are the thing a trader reads.
 
+**Neither screenshot survived, and that is worth stating plainly.** Both were
+written to the scratch directory that the next run cleans, and both were gone
+before they were copied into the repository - the first overwritten by the
+following run, the second deleted by my own `rm` before the final run started.
+What is quoted above is what was read off them at the time, and it is
+corroborated by the run logs, which are reproducible: `full-final2.log` records
+the target created at `29664.00` against a position marked at `29458.75`, and
+the second fault's `TP +842t +$4,210.00 29671.25` was read from the photograph
+before it was lost. The fixes themselves are in the diff and in the suites that
+now pass. If a photograph of a defect is wanted as evidence, the honest thing
+is to say the photograph is not there rather than to point at a different one.
+
 ---
 
 ## Test results, as run on this machine
 
-Workspace suites (`pnpm test`): unit and integration, including the P0
-arithmetic and the drawing geometry.
+Workspace suites (`pnpm test`): **34 files, 646 tests, all passing** - unit and
+integration, including the P0 arithmetic, the drawing geometry, the protective
+leg rule and the popover placement rule.
 
 Browser suites (`pnpm test:browser`), each against the real server, the real
-database and the real delayed market data:
+database and the real delayed market data. The figures below are from the final
+run, end to end in one go: **23 suites, 632 checks, no failures.**
 
 | Suite | Result |
 |---|---|
@@ -472,7 +506,7 @@ database and the real delayed market data:
 | remaining-tools | 56/56 |
 | drag-protect | 25/25 |
 | execution-interaction | 30/30 |
-| stress | 61/62, then 62/62 after the interval check was corrected |
+| stress | 62/62 |
 | perf-panes | 11/11 |
 | visual | 22/22 |
 | tools | 26/26 |
@@ -481,9 +515,22 @@ database and the real delayed market data:
 | admin | 28/28 |
 | acceptance | 20/20 |
 
-Three of those runs failed first and were fixed rather than explained away:
-the drag-protect stop-leg disagreement (a product defect, fixed in the
-product), the execution suites being handed a recording by a crashed
-predecessor (a harness defect, fixed in the harness), and the stress interval
-check looking for an object where the terminal no longer opens (a test
-expectation, corrected).
+Six of those runs failed first, and each one was diagnosed and fixed rather
+than explained away. Which side the fix landed on is stated, because "the test
+was wrong" is the easiest thing to say and the easiest thing to be wrong about:
+
+| What failed | Where the fault was | Fix |
+| --- | --- | --- |
+| drag-protect: a stop offered where a stop cannot go | the product | the leg is decided against the mark, as the engine decides it |
+| drag-protect: a stop drag produced a target | **the product** - the chart was showing a different market | five causes, all in the browser; see the section above |
+| drag-protect: the last block aimed its drag at the entry marker | the test | it aims at the mark, which is what decides the leg |
+| execution-interaction: handed a recording by a crashed predecessor | the harness | the harness clears a crashed run's litter before the next suite |
+| stress: an interval check looked for an object where the terminal no longer opens one | the test | corrected |
+| chart-navigation: "thickening the crosshair paints more" asked for 1.4x and measured 1.40 | the test's measurement | it measures the line's thickness in pixels instead: 1px at thickness 1, 3px at thickness 3 |
+
+Two of those - the market the chart was showing, and the crosshair measurement
+- were passing checks or nearly-passing checks before this pass. A check that
+passes at 1.403 against a threshold of 1.400 is not evidence of anything, and a
+suite that only failed when run seventh in sequence was the only reason the
+worst defect in this milestone was found at all. Every suite now photographs
+its own failures, so the next one does not need luck.
