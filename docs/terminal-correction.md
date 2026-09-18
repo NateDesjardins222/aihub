@@ -302,6 +302,41 @@ fix re-checked in the same shot that had shown the fault.
 
 The screenshots behind these are `docs/milestones/terminal-correction/`.
 
+### Exactly which tools were driven by hand
+
+Named individually because "the drawing tools were tested" is the kind of claim
+the brief is pushing back on. Each of these was selected from the rail, placed
+with real pointer events on a real chart, and photographed:
+
+| Tool | Placed | Selected | Style bar | Settings dialog | Object tree row |
+| --- | --- | --- | --- | --- | --- |
+| Trend line | yes | - | - | - | yes |
+| Horizontal line | yes | - | - | - | yes |
+| Vertical line | yes | - | - | - | yes |
+| Ray | yes | - | - | - | yes |
+| Extended line | yes | - | - | - | yes |
+| Rectangle | yes | - | - | - | yes |
+| Fib retracement | yes | - | - | - | yes |
+| Measure | yes | - | - | - | yes |
+| Text | yes | - | - | - | yes |
+| Long position | yes | yes | yes | yes | yes |
+| Short position | yes | - | - | - | yes |
+
+The dashes are honest: the manual pass selects ONE object and opens its style
+bar and settings, because opening eleven dialogs by hand produces eleven
+screenshots nobody reads. Every tool's own settings, selection and handle
+behaviour is covered by its suite - `rectangle` (43), `line-tools` (68),
+`remaining-tools` (56), `fib-levels` (16), `position-tools` (30) - which is
+AUTOMATED TESTED, not MANUALLY BROWSER VERIFIED, and the two words are not
+swapped anywhere in this document.
+
+Also driven by hand, and photographed: three intervals, two instruments, wheel
+zoom in and out, a drag-pan, a scale reset, two indicator instances with their
+settings dialogs and legend rows, all five chart layouts, maximize and restore,
+the journal's four tabs including a calendar day drilldown and a trade's
+detail, the practice drawer, the ticket's contract presets, all five blotter
+tabs, the blotter collapsed, and all nine settings sections.
+
 ---
 
 ## What is NOT finished

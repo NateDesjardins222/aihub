@@ -520,7 +520,14 @@ export function ChartPanel({
       offQuote();
       motion.reset();
     };
-  }, [activeSymbol, timeframe, instrument, exchangeZone, tickSize]);
+    /*
+     * `routedToReplay` is a dependency so that changing market SOURCE tears
+     * the motion layer down with everything else. It holds the last bar it
+     * observed and interpolates from it every frame, so without this it went
+     * on painting the previous market's price onto a chart that had just been
+     * cleared for the new one.
+     */
+  }, [activeSymbol, timeframe, instrument, exchangeZone, tickSize, routedToReplay]);
 
   // Settings are read live, so switching between raw and smooth takes effect on
   // the next frame. The chart is never remounted and the series is never

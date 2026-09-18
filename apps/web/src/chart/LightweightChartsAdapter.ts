@@ -708,6 +708,22 @@ export class LightweightChartsAdapter implements ChartAdapter {
    */
   applyLiveBar(bar: NormalizedBar): void {
     if (!this.priceSeries) return;
+    /*
+     * A live bar UPDATES a series. It never creates one.
+     *
+     * History decides what the chart holds, including that it holds nothing.
+     * Letting a single streamed bar establish the series meant that one bar
+     * left over from the previous market could rebuild the chart around
+     * itself: a cleared chart came back as a single candle at 29673 with the
+     * price scale auto-fitted to a six-point range, while the position it was
+     * supposed to be showing was marked at 29462. A drag across that chart
+     * then priced a target 842 ticks away.
+     *
+     * Dropping it costs nothing: the panel asks for history again as soon as a
+     * source that had nothing starts producing, and that history contains this
+     * bar.
+     */
+    if (this.bars.length === 0) return;
 
     const index = this.byTime.get(bar.time);
     const lastIndex = this.bars.length - 1;
