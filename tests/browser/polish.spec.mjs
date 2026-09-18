@@ -114,6 +114,23 @@ try {
     `${instant.length} under 60ms`,
   );
 
+  // --- two statements a foot apart, one of them false ---------------------
+  /*
+   * An invariant rather than a snapshot: whatever the session is doing when
+   * this runs, the status line may not say the market is closed AND count down
+   * to the close of a bar that is not going to close.
+   */
+  const contradiction = await page.evaluate(() => {
+    const line = document.querySelector('[data-pane=p1] [data-testid=status-line]');
+    const text = (line?.textContent ?? '').replace(/\s+/g, ' ');
+    return { closed: /MARKET CLOSED/.test(text), counting: /closes \d/.test(text), text: text.slice(-60) };
+  });
+  say(
+    !(contradiction.closed && contradiction.counting),
+    'the status line does not count down to a bar close while the market is shut',
+    contradiction.text,
+  );
+
   // --- the menus -----------------------------------------------------------
   await surface(
     'the symbol search',

@@ -825,7 +825,18 @@ export function ChartPanel({
           <span className="sl-meta" style={{ display: 'none' }}>
             <span ref={barTimeRef}>—</span>
           </span>
-          {statusLine.barCloseCountdownVisible && countdown !== null ? (
+          {/*
+            A countdown to a bar that is not going to close.
+
+            With the session shut the server still reports how long the last
+            bar had left, and the status line read "MARKET CLOSED ... closes
+            0:26" - two statements a foot apart, one of them false. A replay is
+            the exception: it closes bars on its own clock whatever the real
+            session is doing.
+          */}
+          {statusLine.barCloseCountdownVisible &&
+          countdown !== null &&
+          (routedToReplay || freshness?.state !== 'MARKET_CLOSED') ? (
             <span className="sl-meta" title="Time until this bar closes">
               closes <span className="num">{formatCountdown(countdown)}</span>
             </span>
