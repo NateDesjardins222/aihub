@@ -46,7 +46,26 @@ export const ALL_TIMEFRAMES: readonly Timeframe[] = [
   '1D',
 ];
 
-export const DEFAULT_FAVOURITE_TIMEFRAMES: readonly Timeframe[] = ['1m', '5m', '15m', '1h', '1D'];
+/*
+ * The intervals on show before a trader picks their own.
+ *
+ * This is the row the brief asked for by name. It is a DEFAULT, not the set:
+ * every interval in ALL_TIMEFRAMES can be favourited or dropped from the
+ * chevron beside the row, and the choice persists. Nine compact text controls,
+ * not nine buttons - the brief was equally clear that these are not to be
+ * "inside a giant bulky button".
+ */
+export const DEFAULT_FAVOURITE_TIMEFRAMES: readonly Timeframe[] = [
+  '1m',
+  '2m',
+  '3m',
+  '5m',
+  '15m',
+  '30m',
+  '1h',
+  '4h',
+  '1D',
+];
 
 interface WorkspaceState {
   surface: Surface;

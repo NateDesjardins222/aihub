@@ -118,6 +118,28 @@ try {
 
   const balance = await page.locator('[data-testid=account-box-bal] .abar-box-value').innerText();
   say(/150/.test(balance.replace(/[^0-9.]/g, '')), 'with the balance it was provisioned with', balance);
+
+  /*
+   * What a BRAND NEW trader's chart opens with.
+   *
+   * Checked here rather than in the terminal suite because favourites persist
+   * per trader: the demo account has its own set, so only a freshly created
+   * user shows the default. The brief named the row it wanted.
+   */
+  const intervals = (await page.locator('.chdr-tf').allTextContents()).map((t) => t.trim());
+  say(
+    ['1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h', '1D'].every((tf) => intervals.includes(tf)),
+    'and a chart that opens on the intervals a futures trader starts from',
+    intervals.join(' '),
+  );
+  const boxes = (await page.locator('.abar-box .abar-box-label').allTextContents()).map((t) =>
+    t.trim(),
+  );
+  say(
+    boxes.join(' ') === 'BAL MLL RP&L UP&L',
+    'above four account figures and nothing else',
+    boxes.join(' '),
+  );
   await shot(page, 'acceptance-first-login');
 
   // --- they trade ----------------------------------------------------------
