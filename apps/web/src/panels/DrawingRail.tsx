@@ -88,13 +88,25 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
   const style = usePopover();
   const objects = usePopover();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const sticky = useChartStore((state) => state.toolSticky);
+  const setSticky = (next: boolean): void => useChartStore.setState({ toolSticky: next });
   const railRef = useRef<HTMLElement>(null);
 
   const selected = drawings.find((drawing) => drawing.id === selectedId) ?? null;
   const mine = drawings.filter((drawing) => drawing.symbol === symbol);
   const activeStyle = selected?.style ?? defaultStyle;
 
-  const pick = (next: DrawingTool): void => setTool(tool === next ? 'CURSOR' : next);
+  /*
+   * Arming a tool does not hijack the chart.
+   *
+   * One click, one object, and the cursor comes back - which is the default
+   * because the alternative is a chart that has stopped panning and a trader
+   * who has to work out why. Persistent mode is the pin beside the cursor: an
+   * explicit choice, visible while it is in force, and Escape or the cursor
+   * button ends it.
+   */
+  const pick = (next: DrawingTool): void =>
+    setTool(tool === next ? 'CURSOR' : next, sticky);
 
   return (
     <nav className="rail" ref={railRef} aria-label="Drawing tools">
@@ -105,6 +117,27 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         aria-label="Cursor"
       >
         <Icon name="cursor" />
+      </button>
+
+      <button
+        className={`rail-btn ${sticky ? 'rail-btn-on' : ''}`}
+        onClick={() => {
+          const next = !sticky;
+          setSticky(next);
+          // Applying it to whatever is armed right now, so the toggle takes
+          // effect on the tool in the trader's hand rather than the next one.
+          setTool(tool, next);
+        }}
+        title={
+          sticky
+            ? 'Keeping the tool armed: it stays selected after each object'
+            : 'Keep the tool armed after drawing, instead of returning to the cursor'
+        }
+        aria-label="Keep the drawing tool armed"
+        aria-pressed={sticky}
+        data-testid="tool-sticky"
+      >
+        <Icon name={sticky ? 'lock' : 'unlock'} />
       </button>
 
       <div className="rail-sep" />

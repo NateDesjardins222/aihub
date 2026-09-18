@@ -43,14 +43,28 @@ export function LayoutMenu(): JSX.Element {
 
   return (
     <>
+      {/*
+        A WORD, not just a glyph.
+        =========================
+        The brief reported not knowing how to create two charts, and the
+        feature was already built - as an unlabelled icon in a bar that also
+        held six account metrics and five status pills. An icon a trader has to
+        hover to identify is a feature they have to already know about, so the
+        control says what it is: the layout's own icon, then "Layout", and the
+        count when there is more than one chart.
+      */}
       <button
-        className={`abar-icon ${layout === 'ONE' ? '' : 'abar-icon-on'}`}
+        className={`lm-trigger ${layout === 'ONE' ? '' : 'lm-trigger-on'}`}
         onClick={menu.toggle}
         title={`Chart layout: ${LAYOUT_LABEL[layout]}`}
         aria-label="Chart layout"
         data-testid="layout-button"
       >
         <Icon name={LAYOUT_ICON[layout]} size={13} />
+        <span className="lm-trigger-label">Layout</span>
+        {PANE_COUNT[layout] > 1 ? (
+          <span className="lm-trigger-count">{PANE_COUNT[layout]}</span>
+        ) : null}
       </button>
       <Popover
         open={menu.open}

@@ -48,3 +48,50 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/*
+ * The trigger says what it is.
+ *
+ * An unlabelled icon is a feature a trader has to already know about, and the
+ * brief's report was exactly that: the multi-chart layouts existed and could
+ * not be found.
+ */
+.lm-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 8px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.lm-trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.lm-trigger-label {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+/* How many charts are open, when it is more than one. */
+.lm-trigger-count {
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #06080c;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: center;
+}
+
+.lm-trigger-on {
+  color: var(--text-primary);
+  border-color: var(--accent-dim);
+}

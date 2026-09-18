@@ -334,7 +334,34 @@ export const useChartStore = create<ChartState>((set, get) => ({
     get().commitHistory();
   },
 
+  /**
+   * Patch a drawing.
+   *
+   * A LOCKED drawing will not have its anchors changed. The lock used to be
+   * enforced only by the pointer layer, which meant it held against a drag and
+   * against Delete and against nothing else: a typed coordinate, an applied
+   * template, or any future path into this action could move an object the
+   * trader had locked. The drawing-tool matrix caught it as "MOVED WHILE
+   * LOCKED", which is the whole point of walking every tool through lock and
+   * unlock rather than counting tests.
+   *
+   * Geometry only. Locking an object prevents moving it, not restyling it -
+   * and a patch that unlocks is honoured, or a lock would be permanent.
+   */
   updateDrawing(drawingId, patch) {
+    const existing = get().drawings.find((d) => d.id === drawingId);
+    if (!existing) return;
+    const unlocking = patch.locked === false;
+    if (existing.locked && !unlocking && patch.anchors !== undefined) {
+      const { anchors: _refused, ...rest } = patch;
+      if (Object.keys(rest).length === 0) return;
+      set({
+        drawings: get().drawings.map((drawing) =>
+          drawing.id === drawingId ? { ...drawing, ...rest } : drawing,
+        ),
+      });
+      return;
+    }
     set({
       drawings: get().drawings.map((drawing) =>
         drawing.id === drawingId ? { ...drawing, ...patch } : drawing,

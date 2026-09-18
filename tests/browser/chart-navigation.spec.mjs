@@ -66,20 +66,27 @@ try {
     `${spacingBefore.span.toFixed(1)} -> ${back.span.toFixed(1)}`,
   );
 
-  // --- the bar under the cursor stays under the cursor ----------------------
-  for (const fx of [0.25, 0.75]) {
+  /*
+   * --- the window TRANSLATES: the right edge is the anchor -----------------
+   *
+   * A deliberate change of behaviour, not a regression. This used to hold the
+   * bar under the cursor and grow the view equally in both directions, which
+   * with the pointer mid-chart reads as magnifying about the centre - the
+   * specific complaint the brief made twice. The wheel now pins the newest bar
+   * and its margin and moves the LEFT edge, so history expands in from the
+   * left and contracts out to the left, wherever the pointer happens to be.
+   */
+  for (const fx of [0.25, 0.5, 0.75]) {
     await page.mouse.move(at(fx, 0.5).x, at(fx, 0.5).y);
     await page.waitForTimeout(200);
-    const anchorBefore = await page.evaluate((x) => window.__atlasChartView?.(x)?.logicalAtX ?? null,
-      box.width * fx);
+    const before = await view();
     await page.mouse.wheel(0, -240);
     await page.waitForTimeout(350);
-    const anchorAfter = await page.evaluate((x) => window.__atlasChartView?.(x)?.logicalAtX ?? null,
-      box.width * fx);
+    const after = await view();
     say(
-      anchorBefore !== null && anchorAfter !== null && Math.abs(anchorAfter - anchorBefore) < 0.75,
-      `zooming holds the bar under the cursor at ${Math.round(fx * 100)}% across`,
-      `logical ${anchorBefore?.toFixed(2)} -> ${anchorAfter?.toFixed(2)}`,
+      Math.abs(after.to - before.to) < 0.75 && after.from > before.from + 1,
+      `zooming with the pointer at ${Math.round(fx * 100)}% across pins the right edge and moves the left`,
+      `from ${before.from.toFixed(1)}->${after.from.toFixed(1)}, to ${before.to.toFixed(1)}->${after.to.toFixed(1)}`,
     );
     await page.mouse.wheel(0, 240);
     await page.waitForTimeout(300);

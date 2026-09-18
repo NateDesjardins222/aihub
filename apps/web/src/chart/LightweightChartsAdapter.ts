@@ -490,11 +490,18 @@ export class LightweightChartsAdapter implements ChartAdapter {
   /**
    * The wheel, as a trader expects it.
    *
-   * Plain wheel zooms about the POINTER: the bar under the cursor is the one
-   * you are looking at, so it stays where it is and the rest of the view
-   * expands or contracts around it. Zooming with the pointer near the right
-   * edge therefore keeps the newest bar and its margin in place, which is the
-   * right-offset behaviour a symmetrical zoom loses.
+   * ZOOM ANCHORS THE RIGHT EDGE. The newest bar and its margin stay exactly
+   * where they are, the bar spacing changes, and history expands in from the
+   * left or contracts out to the left. That is the expansion-and-translation
+   * feel of the platforms this is measured against, and the brief asked for it
+   * twice: scrolling forward should translate the window along time rather
+   * than magnify symmetrically about a point.
+   *
+   * It replaces a pointer-anchored zoom, which held the bar under the cursor
+   * and grew the view equally in both directions. That is defensible in the
+   * abstract and it is not what a futures trader's hands expect: with the
+   * pointer mid-chart it reads as zooming about the centre, which is the
+   * specific complaint.
    *
    * Shift scrolls sideways through time instead, in whole bars, which is how
    * every charting package treats shift-wheel.
@@ -526,11 +533,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
       return;
     }
 
-    const rect = container.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const anchor = timeScale.coordinateToLogical(x);
-    if (anchor === null) return;
-
     /*
      * A notch is 120 in the browser's units. `zoom` is how much of the current
      * span survives: a notch forward keeps 92% of it, a notch back stretches
@@ -541,11 +543,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
     const nextSpan = Math.max(6, Math.min(4_000, span * zoom));
     if (nextSpan === span) return;
 
-    // The pointer's position within the view is preserved, which is what keeps
-    // the bar under the cursor under the cursor.
-    const ratio = (anchor - range.from) / span;
-    const from = anchor - ratio * nextSpan;
-    timeScale.setVisibleLogicalRange({ from, to: from + nextSpan });
+    // `to` is held and `from` moves: the right edge stays put and the window
+    // translates along time. Nothing here reads the pointer's x, deliberately.
+    timeScale.setVisibleLogicalRange({ from: range.to - nextSpan, to: range.to });
   };
 
   private wireEvents(): void {
