@@ -155,14 +155,32 @@ try {
   await page.waitForTimeout(2_000);
   page.off('request', watch);
 
-  const during = calls.filter((call) => call.at >= dragStarted && call.at <= dragEnded);
+  /*
+   * Requests the page makes on a TIMER, dragging or not.
+   *
+   * The rule being protected is that the gesture writes nothing until it ends.
+   * A market-data poll that would have fired anyway is not the gesture writing
+   * anything, and counting it made this check fail on a correct drag whenever
+   * the poll happened to land inside the window. Named explicitly rather than
+   * excluded by method, so the exemption is reviewable: any NEW endpoint the
+   * drag starts talking to still fails this.
+   */
+  const BACKGROUND = /\/api\/v1\/(marketdata\/(status|bars|latency)|accounts|auth\/refresh)/;
+  const during = calls.filter(
+    (call) => call.at >= dragStarted && call.at <= dragEnded && !BACKGROUND.test(call.url),
+  );
+  const polledDuring = calls.filter(
+    (call) => call.at >= dragStarted && call.at <= dragEnded && BACKGROUND.test(call.url),
+  );
   const persisted = calls.filter(
     (call) => call.at > dragEnded && /\/api\/v1\/(drawings|preferences)/.test(call.url),
   );
   say(
     during.length === 0,
-    'nothing is sent to the server while the drawing is being dragged',
-    during.length === 0 ? 'no requests' : during.map((c) => c.url).join(' '),
+    'the drag itself sends nothing to the server',
+    during.length === 0
+      ? `no requests${polledDuring.length > 0 ? `, ${polledDuring.length} background poll(s) ignored` : ''}`
+      : during.map((c) => c.url).join(' '),
   );
   say(
     persisted.length > 0,
