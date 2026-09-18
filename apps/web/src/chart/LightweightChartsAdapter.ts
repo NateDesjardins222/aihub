@@ -49,6 +49,7 @@ import {
   type ChartAppearance,
 } from './appearance';
 import { indicatorDef, type IndicatorInstance, type Plot } from './indicators/registry';
+import { BandFill, type BandPoint } from './band-fill';
 
 
 /**
@@ -125,6 +126,23 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private readonly indicatorSeries = new Map<
     string,
     { series: ISeriesApi<SeriesType>; plot: Plot; pane: number }
+  >();
+  /**
+   * The shaded regions between plots - today, the Bollinger band.
+   *
+   * A fill is attached to the upper plot's series and reads both series'
+   * coordinate converters when it paints, so it follows every pan, zoom and
+   * scale change without being told. What it holds here is the state the
+   * primitive reads: the values, the colour and whether it is wanted.
+   */
+  private readonly indicatorFills = new Map<
+    string,
+    {
+      readonly fill: BandFill;
+      readonly host: ISeriesApi<SeriesType>;
+      /** What the primitive reads. Mutated in place; never replaced. */
+      readonly state: { points: BandPoint[]; colour: string; visible: boolean };
+    }
   >();
   private readonly indicatorGuides = new Map<string, IPriceLine[]>();
   private readonly legendValues = new Map<string, string>();
@@ -791,6 +809,20 @@ export class LightweightChartsAdapter implements ChartAdapter {
     for (const [key] of [...this.indicatorGuides]) {
       if (!live.has(key)) this.indicatorGuides.delete(key);
     }
+    for (const [key, entry] of [...this.indicatorFills]) {
+      const instanceId = key.slice(0, key.lastIndexOf(':'));
+      if (live.has(instanceId)) continue;
+      // The series it was attached to has already gone, which takes the
+      // primitive with it; this is the bookkeeping catching up.
+      try {
+        (
+          entry.host as unknown as { detachPrimitive: (p: unknown) => void }
+        ).detachPrimitive(entry.fill);
+      } catch {
+        /* the series is gone; nothing to detach from */
+      }
+      this.indicatorFills.delete(key);
+    }
 
     this.panes.clear();
     let nextPane = 1;
@@ -913,6 +945,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
                     priceLineVisible: false,
                     lastValueVisible: false,
                     crosshairMarkerVisible: false,
+                    visible: plot.visible !== false,
                   },
                   pane,
                 );
@@ -932,6 +965,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
             color: withOpacity(plot.color, plot.opacity),
             lineWidth: plot.lineWidth,
             lineStyle: dashOf(plot.lineStyle),
+            visible: plot.visible !== false,
           } as never);
           entry.plot = plot;
         }
@@ -956,6 +990,58 @@ export class LightweightChartsAdapter implements ChartAdapter {
           key,
           last ? last.value.toFixed(this.legendPrecision(plot)) : '—',
         );
+      }
+
+      /*
+       * Shaded regions between two of this instance's plots.
+       *
+       * The primitive is attached once and then only fed: it reads the two
+       * series' own price-to-coordinate converters on every frame, so a pan,
+       * a zoom or a scale change needs nothing from here. Hiding the fill
+       * leaves the primitive attached and tells it not to draw, because
+       * detaching and re-attaching on a checkbox is how a renderer loses
+       * track of what is on it.
+       */
+      for (const spec of output.fills ?? []) {
+        const upper = this.indicatorSeries.get(`${instance.id}:${spec.upper}`);
+        const lower = this.indicatorSeries.get(`${instance.id}:${spec.lower}`);
+        if (!upper || !lower) continue;
+
+        const points: BandPoint[] = [];
+        const lowerByTime = new Map(lower.plot.points.map((point) => [point.time, point.value]));
+        for (const point of upper.plot.points) {
+          const other = lowerByTime.get(point.time);
+          if (other === undefined) continue;
+          points.push({ time: point.time, upper: point.value, lower: other });
+        }
+
+        const key = `${instance.id}:${spec.id}`;
+        const existing = this.indicatorFills.get(key);
+        const colour = withOpacity(spec.color, spec.opacity);
+        // Both lines hidden means there is no band to shade.
+        const visible =
+          spec.visible && (upper.plot.visible !== false || lower.plot.visible !== false);
+
+        if (existing) {
+          existing.state.points = points;
+          existing.state.colour = colour;
+          existing.state.visible = visible;
+          continue;
+        }
+
+        const state = { points, colour, visible };
+        const timeScale = this.chart.timeScale();
+        const fill = new BandFill({
+          xAt: (timeMs) => timeScale.timeToCoordinate(toTime(timeMs)) as number | null,
+          yAt: (price) => upper.series.priceToCoordinate(price) as number | null,
+          points: () => state.points,
+          colour: () => state.colour,
+          visible: () => state.visible,
+        });
+        // The primitive's shape is described by what it uses; the renderer's
+        // own type is wider than that, so the cast is at the boundary.
+        (upper.series as unknown as { attachPrimitive: (p: unknown) => void }).attachPrimitive(fill);
+        this.indicatorFills.set(key, { fill, host: upper.series, state });
       }
 
       // Pane guides, e.g. RSI's 30/70. Created once per instance.

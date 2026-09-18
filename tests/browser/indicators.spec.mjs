@@ -49,6 +49,48 @@ async function clearAll() {
   }
 }
 
+/**
+ * How many pixels of a given colour the price pane is painting.
+ *
+ * Read off the renderer's own canvases rather than from a screenshot, so the
+ * count is of what was drawn rather than of what a JPEG made of it.
+ */
+const hueCount = (r0, g0, b0) =>
+  page.evaluate(
+    ([r, g, b]) => {
+      let hits = 0;
+      for (const canvas of document.querySelectorAll('[data-pane=p1] canvas')) {
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width === 0) continue;
+        let data;
+        try {
+          data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        } catch {
+          continue;
+        }
+        for (let i = 0; i < data.length; i += 4) {
+          if (
+            Math.abs(data[i] - r) < 30 &&
+            Math.abs(data[i + 1] - g) < 30 &&
+            Math.abs(data[i + 2] - b) < 30
+          ) {
+            hits += 1;
+          }
+        }
+      }
+      return hits;
+    },
+    [r0, g0, b0],
+  );
+
+/** Reopen the Bollinger instance's settings, whatever closed them. */
+async function openBollinger() {
+  if ((await page.locator('[data-testid=indicator-settings]').count()) === 1) return;
+  await page.locator('[data-testid=indicator-row][data-kind=BOLL]').first().dblclick();
+  await page.waitForSelector('[data-testid=indicator-settings]', { timeout: 10_000 });
+  await page.waitForTimeout(700);
+}
+
 try {
   await signIn(page);
   await page.waitForTimeout(4500);
@@ -208,6 +250,75 @@ try {
     'Bollinger bands expose their own parameters',
     bbLabels.join(' / '),
   );
+
+  /*
+   * Three lines and a fill, each controlled on its own.
+   *
+   * One colour and one width for all three used to be the whole indicator's
+   * appearance, so the basis could not be de-emphasised behind the bands. The
+   * check is on PIXELS rather than on stored parameters: a setting that saves
+   * and does not draw is not a setting.
+   */
+  const bbSections = await page
+    .locator('[data-testid=indicator-settings] .st-group-title')
+    .allTextContents();
+  for (const wanted of ['Basis', 'Upper band', 'Lower band', 'Fill']) {
+    say(bbSections.includes(wanted), `${wanted} has its own settings section`, bbSections.join(' / '));
+  }
+
+  const bbRows = (label) =>
+    page
+      .locator('[data-testid=indicator-settings] .st-row')
+      .filter({ has: page.locator(`.st-row-label:text-is("${label}")`) });
+
+  // Magenta at full strength, because it cannot be confused with anything
+  // else the chart draws.
+  const fillColour = bbRows('Colour').last().locator('.st-colour-text');
+  await fillColour.fill('#ff00ff');
+  await fillColour.press('Enter');
+  const fillOpacity = bbRows('Opacity').last().locator('input[type=number]');
+  await fillOpacity.fill('100');
+  await fillOpacity.press('Enter');
+  await page.waitForTimeout(1_200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+  const filled = await hueCount(255, 0, 255);
+  say(filled > 2_000, 'the band between the bands is actually shaded', `${filled} px`);
+  await shot(page, 'indicators-bollinger-fill');
+
+  await openBollinger();
+  await bbRows('Shown').last().locator('input[type=checkbox]').uncheck();
+  await page.waitForTimeout(1_000);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+  const unfilled = await hueCount(255, 0, 255);
+  say(unfilled === 0, 'and turning the fill off removes every pixel of it', `${unfilled} px`);
+
+  await openBollinger();
+  const upperColour = bbRows('Colour').nth(1).locator('.st-colour-text');
+  await upperColour.fill('#00ff00');
+  await upperColour.press('Enter');
+  const upperWidth = bbRows('Thickness').nth(1).locator('input[type=number]');
+  await upperWidth.fill('4');
+  await upperWidth.press('Enter');
+  await page.waitForTimeout(1_200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+  const upperOnly = await hueCount(0, 255, 0);
+  say(upperOnly > 500, 'the upper band takes its own colour and thickness', `${upperOnly} px`);
+
+  await openBollinger();
+  await bbRows('Shown').nth(0).locator('input[type=checkbox]').uncheck();
+  await page.waitForTimeout(1_000);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+  const afterBasisHidden = await hueCount(0, 255, 0);
+  say(
+    Math.abs(afterBasisHidden - upperOnly) < upperOnly * 0.1,
+    'and hiding the basis leaves the bands exactly where they were',
+    `${upperOnly} -> ${afterBasisHidden} px`,
+  );
+
   await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
   rows = await rowTexts();

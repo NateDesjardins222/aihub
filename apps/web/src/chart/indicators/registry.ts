@@ -31,20 +31,42 @@ export interface Plot {
   readonly lineStyle: 'SOLID' | 'DASHED' | 'DOTTED';
   /** 0 to 1. Applied to the colour, since the renderer has no alpha layer. */
   readonly opacity: number;
+  /**
+   * Whether to draw it. Default true.
+   *
+   * A hidden plot keeps its series rather than dropping it: the series is the
+   * pane and the price scale, and churning it to hide one of three Bollinger
+   * lines would rebuild the layout on a checkbox.
+   */
+  readonly visible?: boolean;
   readonly points: readonly PlotPoint[];
+}
+
+/** A shaded region between two of an indicator's own plots. */
+export interface PlotFill {
+  readonly id: string;
+  /** Plot ids, on the same pane and the same price scale. */
+  readonly upper: string;
+  readonly lower: string;
+  readonly color: string;
+  /** 0 to 1. */
+  readonly opacity: number;
+  readonly visible: boolean;
 }
 
 export interface IndicatorOutput {
   /** 'PRICE' overlays the candles; a number is a separate pane below it. */
   readonly pane: 'PRICE' | number;
   readonly plots: readonly Plot[];
+  /** Shaded regions between plots, e.g. between the Bollinger bands. */
+  readonly fills?: readonly PlotFill[];
   /** Horizontal reference lines for a pane, e.g. RSI's 30 and 70. */
   readonly guides?: readonly { value: number; color: string }[];
   /** Fixed pane range, where the statistic has one. */
   readonly range?: { min: number; max: number };
 }
 
-export type ParamType = 'NUMBER' | 'SOURCE' | 'COLOR' | 'LINE_STYLE';
+export type ParamType = 'NUMBER' | 'SOURCE' | 'COLOR' | 'LINE_STYLE' | 'TOGGLE';
 
 export interface ParamDef {
   readonly key: string;
@@ -53,6 +75,24 @@ export interface ParamDef {
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
+  /**
+   * The settings section this belongs in.
+   *
+   * Omitted means the panel decides - inputs above, appearance below - which
+   * is right for an indicator with one line. Bollinger bands have three lines
+   * and a fill with their own colour, width, style, opacity and visibility,
+   * and twenty controls in one list is not a settings panel. Naming the
+   * section puts each line's controls together.
+   */
+  readonly group?: string;
+}
+
+/** A TOGGLE parameter's value. Stored as a string, like every other. */
+export function flag(params: ParamValues, key: string, fallback = true): boolean {
+  const value = params[key];
+  if (value === 'on') return true;
+  if (value === 'off') return false;
+  return fallback;
 }
 
 export type ParamValues = Record<string, number | string>;
@@ -102,6 +142,7 @@ function plot(
     lineWidth?: number;
     lineStyle?: 'SOLID' | 'DASHED' | 'DOTTED';
     opacity?: number;
+    visible?: boolean;
   },
 ): Plot {
   const points: PlotPoint[] = [];
@@ -118,6 +159,7 @@ function plot(
     lineWidth: spec.lineWidth ?? 1,
     lineStyle: spec.lineStyle ?? 'SOLID',
     opacity: spec.opacity ?? 1,
+    visible: spec.visible ?? true,
     points,
   };
 }
@@ -133,6 +175,55 @@ function styleOf(params: ParamValues, fallbackWidth = 1): {
     lineWidth: Math.max(1, Math.min(4, num(params, 'lineWidth', fallbackWidth))),
     lineStyle: raw === 'DASHED' || raw === 'DOTTED' ? raw : 'SOLID',
     opacity: Math.max(0.1, Math.min(1, num(params, 'opacity', 100) / 100)),
+  };
+}
+
+/**
+ * One line's own controls, for an indicator that draws more than one.
+ *
+ * Keys are prefixed with the line's name so three lines cannot share a
+ * setting by accident, and every one of them lands in a section named after
+ * the line it belongs to.
+ */
+function line(prefix: string, group: string): readonly ParamDef[] {
+  return [
+    { key: `${prefix}Visible`, label: 'Shown', type: 'TOGGLE', group },
+    { key: `${prefix}Color`, label: 'Colour', type: 'COLOR', group },
+    { key: `${prefix}Width`, label: 'Thickness', type: 'NUMBER', min: 1, max: 4, step: 1, group },
+    { key: `${prefix}Style`, label: 'Line style', type: 'LINE_STYLE', group },
+    { key: `${prefix}Opacity`, label: 'Opacity', type: 'NUMBER', min: 10, max: 100, step: 1, group },
+  ];
+}
+
+function lineDefaults(prefix: string, colour: string, width: number): ParamValues {
+  return {
+    [`${prefix}Visible`]: 'on',
+    [`${prefix}Color`]: colour,
+    [`${prefix}Width`]: width,
+    [`${prefix}Style`]: 'SOLID',
+    [`${prefix}Opacity`]: 100,
+  };
+}
+
+/** What `plot` needs for one prefixed line. */
+function lineSpec(
+  params: ParamValues,
+  prefix: string,
+  fallback: string,
+): {
+  color: string;
+  lineWidth: number;
+  lineStyle: 'SOLID' | 'DASHED' | 'DOTTED';
+  opacity: number;
+  visible: boolean;
+} {
+  const raw = params[`${prefix}Style`];
+  return {
+    color: colourOf(params, `${prefix}Color`, fallback),
+    lineWidth: Math.max(1, Math.min(4, num(params, `${prefix}Width`, 1))),
+    lineStyle: raw === 'DASHED' || raw === 'DOTTED' ? raw : 'SOLID',
+    opacity: Math.max(0.1, Math.min(1, num(params, `${prefix}Opacity`, 100) / 100)),
+    visible: flag(params, `${prefix}Visible`),
   };
 }
 
@@ -258,26 +349,58 @@ export const INDICATORS: readonly IndicatorDef[] = [
     category: 'Volatility',
     overlay: true,
     description: 'A moving average with bands a multiple of the standard deviation either side.',
+    /*
+     * Three lines and a fill, each controlled on its own.
+     *
+     * One colour and one width for all three was the whole indicator's
+     * appearance, so the basis could not be de-emphasised behind the bands and
+     * the bands could not be told apart from the moving average that is also
+     * on the chart. A band is not the same object as its centre line, and the
+     * space between the bands is not decoration - it is the volatility.
+     */
     params: [
       PERIOD,
       { key: 'multiplier', label: 'Deviations', type: 'NUMBER', min: 0.1, max: 10, step: 0.1 },
       SOURCE,
-      COLOUR,
-      ...STYLE,
+      ...line('basis', 'Basis'),
+      ...line('upper', 'Upper band'),
+      ...line('lower', 'Lower band'),
+      { key: 'fillVisible', label: 'Shown', type: 'TOGGLE', group: 'Fill' },
+      { key: 'fillColor', label: 'Colour', type: 'COLOR', group: 'Fill' },
+      { key: 'fillOpacity', label: 'Opacity', type: 'NUMBER', min: 0, max: 100, step: 1, group: 'Fill' },
     ],
-    defaults: { ...STYLE_DEFAULTS, period: 20, multiplier: 2, source: 'close', color: '#6b7a94' },
+    defaults: {
+      period: 20,
+      multiplier: 2,
+      source: 'close',
+      ...lineDefaults('basis', '#8e9bb3', 1),
+      ...lineDefaults('upper', '#6b7a94', 1),
+      ...lineDefaults('lower', '#6b7a94', 1),
+      fillVisible: 'on',
+      fillColor: '#4d8dff',
+      fillOpacity: 8,
+    },
     compute: (bars, params, ctx) => {
       const values = bars.map((b) => sourceValue(b, src(params, 'source')));
       const period = num(params, 'period', 20);
       const multiplier = Number(params['multiplier']) || 2;
       const { middle, upper, lower } = bollinger(values, period, multiplier);
-      const base = colourOf(params, 'color', '#6b7a94');
       return {
         pane: ctx.pane,
         plots: [
-          plot(bars, upper, { id: 'upper', label: `BB upper`, color: base, ...styleOf(params) }),
-          plot(bars, middle, { id: 'middle', label: `BB ${period}`, color: base, ...styleOf(params) }),
-          plot(bars, lower, { id: 'lower', label: `BB lower`, color: base, ...styleOf(params) }),
+          plot(bars, upper, { id: 'upper', label: 'BB upper', ...lineSpec(params, 'upper', '#6b7a94') }),
+          plot(bars, middle, { id: 'middle', label: `BB ${period}`, ...lineSpec(params, 'basis', '#8e9bb3') }),
+          plot(bars, lower, { id: 'lower', label: 'BB lower', ...lineSpec(params, 'lower', '#6b7a94') }),
+        ],
+        fills: [
+          {
+            id: 'band',
+            upper: 'upper',
+            lower: 'lower',
+            color: colourOf(params, 'fillColor', '#4d8dff'),
+            opacity: Math.max(0, Math.min(1, Number(params['fillOpacity'] ?? 8) / 100)),
+            visible: flag(params, 'fillVisible'),
+          },
         ],
       };
     },
@@ -447,7 +570,11 @@ export function indicatorTitle(kind: string, params: ParamValues): string {
   const def = indicatorDef(kind);
   const parts: string[] = [];
   for (const param of def?.params ?? []) {
-    if (param.type === 'COLOR' || param.type === 'LINE_STYLE') continue;
+    // Appearance never goes in the title. A parameter that names its own
+    // section is appearance by construction, which is what keeps Bollinger
+    // bands from introducing themselves as "BB 20 2 close on #6b7a94 1 SOLID".
+    if (param.group !== undefined) continue;
+    if (param.type === 'COLOR' || param.type === 'LINE_STYLE' || param.type === 'TOGGLE') continue;
     if (param.key === 'lineWidth' || param.key === 'opacity') continue;
     const value = params[param.key];
     if (value === undefined || value === '') continue;

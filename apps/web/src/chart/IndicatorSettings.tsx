@@ -7,7 +7,7 @@
  * first thing in it, because "I cannot confidently tell what EMA length I
  * have" was the complaint that prompted this.
  */
-import { useEffect, useRef, type JSX } from 'react';
+import { Fragment, useEffect, useRef, type JSX } from 'react';
 import { useLayout } from '../state/layout-store';
 import { indicatorDef, type ParamDef } from './indicators/registry';
 import { Check, Choice, Colour, Num, Row } from '../settings/Controls';
@@ -60,8 +60,28 @@ export function IndicatorSettings({ instanceId, onClose }: IndicatorSettingsProp
   const def = indicatorDef(instance.kind);
   if (!def) return null;
 
-  const inputs = def.params.filter((p) => !isStyle(p));
-  const styles = def.params.filter((p) => isStyle(p));
+  /*
+   * Sections, in the order the indicator declares them.
+   *
+   * A parameter that names a group goes in that group; the rest fall into
+   * Inputs or Style the way they always did. Bollinger bands declare Basis,
+   * Upper band, Lower band and Fill, so each line's five controls sit
+   * together instead of twenty controls sharing one list.
+   */
+  const sections: Array<{ title: string; params: ParamDef[] }> = [];
+  const section = (title: string): ParamDef[] => {
+    const found = sections.find((s) => s.title === title);
+    if (found) return found.params;
+    const made = { title, params: [] as ParamDef[] };
+    sections.push(made);
+    return made.params;
+  };
+  for (const param of def.params) {
+    section(param.group ?? (isStyle(param) ? 'Style' : 'Inputs')).push(param);
+  }
+  // Inputs first whatever order the declaration happened to be in.
+  sections.sort((a, b) => (a.title === 'Inputs' ? -1 : b.title === 'Inputs' ? 1 : 0));
+  const takesInputs = def.params.some((p) => p.group === undefined && !isStyle(p));
 
   const control = (param: ParamDef): JSX.Element | null => {
     const value = instance.params[param.key];
@@ -99,6 +119,13 @@ export function IndicatorSettings({ instanceId, onClose }: IndicatorSettingsProp
             onChange={(next) => update(instance.id, { [param.key]: next })}
           />
         );
+      case 'TOGGLE':
+        return (
+          <Check
+            checked={value !== 'off'}
+            onChange={(next) => update(instance.id, { [param.key]: next ? 'on' : 'off' })}
+          />
+        );
       default:
         return null;
     }
@@ -115,24 +142,17 @@ export function IndicatorSettings({ instanceId, onClose }: IndicatorSettingsProp
       </header>
 
       <div className="is-body">
-        <h4 className="st-group-title">Inputs</h4>
-        {inputs.map((param) => (
-          <Row key={param.key} label={param.label}>
-            {control(param)}
-          </Row>
-        ))}
-        {inputs.length === 0 ? <p className="st-note">This indicator takes no inputs.</p> : null}
-
-        {styles.length > 0 ? (
-          <>
-            <h4 className="st-group-title">Style</h4>
-            {styles.map((param) => (
+        {sections.map((group) => (
+          <Fragment key={group.title}>
+            <h4 className="st-group-title">{group.title}</h4>
+            {group.params.map((param) => (
               <Row key={param.key} label={param.label}>
                 {control(param)}
               </Row>
             ))}
-          </>
-        ) : null}
+          </Fragment>
+        ))}
+        {!takesInputs ? <p className="st-note">This indicator takes no inputs.</p> : null}
 
         <h4 className="st-group-title">Visibility</h4>
         <Row label="Shown on the chart">
