@@ -112,9 +112,28 @@ async function flatten() {
   }
 }
 
+/** One chart, whatever the last session left behind. */
+async function singleChart() {
+  if ((await page.locator('[data-testid=chart-pane]').count()) <= 1) return;
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(500);
+  await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
+  await page.waitForTimeout(3_500);
+}
+
 try {
   await signIn(page);
   await page.waitForTimeout(4_500);
+
+  /*
+   * Start from one chart.
+   *
+   * The workspace persists by design, so a previous session - including one
+   * that stopped halfway - hands this run whatever layout it was left in. A
+   * walkthrough that assumes a single chart and is given two clicks the wrong
+   * pane's dialog and stops, which says nothing about the product.
+   */
+  await singleChart();
   await record('signed-in');
 
   let box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
@@ -197,7 +216,10 @@ try {
   await record('selected-style-bar', 600);
   await page.mouse.dblclick(long.x + 30, long.y + 6);
   await record('object-settings', 900);
-  await page.click('[data-testid=drawing-properties] button[aria-label="Close object settings"]');
+  await page
+    .locator('[data-testid=drawing-properties] button[aria-label="Close object settings"]')
+    .first()
+    .click();
   await page.waitForTimeout(500);
 
   // The object tree, with everything on the chart in it.
@@ -398,7 +420,7 @@ try {
   await page.keyboard.press('Escape');
   await page.mouse.dblclick(at(box, 0.45, 0.49).x, at(box, 0.45, 0.49).y);
   await page.waitForTimeout(900);
-  const levelEditor = page.locator('[data-testid=level-editor]');
+  const levelEditor = page.locator('[data-testid=level-editor]').first();
   if ((await levelEditor.count()) > 0) {
     // Nothing standard: 11.1, 33.3 and 88.8, named by hand. The default set
     // is not hard-coded anywhere the editor can reach, which is the point.
@@ -442,7 +464,7 @@ try {
     );
   }
   const closeProps = page.locator('[data-testid=drawing-properties] button[aria-label="Close object settings"]');
-  if ((await closeProps.count()) > 0) await closeProps.click();
+  if ((await closeProps.count()) > 0) await closeProps.first().click();
   await page.waitForTimeout(600);
   await record('fib-on-the-chart', 900);
 
