@@ -31,6 +31,7 @@ const SUITES = [
   'pane-resize',
   'abuse',
   'live-indicators',
+  'recovery',
   'visual',
   'tools',
   'replay-brackets',
