@@ -217,8 +217,9 @@ pane with its own price scale and canvas. That was never the problem.
 
 ### Endurance — eighteen minutes of continuous use
 
-Around 150 cycles of pan, zoom, timeframe change, symbol change, indicator
-add/remove and a trip through the journal, sampled 236 times.
+236 cycles of pan, zoom, timeframe change, symbol change, indicator add/remove
+and a trip through the journal, with a heap, DOM and canvas reading taken at
+the end of each one.
 
 | | heap min | heap mean | heap max | DOM | canvases |
 | --- | --- | --- | --- | --- | --- |
@@ -315,6 +316,23 @@ looked.
 pass, theme presets and the customisation experience. These are the most
 visible items in the brief and the least likely to be where the product is
 actually weak, which is exactly why they come last.
+
+---
+
+## What the order produced
+
+The plan held. Working in that order found, in order: a 17px hit target and a
+legend that could remove the wrong study; panes that could be dragged but never
+remembered; a tick path that recomputed every study over every bar; a terminal
+that survived eighteen minutes, nineteen kinds of abuse, ten reloads and two
+dead endpoints without a mark; a journal that hid 935 trades behind a page it
+did not mention; a tablet on which a study could be added and never removed; a
+top bar that cut a word in half at 820px; and a status line that counted down
+to the close of a bar that was not going to close.
+
+Appearance came last and was the smallest part: five themes, a colour control,
+six pixels of account bar. `docs/atlas-product-hardening-report.md` is the
+completion report.
 
 ## Known issues carried in from before
 

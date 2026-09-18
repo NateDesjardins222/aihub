@@ -193,7 +193,105 @@ try {
   await page.waitForTimeout(600);
   say((await field.inputValue()) === '#2ec4a6', 'and a hex can still simply be typed');
 
+  // --- twenty changes in a row, and a reload -------------------------------
+  /*
+   * The customisation stress the brief asks for.
+   *
+   * Settings are written to the server behind a debounce, so the failure mode
+   * is not "a setting does not save" - it is "a setting does not save when
+   * twenty others are saved on top of it". Twenty changes are made as fast as
+   * the controls take them, and then the page is reloaded and every one is
+   * read back.
+   */
+  await openSettings('Status line');
+  const toggles = page.locator('.st-content .st-row input[type=checkbox]');
+  const toggleCount = Math.min(8, await toggles.count());
+  const wanted = [];
+  for (let i = 0; i < toggleCount; i += 1) {
+    const box = toggles.nth(i);
+    const was = await box.isChecked();
+    await box.click();
+    await page.waitForTimeout(90);
+    wanted.push(!was);
+  }
+  say(toggleCount >= 6, 'the status line has enough switches to stress', `${toggleCount} toggles`);
+
+  await openSettings('Scales and lines');
+  const scaleToggles = page.locator('.st-content .st-row input[type=checkbox]');
+  const scaleCount = Math.min(6, await scaleToggles.count());
+  const scaleWanted = [];
+  for (let i = 0; i < scaleCount; i += 1) {
+    const box = scaleToggles.nth(i);
+    const was = await box.isChecked();
+    await box.click();
+    await page.waitForTimeout(90);
+    scaleWanted.push(!was);
+  }
+
+  await openSettings('Canvas');
+  const fontSize = page.locator('.st-row:has-text("Font size") input[type=number]').first();
+  await fontSize.fill('14');
+  await fontSize.dispatchEvent('change');
+  await page.waitForTimeout(200);
+  const background = page.locator('.st-row:has-text("Background") .cp-text').first();
+  await background.fill('#0a0c12');
+  await background.press('Enter');
+  await page.waitForTimeout(300);
+
+  say(
+    toggleCount + scaleCount + 2 >= 16,
+    'sixteen or more settings changed in a few seconds',
+    `${toggleCount + scaleCount + 2} changes`,
+  );
+
+  await page.click('.st-close');
+  await page.waitForTimeout(2_500);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
+  await page.waitForTimeout(6_000);
+
+  await openSettings('Status line');
+  const afterStatus = [];
+  for (let i = 0; i < toggleCount; i += 1) {
+    afterStatus.push(await page.locator('.st-content .st-row input[type=checkbox]').nth(i).isChecked());
+  }
+  say(
+    JSON.stringify(afterStatus) === JSON.stringify(wanted),
+    'every status-line switch came back the way it was left',
+    `${JSON.stringify(wanted)} vs ${JSON.stringify(afterStatus)}`,
+  );
+
+  await openSettings('Scales and lines');
+  const afterScales = [];
+  for (let i = 0; i < scaleCount; i += 1) {
+    afterScales.push(await page.locator('.st-content .st-row input[type=checkbox]').nth(i).isChecked());
+  }
+  say(
+    JSON.stringify(afterScales) === JSON.stringify(scaleWanted),
+    'and so did every scale switch',
+    `${JSON.stringify(scaleWanted)} vs ${JSON.stringify(afterScales)}`,
+  );
+
+  await openSettings('Canvas');
+  say(
+    (await page.locator('.st-row:has-text("Font size") input[type=number]').first().inputValue()) === '14',
+    'the font size survived too',
+  );
+  say(
+    (await page.locator('.st-row:has-text("Background") .cp-text').first().inputValue()) === '#0a0c12',
+    'and the background colour',
+  );
+
   // Leave the workspace as it was found: the suites share one account.
+  await openSettings('Canvas');
+  await page.click('.st-actions button:has-text("Reset to defaults")');
+  await page.waitForTimeout(400);
+  await page.click('.st-actions button:has-text("Reset")');
+  await page.waitForTimeout(1_200);
+  say(
+    (await page.locator('.st-row:has-text("Font size") input[type=number]').first().inputValue()) !== '14',
+    'and one reset puts all of it back',
+  );
   await openSettings('Theme');
   await page.click('[data-theme-card=ATLAS_DARK]');
   await page.waitForTimeout(900);
