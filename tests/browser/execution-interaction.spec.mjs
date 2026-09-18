@@ -175,11 +175,29 @@ try {
   );
   say(midDragModals === 0, 'nothing modal appears while dragging');
 
+  /*
+   * Read the price from the SERVER, not from the label.
+   *
+   * A protective label at rest carries its dollar P&L and nothing else - that
+   * is the whole point of the redesign - so there is no price on it to compare
+   * once the pointer is released. `second.price` is what the label showed at
+   * the moment of release, which makes this a stronger claim than it was: the
+   * price a trader reads while placing is the price the server ends up
+   * holding.
+   */
   const held = await orderText();
   say(
-    held.includes(await read('[data-testid=marker-stop] .pm-price')),
-    'the released price is the price the server holds',
-    await read('[data-testid=marker-stop] .pm-price'),
+    second.price.length > 0 && held.includes(second.price),
+    'the price shown while placing is the price the server holds',
+    `${second.price} in ${held.slice(0, 90)}`,
+  );
+  const restingTag = ((await page.textContent('[data-testid=marker-stop]')) ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  say(
+    /^[-\u2212+]?\$[\d,]+\.\d\d$/.test(restingTag),
+    'and the label goes back to carrying only the dollars',
+    restingTag,
   );
 
   // ===== 2. the menu on a protective level =================================
@@ -199,14 +217,13 @@ try {
 
   await page.click('[data-testid=order-context-menu] button:has-text("Move stop to break even")');
   await page.waitForTimeout(3_500);
-  const breakEven = await read('[data-testid=marker-stop] .pm-price');
-  say(
-    Number(breakEven) === entry,
-    'break even moves the real order to the entry price',
-    `${breakEven} vs entry ${entry}`,
-  );
+  // Again from the server: the resting label has no price on it to read.
   const beOrders = await orderText();
-  say(beOrders.includes(breakEven), 'and the server holds it there', breakEven);
+  say(
+    beOrders.includes(String(entry)),
+    'break even moves the real order to the entry price',
+    `entry ${entry} in ${beOrders.slice(0, 110)}`,
+  );
 
   await page.click('[data-testid=marker-stop]', { button: 'right' });
   await page.waitForTimeout(400);
