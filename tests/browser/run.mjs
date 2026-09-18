@@ -28,6 +28,7 @@ const SUITES = [
   'execution-interaction',
   'stress',
   'perf-panes',
+  'pane-resize',
   'visual',
   'tools',
   'replay-brackets',

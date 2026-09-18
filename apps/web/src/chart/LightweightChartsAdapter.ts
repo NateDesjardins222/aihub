@@ -119,6 +119,16 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private exchangeZone = 'America/Chicago';
   private indicators: readonly IndicatorInstance[] = [];
   /**
+   * The split the trader dragged, as one stretch factor per pane, or null
+   * while the terminal is choosing. Held here because the renderer forgets it
+   * the moment a pane is added or removed.
+   */
+  private paneSplit: readonly number[] | null = null;
+  private readonly paneSplitCallbacks = new Set<(f: readonly number[] | null) => void>();
+  /** Listeners attached to the renderer's own separator handles. */
+  private separatorCleanup: Array<() => void> = [];
+  private separatorFrame: number | null = null;
+  /**
    * One rendered series per indicator plot, keyed `instanceId:plotId`.
    *
    * Kept beside the price series rather than inside it: an indicator is drawn
@@ -364,6 +374,11 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
   destroy(): void {
     this.container?.removeEventListener('wheel', this.onWheel);
+    if (this.separatorFrame !== null) cancelAnimationFrame(this.separatorFrame);
+    this.separatorFrame = null;
+    for (const off of this.separatorCleanup) off();
+    this.separatorCleanup = [];
+    this.paneSplitCallbacks.clear();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.orderLines.clear();
@@ -920,14 +935,161 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (!this.chart) return;
     try {
       const panes = this.chart.panes();
-      const below = Math.max(1, panes.length - 1);
-      for (let i = 0; i < panes.length; i += 1) {
-        panes[i]?.setStretchFactor(i === 0 ? below * 3 : 1);
+      const split = this.fitSplit(panes.length);
+      if (split) {
+        for (let i = 0; i < panes.length; i += 1) panes[i]?.setStretchFactor(split[i]!);
+        /*
+         * A split adapted to a new pane count IS the split now.
+         *
+         * Keeping the two-pane array a trader dragged and re-deriving from it
+         * every time made what came back after a reload depend on how many
+         * panes were open when it was stored - the chart reopened at a
+         * different size from the one it was closed at. What is on the screen
+         * is what is remembered.
+         */
+        if (split.length !== this.paneSplit?.length) {
+          this.paneSplit = split;
+          this.announceSplit(split);
+        }
+      } else {
+        const below = Math.max(1, panes.length - 1);
+        for (let i = 0; i < panes.length; i += 1) {
+          panes[i]?.setStretchFactor(i === 0 ? below * 3 : 1);
+        }
       }
     } catch {
       // A renderer without pane stretching still draws correctly, just with
       // the default split.
     }
+    /*
+     * After the frame that creates them.
+     *
+     * The renderer builds a separator row when a pane appears, but not inside
+     * the call that added the series - asking for the handles here found
+     * nothing, and the grip went unlabelled and unwatched until the next
+     * indicator change happened to catch up.
+     */
+    if (this.separatorFrame !== null) cancelAnimationFrame(this.separatorFrame);
+    this.separatorFrame = requestAnimationFrame(() => {
+      this.separatorFrame = null;
+      this.wireSeparators();
+    });
+  }
+
+  /**
+   * The trader's split, adjusted to however many panes there are now.
+   *
+   * Adding a second oscillator to a chart whose price pane was dragged to
+   * two-thirds should not throw that choice away and re-balance from scratch.
+   * The price pane keeps the share it was given; the panes below divide what
+   * is left between them. Returns null when nothing has been chosen, which is
+   * the automatic split.
+   */
+  private fitSplit(count: number): number[] | null {
+    const manual = this.paneSplit;
+    /*
+     * One pane has no split, and saying so would destroy one.
+     *
+     * A chart passes through a single pane twice: at startup, before the
+     * stored workspace has arrived, and whenever the last study is removed.
+     * Adapting a three-pane split to "one pane" produced a one-element array,
+     * which is not a split at all - and because the adaptation was saved, a
+     * trader's arrangement was quietly overwritten by their own reload.
+     */
+    if (!manual || manual.length === 0 || count < 2) return null;
+    if (manual.length === count) return [...manual];
+    const total = manual.reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return null;
+    const price = manual[0] ?? 1;
+    const below = Math.max(0, total - price);
+    const others = count - 1;
+    if (others <= 0) return [price];
+    // A pane that did not exist when the trader dragged gets an equal share of
+    // what was below the price, so the price pane's own share is untouched.
+    const each = below > 0 ? below / others : price / 3;
+    return [price, ...Array.from({ length: others }, () => each)];
+  }
+
+  /** Read the split back out of the renderer, after a drag. */
+  private readSplit(): number[] | null {
+    if (!this.chart) return null;
+    try {
+      const panes = this.chart.panes();
+      if (panes.length < 2) return null;
+      return panes.map((pane) => pane.getStretchFactor());
+    } catch {
+      return null;
+    }
+  }
+
+  private announceSplit(split: readonly number[] | null): void {
+    for (const callback of this.paneSplitCallbacks) callback(split);
+  }
+
+  /**
+   * The renderer's separator handles, given a hand to work with.
+   *
+   * lightweight-charts already draws a nine-pixel handle with a row-resize
+   * cursor and does the dragging itself, so the drag is not reimplemented
+   * here. What is missing is everything AROUND the drag: nobody is told when
+   * it ends, so the split cannot be saved; there is no way back to the
+   * automatic split; and the handle does not say what it is. The handles are
+   * recreated whenever a pane appears or disappears, so this runs again after
+   * every balance and marks what it has already wired.
+   */
+  private wireSeparators(): void {
+    const container = this.container;
+    if (!container) return;
+    for (const off of this.separatorCleanup) off();
+    this.separatorCleanup = [];
+    const handles = container.querySelectorAll<HTMLElement>('td > div');
+    for (const handle of handles) {
+      if (handle.style.cursor !== 'row-resize' || handle.style.position !== 'absolute') continue;
+      handle.title = 'Drag to resize · double-click to reset';
+
+      const onDown = () => {
+        const finish = () => {
+          window.removeEventListener('mouseup', finish);
+          window.removeEventListener('touchend', finish);
+          // After the renderer's own mouseup, so the factors read are final.
+          window.setTimeout(() => {
+            const split = this.readSplit();
+            if (!split) return;
+            this.paneSplit = split;
+            this.announceSplit(split);
+          }, 0);
+        };
+        window.addEventListener('mouseup', finish);
+        window.addEventListener('touchend', finish);
+      };
+      const onDoubleClick = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.paneSplit = null;
+        this.balancePanes();
+        this.announceSplit(null);
+      };
+      handle.addEventListener('mousedown', onDown);
+      handle.addEventListener('touchstart', onDown, { passive: true });
+      handle.addEventListener('dblclick', onDoubleClick);
+      this.separatorCleanup.push(() => {
+        handle.removeEventListener('mousedown', onDown);
+        handle.removeEventListener('touchstart', onDown);
+        handle.removeEventListener('dblclick', onDoubleClick);
+      });
+    }
+  }
+
+  setPaneSplit(factors: readonly number[] | null): void {
+    const next = factors && factors.length > 0 ? [...factors] : null;
+    if (JSON.stringify(next) === JSON.stringify(this.paneSplit)) return;
+    this.paneSplit = next;
+    this.balancePanes();
+  }
+
+  onPaneSplitChange(callback: (factors: readonly number[] | null) => void): () => void {
+    this.paneSplitCallbacks.add(callback);
+    return () => this.paneSplitCallbacks.delete(callback);
   }
 
   /**

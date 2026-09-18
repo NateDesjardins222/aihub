@@ -122,6 +122,8 @@ export function ChartPanel({
   const appearance = useChartStore((s) => s.appearance);
   const chartType = pane?.chartType ?? 'CANDLES';
   const indicators = pane?.indicators ?? EMPTY_INDICATORS;
+  const paneSplit = pane?.paneSplit ?? null;
+  const setPaneSplit = useLayout((s) => s.setPaneSplit);
   const showDates = useTraining((s) => s.visibility.dateTime);
   const chartFocus = useSession((s) => s.chartFocus);
   /*
@@ -268,6 +270,17 @@ export function ChartPanel({
     const mounted = useLayout.getState().panes.find((item) => item.id === paneId);
     adapter.setChartType(mounted?.chartType ?? 'CANDLES');
     adapter.setIndicators(mounted?.indicators ?? []);
+    /*
+     * The split the trader last dragged, before the first frame.
+     *
+     * Applied here rather than in an effect so a stored split is never seen as
+     * a jump: the chart's first paint already has the price pane the size it
+     * was left at.
+     */
+    adapter.setPaneSplit(mounted?.paneSplit ?? null);
+    const offSplit = adapter.onPaneSplitChange((factors) => {
+      useLayout.getState().setPaneSplit(paneId, factors);
+    });
 
     /*
      * The legend follows the crosshair, but at FRAME rate.
@@ -336,6 +349,7 @@ export function ChartPanel({
       offRange();
       offCrosshairSync();
       offRangeSync();
+      offSplit();
       adapter.destroy();
       adapterRef.current = null;
       setChartReady(false);
@@ -357,6 +371,15 @@ export function ChartPanel({
   useEffect(() => {
     adapterRef.current?.setIndicators(indicators);
   }, [indicators]);
+
+  /*
+   * A split restored from the workspace, or cleared by a double-click
+   * somewhere else. The adapter ignores a value it already has, so this
+   * cannot fight the drag that produced it.
+   */
+  useEffect(() => {
+    adapterRef.current?.setPaneSplit(paneSplit);
+  }, [paneSplit]);
 
   useEffect(() => {
     legendRef.current?.configure({ precision, timeZone });

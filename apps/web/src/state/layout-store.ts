@@ -52,6 +52,14 @@ export interface PaneState {
   readonly timeframe: string;
   readonly chartType: ChartType;
   readonly indicators: readonly IndicatorInstance[];
+  /**
+   * How the chart's own height is divided between the price and the studies
+   * below it, as one stretch factor per pane, or null while it is automatic.
+   *
+   * A trader who drags that line has made a reading decision, and a reading
+   * decision belongs in the workspace beside the instrument and the interval.
+   */
+  readonly paneSplit: readonly number[] | null;
 }
 
 /** What is kept in step between panes. Everything is off until asked for. */
@@ -86,6 +94,7 @@ interface LayoutStore {
   setPaneSymbol: (id: string, symbol: string | null) => void;
   setPaneTimeframe: (id: string, timeframe: string) => void;
   setPaneChartType: (id: string, chartType: ChartType) => void;
+  setPaneSplit: (id: string, split: readonly number[] | null) => void;
 
   addIndicator: (paneId: string, kind: string) => string;
   removeIndicator: (id: string) => void;
@@ -128,7 +137,7 @@ const INSTANCE_COLOURS: readonly string[] = [
 const PANE_IDS = ['p1', 'p2', 'p3', 'p4'] as const;
 
 function freshPane(id: string, timeframe: string): PaneState {
-  return { id, symbol: null, timeframe, chartType: 'CANDLES', indicators: [] };
+  return { id, symbol: null, timeframe, chartType: 'CANDLES', indicators: [], paneSplit: null };
 }
 
 function defaultPanes(): PaneState[] {
@@ -198,6 +207,18 @@ export const useLayout = create<LayoutStore>((set, get) => ({
   setPaneChartType(id, chartType) {
     set({
       panes: get().panes.map((pane) => (pane.id === id ? { ...pane, chartType } : pane)),
+    });
+  },
+
+  setPaneSplit(id, split) {
+    const current = get().panes.find((pane) => pane.id === id)?.paneSplit ?? null;
+    // Dragging a separator fires once, but the chart re-applies a split it was
+    // given; writing an identical value would save the workspace for nothing.
+    if (JSON.stringify(current) === JSON.stringify(split)) return;
+    set({
+      panes: get().panes.map((pane) =>
+        pane.id === id ? { ...pane, paneSplit: split === null ? null : [...split] } : pane,
+      ),
     });
   },
 
@@ -379,8 +400,26 @@ function sanitizePanes(raw: unknown): PaneState[] {
           ? (candidate.chartType as ChartType)
           : fallback.chartType,
       indicators: sanitizeIndicators(candidate.indicators),
+      paneSplit: sanitizeSplit(candidate.paneSplit),
     };
   });
+}
+
+/**
+ * A stored split, or nothing.
+ *
+ * Anything that is not a list of finite positive numbers becomes null, which
+ * is the automatic split: a corrupt stored value must not be able to collapse
+ * a pane to nothing on the next load.
+ */
+function sanitizeSplit(raw: unknown): readonly number[] | null {
+  if (!Array.isArray(raw) || raw.length < 2 || raw.length > 8) return null;
+  const out: number[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+    out.push(value);
+  }
+  return out;
 }
 
 function sanitizeIndicators(raw: unknown): IndicatorInstance[] {

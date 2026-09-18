@@ -144,6 +144,22 @@ export interface ChartAdapter {
   setIndicators(indicators: readonly IndicatorInstance[]): void;
 
   /**
+   * The height each pane is given, as stretch factors, or null for automatic.
+   *
+   * A trader who drags the line between the price and an oscillator has said
+   * something about how they want to read the chart, and it has to survive the
+   * next indicator they add and the next time they open the terminal. Null
+   * means "you decide", which is what a chart starts as.
+   */
+  setPaneSplit(factors: readonly number[] | null): void;
+
+  /**
+   * Told when the trader changes the split themselves: a drag, or the
+   * double-click that puts it back to automatic (which reports null).
+   */
+  onPaneSplitChange(callback: (factors: readonly number[] | null) => void): () => void;
+
+  /**
    * One row per plot, in display order, with the value at a given bar.
    *
    * Pass the crosshair's time to read that bar; pass nothing for the newest.
