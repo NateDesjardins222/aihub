@@ -34,7 +34,7 @@ const TOOLS = [
   { label: 'Rectangle', category: 'Shapes', points: [[0.34, 0.32], [0.50, 0.56]], anchors: 2 },
   { label: 'Fib retracement', category: 'Fibonacci', points: [[0.30, 0.74], [0.46, 0.54]], anchors: 2 },
   { label: 'Measure', category: 'Measure', points: [[0.36, 0.42], [0.50, 0.62]], anchors: 2 },
-  { label: 'Text', category: 'Annotations', points: [[0.40, 0.70]], anchors: 1 },
+  { label: 'Text', category: 'Annotation', points: [[0.40, 0.70]], anchors: 1 },
   { label: 'Long position', category: 'Risk and reward', points: [[0.38, 0.52]], anchors: 3 },
   { label: 'Short position', category: 'Risk and reward', points: [[0.42, 0.44]], anchors: 3 },
 ];

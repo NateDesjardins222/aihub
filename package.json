@@ -15,7 +15,10 @@
     "db:generate": "pnpm --filter @atlas/server db:generate",
     "db:migrate": "pnpm --filter @atlas/server db:migrate",
     "db:seed": "pnpm --filter @atlas/server db:seed",
-    "test:browser": "node tests/browser/run.mjs"
+    "test:browser": "node tests/browser/run.mjs",
+    "audit:candles": "node tools/candle-audit.mjs",
+    "audit:latency": "node tools/latency-probe.mjs",
+    "audit:drawings": "node tools/drawing-matrix.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
