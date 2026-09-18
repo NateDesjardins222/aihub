@@ -142,14 +142,38 @@ try {
   const afterZoom = await barUnder(probe.x, probe.y);
   say(beforeZoom !== afterZoom, 'the chart still zooms after drawing a rectangle', `${beforeZoom} -> ${afterZoom}`);
 
+  /*
+   * Pan from empty chart, not from the line.
+   *
+   * The drawing on screen is a horizontal line spanning the full width, and
+   * the zoom above rescaled the price axis - so a grab point fixed at 75% of
+   * the height lands on the line whenever the new scale happens to put it
+   * there, and dragging a drawing correctly does NOT pan the chart. The check
+   * is that drawings do not FREEZE panning, so it grabs a row of pixels the
+   * drawing is not in and says which row it used.
+   */
+  const drawn = await paintedBounds(page, '.draw-canvas');
+  const canvas = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+  let grabFraction = 0.75;
+  if (drawn !== null) {
+    const clash = (fraction) => {
+      const y = canvas.y + canvas.height * fraction;
+      return y > drawn.top - 45 && y < drawn.bottom + 45;
+    };
+    grabFraction = [0.75, 0.25, 0.6, 0.4, 0.85, 0.15].find((f) => !clash(f)) ?? 0.75;
+  }
   const beforeFinal = await barUnder(probe.x, probe.y);
-  await page.mouse.move(at(0.2, 0.75).x, at(0.2, 0.75).y);
+  await page.mouse.move(at(0.2, grabFraction).x, at(0.2, grabFraction).y);
   await page.mouse.down();
-  await page.mouse.move(at(0.5, 0.75).x, at(0.2, 0.75).y, { steps: 12 });
+  await page.mouse.move(at(0.5, grabFraction).x, at(0.2, grabFraction).y, { steps: 12 });
   await page.mouse.up();
   await page.waitForTimeout(700);
   const afterFinal = await barUnder(probe.x, probe.y);
-  say(beforeFinal !== afterFinal, 'the chart pans after selecting and deselecting', `${beforeFinal} -> ${afterFinal}`);
+  say(
+    beforeFinal !== afterFinal,
+    'the chart pans after selecting and deselecting',
+    `grabbed at ${Math.round(grabFraction * 100)}% of the height: ${beforeFinal} -> ${afterFinal}`,
+  );
 
   // --- undo / redo ---------------------------------------------------------
   // From a known empty state, so the assertion is about undo and not about

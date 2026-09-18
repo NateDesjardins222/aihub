@@ -169,9 +169,22 @@ history, fills, stop or target triggering, order matching, P&L, risk, journal
 data or recorded market data. Choosing Raw hides the smoothing controls. The
 choice persists across a reload.
 
-AUTOMATED TESTED: `motion.test.ts` — every emitted value lies between two
-genuine observations, converges on the newest within a bounded time, and a mode
-switch cannot produce a value the raw feed did not justify.
+AUTOMATED TESTED, two ways, because one is not enough:
+
+* `motion.test.ts` on the **values**: every emitted value lies between two
+  genuine observations, converges on the newest within a bounded time, and a
+  mode switch cannot produce a value the raw feed did not justify.
+* `motion-containment.test.ts` on the **reach**: a well-behaved interpolated
+  price is still wrong the moment anything but the canvas can read it. The
+  guard walks every file in the web client and fails if anything other than the
+  chart panel that draws with it so much as names `MarketMotion`, and if the
+  server-facing modules mention motion at all. Everything else may touch the
+  settings — a mode and a smoothing fraction, no prices in them.
+
+The second guard matters more than it looks. The failure it prevents is not
+"the interpolation is wrong"; it is someone reaching for the smooth value in an
+order ticket because it is the number on screen, which every individual step of
+would look reasonable in review.
 
 ---
 
