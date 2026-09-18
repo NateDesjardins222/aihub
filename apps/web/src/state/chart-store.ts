@@ -14,7 +14,15 @@ import {
   normalizeAppearance,
   type ChartAppearance,
 } from '../chart/appearance';
-import { applyTheme, DEFAULT_THEME, themeById, withTheme, type ThemeId } from '../chart/themes';
+import {
+  applyTheme,
+  BUILT_IN,
+  DEFAULT_THEME,
+  themeById,
+  withTheme,
+  type CustomTheme,
+  type ThemeId,
+} from '../chart/themes';
 import type { ChartType } from '../chart/ChartAdapter';
 import { indicatorDef, type IndicatorInstance, type ParamValues } from '../chart/indicators/registry';
 import {
@@ -50,6 +58,12 @@ interface ChartState {
    * the settings dialog asks separately.
    */
   themeId: ThemeId;
+  /** Themes the trader saved, which are themes like any other. */
+  customThemes: readonly CustomTheme[];
+  /** Individual design tokens changed by hand, on top of whatever theme. */
+  surfaceOverrides: Readonly<Record<string, string>>;
+  /** What "reset" goes back to, and what a fresh workspace opens on. */
+  defaultThemeId: ThemeId;
   /** Every drawing, for every instrument. */
   drawings: readonly Drawing[];
   /** The tool the next click uses. Returns to CURSOR after a drawing is made. */
@@ -133,6 +147,12 @@ interface ChartState {
   setDefaultStyle: (patch: Partial<DrawingStyle>) => void;
 
   setTheme: (id: ThemeId) => void;
+  setSurfaceToken: (token: string, value: string | null) => void;
+  saveCustomTheme: (name?: string) => string;
+  renameCustomTheme: (id: string, name: string) => void;
+  duplicateCustomTheme: (id: string) => string;
+  deleteCustomTheme: (id: string) => void;
+  setDefaultTheme: (id: ThemeId) => void;
   restore: (stored: StoredChart) => void;
   snapshot: () => StoredChart;
 }
@@ -142,6 +162,9 @@ type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]>
 export interface StoredChart {
   appearance?: unknown;
   themeId?: unknown;
+  customThemes?: unknown;
+  surfaceOverrides?: unknown;
+  defaultThemeId?: unknown;
   chartType?: string;
   indicators?: readonly IndicatorInstance[];
   drawings?: readonly Drawing[];
@@ -222,6 +245,9 @@ export const DEFAULT_FAVOURITE_TOOLS: readonly DrawingKind[] = [
 export const useChartStore = create<ChartState>((set, get) => ({
   appearance: DEFAULT_APPEARANCE,
   themeId: DEFAULT_THEME,
+  customThemes: [],
+  surfaceOverrides: {},
+  defaultThemeId: DEFAULT_THEME,
   drawings: [],
   tool: 'CURSOR',
   toolSticky: false,
@@ -241,11 +267,25 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   resetAppearance() {
-    // Back to the preset in use, not to the factory colours: a trader on
-    // Midnight who resets wants Midnight, not the default blue-grey.
-    const theme = themeById(get().themeId);
-    applyTheme(theme.id);
-    set({ appearance: withTheme(DEFAULT_APPEARANCE, theme.id) });
+    /*
+     * Back to the DEFAULT theme, with nothing changed by hand.
+     *
+     * Not the factory blue-grey: a trader who set Midnight as their default
+     * and then made a mess of the colours wants Midnight back, which is what
+     * "set default" is for.
+     */
+    const theme = themeById(get().defaultThemeId, get().customThemes);
+    applyTheme(theme.id, get().customThemes, {});
+    set({
+      themeId: theme.id,
+      surfaceOverrides: {},
+      appearance: normalizeAppearance({
+        ...DEFAULT_APPEARANCE,
+        symbol: { ...DEFAULT_APPEARANCE.symbol, ...theme.chart.symbol },
+        scales: { ...DEFAULT_APPEARANCE.scales, ...theme.chart.scales },
+        canvas: { ...DEFAULT_APPEARANCE.canvas, ...theme.chart.canvas },
+      }),
+    });
   },
 
   /**
@@ -255,12 +295,120 @@ export const useChartStore = create<ChartState>((set, get) => ({
    * theme decides colours and a trader decides whether the volume is shown.
    */
   setTheme(id) {
-    const theme = themeById(id);
-    applyTheme(theme.id);
+    const custom = get().customThemes;
+    const theme = themeById(id, custom);
+    /*
+     * Picking a theme clears the tokens changed by hand.
+     *
+     * Otherwise a trader who tinted the accent green on Atlas Dark and then
+     * chose Clean Light would get Clean Light with somebody else's accent -
+     * a half-applied theme, which is the exact thing the brief forbids. What
+     * they changed by hand is saveable as a theme of its own first.
+     */
+    applyTheme(theme.id, custom, {});
     set({
       themeId: theme.id,
-      appearance: normalizeAppearance(withTheme(get().appearance, theme.id)),
+      surfaceOverrides: {},
+      appearance: normalizeAppearance(
+        withTheme(get().appearance, theme.id, custom),
+      ),
     });
+  },
+
+  /** One design token, changed by hand and applied at once. */
+  setSurfaceToken(token, value) {
+    const overrides = { ...get().surfaceOverrides };
+    if (value === null) delete overrides[token];
+    else overrides[token] = value;
+    applyTheme(get().themeId, get().customThemes, overrides);
+    set({ surfaceOverrides: overrides });
+  },
+
+  /**
+   * Save what is on the screen as a theme of the trader's own.
+   *
+   * Everything - the chart colours, the surface tokens and the accents, with
+   * the hand-made changes folded in - so the saved theme is what they are
+   * looking at rather than an approximation of it.
+   */
+  saveCustomTheme(name) {
+    const state = get();
+    const base = themeById(state.themeId, state.customThemes);
+    const overrides = state.surfaceOverrides;
+    const id = `custom-${Date.now().toString(36)}`;
+    const taken = new Set(state.customThemes.map((theme) => theme.name));
+    let label = name?.trim() || `${base.name} (mine)`;
+    for (let n = 2; taken.has(label); n += 1) label = `${name?.trim() || base.name} ${n}`;
+    const saved: CustomTheme = {
+      id,
+      name: label,
+      base: BUILT_IN.includes(base.id) ? base.id : (base as { base?: string }).base ?? DEFAULT_THEME,
+      light: base.light,
+      surface: { ...base.surface, ...overrides } as CustomTheme['surface'],
+      accents: {
+        accent: overrides['--accent'] ?? base.accents.accent,
+        long: overrides['--long'] ?? base.accents.long,
+        short: overrides['--short'] ?? base.accents.short,
+      },
+      chart: {
+        symbol: { ...state.appearance.symbol },
+        scales: {
+          gridColor: state.appearance.scales.gridColor,
+          scaleLineColor: state.appearance.scales.scaleLineColor,
+          scaleTextColor: state.appearance.scales.scaleTextColor,
+          paneSeparatorColor: state.appearance.scales.paneSeparatorColor,
+          crosshairColor: state.appearance.scales.crosshairColor,
+          crosshairLabelBackground: state.appearance.scales.crosshairLabelBackground,
+          sessionBreakColor: state.appearance.scales.sessionBreakColor,
+        },
+        canvas: {
+          background: state.appearance.canvas.background,
+          backgroundGradientTo: state.appearance.canvas.backgroundGradientTo,
+          textColor: state.appearance.canvas.textColor,
+        },
+      },
+    };
+    const customThemes = [...state.customThemes, saved];
+    applyTheme(id, customThemes, {});
+    set({ customThemes, themeId: id, surfaceOverrides: {} });
+    return id;
+  },
+
+  renameCustomTheme(id, name) {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return;
+    set({
+      customThemes: get().customThemes.map((theme) =>
+        theme.id === id ? { ...theme, name: trimmed } : theme,
+      ),
+    });
+  },
+
+  duplicateCustomTheme(id) {
+    const source = get().customThemes.find((theme) => theme.id === id);
+    if (!source) return '';
+    const copy: CustomTheme = {
+      ...source,
+      id: `custom-${Date.now().toString(36)}`,
+      name: `${source.name} copy`,
+    };
+    set({ customThemes: [...get().customThemes, copy] });
+    return copy.id;
+  },
+
+  deleteCustomTheme(id) {
+    const state = get();
+    const customThemes = state.customThemes.filter((theme) => theme.id !== id);
+    // Deleting the theme in use, or the one set as default, falls back rather
+    // than leaving the terminal pointing at something that is not there.
+    const themeId = state.themeId === id ? DEFAULT_THEME : state.themeId;
+    const defaultThemeId = state.defaultThemeId === id ? DEFAULT_THEME : state.defaultThemeId;
+    applyTheme(themeId, customThemes, state.surfaceOverrides);
+    set({ customThemes, themeId, defaultThemeId });
+  },
+
+  setDefaultTheme(id) {
+    set({ defaultThemeId: id });
   },
 
   setTool(tool, sticky = false) {
@@ -544,10 +692,22 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   restore(stored) {
-    const themeId = themeById(typeof stored.themeId === 'string' ? stored.themeId : null).id;
-    applyTheme(themeId);
+    const customThemes = sanitizeCustomThemes(stored.customThemes);
+    const surfaceOverrides = sanitizeOverrides(stored.surfaceOverrides);
+    const themeId = themeById(
+      typeof stored.themeId === 'string' ? stored.themeId : null,
+      customThemes,
+    ).id;
+    const defaultThemeId = themeById(
+      typeof stored.defaultThemeId === 'string' ? stored.defaultThemeId : null,
+      customThemes,
+    ).id;
+    applyTheme(themeId, customThemes, surfaceOverrides);
     set({
       themeId,
+      customThemes,
+      surfaceOverrides,
+      defaultThemeId,
       appearance: normalizeAppearance(stored.appearance),
       drawings: sanitizeDrawings(stored.drawings),
       favouriteTools:
@@ -571,6 +731,9 @@ export const useChartStore = create<ChartState>((set, get) => ({
     return {
       appearance: state.appearance,
       themeId: state.themeId,
+      customThemes: state.customThemes,
+      surfaceOverrides: state.surfaceOverrides,
+      defaultThemeId: state.defaultThemeId,
       drawings: state.drawings,
       favouriteTools: state.favouriteTools,
       defaultStyle: state.defaultStyle,
@@ -629,6 +792,59 @@ function readMagnet(raw: unknown): MagnetMode {
 }
 
 /** Stored preferences are untrusted input: an unknown indicator is dropped. */
+/**
+ * Themes and tokens read back from the server, which is untrusted input.
+ *
+ * A stored blob was written by some earlier build of this file, so a custom
+ * theme missing half its fields must become nothing rather than a terminal
+ * with no panel colour. Every value has to be a non-empty string; anything
+ * else is dropped.
+ */
+function colourish(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length < 64;
+}
+
+function sanitizeOverrides(raw: unknown): Record<string, string> {
+  if (raw === null || typeof raw !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [token, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (token.startsWith('--') && token.length < 40 && colourish(value)) out[token] = value;
+  }
+  return out;
+}
+
+function sanitizeCustomThemes(raw: unknown): readonly CustomTheme[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CustomTheme[] = [];
+  for (const item of raw.slice(0, 40)) {
+    const theme = item as Partial<CustomTheme>;
+    if (typeof theme.id !== 'string' || typeof theme.name !== 'string') continue;
+    if (!theme.surface || !theme.accents || !theme.chart) continue;
+    const accents = theme.accents as unknown as Record<string, unknown>;
+    if (!colourish(accents['accent']) || !colourish(accents['long']) || !colourish(accents['short'])) {
+      continue;
+    }
+    const base = typeof theme.base === 'string' ? theme.base : DEFAULT_THEME;
+    out.push({
+      id: theme.id,
+      name: theme.name.slice(0, 60),
+      base,
+      light: theme.light === true,
+      /*
+       * The base theme's tokens under whatever the stored one carries.
+       *
+       * A stored surface written by an older build can be missing tokens this
+       * one uses, and a theme with no panel colour is a terminal with no
+       * panels. The base fills the gaps.
+       */
+      surface: { ...themeById(base).surface, ...sanitizeOverrides(theme.surface) },
+      accents: theme.accents,
+      chart: theme.chart,
+    });
+  }
+  return out;
+}
+
 function sanitizeIndicators(raw: unknown): readonly IndicatorInstance[] {
   if (!Array.isArray(raw)) return [];
   const out: IndicatorInstance[] = [];

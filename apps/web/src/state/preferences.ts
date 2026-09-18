@@ -183,7 +183,11 @@ export async function attachPreferences(): Promise<void> {
    * document, so `data-theme` is there for the rules that key off it rather
    * than only after the first theme change.
    */
-  applyTheme(useChartStore.getState().themeId);
+  applyTheme(
+    useChartStore.getState().themeId,
+    useChartStore.getState().customThemes,
+    useChartStore.getState().surfaceOverrides,
+  );
 
   useMotion.subscribe(write);
   useTraining.subscribe(write);

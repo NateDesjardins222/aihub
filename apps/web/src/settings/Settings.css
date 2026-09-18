@@ -501,13 +501,10 @@
 .th-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  text-align: left;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-raised);
-  cursor: pointer;
+  overflow: hidden;
   transition:
     border-color var(--fast) var(--ease),
     background var(--fast) var(--ease);
@@ -515,7 +512,60 @@
 
 .th-card:hover {
   border-color: var(--border-strong);
+}
+
+/* The card's own button: everything but the row of actions under it. */
+.th-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.th-pick:hover {
   background: var(--bg-hover);
+}
+
+.th-actions,
+.th-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.th-rename input {
+  flex: 1;
+  min-width: 90px;
+  height: 22px;
+  font-size: var(--fs-sm);
+}
+
+.th-action {
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.th-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.th-action-danger:hover {
+  color: var(--short-bright);
+  border-color: var(--short-dim);
 }
 
 .th-card-on {
@@ -570,7 +620,7 @@
   color: var(--text-primary);
 }
 
-.th-edited {
+.th-tag {
   font-style: normal;
   font-weight: 500;
   color: var(--text-muted);

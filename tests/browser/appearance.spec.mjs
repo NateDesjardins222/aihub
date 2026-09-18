@@ -142,6 +142,119 @@ try {
   say(worst >= 4.5, 'the light theme keeps its text readable', JSON.stringify(light));
   await shot(page, 'theme-clean-light');
 
+  // --- the seven colours the terminal is built from ------------------------
+  /*
+   * The brief asks for accent, profit, loss, SL, TP, working orders and panels
+   * to be customisable. They are all one question: those markers are drawn
+   * from three design tokens, so changing the accent has to move the selection
+   * tint and the working-order line with it, and changing profit has to move
+   * the filled P&L box. A colour that moves alone is a half-applied theme.
+   */
+  const token = (name) =>
+    page.evaluate(
+      (t) => getComputedStyle(document.documentElement).getPropertyValue(t).trim(),
+      name,
+    );
+  await openSettings('Theme');
+  say(
+    (await page.locator('[data-testid=terminal-colours] .st-row').count()) === 7,
+    'the terminal has its own colours, not just the chart',
+  );
+
+  const accentBefore = await token('--accent');
+  const accentTintBefore = await token('--accent-bg');
+  await page
+    .locator('[data-testid=terminal-colours] .st-row:has-text("Accent") [data-testid=colour-swatch]')
+    .click();
+  await page.waitForTimeout(400);
+  await page.locator('[data-testid=colour-popover] .cp-cell').nth(19).click();
+  await page.waitForTimeout(700);
+  say((await token('--accent')) !== accentBefore, 'the accent can be changed', `${accentBefore} → ${await token('--accent')}`);
+  say((await token('--accent-bg')) !== accentTintBefore, 'and its tint moves with it');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  const fillBefore = await token('--pos-fill');
+  await page
+    .locator('[data-testid=terminal-colours] .st-row:has-text("Profit") [data-testid=colour-swatch]')
+    .click();
+  await page.waitForTimeout(400);
+  await page.locator('[data-testid=colour-popover] .cp-cell').nth(11).click();
+  await page.waitForTimeout(700);
+  say((await token('--pos-fill')) !== fillBefore, 'profit moves the filled P&L box with it');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // --- saving one of your own ---------------------------------------------
+  const presets = await page.locator('[data-theme-card]').count();
+  await page.click('[data-testid=save-theme]');
+  await page.waitForTimeout(900);
+  say(
+    (await page.locator('[data-theme-card]').count()) === presets + 1,
+    'what is on the screen can be saved as a theme',
+    `${presets} → ${await page.locator('[data-theme-card]').count()} cards`,
+  );
+  const savedName = await page.locator('.th-card-on .th-name').innerText();
+  say(/mine/i.test(savedName), 'named after the one it came from', savedName.replace(/\s+/g, ' '));
+
+  await page.locator('.th-card-on .th-action:has-text("Rename")').click();
+  await page.waitForTimeout(400);
+  await page.fill('.th-rename input', 'Desk');
+  await page.click('.th-rename button');
+  await page.waitForTimeout(600);
+  say(/Desk/.test(await page.locator('.th-card-on .th-name').innerText()), 'and renamed');
+
+  await page.locator('.th-card-on .th-action:has-text("Duplicate")').click();
+  await page.waitForTimeout(700);
+  say(
+    (await page.locator('[data-theme-card]').count()) === presets + 2,
+    'and duplicated',
+  );
+
+  await page.locator('.th-card-on .th-action:has-text("Set default")').click();
+  await page.waitForTimeout(500);
+  say(
+    /default/.test(await page.locator('.th-card-on .th-name').innerText()),
+    'and set as the default',
+  );
+
+  await page.click('.st-close');
+  await page.waitForTimeout(2_500);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
+  await page.waitForTimeout(6_000);
+  await openSettings('Theme');
+  say(
+    (await page.locator('[data-theme-card]').count()) === presets + 2,
+    'the saved themes come back after a reload',
+  );
+  say(
+    /Desk/.test(await page.locator('.th-card-on .th-name').innerText()),
+    'and the one in use is still the one in use',
+  );
+
+  const copy = page.locator('.th-card:has(.th-name:has-text("copy"))').first();
+  await copy.locator('.th-action:has-text("Delete")').click();
+  await page.waitForTimeout(400);
+  say((await copy.locator('.th-action:has-text("Delete it")').count()) === 1, 'deleting asks first');
+  await copy.locator('.th-action:has-text("Delete it")').click();
+  await page.waitForTimeout(700);
+  say(
+    (await page.locator('[data-theme-card]').count()) === presets + 1,
+    'and then deletes it',
+  );
+
+  const own = page.locator('.th-card:has(.th-name:has-text("Desk"))').first();
+  await own.locator('.th-action:has-text("Delete")').click();
+  await page.waitForTimeout(400);
+  await own.locator('.th-action:has-text("Delete it")').click();
+  await page.waitForTimeout(900);
+  say(
+    (await page.locator('[data-theme-card]').count()) === presets &&
+      (await page.evaluate(() => document.documentElement.dataset.theme)) === 'ATLAS_DARK',
+    'and deleting the one in USE falls back rather than leaving nothing',
+  );
+
   // --- a theme decides colours and nothing else ---------------------------
   /*
    * Found by reading the diff, not by a failure: a theme used to carry a whole
