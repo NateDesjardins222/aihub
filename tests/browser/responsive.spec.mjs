@@ -17,7 +17,7 @@
  * asks again, at several window sizes. A failure names the element, so it can
  * be fixed rather than hunted.
  */
-import { createReport, launch, shot, signIn } from './harness.mjs';
+import { clearIndicators, createReport, launch, shot, signIn } from './harness.mjs';
 
 const { say, finish, watch } = createReport('responsive');
 const { browser, page, errors } = await launch({ width: 1680, height: 1000 });
@@ -308,9 +308,20 @@ try {
   await page.click('[data-testid=apprail-charts]');
   await page.waitForTimeout(800);
 
-  // Put it back, so the next suite starts from a sane workspace.
+  /*
+   * Put it back, so the next suite starts from a sane workspace. The
+   * indicators matter: this suite adds an RSI, an RSI lives in its own pane,
+   * and the next suite aims a crosshair and a price-axis drag at pixels in the
+   * price plot. Workspace state survives a browser close by design.
+   */
   await page.setViewportSize({ width: 1680, height: 1000 });
   await page.waitForTimeout(900);
+  const removed = await clearIndicators(page);
+  say(
+    (await page.locator('[data-testid=indicator-row]').count()) === 0,
+    'the chart is left with no indicators on it',
+    `${removed} removed`,
+  );
   await report('the workspace is back where it started');
   await drag('.splitter-v', -120, 0);
   await drag('.splitter-h', 0, -140);
