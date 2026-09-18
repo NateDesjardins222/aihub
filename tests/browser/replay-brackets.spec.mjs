@@ -45,7 +45,7 @@ try {
   await useAccount(page, 'Practice 150K');
 
   // --- start a historical session -----------------------------------------
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForSelector('[data-testid=drawer-practice]', { timeout: 15_000 });
   await page.waitForTimeout(2_500);
 
@@ -72,7 +72,7 @@ try {
   // a trader placing an order chooses a side and a size.
   await setBracket('AUTO', 20, 40);
 
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForTimeout(1_200);
   await page.click('.practice-row .chip:has-text("+30")');
   await page.waitForTimeout(3_000);
@@ -88,7 +88,7 @@ try {
   );
 
   // --- run it --------------------------------------------------------------
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForTimeout(1_200);
   await page.click('.practice-speeds .chip:text-is("50×")');
   await page.waitForTimeout(600);
@@ -120,7 +120,7 @@ try {
   await shot(page, 'replay-filled');
 
   // --- back to live --------------------------------------------------------
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForTimeout(1_500);
   if (await page.locator('.practice-active .chip').count()) {
     await page.click('.practice-active .chip');

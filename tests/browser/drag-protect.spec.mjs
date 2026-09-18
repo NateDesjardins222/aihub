@@ -90,7 +90,7 @@ async function priceY(price) {
 
 /** Advance the paused replay by one market event. */
 async function step() {
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForTimeout(700);
   await page.click('.practice-row .chip:has-text("Step")');
   await page.waitForTimeout(800);
@@ -142,7 +142,7 @@ try {
   await useAccount(page, 'Practice 150K');
 
   // --- a replay, paused ----------------------------------------------------
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForSelector('[data-testid=drawer-practice]', { timeout: 15_000 });
   await page.waitForTimeout(2500);
   if (await page.locator('.practice-active').count()) {
@@ -352,7 +352,7 @@ try {
   })();
   await page.click('.tab:text-is("Positions")');
 
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForTimeout(1200);
   await page.click('.practice-speeds .chip:text-is("100×")');
   await page.waitForTimeout(500);
@@ -382,7 +382,7 @@ try {
   say(errors.length === 0, 'no page errors', errors.join(' | '));
 } finally {
   try {
-    await page.click('.abar-icon[aria-label=Practice]');
+    await page.click('[data-testid=apprail-practice]');
     await page.waitForTimeout(1500);
     if (await page.locator('.practice-active .chip').count()) {
       await page.click('.practice-active .chip');

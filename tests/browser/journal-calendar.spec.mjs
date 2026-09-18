@@ -39,12 +39,14 @@ async function useBusiestAccount() {
 
 async function openJournal(tab) {
   if ((await page.locator('[data-testid=drawer-journal]').count()) === 0) {
-    await page.click('.abar-icon[aria-label=Journal]');
+    await page.click('[data-testid=apprail-journal]');
     await page.waitForSelector('[data-testid=drawer-journal]', { timeout: 15_000 });
     await page.waitForTimeout(2_500);
   }
-  await page.click(`.journal-tabs .chip:has-text("${tab}")`);
-  await page.waitForTimeout(1_200);
+  if (tab) {
+    await page.click(`.journal-tabs .chip:has-text("${tab}")`);
+    await page.waitForTimeout(1_200);
+  }
 }
 
 try {
@@ -56,6 +58,19 @@ try {
     'an account with trades in it is available to review',
     account ? `${account.label}, ${account.count} trades` : 'none',
   );
+
+  /*
+   * The brief: the journal's PRIMARY interface is the calendar. So the first
+   * thing asserted is that opening the journal lands on it - not that the
+   * calendar can be reached by clicking the right chip.
+   */
+  await openJournal(null);
+  const landed = await page.locator('.journal-tabs .chip-on').first().innerText();
+  say(landed.trim() === 'Calendar', 'the journal opens on the calendar', landed.trim());
+  const gridOnOpen = await page.locator('[data-testid=calendar-grid]').count();
+  say(gridOnOpen === 1, 'and the month is on screen with nothing clicked');
+  const firstChip = await page.locator('.journal-tabs .chip').first().innerText();
+  say(firstChip.trim() === 'Calendar', 'and it is the first thing in the tab row', firstChip.trim());
 
   await openJournal('Calendar');
 

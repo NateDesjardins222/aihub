@@ -47,7 +47,13 @@ function duration(ms: number | null): string {
 export function JournalPanel(): JSX.Element {
   const accountId = useTrading((s) => s.accountId);
   const visibility = useTraining((s) => s.visibility);
-  const [tab, setTab] = useState<JournalTab>('OVERVIEW');
+  /*
+   * The calendar opens first. The brief was explicit that the journal's primary
+   * interface is a literal monthly calendar, and it is the right default
+   * anyway: a trader's first journal question is "how did the month go", which
+   * is a shape you read off a grid, not a figure you read off a stat card.
+   */
+  const [tab, setTab] = useState<JournalTab>('CALENDAR');
   /** A day picked from the calendar: the trades list then shows that day only. */
   const [dayFilter, setDayFilter] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<ApiAnalytics | null>(null);
@@ -108,8 +114,8 @@ export function JournalPanel(): JSX.Element {
       <div className="journal-tabs">
         {(
           [
-            ['OVERVIEW', 'Overview'],
             ['CALENDAR', 'Calendar'],
+            ['OVERVIEW', 'Overview'],
             ['TRADES', 'Trades'],
             ['SESSIONS', 'Sessions'],
           ] as const

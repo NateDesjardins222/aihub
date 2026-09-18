@@ -51,7 +51,25 @@ async function faults() {
 
     const controls = [];
     for (const el of document.querySelectorAll(
-      'button, .label, .chip, .num, .abar-box, .tk-label, select, input, .pill, .metric',
+      [
+        'button',
+        '.label',
+        '.chip',
+        '.num',
+        '.abar-box',
+        '.tk-label',
+        'select',
+        'input',
+        '.pill',
+        '.metric',
+        '.apprail-btn',
+        '.chdr-tf',
+        '.chdr-btn',
+        '[data-testid=indicator-row]',
+        '.ind-value',
+        '.st-row',
+        '.cal-cell',
+      ].join(', '),
     )) {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
@@ -178,7 +196,122 @@ try {
   await report('nothing spills at 1280x720 with every panel at its minimum');
   await shot(page, 'responsive-1280-minimum');
 
+  // --- extremely narrow ----------------------------------------------------
+  /*
+   * The brief asked for "extremely narrow" explicitly, past the sizes a trader
+   * would choose. 1024 is a half-screen window on a 2048-wide display; 900 is
+   * narrower than any futures terminal is meant to be used at. Neither has to
+   * be pretty. Nothing may spill out of its box or sit on top of a sibling.
+   */
+  for (const size of [
+    { width: 1152, height: 720 },
+    { width: 1024, height: 700 },
+    { width: 900, height: 680 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(1_000);
+    await report(`nothing spills or overlaps at ${size.width}x${size.height}`);
+  }
+  await shot(page, 'responsive-900-narrow');
+
+  // The rail is application navigation: it keeps its width whatever happens to
+  // the window, because there is no width at which leaving the charts should
+  // stop being possible.
+  const rail = await page.locator('.apprail').boundingBox();
+  say(
+    rail !== null && rail.width >= 40 && rail.width <= 56,
+    'the left navigation holds its width at 900px',
+    rail ? `${Math.round(rail.width)}px` : 'missing',
+  );
+  const railLabels = await page.locator('.apprail-btn').count();
+  say(railLabels >= 5, 'and every destination is still reachable', `${railLabels} buttons`);
+
+  // --- and back to a real window -------------------------------------------
+  await page.setViewportSize({ width: 1680, height: 1000 });
+  await page.waitForTimeout(1_200);
+  await report('and restoring the window restores the workspace');
+
+  // --- the indicator legend ------------------------------------------------
+  await page.click('.chdr-btn:has-text("Indicators")');
+  await page.waitForTimeout(500);
+  await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Exponential moving")');
+  await page.waitForTimeout(900);
+  await page.click('.chdr-btn:has-text("Indicators")');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Relative strength")');
+  await page.waitForTimeout(900);
+  const legendRows = await page.locator('[data-testid=indicator-row]').count();
+  say(legendRows >= 2, 'two indicators are on the chart', `${legendRows} legend rows`);
+  for (const width of [1680, 1280, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(900);
+    await report(`the indicator legend holds together at ${width}px`);
+  }
+
+  // --- the chart toolbar and the timeframe selector ------------------------
+  const tfCount = await page.locator('.chdr-tf').count();
+  say(tfCount >= 3, 'the timeframe selector is still a row of controls', `${tfCount} intervals`);
+  const tfFits = await page.locator('.chdr-tf').evaluateAll((nodes) =>
+    nodes.every((n) => n.scrollWidth <= n.clientWidth + 1),
+  );
+  say(tfFits, 'and none of its labels is clipped at 1024px');
+
+  // --- two charts ----------------------------------------------------------
+  await page.setViewportSize({ width: 1680, height: 1000 });
+  await page.waitForTimeout(900);
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=layout-choices] button[data-layout=TWO_V]');
+  await page.waitForTimeout(1_500);
+  for (const width of [1680, 1280, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(1_000);
+    await report(`two charts side by side at ${width}px`);
+  }
+  await shot(page, 'responsive-two-charts-1024');
+
+  await page.setViewportSize({ width: 1680, height: 1000 });
+  await page.waitForTimeout(900);
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
+  await page.waitForTimeout(1_200);
+  await report('and back to one chart');
+
+  // --- settings ------------------------------------------------------------
+  await page.click('[data-testid=apprail-settings]');
+  await page.waitForTimeout(900);
+  for (const size of [
+    { width: 1680, height: 1000 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 700 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(900);
+    await report(`the settings dialog at ${size.width}x${size.height}`);
+  }
+  await shot(page, 'responsive-settings-1024');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
+
+  // --- the journal calendar ------------------------------------------------
+  await page.setViewportSize({ width: 1680, height: 1000 });
+  await page.waitForTimeout(700);
+  await page.click('[data-testid=apprail-journal]');
+  await page.waitForSelector('[data-testid=drawer-journal]', { timeout: 15_000 });
+  await page.waitForTimeout(2_000);
+  for (const width of [1680, 1280, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(1_000);
+    await report(`the journal calendar at ${width}px`);
+  }
+  await page.click('[data-testid=apprail-charts]');
+  await page.waitForTimeout(800);
+
   // Put it back, so the next suite starts from a sane workspace.
+  await page.setViewportSize({ width: 1680, height: 1000 });
+  await page.waitForTimeout(900);
+  await report('the workspace is back where it started');
   await drag('.splitter-v', -120, 0);
   await drag('.splitter-h', 0, -140);
 

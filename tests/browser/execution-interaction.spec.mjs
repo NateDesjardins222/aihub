@@ -36,7 +36,7 @@ const orderText = async () => {
 
 /** Advance the paused replay by one market event. */
 async function step() {
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForTimeout(700);
   await page.click('.practice-row .chip:has-text("Step")');
   await page.waitForTimeout(800);
@@ -106,7 +106,7 @@ try {
   await useAccount(page, 'Practice 150K');
 
   // --- a paused replay -----------------------------------------------------
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForSelector('[data-testid=drawer-practice]', { timeout: 15_000 });
   await page.waitForTimeout(2_500);
   if (await page.locator('.practice-active').count()) {
@@ -351,7 +351,7 @@ try {
 } finally {
   try {
     await flatten();
-    await page.click('.abar-icon[aria-label=Practice]');
+    await page.click('[data-testid=apprail-practice]');
     await page.waitForTimeout(1_500);
     if (await page.locator('.practice-active .chip').count()) {
       await page.click('.practice-active .chip');

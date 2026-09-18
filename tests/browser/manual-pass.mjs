@@ -167,7 +167,7 @@ try {
   await record('two-charts');
 
   // --- 6. the journal ------------------------------------------------------
-  await page.click('.abar-icon[aria-label=Journal]');
+  await page.click('[data-testid=apprail-journal]');
   await page.waitForSelector('[data-testid=drawer-journal]', { timeout: 20_000 });
   await page.waitForTimeout(2_500);
   await record('journal-overview');
@@ -186,7 +186,7 @@ try {
   await page.waitForTimeout(800);
 
   // --- 7. practice ---------------------------------------------------------
-  await page.click('.abar-icon[aria-label=Practice]');
+  await page.click('[data-testid=apprail-practice]');
   await page.waitForSelector('[data-testid=drawer-practice]', { timeout: 20_000 });
   await record('practice', 2_500);
   await page.keyboard.press('Escape');
