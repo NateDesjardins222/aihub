@@ -84,7 +84,7 @@ async function dragFromMark(dy) {
   const y = await page.evaluate((v) => window.__atlasChartView?.(undefined, v)?.yAtPrice ?? null, price);
   if (y === null) return false;
   const target = chart.y + y + dy;
-  const marker = await page.locator('[data-testid=marker-position]').boundingBox();
+  const marker = await page.locator('[data-pane=p1] [data-testid=marker-position]').first().boundingBox();
   if (!marker) return false;
   const from = { x: marker.x + marker.width / 2, y: marker.y + marker.height / 2 };
   await page.mouse.move(from.x, from.y);
@@ -233,6 +233,19 @@ try {
   await page.waitForTimeout(6_000);
   await record('two-charts');
 
+  /*
+   * Back to one chart before anything is traded.
+   *
+   * The two-chart frame is captured; everything after this is about a single
+   * chart, and a position draws a marker on EVERY pane showing its instrument.
+   * Leaving two up made "the position marker" ambiguous and stopped the
+   * walkthrough dead at the trade.
+   */
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
+  await page.waitForTimeout(3_000);
+
   // --- 6. the journal ------------------------------------------------------
   await page.click('[data-testid=apprail-journal]');
   await page.waitForSelector('[data-testid=drawer-journal]', { timeout: 20_000 });
@@ -347,7 +360,7 @@ try {
   console.log(`  account bar with a position: ${boxesOpen.join('  |  ')}`);
   await closeUp('.abar', 'manual-account-bar', 4);
 
-  if ((await page.locator('[data-testid=marker-position]').count()) > 0) {
+  if ((await page.locator('[data-pane=p1] [data-testid=marker-position]').count()) > 0) {
     await dragFromMark(-150);
     await record('target-placed', 1_200);
     await dragFromMark(150);
@@ -356,7 +369,7 @@ try {
     // default timeout before it throws, and a leg that filled is legitimately
     // not there any more.
     for (const leg of ['stop', 'target']) {
-      const label = page.locator(`[data-testid=marker-${leg}]`);
+      const label = page.locator(`[data-pane=p1] [data-testid=marker-${leg}]`);
       const text =
         (await label.count()) > 0
           ? ((await label.first().textContent()) ?? '').replace(/\s+/g, ' ').trim()
