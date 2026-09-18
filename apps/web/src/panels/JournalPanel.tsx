@@ -63,6 +63,17 @@ export function JournalPanel(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   const [review, setReview] = useState<ApiSessionReview | null>(null);
   const [loading, setLoading] = useState(false);
+  /**
+   * How many trades are asked for, and whether there are more behind them.
+   *
+   * The list used to ask for five hundred and say nothing about the rest, so a
+   * trader with fifteen hundred trades scrolled to the bottom of what looked
+   * like their whole history and was five hundred trades into it. One extra
+   * row is requested than is shown, which is how the list knows there is more
+   * without the server having to count anything.
+   */
+  const [limit, setLimit] = useState(500);
+  const [more, setMore] = useState(false);
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -70,12 +81,13 @@ export function JournalPanel(): JSX.Element {
     try {
       const [a, t, g, s] = await Promise.all([
         journalApi.analytics(accountId),
-        journalApi.trades(accountId, { limit: 500 }),
+        journalApi.trades(accountId, { limit: limit + 1 }),
         journalApi.tags(),
         journalApi.sessions(accountId),
       ]);
       setAnalytics(a);
-      setTrades(t.trades);
+      setMore(t.trades.length > limit);
+      setTrades(t.trades.slice(0, limit));
       setTags(g.tags);
       setSessions(s.sessions);
     } catch {
@@ -83,7 +95,7 @@ export function JournalPanel(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [accountId]);
+  }, [accountId, limit]);
 
   useEffect(() => {
     void load();
@@ -156,6 +168,8 @@ export function JournalPanel(): JSX.Element {
           onTagsChanged={(next) => setTags(next)}
           day={dayFilter}
           onClearDay={() => setDayFilter(null)}
+          more={more && !dayFilter}
+          onMore={() => setLimit((was) => Math.min(5_000, was + 1_000))}
         />
       ) : null}
       {tab === 'SESSIONS' ? (
@@ -555,6 +569,8 @@ function Trades({
   onTagsChanged,
   day = null,
   onClearDay,
+  more = false,
+  onMore,
 }: {
   trades: ApiJournalTrade[];
   tags: ApiTag[];
@@ -564,6 +580,9 @@ function Trades({
   /** The calendar day being shown, when the list was opened from one. */
   day?: string | null;
   onClearDay?: () => void;
+  /** There are older trades than the ones in this list. */
+  more?: boolean;
+  onMore?: () => void;
 }): JSX.Element {
   const [open, setOpen] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -620,6 +639,16 @@ function Trades({
   return (
     <div className="journal-body">
       {dayChip}
+      {more ? (
+        <div className="journal-more" data-testid="journal-more">
+          <span>
+            The most recent {trades.length.toLocaleString()} trades. There are older ones.
+          </span>
+          <button className="chip" onClick={onMore}>
+            Load more
+          </button>
+        </div>
+      ) : null}
       <ul className="journal-trades">
         {trades.map((trade) => {
           const expanded = open === trade.id;

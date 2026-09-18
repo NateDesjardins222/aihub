@@ -21,6 +21,7 @@ const SUITES = [
   'fib-levels',
   'multi-chart',
   'journal-calendar',
+  'journal-scale',
   'rectangle',
   'line-tools',
   'remaining-tools',
