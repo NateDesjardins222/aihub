@@ -427,10 +427,24 @@ export function SettingsDialog(): JSX.Element | null {
                       value={appearance.scales.crosshairStyle}
                       options={[
                         { id: 'CROSS', label: 'Cross' },
-                        { id: 'MAGNET', label: 'Magnet', hint: 'Snaps to the nearest bar' },
+                        { id: 'DOT', label: 'Dot', hint: 'A point at the pointer, no lines' },
+                        { id: 'VERTICAL', label: 'Vertical', hint: 'The time line only' },
+                        { id: 'HORIZONTAL', label: 'Horizontal', hint: 'The price line only' },
                         { id: 'HIDDEN', label: 'Hidden' },
                       ]}
                       onChange={(crosshairStyle) => set({ scales: { crosshairStyle } })}
+                    />
+                  </Row>
+                  {/*
+                    Snapping is its own question. It used to be one of the
+                    styles, which meant a snapping vertical-only crosshair -
+                    or a snapping dot - could not be asked for at all.
+                  */}
+                  <Row label="Snap to the nearest bar">
+                    <Check
+                      checked={appearance.scales.crosshairMagnet}
+                      name="Snap to the nearest bar"
+                      onChange={(crosshairMagnet) => set({ scales: { crosshairMagnet } })}
                     />
                   </Row>
                   <Row label="Colour">

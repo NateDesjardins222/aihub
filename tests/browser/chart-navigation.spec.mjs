@@ -154,6 +154,41 @@ try {
     `${timeBefore.span.toFixed(1)} -> ${timeAfter.span.toFixed(1)} bars in view`,
   );
 
+  // --- double-clicking a scale gives it back to the chart -----------------
+  /*
+   * A trader who has pulled the price axis around needs a way back that is not
+   * "find the reset button": double-clicking the scale is the convention, and
+   * an axis that can be dragged out of shape and not dropped back is a trap.
+   *
+   * Checked from the axis itself rather than from the toolbar button, because
+   * the button is a different gesture and already has its own check.
+   */
+  const stretched = { x: box.x + box.width - 30, y: box.y + box.height * 0.45 };
+  await page.mouse.move(stretched.x, stretched.y);
+  await page.mouse.down();
+  await page.mouse.move(stretched.x, stretched.y + 150, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  const pulled = await page.evaluate(() => window.__atlasChartView?.()?.priceRange ?? null);
+  await page.mouse.dblclick(stretched.x, stretched.y);
+  await page.waitForTimeout(900);
+  const given = await page.evaluate(() => window.__atlasChartView?.()?.priceRange ?? null);
+  say(
+    pulled !== null && given !== null && Math.abs(given - pulled) > 0.5,
+    'double-clicking the price axis hands the vertical scale back to the chart',
+    `${pulled?.toFixed(1)} -> ${given?.toFixed(1)} points visible`,
+  );
+
+  const squeezed = await view();
+  await page.mouse.dblclick(timeAxis.x, timeAxis.y);
+  await page.waitForTimeout(900);
+  const loosened = await view();
+  say(
+    Math.abs(loosened.span - squeezed.span) > 1,
+    'and double-clicking the time axis hands back the bar spacing',
+    `${squeezed.span.toFixed(1)} -> ${loosened.span.toFixed(1)} bars in view`,
+  );
+
   // --- panning and drawing coexist ----------------------------------------
   await page.click('.rail .rail-btn[aria-label="Horizontal line"]');
   await page.mouse.click(at(0.45, 0.45).x, at(0.45, 0.45).y);
@@ -238,12 +273,35 @@ try {
     return gained;
   };
 
-  /** Set the crosshair thickness through the settings dialog. */
+  /**
+   * Put the crosshair in a known state, thickness and all.
+   *
+   * COLOUR as well as thickness, because `crosshairThickness` above counts
+   * pixels of the default blue and appearance persists for this trader: a
+   * previous session - or a previous suite - that left the crosshair magenta
+   * made this read zero and look like a crosshair that had stopped painting.
+   * A check whose subject is "the setting reaches the canvas" has to set the
+   * whole setting.
+   */
   const setThickness = async (value) => {
     await page.click('.abar-icon[aria-label=Settings]');
     await page.waitForTimeout(800);
     await page.click('.st-nav-item:has-text("Scales and lines")');
     await page.waitForTimeout(400);
+    const colour = page
+      .locator('.st-row')
+      .filter({ has: page.locator('.st-row-label:text-is("Colour")') })
+      .first()
+      .locator('.st-colour-text');
+    await colour.fill('#4d8dff');
+    await colour.press('Enter');
+    await page.waitForTimeout(300);
+    const shape = page
+      .locator('.st-row')
+      .filter({ has: page.locator('.st-row-label:text-is("Style")') })
+      .last();
+    await shape.locator('.st-choice-btn:text-is("Cross")').click();
+    await page.waitForTimeout(300);
     const input = page
       .locator('.st-row:has(.st-row-label:text-is("Thickness")) input[type=number]')
       .first();
@@ -284,6 +342,110 @@ try {
 
   // Put it back, since appearance persists for this trader.
   await setThickness(1);
+
+  // --- the five crosshair shapes ------------------------------------------
+  /*
+   * Cross, dot, vertical, horizontal, hidden - the brief lists all five, and
+   * only four of them exist in the renderer. The dot is a pane primitive.
+   *
+   * Each is measured by TOTAL crosshair-coloured pixels, which is the only
+   * measurement that works for all five: sampling a row and a column tells
+   * you nothing about a dot. The colour is set to magenta first so no candle,
+   * grid line or indicator can be counted by accident.
+   */
+  const openScales = async () => {
+    if ((await page.locator('.st-nav-item').count()) === 0) {
+      await page.click('.abar-icon[aria-label=Settings]');
+      await page.waitForTimeout(900);
+    }
+    await page.click('.st-nav-item:text-is("Scales and lines")');
+    await page.waitForTimeout(500);
+  };
+  const crosshairInk = async () => {
+    const box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+    await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.45, { steps: 4 });
+    await page.waitForTimeout(500);
+    return page.evaluate(() => {
+      let total = 0;
+      for (const canvas of document.querySelectorAll('[data-pane=p1] canvas')) {
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width === 0) continue;
+        let d;
+        try {
+          d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        } catch {
+          continue;
+        }
+        for (let i = 0; i < d.length; i += 4) {
+          if (Math.abs(d[i] - 255) < 40 && d[i + 1] < 70 && Math.abs(d[i + 2] - 255) < 40) total += 1;
+        }
+      }
+      return total;
+    });
+  };
+
+  await openScales();
+  const chColour = page
+    .locator('.st-row')
+    .filter({ has: page.locator('.st-row-label:text-is("Colour")') })
+    .first()
+    .locator('.st-colour-text');
+  await chColour.fill('#ff00ff');
+  await chColour.press('Enter');
+  await page.waitForTimeout(600);
+  const styleRow = page
+    .locator('.st-row')
+    .filter({ has: page.locator('.st-row-label:text-is("Style")') })
+    .last();
+  const offered = (await styleRow.locator('.st-choice-btn').allTextContents()).map((t) => t.trim());
+  say(
+    ['Cross', 'Dot', 'Vertical', 'Horizontal', 'Hidden'].every((s) => offered.includes(s)),
+    'all five crosshair shapes are offered',
+    offered.join(' '),
+  );
+  say(
+    (await page
+      .locator('.st-row')
+      .filter({ has: page.locator('.st-row-label:text-is("Snap to the nearest bar")') })
+      .count()) === 1,
+    'and snapping is its own control, not one of the shapes',
+  );
+
+  const shapeInk = {};
+  for (const shape of ['Cross', 'Vertical', 'Horizontal', 'Dot', 'Hidden']) {
+    await openScales();
+    await styleRow.locator(`.st-choice-btn:text-is("${shape}")`).click();
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(600);
+    shapeInk[shape] = await crosshairInk();
+  }
+  const summary = Object.entries(shapeInk)
+    .map(([k, v]) => `${k} ${v}`)
+    .join(', ');
+  say(shapeInk.Hidden === 0, 'hidden draws no crosshair at all', summary);
+  say(shapeInk.Vertical > 50 && shapeInk.Horizontal > 50, 'vertical and horizontal each draw one line', summary);
+  say(
+    Math.abs(shapeInk.Cross - (shapeInk.Vertical + shapeInk.Horizontal)) <= 4,
+    'and a cross is exactly the two of them together',
+    `${shapeInk.Cross} vs ${shapeInk.Vertical} + ${shapeInk.Horizontal}`,
+  );
+  say(
+    shapeInk.Dot > 0 && shapeInk.Dot < shapeInk.Vertical / 4,
+    'a dot is a point at the pointer, not a line',
+    `${shapeInk.Dot} px`,
+  );
+  await shot(page, 'chart-navigation-crosshair-dot');
+
+  // Back to the default, since appearance persists.
+  await openScales();
+  await styleRow.locator('.st-choice-btn:text-is("Cross")').click();
+  await page.waitForTimeout(400);
+  await chColour.fill('#4d8dff');
+  await chColour.press('Enter');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
 
   await shot(page, 'chart-navigation');
   say(errors.length === 0, 'no page errors', errors.join(' | '));

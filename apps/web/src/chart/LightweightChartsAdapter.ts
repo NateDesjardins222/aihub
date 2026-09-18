@@ -50,6 +50,7 @@ import {
 } from './appearance';
 import { indicatorDef, type IndicatorInstance, type Plot } from './indicators/registry';
 import { BandFill, type BandPoint } from './band-fill';
+import { CrosshairDot } from './crosshair-dot';
 
 
 /**
@@ -135,6 +136,16 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * scale change without being told. What it holds here is the state the
    * primitive reads: the values, the colour and whether it is wanted.
    */
+  /**
+   * The dot crosshair, when that is the chosen shape.
+   *
+   * Attached to the price series once and then fed the pointer position from
+   * the crosshair subscription the legend already uses. It is not created
+   * until the shape asks for it, so a cross-shaped crosshair costs nothing.
+   */
+  private crosshairDot: CrosshairDot | null = null;
+  private crosshairPoint: { x: number; y: number } | null = null;
+
   private readonly indicatorFills = new Map<
     string,
     {
@@ -210,12 +221,23 @@ export class LightweightChartsAdapter implements ChartAdapter {
         }
       : { type: ColorType.Solid as const, color: a.canvas.background };
 
+    /*
+     * Shape and snapping are decided separately.
+     *
+     * The renderer has one enum for both, so HIDDEN maps to its Hidden mode
+     * and everything else picks Normal or Magnet from the snap setting. The
+     * shape is then made by turning the two lines on and off - and DOT turns
+     * both off, because the dot itself is drawn by a primitive.
+     */
+    const shape = a.scales.crosshairStyle;
     const crosshairMode =
-      a.scales.crosshairStyle === 'MAGNET'
-        ? CrosshairMode.Magnet
-        : a.scales.crosshairStyle === 'HIDDEN'
-          ? CrosshairMode.Hidden
+      shape === 'HIDDEN'
+        ? CrosshairMode.Hidden
+        : a.scales.crosshairMagnet
+          ? CrosshairMode.Magnet
           : CrosshairMode.Normal;
+    const vertLineVisible = shape === 'CROSS' || shape === 'VERTICAL';
+    const horzLineVisible = shape === 'CROSS' || shape === 'HORIZONTAL';
 
     /*
      * The crosshair's own ink.
@@ -259,13 +281,17 @@ export class LightweightChartsAdapter implements ChartAdapter {
           color: crosshairInk,
           width: crosshairWidth,
           style: crosshairDash,
+          visible: vertLineVisible,
           labelBackgroundColor: a.scales.crosshairLabelBackground,
+          // The chip under the plot is asked for separately from the line
+          // above it, so a dot crosshair can still tell you the time.
           labelVisible: a.scales.crosshairTimeLabel,
         },
         horzLine: {
           color: crosshairInk,
           width: crosshairWidth,
           style: crosshairDash,
+          visible: horzLineVisible,
           labelBackgroundColor: a.scales.crosshairLabelBackground,
           labelVisible: a.scales.crosshairPriceLabel,
         },
@@ -374,6 +400,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (this.priceSeries) {
       this.chart.removeSeries(this.priceSeries);
       this.priceSeries = null;
+      // A primitive dies with the series it was attached to, so the dot is
+      // forgotten here and re-attached by syncCrosshairDot at the end.
+      this.crosshairDot = null;
     }
 
     /*
@@ -479,6 +508,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
       },
     });
     this.applyScaleMode();
+    this.syncCrosshairDot();
   }
 
   /** Log / percent / normal, from the appearance rather than a separate toggle. */
@@ -573,6 +603,11 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.container.addEventListener('wheel', this.onWheel, { passive: false });
 
     this.chart.subscribeCrosshairMove((param) => {
+      // The dot follows the pointer whether or not anything is listening for
+      // the legend, so this is recorded before the early return.
+      this.crosshairPoint = param.point ? { x: param.point.x, y: param.point.y } : null;
+      this.crosshairDot?.redraw();
+
       if (this.crosshairCallbacks.size === 0) return;
       const timeMs = param.time !== undefined ? fromTime(param.time) : null;
       const index = timeMs === null ? undefined : this.byTime.get(timeMs);
@@ -649,6 +684,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (!this.chart) return;
 
     this.chart.applyOptions(this.layoutOptions() as never);
+    this.syncCrosshairDot();
 
     // Freeze, or release, before anything is applied.
     const structural =
@@ -667,6 +703,39 @@ export class LightweightChartsAdapter implements ChartAdapter {
         },
       });
     }
+  }
+
+  /**
+   * Attach or detach the dot, to match the chosen crosshair shape.
+   *
+   * Attached lazily: a cross-shaped crosshair - the default - never creates
+   * the primitive at all. Once created it stays attached and is told whether
+   * to draw, so switching shapes does not churn the renderer's primitive list.
+   */
+  private syncCrosshairDot(): void {
+    const wanted = this.appearance.scales.crosshairStyle === 'DOT';
+    if (!wanted && this.crosshairDot === null) return;
+    if (!this.priceSeries) return;
+
+    if (this.crosshairDot === null) {
+      const dot = new CrosshairDot({
+        at: () => this.crosshairPoint,
+        colour: () =>
+          withOpacity(
+            this.appearance.scales.crosshairColor,
+            this.appearance.scales.crosshairOpacity,
+          ),
+        // A dot the thickness of the line it replaces is invisible, so the
+        // thickness becomes a radius with a floor of its own.
+        radius: () => 1.5 + this.appearance.scales.crosshairWidth,
+        visible: () => this.appearance.scales.crosshairStyle === 'DOT',
+      });
+      (
+        this.priceSeries as unknown as { attachPrimitive: (p: unknown) => void }
+      ).attachPrimitive(dot);
+      this.crosshairDot = dot;
+    }
+    this.crosshairDot.redraw();
   }
 
   applyHistory(bars: readonly NormalizedBar[]): void {

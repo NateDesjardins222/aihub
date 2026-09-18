@@ -65,7 +65,15 @@ export interface ScalesAppearance {
   readonly sessionBreaksVisible: boolean;
   readonly sessionBreakColor: string;
   readonly paneSeparatorColor: string;
-  readonly crosshairStyle: 'CROSS' | 'MAGNET' | 'HIDDEN';
+  /**
+   * The crosshair's SHAPE. Snapping is a separate question - see
+   * `crosshairMagnet` - because "magnet" was never a shape and having it in
+   * this list meant a trader could not have a snapping vertical-only
+   * crosshair, or any of the other combinations.
+   */
+  readonly crosshairStyle: 'CROSS' | 'DOT' | 'VERTICAL' | 'HORIZONTAL' | 'HIDDEN';
+  /** Snap the crosshair to the nearest bar rather than following the pointer. */
+  readonly crosshairMagnet: boolean;
   readonly crosshairColor: string;
   readonly crosshairLabelBackground: string;
   /** Thickness in pixels, 1 to 3. */
@@ -146,6 +154,7 @@ export const DEFAULT_APPEARANCE: ChartAppearance = {
     sessionBreakColor: 'rgba(99, 112, 138, 0.35)',
     paneSeparatorColor: '#242d3e',
     crosshairStyle: 'CROSS',
+    crosshairMagnet: false,
     crosshairColor: '#4d8dff',
     crosshairLabelBackground: '#2a5199',
     crosshairWidth: 1,
@@ -244,10 +253,23 @@ export function normalizeAppearance(raw: unknown): ChartAppearance {
       sessionBreaksVisible: flag(c.sessionBreaksVisible, d.scales.sessionBreaksVisible),
       sessionBreakColor: colour(c.sessionBreakColor, d.scales.sessionBreakColor),
       paneSeparatorColor: colour(c.paneSeparatorColor, d.scales.paneSeparatorColor),
+      /*
+       * 'MAGNET' used to be one of the shapes. A workspace saved under the old
+       * scheme is read as a CROSS that snaps, which is what it was showing.
+       */
       crosshairStyle:
-        c.crosshairStyle === 'MAGNET' || c.crosshairStyle === 'HIDDEN'
+        c.crosshairStyle === 'DOT' ||
+        c.crosshairStyle === 'VERTICAL' ||
+        c.crosshairStyle === 'HORIZONTAL' ||
+        c.crosshairStyle === 'HIDDEN'
           ? c.crosshairStyle
           : 'CROSS',
+      crosshairMagnet: flag(
+        c.crosshairMagnet,
+        // A legacy value: 'MAGNET' is not a member of the current union, so it
+        // is read as the string it was stored as.
+        (c.crosshairStyle as string | undefined) === 'MAGNET',
+      ),
       crosshairColor: colour(c.crosshairColor, d.scales.crosshairColor),
       crosshairLabelBackground: colour(
         c.crosshairLabelBackground,
