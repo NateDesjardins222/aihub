@@ -294,9 +294,16 @@ tail** (31.7ms at p95), which was investigated rather than guessed at:
 The drawing suites pass unchanged after the colour control was replaced under
 them: `drawing-pointer` 16/16, `drawing-engine` 36/36, `line-tools` 68/68,
 `rectangle` 43/43, `remaining-tools` 56/56, `fib-levels` 16/16,
-`position-tools` 30/30. The 11-tool × 20-step matrix from the previous
-milestone (`tools/drawing-matrix.mjs`) was re-run for this report; its result is
-recorded below.
+`position-tools` 30/30.
+
+The 11-tool × 20-step matrix (`tools/drawing-matrix.mjs`) was re-run for this
+report: select, place, reselect, drag the body, drag every anchor, edit, style,
+duplicate, copy/paste, undo, redo, lock, unlock, hide/show, zoom, pan, change
+the interval, **change the instrument**, reload, delete — for Trend line,
+Horizontal line, Vertical line, Ray, Extended line, Rectangle, Fib
+retracement, Measure, Text, Long position and Short position.
+
+**All 220 cells pass.**
 
 One finding from the previous milestone is **withdrawn as false**: "hovering a
 drawing does not change the cursor" was read off `.draw-canvas` while the code
@@ -545,6 +552,45 @@ because exact-pixel comparison over live market data would be dishonest.
 **The interaction pass.** `tests/browser/interaction-pass.mjs`, **159 checks**,
 run twice. Every one performs a real click, drag, keystroke or wheel and reads
 back something that would be different if it had not worked.
+
+### Everything, run end to end
+
+| suite | | suite | |
+| --- | --- | --- | --- |
+| terminal | 20/20 | abuse | 19/19 |
+| responsive | 50/50 | live-indicators | 9/9 |
+| chart-navigation | 32/32 | recovery | 14/14 |
+| indicators | 37/37 | appearance | 26/26 |
+| drawing-pointer | 16/16 | tablet | 15/15 |
+| drawing-engine | 36/36 | visual | 22/22 |
+| position-tools | 30/30 | polish | 25/25 |
+| fib-levels | 16/16 | tools | 27/27 |
+| multi-chart | 25/25 | replay-brackets | 12/12 |
+| journal-calendar | 21/21 | layout | 8/8 |
+| journal-scale | 16/16 | admin | 28/28 |
+| rectangle | 43/43 | acceptance | 17/17 |
+| line-tools | 68/68 | first-run | 19/19 |
+| remaining-tools | 56/56 | **interaction-pass** | **159/159** |
+| drag-protect | 29/29 | | |
+| execution-interaction | 30/30 | | |
+| execution-stress | 13/13 | | |
+| stress | 62/62 | | |
+| perf-panes | 11/11 | | |
+| pane-resize | 14/14 | | |
+
+**1,025 browser checks and 700 unit tests, all passing.**
+
+The full run came back three checks down out of about eight hundred, and
+**none of the three was the product** — each is written up in the commit that
+fixed it, because a test that asks the wrong question is worth exactly as much
+as a bug:
+
+* `live-indicators` asked a replay for 45 bars and got 44; what matters is that
+  the history exceeds the 22-bar window, which 40 says with margin.
+* `appearance` expected six scale switches to survive a reload independently.
+  They cannot: a price scale is logarithmic or percentage and not both.
+* `acceptance` treated an order refusal with the market shut as an honest
+  outcome and then failed on the 422 that same refusal wrote to the console.
 
 ### What still needs work — nothing here is hidden
 
