@@ -30,6 +30,7 @@ const SUITES = [
   'perf-panes',
   'pane-resize',
   'abuse',
+  'live-indicators',
   'visual',
   'tools',
   'replay-brackets',

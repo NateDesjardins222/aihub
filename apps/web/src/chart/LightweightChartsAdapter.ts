@@ -48,7 +48,13 @@ import {
   timeFormatter,
   type ChartAppearance,
 } from './appearance';
-import { indicatorDef, type IndicatorInstance, type Plot } from './indicators/registry';
+import {
+  indicatorDef,
+  type IndicatorInstance,
+  type IndicatorOutput,
+  type Plot,
+  type PlotPoint,
+} from './indicators/registry';
 import { BandFill, type BandPoint } from './band-fill';
 import { CrosshairDot } from './crosshair-dot';
 
@@ -387,6 +393,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.rangeCallbacks.clear();
     this.indicatorSeries.clear();
     this.indicatorGuides.clear();
+    this.computed.clear();
     this.legendValues.clear();
     this.panes.clear();
     this.chart?.remove();
@@ -396,6 +403,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.projectionCache = null;
     this.spacingCache = null;
     this.bars = [];
+    this.barsRevision += 1;
     this.byTime.clear();
   }
 
@@ -755,6 +763,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
   applyHistory(bars: readonly NormalizedBar[]): void {
     this.bars = [...bars];
+    this.barsRevision += 1;
     this.reindex();
     this.historyRequestPending = false;
     this.redraw();
@@ -776,6 +785,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     }
 
     this.bars = [...older, ...this.bars].sort((a, b) => a.time - b.time);
+    this.barsRevision += 1;
     this.reindex();
     this.redraw();
 
@@ -821,6 +831,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
     if (index !== undefined) {
       this.bars[index] = bar;
+      this.barsRevision += 1;
       // The renderer's incremental `update` only accepts the newest point.
       // Revising an interior bar has to go through a full redraw, or the
       // library throws and the chart stops taking updates altogether.
@@ -832,6 +843,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
       const last = this.bars[lastIndex];
       if (last && bar.time < last.time) return; // stale: never rewind the series
       this.bars.push(bar);
+      this.barsRevision += 1;
       this.byTime.set(bar.time, this.bars.length - 1);
     }
 
@@ -906,6 +918,11 @@ export class LightweightChartsAdapter implements ChartAdapter {
         /* the series is gone; nothing to detach from */
       }
       this.indicatorFills.delete(key);
+    }
+
+    // A study that is gone has no cached arithmetic worth keeping.
+    for (const id of [...this.computed.keys()]) {
+      if (!this.indicators.some((instance) => instance.id === id)) this.computed.delete(id);
     }
 
     this.panes.clear();
@@ -1093,6 +1110,82 @@ export class LightweightChartsAdapter implements ChartAdapter {
   }
 
   /**
+   * What the studies have cost since the page loaded.
+   *
+   * A measurement hook, like the chart's geometry one. Indicator arithmetic
+   * happens off the React path and inside the renderer's frame, which makes it
+   * exactly the kind of cost that hides from a profile taken at the wrong
+   * moment: it is bursty, it follows the market rather than the pointer, and
+   * it never shows up in a median. Counting it is how it stops hiding.
+   */
+  indicatorCost(): {
+    calls: number;
+    tailCalls: number;
+    totalMs: number;
+    worstMs: number;
+    /** How many bars the arithmetic is over, which is half of what it costs. */
+    bars: number;
+  } {
+    return { ...this.cost, bars: this.bars.length };
+  }
+
+  /**
+   * What each study currently holds, for a test that has to see inside.
+   *
+   * The live path computes over a window rather than the whole history, and
+   * the failure mode of getting that wrong is invisible from outside: a
+   * Bollinger band that quietly shrinks to its last twenty-two bars still
+   * looks like a Bollinger band. The point counts make it visible.
+   */
+  indicatorDiagnostics(): ReadonlyArray<{
+    instanceId: string;
+    kind: string;
+    plots: Record<string, number>;
+    fills: Record<string, number>;
+    values: Record<string, string>;
+  }> {
+    return this.indicators.map((instance) => {
+      const plots: Record<string, number> = {};
+      const values: Record<string, string> = {};
+      for (const [key, entry] of this.indicatorSeries) {
+        if (!key.startsWith(`${instance.id}:`)) continue;
+        const id = key.slice(instance.id.length + 1);
+        // What the renderer HOLDS, not what was last computed: the two coming
+        // apart is exactly the failure this is here to catch.
+        try {
+          plots[id] = (entry.series as unknown as { data: () => unknown[] }).data().length;
+        } catch {
+          plots[id] = entry.plot.points.length;
+        }
+        values[id] = this.legendValues.get(key) ?? '—';
+      }
+      const fills: Record<string, number> = {};
+      for (const [key, entry] of this.indicatorFills) {
+        if (!key.startsWith(`${instance.id}:`)) continue;
+        fills[key.slice(instance.id.length + 1)] = entry.state.points.length;
+      }
+      return { instanceId: instance.id, kind: instance.kind, plots, fills, values };
+    });
+  }
+
+  private readonly cost = { calls: 0, tailCalls: 0, totalMs: 0, worstMs: 0 };
+
+  /**
+   * Bumped whenever the bars change, and nothing else.
+   *
+   * An indicator is a pure function of the bars and its own parameters, so a
+   * result computed from bars that have not changed since is still the right
+   * result. Adding the twentieth study used to recompute the other nineteen
+   * over the whole history and hand every point back to the renderer - 63ms of
+   * arithmetic for one new line.
+   */
+  private barsRevision = 0;
+  private readonly computed = new Map<
+    string,
+    { revision: number; key: string; pane: number; output: IndicatorOutput }
+  >();
+
+  /**
    * Compute and draw every indicator.
    *
    * The computation happens HERE, from the bars the adapter already holds,
@@ -1100,6 +1193,20 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * render. It reads bars and writes series; it can never write a bar.
    */
   private renderIndicators(options: { tailOnly?: boolean } = {}): void {
+    if (!this.chart) return;
+    const startedAt = performance.now();
+    this.cost.calls += 1;
+    if (options.tailOnly) this.cost.tailCalls += 1;
+    try {
+      this.renderIndicatorsInner(options);
+    } finally {
+      const took = performance.now() - startedAt;
+      this.cost.totalMs += took;
+      if (took > this.cost.worstMs) this.cost.worstMs = took;
+    }
+  }
+
+  private renderIndicatorsInner(options: { tailOnly?: boolean } = {}): void {
     if (!this.chart) return;
 
     /*
@@ -1132,16 +1239,75 @@ export class LightweightChartsAdapter implements ChartAdapter {
       if (!def) continue;
       const pane = this.panes.get(instance.id) ?? 0;
 
-      let output;
-      try {
-        output = def.compute(this.bars, { ...def.defaults, ...instance.params }, {
-          pane: def.overlay ? 'PRICE' : pane,
-          isSessionStart: (_bar, index) => this.isSessionStart(index),
-        });
-      } catch {
-        // A bad parameter must not take the chart down with it. The indicator
-        // simply does not draw, and the trader can fix or remove it.
-        continue;
+      /*
+       * Recomputed only when its own answer could have changed.
+       *
+       * The bars and the parameters are the whole of an indicator's input, so
+       * a cached result under an unchanged pair is not an optimisation that
+       * trades accuracy for speed - it is the same arithmetic, not done twice.
+       * `reused` also spares the renderer the setData below, which is where
+       * most of the saving is: handing back a thousand identical points makes
+       * the library re-validate every one of them.
+       */
+      const params = { ...def.defaults, ...instance.params };
+      const key = JSON.stringify(params);
+      const cached = this.computed.get(instance.id);
+      const reused =
+        cached !== undefined &&
+        cached.revision === this.barsRevision &&
+        cached.key === key &&
+        cached.pane === pane;
+
+      /*
+       * A live tick only has to move the LAST value.
+       *
+       * Every study drawn over every bar the chart holds, several times a
+       * second, was measured at 31ms a tick with twenty studies on the chart -
+       * and a pan during a moving market dropped a fifth of its frames while a
+       * pan during a still one dropped none. The newest value of a moving
+       * average or a Wilder average stops depending on history long before the
+       * start of it, so each indicator declares how far back its own answer
+       * reaches and the tick computes over that much.
+       *
+       * Only when the study is already fully on the chart: a window cannot
+       * create a series, because the points it holds are only the window's.
+       * VWAP declares null and keeps the whole history, because its anchor is
+       * the session rather than a number of bars.
+       * `tail-window.test.ts` holds every one of these windows to the
+       * full-history answer.
+       */
+      const complete =
+        cached !== undefined &&
+        cached.key === key &&
+        cached.pane === pane &&
+        cached.output.plots.every((item) =>
+          this.indicatorSeries.has(`${instance.id}:${item.id}`),
+        );
+      const tailWindow = options.tailOnly && complete ? (def.tailBars?.(params) ?? null) : null;
+      const windowed = tailWindow !== null && tailWindow < this.bars.length;
+      const source = windowed ? this.bars.slice(-tailWindow!) : this.bars;
+      const offset = windowed ? this.bars.length - tailWindow! : 0;
+
+      let output: IndicatorOutput;
+      if (reused && !windowed) {
+        output = cached!.output;
+      } else {
+        try {
+          output = def.compute(source, params, {
+            pane: def.overlay ? 'PRICE' : pane,
+            isSessionStart: (_bar, index) => this.isSessionStart(index + offset),
+          });
+        } catch {
+          // A bad parameter must not take the chart down with it. The
+          // indicator simply does not draw, and the trader can fix or remove
+          // it.
+          continue;
+        }
+        // A windowed result is the newest value, not the series: it must never
+        // become the cached answer for a full redraw.
+        if (!windowed) {
+          this.computed.set(instance.id, { revision: this.barsRevision, key, pane, output });
+        }
       }
 
       for (const plot of output.plots) {
@@ -1191,7 +1357,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
               visible: false,
             });
           }
-        } else {
+        } else if (!windowed) {
           entry.series.applyOptions({
             color: withOpacity(plot.color, plot.opacity),
             lineWidth: plot.lineWidth,
@@ -1199,6 +1365,25 @@ export class LightweightChartsAdapter implements ChartAdapter {
             visible: plot.visible !== false,
           } as never);
           entry.plot = plot;
+        }
+        /*
+         * A windowed pass EXTENDS `entry.plot` rather than replacing it.
+         *
+         * That object holds the whole series, and two things read it: the
+         * shaded band below, and the legend when the crosshair is over a bar.
+         * Replacing it with the window would shrink a Bollinger band to its
+         * last twenty-two bars; leaving it untouched would make the crosshair
+         * read "—" over every bar printed since the last full redraw. So the
+         * newest point is written into it, and nothing else is.
+         */
+        if (windowed) {
+          const newestPoint = plot.points[plot.points.length - 1];
+          if (newestPoint) {
+            const held = entry.plot.points as PlotPoint[];
+            const tail = held[held.length - 1];
+            if (tail && tail.time === newestPoint.time) held[held.length - 1] = newestPoint;
+            else if (!tail || newestPoint.time > tail.time) held.push(newestPoint);
+          }
         }
 
         const asPoint = (point: (typeof plot.points)[number]) => ({
@@ -1212,7 +1397,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
           // The renderer takes a point at or after the last one it holds,
           // which is exactly what a live bar produces.
           entry.series.update(asPoint(newest) as never);
-        } else {
+        } else if (!windowed && (!reused || fresh)) {
           entry.series.setData(plot.points.map(asPoint) as never);
         }
 
@@ -1237,6 +1422,30 @@ export class LightweightChartsAdapter implements ChartAdapter {
         const upper = this.indicatorSeries.get(`${instance.id}:${spec.upper}`);
         const lower = this.indicatorSeries.get(`${instance.id}:${spec.lower}`);
         if (!upper || !lower) continue;
+
+        /*
+         * On a tick, the band gains a point rather than being rebuilt.
+         *
+         * The windowed pass only knows about the last few bars, so rebuilding
+         * from it would throw away the rest of the band; and rebuilding the
+         * whole band several times a second is the cost this window exists to
+         * remove.
+         */
+        if (windowed) {
+          const held = this.indicatorFills.get(`${instance.id}:${spec.id}`);
+          if (!held) continue;
+          const top = output.plots.find((item) => item.id === spec.upper);
+          const bottom = output.plots.find((item) => item.id === spec.lower);
+          const u = top?.points[top.points.length - 1];
+          const l = bottom?.points[bottom.points.length - 1];
+          if (!u || !l || u.time !== l.time) continue;
+          const points = held.state.points;
+          const last = points[points.length - 1];
+          const next = { time: u.time, upper: u.value, lower: l.value };
+          if (last && last.time === next.time) points[points.length - 1] = next;
+          else points.push(next);
+          continue;
+        }
 
         const points: BandPoint[] = [];
         const lowerByTime = new Map(lower.plot.points.map((point) => [point.time, point.value]));

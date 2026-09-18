@@ -106,6 +106,23 @@ export interface IndicatorDef {
   readonly params: readonly ParamDef[];
   readonly defaults: ParamValues;
   readonly compute: (bars: readonly NormalizedBar[], params: ParamValues, ctx: ComputeContext) => IndicatorOutput;
+  /**
+   * How many bars back this indicator's NEWEST value depends on, or null when
+   * the answer is "all of them".
+   *
+   * A live market updates the bar in progress several times a second, and each
+   * update used to recompute every study over every bar the chart held - with
+   * twenty studies that was measured at 31ms per tick, which is two dropped
+   * frames every time the price moves. Only the last value is needed for that
+   * update, and for everything but a session-anchored statistic the last value
+   * stops depending on history a long way before the beginning of it.
+   *
+   * The number is a WARM-UP, not a window of interest: a Wilder average is
+   * recursive, so its seed has to have decayed to nothing by the time the
+   * window reaches the newest bar. `tail-window.test.ts` holds each of these
+   * to the full-history answer rather than trusting the arithmetic here.
+   */
+  readonly tailBars?: (params: ParamValues) => number | null;
 }
 
 export interface ComputeContext {
@@ -276,6 +293,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     description: 'The mean of the last N values of the chosen source.',
     params: [PERIOD, SOURCE, SMOOTHING, COLOUR, ...STYLE],
     defaults: { ...STYLE_DEFAULTS, period: 20, source: 'close', smoothing: 1, color: '#4d8dff' },
+    tailBars: (params) => num(params, 'period', 20) + num(params, 'smoothing', 1) + 2,
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -303,6 +321,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     description: 'Weights recent values more heavily. Seeded from the simple average.',
     params: [PERIOD, SOURCE, SMOOTHING, COLOUR, ...STYLE],
     defaults: { ...STYLE_DEFAULTS, period: 21, source: 'close', smoothing: 1, color: '#f5a524' },
+    tailBars: (params) => 20 * num(params, 'period', 21) + 200,
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -331,6 +350,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
       'Volume-weighted average price, anchored to the session open. Needs genuine volume: a feed that reports none produces no line.',
     params: [SOURCE, COLOUR, ...STYLE],
     defaults: { ...STYLE_DEFAULTS, source: 'hlc3', color: '#a879f0' },
+    tailBars: () => null,
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -380,6 +400,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
       fillColor: '#4d8dff',
       fillOpacity: 8,
     },
+    tailBars: (params) => num(params, 'period', 20) + 2,
     compute: (bars, params, ctx) => {
       const values = bars.map((b) => sourceValue(b, src(params, 'source')));
       const period = num(params, 'period', 20);
@@ -413,6 +434,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     description: 'Contracts traded per bar, coloured by the bar direction.',
     params: [],
     defaults: {},
+    tailBars: () => 2,
     compute: (bars, _params, ctx) => ({
       pane: ctx.pane,
       plots: [
@@ -441,6 +463,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     description: "Wilder's RSI. Bounded 0-100.",
     params: [PERIOD, SOURCE, COLOUR, ...STYLE],
     defaults: { ...STYLE_DEFAULTS, period: 14, source: 'close', color: '#4d8dff' },
+    tailBars: (params) => 20 * num(params, 'period', 14) + 200,
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       range: { min: 0, max: 100 },
@@ -477,6 +500,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
       ...STYLE,
     ],
     defaults: { ...STYLE_DEFAULTS, fast: 12, slow: 26, signal: 9, source: 'close' },
+    tailBars: (params) => 20 * num(params, 'slow', 26) + 20 * num(params, 'signal', 9) + 200,
     compute: (bars, params, ctx) => {
       const values = bars.map((b) => sourceValue(b, src(params, 'source')));
       const result = macd(values, num(params, 'fast', 12), num(params, 'slow', 26), num(params, 'signal', 9));
@@ -518,6 +542,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     description: "Wilder's average of the true range. In price units, not percent.",
     params: [PERIOD, COLOUR, ...STYLE],
     defaults: { ...STYLE_DEFAULTS, period: 14, color: '#f5a524' },
+    tailBars: (params) => 20 * num(params, 'period', 14) + 200,
     compute: (bars, params, ctx) => ({
       pane: ctx.pane,
       plots: [

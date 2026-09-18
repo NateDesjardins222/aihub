@@ -262,6 +262,18 @@ export function ChartPanel({
       ) => adapterRef.current?.viewDiagnostics(x, price) ?? null;
       (window as unknown as { __atlasPaneSync?: unknown }).__atlasPaneSync = () =>
         syncDiagnostics();
+      (window as unknown as { __atlasIndicatorCost?: unknown }).__atlasIndicatorCost = () =>
+        (
+          adapterRef.current as unknown as {
+            indicatorCost?: () => unknown;
+          } | null
+        )?.indicatorCost?.() ?? null;
+      (window as unknown as { __atlasIndicators?: unknown }).__atlasIndicators = () =>
+        (
+          adapterRef.current as unknown as {
+            indicatorDiagnostics?: () => unknown;
+          } | null
+        )?.indicatorDiagnostics?.() ?? null;
     }
     // The legend is built once, after the mask may already have been chosen, so
     // it is told immediately rather than waiting for the mask to change again.
