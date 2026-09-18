@@ -162,17 +162,37 @@ try {
     };
     grabFraction = [0.75, 0.25, 0.6, 0.4, 0.85, 0.15].find((f) => !clash(f)) ?? 0.75;
   }
-  const beforeFinal = await barUnder(probe.x, probe.y);
+  /*
+   * Measured on the LOGICAL RANGE, not on the bar under a probe point.
+   *
+   * "Which bar is under this pixel" is the right question for a crosshair and
+   * the wrong one for a pan: a bar arriving mid-gesture, or a pan that covers
+   * less than one bar at the current spacing, both read as a chart that did
+   * not move. The visible logical range is what panning changes, which is why
+   * chart-navigation measures it that way too.
+   *
+   * Reported with the tool and the selection either way, because the failure
+   * this check exists to catch - a drawing freezing chart navigation - looks
+   * identical in the log to a gesture that missed.
+   */
+  const range = () => page.evaluate(() => window.__atlasChartView?.()?.from ?? null);
+  const pointerState = () =>
+    page.evaluate(() => ({
+      tool: window.__atlasTool?.() ?? null,
+      selected: window.__atlasSelected?.()?.id ?? null,
+      objects: (window.__atlasDrawings?.() ?? []).length,
+    }));
+  const beforeFinal = await range();
   await page.mouse.move(at(0.2, grabFraction).x, at(0.2, grabFraction).y);
   await page.mouse.down();
   await page.mouse.move(at(0.5, grabFraction).x, at(0.2, grabFraction).y, { steps: 12 });
   await page.mouse.up();
   await page.waitForTimeout(700);
-  const afterFinal = await barUnder(probe.x, probe.y);
+  const afterFinal = await range();
   say(
-    beforeFinal !== afterFinal,
+    beforeFinal !== null && afterFinal !== null && Math.abs(afterFinal - beforeFinal) > 1,
     'the chart pans after selecting and deselecting',
-    `grabbed at ${Math.round(grabFraction * 100)}% of the height: ${beforeFinal} -> ${afterFinal}`,
+    `grabbed at ${Math.round(grabFraction * 100)}% of the height, from ${beforeFinal?.toFixed(1)} -> ${afterFinal?.toFixed(1)}, ${JSON.stringify(await pointerState())}`,
   );
 
   // --- undo / redo ---------------------------------------------------------
