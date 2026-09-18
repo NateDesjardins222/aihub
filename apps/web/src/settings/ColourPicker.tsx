@@ -79,19 +79,31 @@ export function Colour({
   value,
   onChange,
   label = 'Colour',
+  /**
+   * Some callers keep the opacity in a field of their own - a drawing's fill,
+   * a Fibonacci level - and for those the picker must hand back a plain hex
+   * and leave the alpha alone rather than folding it into an rgba().
+   */
+  alpha = true,
+  /** The hex field beside the swatch, which a dense row has no space for. */
+  text = true,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  alpha?: boolean;
+  text?: boolean;
+  disabled?: boolean;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   const { hex, opacity } = decompose(value);
-  const [text, setText] = useState(value);
+  const [typed, setTyped] = useState(value);
 
-  useEffect(() => setText(value), [value]);
+  useEffect(() => setTyped(value), [value]);
 
   /*
    * Positioned against the viewport, in a portal.
@@ -139,6 +151,9 @@ export function Colour({
     onChange(next);
   };
 
+  /** What a palette click sends: with the opacity folded in, or without. */
+  const pick = (colour: string): void => commit(alpha ? compose(colour, opacity) : colour);
+
   return (
     <div className="cp">
       <button
@@ -147,21 +162,25 @@ export function Colour({
         className="cp-swatch"
         aria-label={label}
         aria-expanded={open}
+        disabled={disabled}
         data-testid="colour-swatch"
         onClick={() => setOpen((was) => !was)}
       >
         <span className="cp-swatch-ink" style={{ background: value }} />
       </button>
-      <input
-        className="num cp-text"
-        value={text}
-        aria-label={`${label} value`}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={() => commit(text)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') commit(text);
-        }}
-      />
+      {text ? (
+        <input
+          className="num cp-text"
+          value={typed}
+          aria-label={`${label} value`}
+          disabled={disabled}
+          onChange={(event) => setTyped(event.target.value)}
+          onBlur={() => commit(typed)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commit(typed);
+          }}
+        />
+      ) : null}
 
       {open && at
         ? createPortal(
@@ -179,11 +198,12 @@ export function Colour({
                     className={`cp-cell ${hex === colour ? 'cp-cell-on' : ''}`}
                     style={{ background: colour }}
                     aria-label={colour}
-                    onClick={() => commit(compose(colour, opacity))}
+                    onClick={() => pick(colour)}
                   />
                 ))}
               </div>
 
+              {alpha ? (
               <label className="cp-opacity">
                 <span>Opacity</span>
                 <input
@@ -197,6 +217,7 @@ export function Colour({
                 />
                 <span className="num cp-opacity-value">{opacity}%</span>
               </label>
+              ) : null}
 
               {recent.length > 0 ? (
                 <div className="cp-recent">
@@ -222,7 +243,7 @@ export function Colour({
                     type="color"
                     value={hex}
                     aria-label="Custom colour"
-                    onChange={(event) => commit(compose(event.target.value, opacity))}
+                    onChange={(event) => pick(event.target.value)}
                   />
                   <span>Custom</span>
                 </label>

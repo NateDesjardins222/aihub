@@ -436,7 +436,7 @@ try {
   const rowsBefore = await levelRow.count();
   say(rowsBefore >= 7, 'every level is editable on its own row', `${rowsBefore} rows`);
   say(
-    (await editor.locator('input[type=color]').count()) === rowsBefore &&
+    (await editor.locator('[data-testid=colour-swatch]').count()) === rowsBefore &&
       (await editor.locator('.dp-level-alpha').count()) === rowsBefore &&
       (await editor.locator('.dp-level-label').count()) === rowsBefore,
     'each row carries its own colour, opacity and name',

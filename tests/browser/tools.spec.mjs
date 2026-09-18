@@ -290,7 +290,7 @@ try {
 
   await page.click('.st-nav-item:text-is("Symbol")');
   await page.waitForTimeout(400);
-  const colour = page.locator('.st-row:has-text("Up colour") .st-colour-text');
+  const colour = page.locator('.st-row:has-text("Up colour") .cp-text');
   await colour.fill('#8fd0ff');
   await colour.press('Enter');
   await page.waitForTimeout(500);
@@ -306,7 +306,7 @@ try {
   await page.click('.abar-icon[aria-label=Settings]');
   await page.waitForTimeout(700);
   say(
-    (await page.locator('.st-row:has-text("Up colour") .st-colour-text').inputValue()) === '#8fd0ff',
+    (await page.locator('.st-row:has-text("Up colour") .cp-text').inputValue()) === '#8fd0ff',
     'a chart colour survives a reload',
   );
   await page.click('.st-nav-item:text-is("Time and format")');

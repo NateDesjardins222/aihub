@@ -148,3 +148,15 @@
   flex-direction: column;
   gap: 1px;
 }
+
+/*
+ * The moment after a removal.
+ *
+ * The list restacks at once - it has to say what is actually on the chart -
+ * but the controls of whatever slid under the pointer stay out of reach until
+ * the pointer moves. See IndicatorRows.tsx for why.
+ */
+.ind-rows[data-settling] .ind-actions {
+  opacity: 0;
+  pointer-events: none;
+}

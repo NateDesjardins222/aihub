@@ -273,12 +273,15 @@ function PropRow({
                 onChange={(event) => set({ [toggleKey]: event.target.checked })}
               />
             ) : null}
-            <input
-              type="color"
+            <Colour
               value={/^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : '#4d8dff'}
-              aria-label={`${prop.label} colour`}
+              label={`${prop.label} colour`}
+              // The opacity beside it is this drawing's own field, so the
+              // picker hands back a plain colour and does not fold one in.
+              alpha={false}
+              text={false}
               disabled={!on}
-              onChange={(event) => set({ [prop.key]: event.target.value })}
+              onChange={(next) => set({ [prop.key]: next })}
             />
             <input
               className="dp-alpha"
@@ -422,12 +425,13 @@ function LevelEditor({
             }}
           />
           <span className="dp-level-pct">%</span>
-          <input
-            type="color"
+          <Colour
             value={/^#[0-9a-f]{6}$/i.test(level.color) ? level.color : '#6b7a94'}
-            aria-label="Level colour"
-            onChange={(event) =>
-              write(levels.map((item, i) => (i === index ? { ...item, color: event.target.value } : item)))
+            label="Level colour"
+            alpha={false}
+            text={false}
+            onChange={(next) =>
+              write(levels.map((item, i) => (i === index ? { ...item, color: next } : item)))
             }
           />
           {/* Each level's own opacity: the level that matters stays solid and

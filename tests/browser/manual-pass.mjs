@@ -483,7 +483,7 @@ try {
       .locator('[data-testid=indicator-settings] .st-row')
       .filter({ has: page.locator(`.st-row-label:text-is("${label}")`) });
   // A deliberately obvious edit: the upper band on its own.
-  const bbUpper = bbRow('Colour').nth(1).locator('.st-colour-text');
+  const bbUpper = bbRow('Colour').nth(1).locator('.cp-text');
   await bbUpper.fill('#2ec4a6');
   await bbUpper.press('Enter');
   const bbWidth = bbRow('Thickness').nth(1).locator('input[type=number]');

@@ -111,13 +111,10 @@
   color: var(--text-muted);
 }
 
-.dp-level input[type='color'] {
+/* The swatch that opens the picker, sized for this dense row. */
+.dp-level .cp-swatch {
   width: 26px;
   height: 20px;
-  padding: 0;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 /* Narrow on purpose: five controls on one row have to fit a compact dialog. */
@@ -249,17 +246,14 @@
   gap: 7px;
 }
 
-.dp-colour-alpha input[type='color'] {
+.dp-colour-alpha .cp-swatch {
   width: 28px;
   height: 22px;
-  padding: 0;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
-.dp-colour-alpha input[type='color']:disabled {
+.dp-colour-alpha .cp-swatch:disabled {
   opacity: 0.4;
+  cursor: default;
 }
 
 .dp-alpha {

@@ -173,12 +173,13 @@ try {
   await add('Exponential moving average');
   await setNumber('Length', 200);
 
-  // A different colour for the third one, so the chart can be read.
+  // A different colour for the third one, so the chart can be read. Typed as a
+  // hex rather than picked, which is the path the field is there for.
   const colour = page
-    .locator('[data-testid=indicator-settings] .st-row:has(.st-row-label:text-is("Colour")) input[type=color]')
+    .locator('[data-testid=indicator-settings] .st-row:has(.st-row-label:text-is("Colour")) .cp-text')
     .first();
   await colour.fill('#ff5a5a');
-  await colour.dispatchEvent('change');
+  await colour.press('Enter');
   await page.waitForTimeout(500);
   await page.click('[data-testid=indicator-settings] button[aria-label="Close indicator settings"]');
   await page.waitForTimeout(500);
@@ -273,7 +274,7 @@ try {
 
   // Magenta at full strength, because it cannot be confused with anything
   // else the chart draws.
-  const fillColour = bbRows('Colour').last().locator('.st-colour-text');
+  const fillColour = bbRows('Colour').last().locator('.cp-text');
   await fillColour.fill('#ff00ff');
   await fillColour.press('Enter');
   const fillOpacity = bbRows('Opacity').last().locator('input[type=number]');
@@ -295,7 +296,7 @@ try {
   say(unfilled === 0, 'and turning the fill off removes every pixel of it', `${unfilled} px`);
 
   await openBollinger();
-  const upperColour = bbRows('Colour').nth(1).locator('.st-colour-text');
+  const upperColour = bbRows('Colour').nth(1).locator('.cp-text');
   await upperColour.fill('#00ff00');
   await upperColour.press('Enter');
   const upperWidth = bbRows('Thickness').nth(1).locator('input[type=number]');
@@ -359,6 +360,59 @@ try {
     afterReload.length === beforeReload.length,
     'every indicator survives a reload',
     `${beforeReload.length} -> ${afterReload.length}`,
+  );
+
+  // --- removing one must not remove the next ------------------------------
+  /*
+   * Four of the same study, which is the case where it bites.
+   *
+   * Each row's controls sit at the right end of that row, so five DIFFERENT
+   * studies have their remove buttons at five different x positions and a
+   * second click in the same place misses. Four moving averages have rows of
+   * identical width, the buttons line up exactly, and the list restacking
+   * under a pointer that has not moved puts the next one's remove button
+   * precisely where the last one was.
+   */
+  await clearAll();
+  await page.waitForTimeout(600);
+  for (let i = 0; i < 4; i += 1) await add('Exponential moving');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  const stacked = await page.locator('[data-testid=indicator-row]').count();
+  say(stacked === 4, 'four of the same study stack in the legend', `${stacked} rows`);
+
+  const second = page.locator('[data-testid=indicator-row]').nth(1);
+  await second.hover();
+  await page.waitForTimeout(300);
+  const target = await second.locator('.ind-btn-danger').boundingBox();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
+  await page.waitForTimeout(200);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  const afterOne = await page.locator('[data-testid=indicator-row]').count();
+  // The pointer does not move. This is the accidental second click.
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  const afterTwo = await page.locator('[data-testid=indicator-row]').count();
+  say(
+    afterOne === 3 && afterTwo === 3,
+    'a second click without moving the pointer removes nothing',
+    `4 → ${afterOne} → ${afterTwo}`,
+  );
+
+  // And a deliberate move re-arms it immediately.
+  await page.mouse.move(target.x + 220, target.y + 140);
+  await page.waitForTimeout(250);
+  const first = page.locator('[data-testid=indicator-row]').first();
+  await first.hover();
+  await page.waitForTimeout(300);
+  await first.locator('.ind-btn-danger').click();
+  await page.waitForTimeout(600);
+  say(
+    (await page.locator('[data-testid=indicator-row]').count()) === 2,
+    'but moving and aiming again removes the next one at once',
   );
 
   await clearAll();

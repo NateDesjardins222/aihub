@@ -292,7 +292,7 @@ try {
       .locator('.st-row')
       .filter({ has: page.locator('.st-row-label:text-is("Colour")') })
       .first()
-      .locator('.st-colour-text');
+      .locator('.cp-text');
     await colour.fill('#4d8dff');
     await colour.press('Enter');
     await page.waitForTimeout(300);
@@ -389,7 +389,7 @@ try {
     .locator('.st-row')
     .filter({ has: page.locator('.st-row-label:text-is("Colour")') })
     .first()
-    .locator('.st-colour-text');
+    .locator('.cp-text');
   await chColour.fill('#ff00ff');
   await chColour.press('Enter');
   await page.waitForTimeout(600);

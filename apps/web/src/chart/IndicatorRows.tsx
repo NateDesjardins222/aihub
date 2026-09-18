@@ -12,7 +12,7 @@
  * on the chart; re-rendering this component for each of them is exactly the
  * cost the performance work removed.
  */
-import { useEffect, useRef, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import type { ChartAdapter } from './ChartAdapter';
 import { useLayout } from '../state/layout-store';
 import { indicatorDef, indicatorTitle, type IndicatorInstance } from './indicators/registry';
@@ -81,6 +81,33 @@ export function IndicatorRows({
   const duplicateIndicator = useLayout((s) => s.duplicateIndicator);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * After a removal, the legend stops offering its controls until the pointer
+   * moves.
+   *
+   * Removing a study restacks the list, which slides the next one up under a
+   * pointer that has not moved - and that row's controls fade in around it, so
+   * a second click a moment later removes a study nobody aimed at. Measured
+   * last milestone: four of five surviving rows moved, by up to 31px.
+   *
+   * The list still restacks immediately, because it must tell the truth about
+   * what is on the chart. What waits is the controls: they come back the
+   * instant the pointer moves, which is what a trader does when they mean the
+   * next one, and does not when they were about to double-tap the same spot.
+   */
+  const [settling, setSettling] = useState(false);
+  useEffect(() => {
+    if (!settling) return undefined;
+    const wake = (): void => setSettling(false);
+    window.addEventListener('pointermove', wake, { once: true });
+    // A pointer that never moves again must not leave the legend inert.
+    const timer = window.setTimeout(wake, 1_200);
+    return () => {
+      window.removeEventListener('pointermove', wake);
+      window.clearTimeout(timer);
+    };
+  }, [settling]);
+
   // One frame reads every value and writes the ones that changed.
   useEffect(() => {
     let frame = 0;
@@ -124,7 +151,12 @@ export function IndicatorRows({
   const order = [...new Set(indicators.map((i) => panes.get(i.id) ?? 0))].sort((a, b) => a - b);
 
   return (
-    <div className="ind-rows" ref={rootRef} data-testid="indicator-rows">
+    <div
+      className="ind-rows"
+      ref={rootRef}
+      data-testid="indicator-rows"
+      data-settling={settling ? 'true' : undefined}
+    >
       {order.map((pane) => (
         <div className="ind-pane-rows" key={pane} data-pane={pane}>
           {indicators
@@ -137,7 +169,10 @@ export function IndicatorRows({
                 onOpenSettings={onOpenSettings}
                 onToggle={() => updateIndicator(instance.id, { visible: !instance.visible })}
                 onDuplicate={() => duplicateIndicator(instance.id)}
-                onRemove={() => removeIndicator(instance.id)}
+                onRemove={() => {
+                  setSettling(true);
+                  removeIndicator(instance.id);
+                }}
               />
             ))}
         </div>
