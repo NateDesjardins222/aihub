@@ -171,19 +171,42 @@
   accent-color: var(--accent);
 }
 
-.st-colour {
+/*
+ * The colour control: a swatch, the value, and a popover that is not the
+ * operating system's. See ColourPicker.tsx for why.
+ */
+.cp {
   display: flex;
   align-items: center;
   gap: 5px;
 }
 
-.st-colour input[type='color'] {
+.cp-swatch {
+  display: grid;
+  place-items: center;
   width: 26px;
   height: 22px;
-  padding: 1px;
+  padding: 2px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.cp-swatch:hover {
+  border-color: var(--border-strong);
+}
+
+.cp-swatch-ink {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  /* A chequerboard behind the ink, so a transparent colour reads as one. */
+  background-image: linear-gradient(45deg, var(--hairline) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--hairline) 25%, transparent 25%);
+  background-size: 6px 6px;
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 
 /*
@@ -192,10 +215,118 @@
  * colour field that will not show you its own colour. The row above wraps, so
  * this is allowed to take the width it needs.
  */
-.st-colour-text {
+.cp-text {
   width: 192px;
   height: 22px;
   font-size: var(--fs-sm);
+}
+
+.cp-pop {
+  position: fixed;
+  z-index: 1200;
+  width: 236px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.cp-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.cp-cell {
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease);
+}
+
+.cp-cell:hover {
+  transform: scale(1.12);
+}
+
+.cp-cell-on {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.cp-cell-sm {
+  width: 22px;
+}
+
+.cp-opacity {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.cp-opacity input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.cp-opacity-value {
+  width: 36px;
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.cp-recent-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.cp-recent-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cp-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cp-custom input[type='color'] {
+  width: 24px;
+  height: 20px;
+  padding: 1px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.cp-value {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .st-num input {
@@ -345,4 +476,108 @@
 .st-ind-remove:hover {
   background: var(--bg-hover);
   color: var(--short);
+}
+
+/*
+ * Theme cards.
+ *
+ * Wide enough to carry a painting of the theme rather than a row of dots: the
+ * background, an up bar, a down bar, a grid line and a panel edge are the five
+ * things that decide whether a terminal looks right, so they are the five
+ * things the card shows.
+ */
+.st-note {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.th-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+}
+
+.th-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  cursor: pointer;
+  transition:
+    border-color var(--fast) var(--ease),
+    background var(--fast) var(--ease);
+}
+
+.th-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.th-card-on {
+  border-color: var(--accent);
+}
+
+.th-swatch {
+  position: relative;
+  display: block;
+  height: 56px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.th-grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+}
+
+.th-bar {
+  position: absolute;
+  left: 26%;
+  top: 22%;
+  width: 6px;
+  height: 46%;
+  border-radius: 1px;
+}
+
+.th-bar-short {
+  left: 46%;
+  top: 34%;
+  height: 40%;
+}
+
+.th-chip {
+  position: absolute;
+  right: 8px;
+  top: 10px;
+  width: 30px;
+  height: 36px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.th-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.th-edited {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.th-desc {
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  color: var(--text-muted);
 }

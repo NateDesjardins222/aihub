@@ -14,6 +14,7 @@ import {
   normalizeAppearance,
   type ChartAppearance,
 } from '../chart/appearance';
+import { applyTheme, DEFAULT_THEME, themeById, type ThemeId } from '../chart/themes';
 import type { ChartType } from '../chart/ChartAdapter';
 import { indicatorDef, type IndicatorInstance, type ParamValues } from '../chart/indicators/registry';
 import {
@@ -40,6 +41,15 @@ export type MagnetMode = 'OFF' | 'WEAK' | 'STRONG';
 
 interface ChartState {
   appearance: ChartAppearance;
+  /**
+   * The preset the appearance came from.
+   *
+   * Kept even after a colour is changed by hand: it is what the chart was
+   * BASED on, which is what a trader wants to see highlighted and what
+   * "reset" should go back to. Whether it still matches exactly is a question
+   * the settings dialog asks separately.
+   */
+  themeId: ThemeId;
   /** Every drawing, for every instrument. */
   drawings: readonly Drawing[];
   /** The tool the next click uses. Returns to CURSOR after a drawing is made. */
@@ -122,6 +132,7 @@ interface ChartState {
   closeProperties: () => void;
   setDefaultStyle: (patch: Partial<DrawingStyle>) => void;
 
+  setTheme: (id: ThemeId) => void;
   restore: (stored: StoredChart) => void;
   snapshot: () => StoredChart;
 }
@@ -130,6 +141,7 @@ type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]>
 
 export interface StoredChart {
   appearance?: unknown;
+  themeId?: unknown;
   chartType?: string;
   indicators?: readonly IndicatorInstance[];
   drawings?: readonly Drawing[];
@@ -209,6 +221,7 @@ export const DEFAULT_FAVOURITE_TOOLS: readonly DrawingKind[] = [
 
 export const useChartStore = create<ChartState>((set, get) => ({
   appearance: DEFAULT_APPEARANCE,
+  themeId: DEFAULT_THEME,
   drawings: [],
   tool: 'CURSOR',
   toolSticky: false,
@@ -228,7 +241,31 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   resetAppearance() {
-    set({ appearance: DEFAULT_APPEARANCE });
+    // Back to the preset in use, not to the factory colours: a trader on
+    // Midnight who resets wants Midnight, not the default blue-grey.
+    const theme = themeById(get().themeId);
+    applyTheme(theme.id);
+    set({ appearance: theme.chart });
+  },
+
+  /**
+   * Apply a preset, to the chart and to the window around it.
+   *
+   * Everything the preset does not mention keeps its current value, because a
+   * theme decides colours and a trader decides whether the volume is shown.
+   */
+  setTheme(id) {
+    const theme = themeById(id);
+    applyTheme(theme.id);
+    set({
+      themeId: theme.id,
+      appearance: normalizeAppearance({
+        ...get().appearance,
+        symbol: { ...get().appearance.symbol, ...theme.chart.symbol },
+        scales: { ...get().appearance.scales, ...theme.chart.scales },
+        canvas: { ...get().appearance.canvas, ...theme.chart.canvas },
+      }),
+    });
   },
 
   setTool(tool, sticky = false) {
@@ -512,7 +549,10 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   restore(stored) {
+    const themeId = themeById(typeof stored.themeId === 'string' ? stored.themeId : null).id;
+    applyTheme(themeId);
     set({
+      themeId,
       appearance: normalizeAppearance(stored.appearance),
       drawings: sanitizeDrawings(stored.drawings),
       favouriteTools:
@@ -535,6 +575,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const state = get();
     return {
       appearance: state.appearance,
+      themeId: state.themeId,
       drawings: state.drawings,
       favouriteTools: state.favouriteTools,
       defaultStyle: state.defaultStyle,

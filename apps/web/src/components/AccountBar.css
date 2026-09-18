@@ -213,7 +213,7 @@
   font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
 }
 
 .abar-box-value {
@@ -222,7 +222,7 @@
   /* Tabular figures: a P&L that changes must not make the box twitch. */
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 /*
@@ -234,6 +234,12 @@
 .abar-box-pos .abar-box-value,
 .abar-box-neg .abar-box-value {
   font-weight: 700;
+  /*
+   * On a filled green or red ground the figure is white on every theme,
+   * including the light one: the fill is saturated either way, and the token
+   * says so rather than each rule deciding for itself.
+   */
+  color: var(--on-fill);
 }
 
 /* A result box is filled with its sign. */
@@ -249,7 +255,7 @@
 
 .abar-box-pos .abar-box-label,
 .abar-box-neg .abar-box-label {
-  color: rgba(255, 255, 255, 0.78);
+  color: color-mix(in srgb, var(--on-fill) 78%, transparent);
 }
 
 /* Narrow windows drop the label rather than the number. */

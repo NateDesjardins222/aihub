@@ -7,6 +7,10 @@
 import type { JSX, ReactNode } from 'react';
 import './Settings.css';
 
+// The colour control lives in its own file; re-exported so every settings
+// surface keeps importing `Colour` from one place.
+export { Colour } from './ColourPicker';
+
 export function Row({
   label,
   hint,
@@ -61,47 +65,6 @@ export function Check({
       {label ? <span>{label}</span> : null}
     </label>
   );
-}
-
-/**
- * A colour control.
- *
- * A native swatch plus the text, because a trader who wants an exact hex should
- * be able to type it, and because rgba() values cannot be expressed in the
- * native picker at all.
- */
-export function Colour({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}): JSX.Element {
-  const hex = /^#[0-9a-f]{6}$/i.test(value) ? value : toHex(value);
-  return (
-    <div className="st-colour">
-      <input
-        type="color"
-        value={hex}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label="Colour"
-      />
-      <input
-        className="num st-colour-text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label="Colour value"
-      />
-    </div>
-  );
-}
-
-/** Best-effort hex for the native picker; the text field keeps the true value. */
-function toHex(value: string): string {
-  const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(value);
-  if (!rgb) return '#000000';
-  const part = (n: string): string => Number(n).toString(16).padStart(2, '0');
-  return `#${part(rgb[1]!)}${part(rgb[2]!)}${part(rgb[3]!)}`;
 }
 
 export function Num({

@@ -50,7 +50,7 @@
   width: 13px;
   height: 13px;
   border-radius: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid var(--hairline);
 }
 
 .rail-btn:disabled {
@@ -121,7 +121,7 @@
   width: 18px;
   height: 18px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--hairline);
 }
 
 .rail-swatch-on {

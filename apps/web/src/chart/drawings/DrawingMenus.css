@@ -137,7 +137,7 @@
   width: 13px;
   height: 13px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--hairline);
 }
 
 .dsb-sep {
@@ -170,7 +170,7 @@
   width: 16px;
   height: 16px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--hairline);
 }
 
 .dsb-swatch-btn:hover {

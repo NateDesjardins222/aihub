@@ -20,10 +20,12 @@ import { EnvironmentPanel } from '../panels/EnvironmentPanel';
 import { TrainingSettings } from '../panels/TrainingSettings';
 import { Check, Choice, Colour, Group, Num, Pick, Row, Slider } from './Controls';
 import { PriceMotionSettings } from './PriceMotion';
+import { ThemePicker } from './ThemePicker';
 import { Icon } from '../ui/Icon';
 import './Settings.css';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string; group: string }> = [
+  { id: 'THEME', label: 'Theme', group: 'Chart' },
   { id: 'SYMBOL', label: 'Symbol', group: 'Chart' },
   { id: 'PRICE_MOTION', label: 'Price motion', group: 'Chart' },
   { id: 'STATUS_LINE', label: 'Status line', group: 'Chart' },
@@ -123,6 +125,8 @@ export function SettingsDialog(): JSX.Element | null {
           </nav>
 
           <div className="st-content">
+            {tab === 'THEME' ? <ThemePicker /> : null}
+
             {tab === 'SYMBOL' ? (
               <>
                 <Group title="Candles">

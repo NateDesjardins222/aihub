@@ -32,6 +32,7 @@ const SUITES = [
   'abuse',
   'live-indicators',
   'recovery',
+  'appearance',
   'visual',
   'tools',
   'replay-brackets',

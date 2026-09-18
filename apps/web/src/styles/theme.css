@@ -67,6 +67,14 @@
    */
   --pos-fill: #11845e;
   --neg-fill: #b23a33;
+  /*
+   * Type on a filled long/short box. White on every theme, because the fills
+   * are saturated on every theme - but named, so a rule never has to decide
+   * for itself and a light theme cannot turn it into white on white.
+   */
+  --on-fill: #ffffff;
+  /* A hairline drawn over a surface: light on a dark theme, dark on a light one. */
+  --hairline: rgba(255, 255, 255, 0.14);
 
   /* Link-group colours for multi-chart symbol linking. */
   --link-blue: #5b9dff;

@@ -12,6 +12,7 @@ import type { Timeframe } from '@atlas/contracts';
 import { drawingsApi, preferencesApi } from '../trading/journal-api';
 import { ApiRequestError } from '../api/client';
 import { usePersistence } from './persistence-status';
+import { applyTheme } from '../chart/themes';
 import { useMotion } from './motion-store';
 import { normalizeMotion, type MotionSettings } from '../chart/motion';
 import { FULL_VISIBILITY, useTraining, type TrainingModeId, type Visibility } from './training';
@@ -33,11 +34,34 @@ interface StoredPreferences {
 
 const WRITE_DEBOUNCE_MS = 600;
 let timer: number | null = null;
+/**
+ * A preview is a change the trader has not made yet.
+ *
+ * Hovering a theme applies it to the real chart, because that is the only
+ * honest preview - a swatch is a guess about what a chart will look like. But
+ * a hover is not a decision, and saving one would mean a trader who moved the
+ * pointer across five presets and then closed the dialog had their workspace
+ * rewritten five times and left on the last one they happened to pass over.
+ */
+let suspended = false;
 let restored = false;
 /** The drawings last sent, so a preference change does not re-send them. */
 let sentDrawings = '';
 
+/** Apply changes without saving them, for a preview the trader can abandon. */
+export function suspendSaving(): void {
+  suspended = true;
+  if (timer !== null) window.clearTimeout(timer);
+  timer = null;
+}
+
+/** Saving again. Call it before the change that IS a decision. */
+export function resumeSaving(): void {
+  suspended = false;
+}
+
 function write(): void {
+  if (suspended) return;
   if (timer !== null) window.clearTimeout(timer);
   timer = window.setTimeout(() => {
     timer = null;
@@ -151,6 +175,15 @@ export async function attachPreferences(): Promise<void> {
     // A trader with no stored preferences is not an error; they get the
     // defaults, and the first change they make saves them.
   }
+
+  /*
+   * The theme, before anything is drawn.
+   *
+   * A trader with no stored workspace still gets the tokens written onto the
+   * document, so `data-theme` is there for the rules that key off it rather
+   * than only after the first theme change.
+   */
+  applyTheme(useChartStore.getState().themeId);
 
   useMotion.subscribe(write);
   useTraining.subscribe(write);
