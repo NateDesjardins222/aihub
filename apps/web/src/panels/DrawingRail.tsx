@@ -142,6 +142,14 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
 
       <div className="rail-sep" />
 
+      {/*
+        The favourites, marked as TOOLS.
+        
+        The rail also holds a cursor, a sticky-mode pin, a magnet, an object
+        tree and undo/redo - all of which are modes and actions rather than
+        things you draw with. Marking the tools lets a check count the drawing
+        tools on show without counting the controls around them.
+      */}
       {favourites.map((kind) => (
         <button
           key={kind}
@@ -149,6 +157,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
           onClick={() => pick(kind)}
           title={KIND_LABEL[kind]}
           aria-label={KIND_LABEL[kind]}
+          data-rail="tool"
         >
           <Icon name={TOOL_ICON[kind]} />
         </button>

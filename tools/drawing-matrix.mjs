@@ -5,7 +5,7 @@
  * exposed drawing tool must manually pass select -> place -> select object ->
  * drag entire object -> drag every anchor -> edit -> style -> duplicate ->
  * copy/paste -> undo -> redo -> lock -> unlock -> hide/show -> zoom -> pan ->
- * timeframe change -> reload -> delete."
+ * change interval -> change symbol -> reload -> delete."
  *
  * A suite that reports "68/68" answers none of that, because it does not say
  * WHICH tool failed WHICH step. This walks the matrix and prints it, one row
@@ -57,6 +57,7 @@ const STEPS = [
   'zoom',
   'pan',
   'timeframe',
+  'symbol',
   'reload',
   'delete',
 ];
@@ -323,6 +324,30 @@ try {
       await page.waitForTimeout(2600);
       const after = await priceOf();
       return { ok: mid === before && after === before, detail: '1m -> 5m -> 1m' };
+    });
+
+    /*
+     * A drawing belongs to a symbol, not to the chart.
+     *
+     * Switching away must take it off the plot - a trend line drawn on NQ has
+     * no meaning on ES - and switching back must return it to the same two
+     * prices. Anything else is either a drawing that follows the trader
+     * between instruments, or one that is quietly lost.
+     */
+    await cell(tool.label, 'symbol', async () => {
+      const before = await priceOf();
+      const mine = (await objects()).length;
+      await useSymbol(page, 'ES');
+      await page.waitForTimeout(1200);
+      const away = (await objects()).length;
+      await useSymbol(page, 'NQ');
+      await page.waitForTimeout(1200);
+      const back = await priceOf();
+      const home = (await objects()).length;
+      return {
+        ok: away === 0 && home === mine && back === before,
+        detail: `NQ ${mine} -> ES ${away} -> NQ ${home}`,
+      };
     });
 
     await cell(tool.label, 'reload', async () => {

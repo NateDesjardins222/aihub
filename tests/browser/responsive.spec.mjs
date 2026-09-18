@@ -175,6 +175,51 @@ try {
   await drag('.splitter-h', 0, -200);
   await report('and back again');
 
+  // --- the sizes a trader chose survive a reload ---------------------------
+  /*
+   * The brief asks for the bottom panel's height to be persisted, and the
+   * order panel is the same promise. A workspace that resets its proportions
+   * on every reload is one a trader re-arranges every morning.
+   */
+  await drag('.splitter-v', -70, 0);
+  await drag('.splitter-h', 0, -60);
+  const chosen = {
+    right: Math.round((await page.locator('.terminal-right').boundingBox()).width),
+    bottom: Math.round((await page.locator('.terminal-bottom').boundingBox()).height),
+  };
+  await page.reload();
+  await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
+  await page.waitForTimeout(4_000);
+  const kept = {
+    right: Math.round((await page.locator('.terminal-right').boundingBox()).width),
+    bottom: Math.round((await page.locator('.terminal-bottom').boundingBox()).height),
+  };
+  say(
+    Math.abs(kept.right - chosen.right) <= 2,
+    'the order panel comes back the width it was left',
+    `${chosen.right}px -> ${kept.right}px`,
+  );
+  say(
+    Math.abs(kept.bottom - chosen.bottom) <= 2,
+    'and the bottom panel the height it was left',
+    `${chosen.bottom}px -> ${kept.bottom}px`,
+  );
+
+  // Collapsed, and still collapsed after a reload.
+  await page.click('.panel-head .icon-btn');
+  await page.waitForTimeout(700);
+  const collapsed = Math.round((await page.locator('.terminal-bottom').boundingBox()).height);
+  say(collapsed < 40, 'the bottom panel collapses out of the way', `${collapsed}px`);
+  await page.click('.panel-head .icon-btn');
+  await page.waitForTimeout(700);
+  const reopened = Math.round((await page.locator('.terminal-bottom').boundingBox()).height);
+  say(
+    Math.abs(reopened - chosen.bottom) <= 2,
+    'and reopens at the height it had, not a default',
+    `${reopened}px`,
+  );
+  await report('nothing spills after a reload');
+
   // --- window sizes a trader actually uses ---------------------------------
   for (const size of [
     { width: 1920, height: 1080 },

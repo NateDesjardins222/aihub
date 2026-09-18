@@ -33,8 +33,23 @@ try {
   await page.waitForTimeout(400);
 
   // --- drawings ------------------------------------------------------------
+  /*
+   * A handful of TOOLS on show, with the rest behind the chevron.
+   *
+   * Counting every button in the rail counted the cursor, the sticky-mode pin,
+   * the magnet, the object tree and undo/redo as drawing tools, so adding one
+   * mode toggle read as the rail growing into a wall. The tools carry
+   * data-rail="tool"; the second check keeps the rail as a whole compact, so
+   * the first one cannot be satisfied by moving a tool into a mode.
+   */
+  const railTools = await page.locator('.rail .rail-btn[data-rail=tool]').count();
+  say(railTools <= 8, 'the rail shows a handful of tools, not a wall', `${railTools} tools`);
   const railButtons = await page.locator('.rail .rail-btn').count();
-  say(railButtons <= 11, 'the rail shows a handful of tools, not a wall', `${railButtons} buttons`);
+  say(
+    railButtons <= 14,
+    'and the rail as a whole stays narrow enough to scan',
+    `${railButtons} buttons in total`,
+  );
 
   await page.click('.rail .rail-btn[aria-label="Trend line"]');
   say(
@@ -214,30 +229,52 @@ try {
   const filtered = await page.locator('.popover .pop-item').allTextContents();
   say(filtered.length === 1 && /Relative strength/.test(filtered[0]), 'the search filters it', filtered.join(' / '));
   await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Relative strength")');
-  await page.waitForTimeout(3_000);
 
   // Read from the LEGEND ROWS, which is where an indicator's value lives now.
   const rowText = async () =>
     (await page.locator('[data-testid=indicator-row]').allTextContents())
       .join(' | ')
       .replace(/\s+/g, ' ');
-  const status = await rowText();
-  const rsi = Number(status.match(/RSI 14 close\s*([\d.]+)/)?.[1] ?? NaN);
-  say(Number.isFinite(rsi) && rsi >= 0 && rsi <= 100, 'RSI computes a value inside 0-100', String(rsi));
+
+  /*
+   * Wait for the VALUE, not for the clock.
+   *
+   * A fixed sleep after adding an indicator was passing on a fast machine and
+   * reporting NaN on a slow one, and "NaN" says nothing about whether the
+   * indicator is broken or the row had simply not rendered yet. This waits for
+   * the row to carry a number and hands back the raw text either way, so a
+   * real failure names what was on screen.
+   */
+  const valueOf = async (pattern, tries = 20) => {
+    let text = '';
+    for (let i = 0; i < tries; i += 1) {
+      await page.waitForTimeout(600);
+      text = await rowText();
+      const found = text.match(pattern)?.[1];
+      if (found !== undefined) return { value: Number(found), text };
+    }
+    return { value: NaN, text };
+  };
+
+  const rsiRead = await valueOf(/RSI 14 close\s*([\d.]+)/);
+  say(
+    Number.isFinite(rsiRead.value) && rsiRead.value >= 0 && rsiRead.value <= 100,
+    'RSI computes a value inside 0-100',
+    `${rsiRead.value} from "${rsiRead.text}"`,
+  );
 
   await page.click('.chdr-btn:has-text("Indicators")');
   await page.waitForTimeout(400);
   await page.fill('.popover .pop-search', 'moving');
   await page.waitForTimeout(400);
   await page.click('[data-testid=indicator-catalogue] .pop-item:has-text("Moving average")');
-  await page.waitForTimeout(3_000);
-  const status2 = await rowText();
-  const ma = Number(status2.match(/MA 20 close\s*([\d.]+)/)?.[1] ?? NaN);
-  const last = Number(((await page.textContent('.sl-price')) ?? '').trim());
+  const maRead = await valueOf(/MA 20 close\s*([\d.]+)/);
+  const ma = maRead.value;
+  const last = Number(((await page.textContent('.sl-price')) ?? '').replace(/,/g, '').trim());
   say(
     Number.isFinite(ma) && Math.abs(ma - last) / last < 0.05,
     'the moving average sits near the price rather than being nonsense',
-    `MA ${ma} vs last ${last}`,
+    `MA ${ma} vs last ${last}, from "${maRead.text}"`,
   );
   await shot(page, 'tools-indicators');
 

@@ -147,6 +147,16 @@ const CASES = [
     why: '10 ticks at $10',
   },
   {
+    symbol: 'MGC',
+    side: 'BUY' as const,
+    qty: 3,
+    entry: 2_400,
+    exit: 2_402,
+    // the micro is a tenth of GC: $2 = 20 ticks of 0.10; 20 x $1 x 3
+    expected: 60,
+    why: '20 ticks at $1 on 3 contracts',
+  },
+  {
     symbol: 'CL',
     side: 'BUY' as const,
     qty: 2,
@@ -155,6 +165,16 @@ const CASES = [
     // half a dollar against = 50 ticks of 0.01; 50 x $10 x 2
     expected: -1_000,
     why: '50 ticks against at $10 on 2 contracts',
+  },
+  {
+    symbol: 'MCL',
+    side: 'SELL' as const,
+    qty: 2,
+    entry: 80,
+    exit: 79.4,
+    // short into a fall: 60 cents = 60 ticks of 0.01; 60 x $1 x 2
+    expected: 120,
+    why: 'short 60 ticks at $1 on 2 contracts',
   },
 ];
 
