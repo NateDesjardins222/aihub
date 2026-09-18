@@ -14,6 +14,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { requireInstrument } from '@atlas/instruments';
+import { analyze, type TradeRecord } from '@atlas/core';
 import { accounts, trades as tradesTable } from '../db/schema.js';
 import { TradingEngine } from './engine.js';
 import { ScriptedMarket, createFixture, settle, type TestFixture } from './harness.js';
@@ -204,6 +205,69 @@ describe('P&L reconciles to the executions, instrument by instrument', () => {
       void spec;
       expect(price(row!.entryTicksScaled)).toBeCloseTo(item.entry, 6);
       expect(price(row!.exitTicksScaled)).toBeCloseTo(item.exit, 6);
+
+      /*
+       * 6. the journal, the calendar and the admin view.
+       *
+       * The brief asked for the same number from every surface, so every
+       * surface is asked - through the function each one actually calls, not
+       * through a re-derivation that would only prove the test can add up.
+       */
+      const records: TradeRecord[] = [
+        {
+          id: row!.id,
+          symbol: row!.symbol,
+          side: row!.side as TradeRecord['side'],
+          qty: row!.qty,
+          entryTime: row!.entryTime.getTime(),
+          exitTime: row!.exitTime.getTime(),
+          grossPnlMicros: row!.grossPnlMicros,
+          feesMicros: row!.feesMicros,
+          netPnlMicros: row!.netPnlMicros,
+          maeMicros: row!.maeMicros,
+          mfeMicros: row!.mfeMicros,
+          initialRiskMicros: row!.initialRiskMicros,
+          tradeDate: row!.tradeDate,
+        },
+      ];
+
+      const journal = analyze(records, 100_000 * D);
+      // The journal's own total, over its own records.
+      expect(journal.stats.netPnlMicros).toBe(expectedMicros);
+      // The calendar cell for the day the trade closed.
+      expect(journal.days).toHaveLength(1);
+      expect(journal.days[0]!.tradeDate).toBe(row!.tradeDate);
+      expect(journal.days[0]!.netPnlMicros).toBe(expectedMicros);
+      expect(journal.days[0]!.trades).toBe(1);
+      // The equity curve the journal draws ends where the account balance is.
+      const curveEnd = journal.curve.points[journal.curve.points.length - 1];
+      expect(curveEnd?.equityMicros).toBe(100_000 * D + expectedMicros);
+
+      // The admin account view reads the account row and the same valuation.
+      expect(account!.balanceMicros).toBe(curveEnd?.equityMicros);
+      expect(account!.realizedPnlMicros).toBe(journal.stats.netPnlMicros);
+
+      /*
+       * 7. the ledger identity, and the floor a breach is judged against.
+       *
+       * balance = starting balance + gross realized - fees. Worth stating as
+       * an equation because `realizedPnlMicros` is GROSS and the fees are a
+       * separate column, so anything that shows one as the other will be out
+       * by exactly the commission - which is how a P&L figure ends up almost
+       * right and therefore hardest to doubt.
+       *
+       * Note what is NOT asserted: that the high-water mark stays within
+       * realized P&L. A high-water mark is peak equity and equity includes
+       * unrealized profit, so it legitimately sits above realized P&L. An
+       * earlier version of this test claimed otherwise, and it would have
+       * failed on every profitable trade that gave anything back.
+       */
+      expect(account!.balanceMicros).toBe(
+        account!.startingBalanceMicros + account!.realizedPnlMicros - account!.feesMicros,
+      );
+      // A floor above the starting balance would mean the account was in
+      // breach the moment it opened.
+      expect(account!.drawdownFloorMicros).toBeLessThanOrEqual(account!.startingBalanceMicros);
     });
   }
 

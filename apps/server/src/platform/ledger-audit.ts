@@ -63,19 +63,27 @@ export async function auditLedgers(db: Database): Promise<LedgerFinding[]> {
       });
     }
 
-    // A high-water mark above the balance with nothing realized to explain it
-    // is equity that was marked once and committed - the defect this milestone
-    // fixed. Reported so the ones already in the database are visible.
-    const realizedRoom = account.balanceMicros - account.startingBalanceMicros;
-    if (account.highWaterMarkMicros > account.startingBalanceMicros + Math.max(0, realizedRoom)) {
-      findings.push({
-        accountId: row.id,
-        name: account.name,
-        problem: 'the high-water mark is above anything realized P&L can explain',
-        ledgerMicros: account.highWaterMarkMicros,
-        expectedMicros: account.startingBalanceMicros + Math.max(0, realizedRoom),
-      });
-    }
+    /*
+     * There is deliberately no "high-water mark above realized P&L" check.
+     *
+     * One was here, and it was wrong. A high-water mark is peak EQUITY, and
+     * equity includes unrealized profit, so a mark above what realized P&L
+     * explains is what happens the first time any position is in profit and
+     * then gives some back. It flagged fifteen of thirty accounts in this
+     * database - every one of them behaving correctly - and a check that cries
+     * wolf on half its inputs teaches people to ignore audits.
+     *
+     * The original defect it was aiming at was a mark raised by equity valued
+     * against a market the position was not opened in. That is not visible in
+     * the finished row: peak equity of $152,607 looks the same whether it was
+     * reached legitimately or by marking against a recording. It is prevented
+     * at the source instead - a position records its market era, a mark from
+     * another era does not apply to it, and a missing mark is unknown rather
+     * than zero - and `pnl-reconciliation.test.ts` holds it there.
+     *
+     * What IS checkable is the floor, which is a pure function of the rule and
+     * is covered by the check above.
+     */
   }
 
   return findings;
@@ -103,3 +111,4 @@ export async function findingsFor(db: Database, accountId: string): Promise<Ledg
   void eq;
   return all.filter((f) => f.accountId === accountId);
 }
+
