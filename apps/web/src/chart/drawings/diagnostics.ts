@@ -22,13 +22,36 @@
  * runs. `tools/drawing-matrix.mjs` is the only caller.
  */
 import { useChartStore } from '../../state/chart-store';
+import { useLayout } from '../../state/layout-store';
+import { useSession } from '../../state/session';
 import type { Drawing } from './model';
 
-/** The current drawings for the symbol the matrix is working on. */
+/**
+ * The drawings on the chart that is on screen.
+ *
+ * It used to group by the FIRST stored drawing's symbol, which is the same
+ * thing only while one instrument has ever been drawn on. Switch to ES with a
+ * trend line on NQ and it still answered with the NQ line - so "the drawing
+ * left the plot" read as "the drawing is still here", and a diagnostic that
+ * reports the wrong chart is worse than no diagnostic.
+ *
+ * The pane's symbol first, then the terminal's, because a pane can be pointed
+ * somewhere the ticket is not.
+ */
+function activeSymbol(): string | null {
+  const pane = useLayout.getState().panes[0];
+  return pane?.symbol ?? useSession.getState().activeSymbol ?? null;
+}
+
 function forSymbol(): Drawing[] {
   const state = useChartStore.getState();
-  const symbol = state.drawings[0]?.symbol;
+  const symbol = activeSymbol();
   return symbol ? state.drawings.filter((d) => d.symbol === symbol) : [...state.drawings];
+}
+
+/** Every drawing the store holds, whatever chart it belongs to. */
+function allDrawings(): Drawing[] {
+  return [...useChartStore.getState().drawings];
 }
 
 /**
@@ -73,6 +96,9 @@ function moveAnchor(index: number, points: number, id?: string): boolean {
 export function registerDrawingDiagnostics(): void {
   if (typeof window === 'undefined') return;
   const w = window as unknown as Record<string, unknown>;
+
+  /** How many drawings the store holds in total, across every symbol. */
+  w['__atlasStoredDrawings'] = () => allDrawings().length;
 
   w['__atlasDrawings'] = () =>
     forSymbol().map((d) => ({

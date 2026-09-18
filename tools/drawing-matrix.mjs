@@ -337,16 +337,22 @@ try {
     await cell(tool.label, 'symbol', async () => {
       const before = await priceOf();
       const mine = (await objects()).length;
+      const stored = await page.evaluate(() => window.__atlasStoredDrawings?.() ?? 0);
+
       await useSymbol(page, 'ES');
-      await page.waitForTimeout(1200);
-      const away = (await objects()).length;
+      await page.waitForTimeout(1500);
+      const onEs = (await objects()).length;
+      // Gone from the PLOT, not gone from the platform: the store must still
+      // hold it or there would be nothing to come back to.
+      const keptWhileAway = await page.evaluate(() => window.__atlasStoredDrawings?.() ?? 0);
+
       await useSymbol(page, 'NQ');
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(1500);
       const back = await priceOf();
       const home = (await objects()).length;
       return {
-        ok: away === 0 && home === mine && back === before,
-        detail: `NQ ${mine} -> ES ${away} -> NQ ${home}`,
+        ok: onEs === 0 && keptWhileAway === stored && home === mine && back === before,
+        detail: `NQ ${mine} -> ES ${onEs} (${keptWhileAway} still stored) -> NQ ${home}`,
       };
     });
 
