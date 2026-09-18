@@ -142,9 +142,13 @@ Before the fix the browser half could not be measured at all: `apply` and
 live bar.
 
 **The vendor is the limiting factor, by four orders of magnitude.** 602 seconds
-of delay and one reading every 10.5 seconds against 54 ms of Atlas. No amount of
-work inside Atlas can make this feed feel fast, and none of it fabricates ticks
-to pretend otherwise.
+of delay and one reading every 5 to 10 seconds against 54 ms of Atlas. No amount
+of work inside Atlas can make this feed feel fast, and none of it fabricates
+ticks to pretend otherwise.
+
+The full assessment the brief asked for — all ten dimensions, measured, plus
+what is already in place for a licensed feed and what is explicitly NOT built —
+is in [`market-data-providers.md`](market-data-providers.md).
 
 AUTOMATED TESTED: `perf-panes` (11), `stress` (62).
 MANUALLY BROWSER VERIFIED: the displayed price sampled 20x/second for 150
@@ -193,7 +197,7 @@ would look reasonable in review.
 **Yes, and it reconciles across every surface the brief named.**
 
 `pnl-reconciliation.test.ts` takes a known entry, a known exit and a known
-quantity for **NQ, MNQ, ES, MES, GC and CL**, with the expected figure worked
+quantity for **NQ, MNQ, ES, MES, GC, MGC, CL and MCL**, with the expected figure worked
 out longhand from each instrument's published specification — a test that
 computes its expectation with the same helper as the code under test proves only
 that the helper is self-consistent. It then demands that number from the
@@ -357,6 +361,69 @@ already built and working.
 
 ---
 
+### Indicators as real objects
+
+**Bollinger bands were one object pretending to be three.** One colour and one
+width were shared by all three lines and there was no fill at all — so the
+basis could not be de-emphasised behind the bands, the bands could not be told
+apart from a moving average also on the chart, and the space between them,
+which is the volatility, was not drawn.
+
+Each line now carries its own visibility, colour, thickness, line style and
+opacity, in its own settings section. A parameter can name the section it
+belongs to, which is what keeps twenty controls out of one flat list — and a
+parameter that names a section is appearance by construction, so the legend
+reads `BB 20 2 close` rather than `BB 20 2 close on #6b7a94 1 SOLID 100`.
+
+The fill is a pane primitive. It reads both series' own coordinate converters
+every frame, so it follows any pan, zoom or scale change without being told,
+and it breaks its polygon at a gap in either line rather than bridging a hole
+and shading a region the data says nothing about.
+
+**EMA and MA gained the smoothing input** the brief listed. It is a second
+average applied to the LINE, so it needs its own function: an indicator's
+output begins with nulls, and averaging across that boundary would produce a
+number from fewer samples than were asked for. 1 means off, and off is the
+default — a moving average that silently averages itself again is not the
+indicator the trader asked for.
+
+AUTOMATED TESTED: `indicators` (34). The Bollinger checks measure **pixels off
+the renderer's own canvas**, not stored parameters, because a setting that
+saves and does not draw is not a setting. Fill on: 84,009. Fill off: 0. Upper
+band recoloured and thickened: 4,596, and still 4,596 after hiding only the
+basis.
+
+### The crosshair
+
+**Cross, dot, vertical, horizontal, hidden** — and snapping is now a separate
+control instead of being one of the shapes. "Magnet" was never a shape, and
+having it in that list meant a snapping vertical-only crosshair could not be
+asked for at all. A workspace saved under the old scheme reads as "a cross that
+snaps", which is what it was showing.
+
+The renderer has four of the five shapes; the dot is a pane primitive fed the
+pointer position from the crosshair subscription the legend already uses.
+
+Measured: **Cross 950 px = Vertical 342 + Horizontal 608**, Dot 32, Hidden 0.
+
+### The scales
+
+Dragging the price axis changes the vertical scale, dragging the time axis
+changes the bar spacing, and **double-clicking either hands it back to the
+chart**. That last one already worked; what was missing was any check that it
+did. Price axis pulled to 905.8 points visible and double-clicked back to
+407.6; time axis squeezed to 176.1 bars and double-clicked back to 172.4.
+
+### The interval row
+
+`1m 2m 3m 5m 15m 30m 1h 4h D`, the row the brief names, is what a chart opens
+on. All eleven intervals were already available and favourites were already
+customisable and persisted — this is the starting set for a trader who has not
+chosen yet, which is why it is checked in the acceptance suite against a
+**freshly provisioned user** rather than against the demo account, whose own
+choices correctly win.
+
+
 ## P4 — the journal, responsiveness and the workspace
 
 ### The journal calendar
@@ -395,6 +462,13 @@ studies on the chart, the chart toolbar and timeframe selector, two charts side
 by side at three widths, the settings dialog at three sizes, and the journal
 calendar at three widths — each with a restore afterwards. **38/38.**
 
+**The sizes a trader chooses survive a reload.** The bottom panel's height was
+persisted and unasserted; so was the order panel's width. Both are now checked
+across a real reload — 340px → 340px and 370px → 370px — along with collapsing
+the bottom panel to 22px and reopening it at the height it had rather than at a
+default. A workspace that resets its proportions every morning is one a trader
+re-arranges every morning.
+
 **Two real defects, both found by widening the sweep:**
 
 1. A settings row never shrank (`flex: 0 0 auto`), so the seven-way **Source**
@@ -432,19 +506,25 @@ the charts need, and the journal and trade history are all intact.
 ## What is NOT finished
 
 * **The feed.** Everything above is bounded by a development vendor that is 602
-  seconds delayed, publishes one reading every 10.5 seconds, serves OHLCV only
-  with no bid, ask, prints or book, offers 7 days of 1-minute history, and
+  seconds delayed, publishes one reading every 5 to 10 seconds, serves OHLCV
+  only with no bid, ask, prints or book, offers 7 days of 1-minute history, and
   rate-limits. The pipeline is proven correct against it; it cannot support
   professional futures charting, and the next milestone for speed is a licensed
-  feed rather than more work inside Atlas.
+  feed rather than more work inside Atlas. Assessed in full in
+  [`market-data-providers.md`](market-data-providers.md), which also lists what
+  a licensed feed would need that is **not** built: a live tick ingest path,
+  sub-minute aggregation, a real order book, gap-fill on reconnect, and vendor
+  entitlement.
 * **Sub-minute timeframes** cannot exist on this feed at all.
 * **Indicator panes cannot be resized** by dragging their separator.
 * **The Fibonacci family is one tool.** The retracement is complete including
   the arbitrary-level editor; fans, arcs and time zones are not built.
 * **The five secondary tools have no per-tool detail pass** — they pass all
-  nineteen lifecycle steps, and the measure's readout and text styling have not
+  twenty lifecycle steps, and the measure's readout and text styling have not
   had the attention the rectangle and the position tools got.
 * **Alerts, watchlist and a hotkey editor** are not in this milestone.
+* **Bollinger bands are the only multi-line indicator** with per-line controls.
+  MACD and the rest still take one colour for every plot.
 * **A typography and spacing pass** across the bottom blotter and the settings
   dialog. Both are consistent and neither spills, and both carry more borders
   than they need.
