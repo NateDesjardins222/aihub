@@ -4,6 +4,7 @@
  *   node tools/perf-baseline.mjs                 # the standard set
  *   node tools/perf-baseline.mjs --save          # and write the baseline file
  *   node tools/perf-baseline.mjs --only pan,zoom # a subset while iterating
+ *   node tools/perf-baseline.mjs --json out.json # write the run for comparison
  *
  * Each scenario drives REAL pointer, wheel and keyboard input against the real
  * application and reports the frame-time distribution and the input latency
@@ -17,6 +18,8 @@ import { PROBE_SOURCE, measure, row, table } from './perf/probe.mjs';
 const BASELINE = 'tests/browser/baselines/performance.json';
 const argv = process.argv.slice(2);
 const SAVE = argv.includes('--save');
+/** Write the run somewhere else instead, for `perf-check.mjs` to compare. */
+const JSON_OUT = argv.includes('--json') ? argv[argv.indexOf('--json') + 1] ?? null : null;
 const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1]?.split(',') ?? [] : [];
 
 const { browser, page, errors } = await launch({
@@ -262,6 +265,14 @@ try {
   console.log('\n' + table(results, columns));
   console.log('\n' + notes.map((n) => `- ${n}`).join('\n'));
   console.log(`\npage errors: ${errors.length === 0 ? 'none' : errors.join(' | ')}`);
+
+  if (JSON_OUT) {
+    writeFileSync(
+      JSON_OUT,
+      JSON.stringify({ recordedAt: new Date().toISOString(), rows: results, notes }, null, 2),
+    );
+    console.log(`\nrun written to ${JSON_OUT}`);
+  }
 
   if (SAVE) {
     mkdirSync('tests/browser/baselines', { recursive: true });
