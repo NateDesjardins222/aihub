@@ -1,5 +1,5 @@
 /*
- * The account bar. One row, 30px, dense.
+ * The account bar. One row, and the only chrome above the chart.
  */
 .abar {
   display: flex;
@@ -58,28 +58,6 @@
   background-position: calc(100% - 13px) calc(50% + 1px), calc(100% - 9px) calc(50% + 1px);
   background-size: 5px 5px;
   background-repeat: no-repeat;
-}
-
-.abar-metric {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 0 5px;
-  border-left: 1px solid var(--border-subtle);
-  white-space: nowrap;
-}
-
-.abar-metric-label {
-  font-size: var(--fs-xs);
-  letter-spacing: 0.07em;
-  color: var(--text-muted);
-  font-weight: 700;
-}
-
-.abar-metric-value {
-  font-size: var(--fs-md);
-  font-weight: 500;
-  color: var(--text-primary);
 }
 
 .abar-pill {
@@ -171,22 +149,13 @@
 }
 
 /*
- * Narrow screens drop the least load-bearing metrics rather than wrapping.
+ * Narrow screens give up the wordmark, never a figure.
  *
- * Balance, equity and the day's result stay to the last, because they are what
- * a trader glances at. The rule headroom goes first, and is still in Settings
- * under Risk and programme.
+ * There are four figures now and all four are load-bearing, so the bar sheds
+ * chrome instead: the brand goes, then the box padding tightens. What it must
+ * not do is wrap, because the bar's height is the chart's height.
  */
-@media (max-width: 1400px) {
-  .abar-metric:nth-of-type(n + 6) {
-    display: none;
-  }
-}
-
 @media (max-width: 1250px) {
-  .abar-metric:nth-of-type(n + 4) {
-    display: none;
-  }
   .abar-brand {
     display: none;
   }
@@ -208,4 +177,62 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   white-space: nowrap;
+}
+
+/*
+ * The four primary account figures.
+ *
+ * Substantial filled rectangles rather than label-and-number pairs: these are
+ * the numbers a trader glances at between decisions, and the bar's job is to
+ * make them readable without being looked for. White type throughout - on a
+ * green or red fill the colour is already the sign.
+ */
+.abar-box {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.abar-box-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.abar-box-value {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+/* A result box is filled with its sign. */
+.abar-box-pos {
+  background: var(--pos-fill);
+  border-color: var(--pos-fill);
+}
+
+.abar-box-neg {
+  background: var(--neg-fill);
+  border-color: var(--neg-fill);
+}
+
+.abar-box-pos .abar-box-label,
+.abar-box-neg .abar-box-label {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Narrow windows drop the label rather than the number. */
+@media (max-width: 1400px) {
+  .abar-box {
+    padding: 0 7px;
+    gap: 5px;
+  }
 }

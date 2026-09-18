@@ -187,9 +187,45 @@
   --line: var(--long);
 }
 
-.pm-stop .pm-tag,
-.pm-target .pm-tag {
-  background: var(--bg-panel);
+/*
+ * A PROTECTIVE LEVEL AT REST: A FILLED BOX WITH BLACK NUMBERS.
+ *
+ * Solid red for a stop, solid green for a target, so the leg is readable
+ * without reading. Black type on those fills rather than white: both are
+ * bright enough that black is the higher-contrast choice, and it is what
+ * distinguishes a protective level at a glance from the account bar's own
+ * filled result boxes, which are white on darker fills.
+ */
+.pm-stop .pm-tag-protective {
+  background: var(--short);
+  border-color: var(--short);
+}
+
+.pm-target .pm-tag-protective {
+  background: var(--long);
+  border-color: var(--long);
+}
+
+.pm-tag-protective,
+.pm-tag-protective .num,
+.pm-tag-protective .pm-kind {
+  color: #06080c;
+}
+
+/* At rest the box holds one number, so it is sized for one number. */
+.pm-tag-money-only {
+  gap: 0;
+  padding: 0 8px;
+}
+
+.pm-tag-money-only .pm-pnl {
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+/* Dragging widens it to carry the price and the ticks as well. */
+.pm-tag-protective:not(.pm-tag-money-only) {
+  gap: 6px;
 }
 
 .pm-order.pm-buy {

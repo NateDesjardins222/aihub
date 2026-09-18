@@ -25,19 +25,27 @@ const orderText = async () => {
   return ((await page.textContent('.panel-body')) ?? '').replace(/\s+/g, ' ');
 };
 
-/** Drag from the position marker by a number of pixels; up is negative. */
-async function dragOffMarker(dy) {
-  const marker = await page.locator('[data-testid=marker-position]').boundingBox();
-  const from = { x: marker.x + marker.width / 2, y: marker.y + marker.height / 2 };
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  // Several steps so the threshold is crossed and the preview is live.
-  await page.mouse.move(from.x - 60, from.y + dy / 2, { steps: 6 });
-  await page.mouse.move(from.x - 60, from.y + dy, { steps: 6 });
-  const preview = await page.locator('[data-testid=marker-preview]').count();
-  await page.mouse.up();
-  await page.waitForTimeout(3500);
-  return preview;
+/**
+ * A label holding nothing but a dollar amount.
+ *
+ * The minus is U+2212, not a hyphen: `formatMicros` uses the typographic one
+ * because a hyphen next to tabular figures reads as a dash in a column.
+ */
+const MONEY_ONLY = /^[-\u2212+]?\$[\d,]+\.\d\d$/;
+
+/**
+ * Drag from the position marker to a level a given distance from the MARK.
+ *
+ * Positive is below the mark, negative above it. Every one of these drags used
+ * to be measured from the position marker, which sits at the ENTRY - and which
+ * side of the mark a level lands on is what decides whether it becomes a stop
+ * or a target. So "drag up on a long" asked for a target and got a stop
+ * whenever the position was far enough in profit that up-from-the-entry was
+ * still below the market. Aiming at the mark is aiming at the thing the answer
+ * depends on.
+ */
+async function dragFromMark(dy) {
+  return dragToY((await priceY(await markPrice())) + dy);
 }
 
 /** Drag from the position marker to an absolute page y. */
@@ -166,7 +174,7 @@ try {
   say(!/LONG|SHORT/.test(pnlOnly), 'it does not carry the side, the entry price or +SL/+TP', pnlOnly.slice(0, 40));
 
   // Drag UP on a long -> take profit.
-  const previewUp = await dragOffMarker(-140);
+  const previewUp = await dragFromMark(-140);
   say(previewUp === 1, 'a live preview line follows the drag');
   say((await page.locator('[data-marker=target]').count()) === 1, 'dragging above a long creates a TARGET');
   let orders = await orderText();
@@ -174,31 +182,91 @@ try {
 
   // Drag DOWN on a long -> stop loss.
   await page.click('.tab:text-is("Positions")');
-  await dragOffMarker(140);
+  await dragFromMark(140);
   say((await page.locator('[data-marker=stop]').count()) === 1, 'dragging below a long creates a STOP');
   orders = await orderText();
   say(/STOP LOSS/.test(orders), 'the stop exists on the server too');
   await page.click('.tab:text-is("Positions")');
 
-  // Modify: drag the stop further away and check the server followed.
-  const before = ((await page.locator('[data-testid=marker-stop] .pm-price').textContent()) ?? '').trim();
+  /*
+   * The label at rest carries ONE number: the dollars.
+   *
+   * No leg text, no ticks, no price, no quantity, no cancel button - the
+   * colour of the box says which leg it is, and everything else is either
+   * shown while dragging or on the right-click menu.
+   */
+  const restTag = page.locator('[data-testid=marker-stop]');
+  const restText = ((await restTag.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  say(MONEY_ONLY.test(restText), 'a stop at rest shows only its dollar P&L', restText);
+  say(
+    (await restTag.locator('.pm-price').count()) === 0 &&
+      (await restTag.locator('.pm-ticks').count()) === 0 &&
+      (await restTag.locator('.pm-qty').count()) === 0 &&
+      (await restTag.locator('.pm-act-close').count()) === 0,
+    'and carries no price, ticks, quantity or cancel button',
+  );
+  const tagStyle = await restTag.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { background: s.backgroundColor, color: s.color };
+  });
+  say(
+    /^rgb\(255, 90, 90\)$/.test(tagStyle.background) && /^rgb\(6, 8, 12\)$/.test(tagStyle.color),
+    'a stop is a filled red box with black numbers',
+    JSON.stringify(tagStyle),
+  );
+
+  // Modify: drag the stop further away and check the server followed. The
+  // price is read from the ORDER now, because the label no longer prints it.
+  const priceOf = async (role) => {
+    const text = await orderText();
+    const match = new RegExp(`${role}([\\d.]+)`).exec(text.replace(/\s+/g, ''));
+    await page.click('.tab:text-is("Positions")');
+    return match ? match[1] : '';
+  };
+  const before = await priceOf('NQSELL1STOPMARKET');
   const stopBox = await page.locator('[data-testid=marker-stop]').boundingBox();
   await page.mouse.move(stopBox.x + stopBox.width / 2, stopBox.y + stopBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(stopBox.x + stopBox.width / 2, stopBox.y + 40, { steps: 8 });
+  // While the pointer is DOWN the label widens to carry the placing numbers.
+  const dragText = ((await restTag.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  say(/SL/.test(dragText) && /\d/.test(dragText), 'while dragging it shows the placing numbers', dragText);
   await page.mouse.up();
   await page.waitForTimeout(3500);
-  const after = ((await page.locator('[data-testid=marker-stop] .pm-price').textContent()) ?? '').trim();
+  const collapsed = ((await restTag.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  say(
+    MONEY_ONLY.test(collapsed),
+    'and collapses back to the dollars on release',
+    collapsed,
+  );
+  const after = await priceOf('NQSELL1STOPMARKET');
   say(before !== after, 'dragging the stop moves it', `${before} -> ${after}`);
   orders = await orderText();
-  say(orders.includes(after), 'the moved price is the price the server holds', after);
+  say(orders.replace(/\s+/g, '').includes(after), 'the moved price is the price the server holds', after);
   await page.click('.tab:text-is("Positions")');
 
-  // Cancel the target from its own label.
-  await page.click('[data-testid=marker-target] .pm-act-close');
+  /*
+   * Remove a leg from its right-click menu, which is where the actions live
+   * now that the label carries no buttons.
+   *
+   * Whichever leg is still working: the target sits above a long and the
+   * market can reach it while the test is busy dragging the stop, and a test
+   * that insists on cancelling a level the market already filled is asserting
+   * about the market rather than about the menu.
+   */
+  const targetLive = (await page.locator('[data-marker=target]').count()) === 1;
+  const legRole = targetLive ? 'target' : 'stop';
+  const legItem = targetLive ? 'Remove take profit' : 'Remove stop loss';
+  const legTag = page.locator(`[data-testid=marker-${legRole}]`);
+  const tBox = await legTag.boundingBox();
+  await page.mouse.click(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { button: 'right' });
+  await page.waitForTimeout(700);
+  await page.click(`[data-testid=order-context-menu] button:has-text("${legItem}")`);
   await page.waitForTimeout(3500);
-  say((await page.locator('[data-marker=target]').count()) === 0, 'the target cancels from its label');
-  say((await page.locator('[data-marker=stop]').count()) === 1, 'cancelling one leg leaves the other working');
+  say(
+    (await page.locator(`[data-marker=${legRole}]`).count()) === 0,
+    `the ${legRole} cancels from its menu`,
+  );
 
   await shot(page, 'drag-protect-long');
   await flatten();
@@ -207,11 +275,11 @@ try {
   say(await openPosition('sell'), 'a short position opens', await positionText());
 
   // Drag DOWN on a short -> take profit.
-  await dragOffMarker(140);
+  await dragFromMark(140);
   say((await page.locator('[data-marker=target]').count()) === 1, 'dragging below a short creates a TARGET');
 
   // Drag UP on a short -> stop loss.
-  await dragOffMarker(-140);
+  await dragFromMark(-140);
   say((await page.locator('[data-marker=stop]').count()) === 1, 'dragging above a short creates a STOP');
   orders = await orderText();
   say(/STOP LOSS/.test(orders) && /BUY/.test(orders), 'a short is protected by BUY orders', orders.slice(0, 120));
@@ -272,8 +340,10 @@ try {
   });
   await page.mouse.up();
   await page.waitForTimeout(3500);
-  const level = ((await page.locator('[data-testid=marker-stop] .pm-price').textContent()) ?? '').trim();
-  say(level.length > 0, 'the stop is moved next to the market', level);
+  // The label carries dollars now, so the moved level is read from the order.
+  const level = ((await page.locator('[data-testid=marker-stop]').textContent()) ?? '').trim();
+  say(MONEY_ONLY.test(level), 'the stop is moved next to the market', level);
+  const dragged = await priceOf('NQSELL1STOPMARKET');
 
   const tradesBefore = await (async () => {
     await page.click('.tab:text-is("Trades")');
@@ -298,7 +368,7 @@ try {
 
   orders = await orderText();
   say(
-    new RegExp(`${level.replace('.', '\\.')}[^A-Za-z]*FILLED`).test(orders),
+    new RegExp(`${dragged.replace('.', '\\.')}[^A-Za-z]*FILLED`).test(orders),
     'the fill is the dragged leg, at the price it was dragged to',
     orders.slice(0, 150),
   );

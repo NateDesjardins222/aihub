@@ -808,6 +808,7 @@ export function PriceMarkers({
       {markers.map((marker) => {
         const isPosition = marker.role === 'POSITION';
         const isProtective = marker.role === 'STOP' || marker.role === 'TARGET';
+        const isDragging = dragging === marker.key;
         return (
           <div
             key={marker.key}
@@ -861,28 +862,60 @@ export function PriceMarkers({
               </div>
             ) : (
               <div
-                className={`pm-tag ${marker.drag ? 'pm-tag-drag' : ''}`}
+                className={[
+                  'pm-tag',
+                  marker.drag ? 'pm-tag-drag' : '',
+                  isProtective ? 'pm-tag-protective' : '',
+                  isProtective && !isDragging ? 'pm-tag-money-only' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 data-testid={`marker-${marker.role.toLowerCase()}`}
                 onPointerDown={(event) => beginDrag(event, marker)}
                 onContextMenu={(event) => openMenu(event, marker)}
                 title={marker.drag ? 'Drag to move this level' : undefined}
               >
-                <span className="pm-kind">{marker.label}</span>
+                {/*
+                  A PROTECTIVE LEVEL SHOWS ONE NUMBER: WHAT IT IS WORTH.
+                  =====================================================
+                  It used to carry the leg, the ticks, the dollars, the price,
+                  the quantity and a cancel button - six things on a label that
+                  exists to be read out of the corner of an eye while watching
+                  price. The dollar amount is the one a trader acts on, and the
+                  colour of the box already says which leg it is: red below a
+                  long is a stop, green above it is a target.
+
+                  The rest is not lost. Dragging the level shows the
+                  destination price, the ticks and the estimated P&L, because
+                  those are what a trader needs WHILE placing it - and the
+                  instant the pointer is released it collapses back to the
+                  dollars. Right-clicking the level still offers every action,
+                  including removing it, which is what the cancel button was
+                  for.
+                */}
                 {isProtective ? (
                   <>
-                    <span className="num pm-ticks" data-ticks-label />
+                    {isDragging ? (
+                      <>
+                        <span className="pm-kind">{marker.label}</span>
+                        <span className="num pm-ticks" data-ticks-label />
+                        <span className="num pm-price" data-price-label>
+                          {marker.price.toFixed(pricePrecision)}
+                        </span>
+                      </>
+                    ) : null}
                     <span className="num pm-pnl" data-pnl-label />
                   </>
-                ) : null}
-                <span className="num pm-price" data-price-label>
-                  {marker.price.toFixed(pricePrecision)}
-                </span>
-                {marker.qty !== null ? (
-                  <span className="num pm-qty">
-                    {isProtective ? `-${marker.qty}` : marker.qty}
-                  </span>
-                ) : null}
-                {marker.cancel ? (
+                ) : (
+                  <>
+                    <span className="pm-kind">{marker.label}</span>
+                    <span className="num pm-price" data-price-label>
+                      {marker.price.toFixed(pricePrecision)}
+                    </span>
+                    {marker.qty !== null ? <span className="num pm-qty">{marker.qty}</span> : null}
+                  </>
+                )}
+                {marker.cancel && !isProtective ? (
                   <button
                     className="pm-act pm-act-close"
                     disabled={busy}

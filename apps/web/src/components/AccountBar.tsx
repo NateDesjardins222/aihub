@@ -9,7 +9,7 @@
  */
 import { useEffect, type JSX } from 'react';
 import { useSession, selectedAccount, activeInstrument } from '../state/session';
-import { formatCompactMicros, formatMicros, pnlClass } from '../state/format';
+import { formatMicros } from '../state/format';
 import { useClock } from './usePersistentSize';
 import { useFreshness } from '../market/useFreshness';
 import { useTrading } from '../trading/store';
@@ -124,66 +124,76 @@ export function AccountBar({
         </span>
       ) : null}
 
-      <Metric
+      {/*
+        FOUR BOXES, AND ONLY FOUR.
+        ==========================
+        The brief removed EQ, DAY, OPEN, DD LEFT, DLL LEFT and TARGET from the
+        primary bar. What is left is what a trader checks between decisions:
+        what the account is worth settled, the line it must not cross, what it
+        has made, and what it is making right now.
+
+        Nothing is derived here. RP&L is NET - gross realized less fees -
+        because that is the number for which BAL equals the starting balance
+        plus RP&L, and a bar whose own figures do not add up is worse than a
+        bar with fewer of them.
+
+        The removed figures are not gone from the platform: equity, day P&L,
+        drawdown headroom, the daily loss limit and target progress are all in
+        the Accounts blotter and in Risk and programme, which is where a trader
+        goes to study the account rather than to glance at it.
+      */}
+      <MoneyBox
         label="BAL"
         value={money(() =>
-          pnl ? formatCompactMicros(pnl.balanceMicros) : account ? formatCompactMicros(account.balanceMicros) : '—',
+          pnl
+            ? formatMicros(pnl.balanceMicros)
+            : account
+              ? formatMicros(account.balanceMicros)
+              : '—',
         )}
         title="Settled cash: starting balance plus realized P&L, less fees"
       />
-      <Metric
-        label="EQ"
-        value={money(() =>
-          rules ? formatCompactMicros(rules.equityMicros) : pnl ? formatCompactMicros(pnl.equityMicros) : '—',
+      {/*
+        A floor at or below zero is not a limit.
+        ======================================
+        A practice template with a maximum loss larger than the account puts
+        the floor below zero - this database has $100,000 accounts whose floor
+        computes to -$50,000 - and printing "MLL -$50,000.00" states a limit
+        that cannot be reached as though it were one. The honest rendering is a
+        dash that says why, and the server's start-up audit reports the
+        configuration itself.
+      */}
+      <MoneyBox
+        label="MLL"
+        value={money(() => {
+          const floor = rules?.drawdownFloorMicros ?? pnl?.drawdownFloorMicros ?? null;
+          if (floor === null) return '—';
+          return floor > 0 ? formatMicros(floor) : '—';
+        })}
+        title={
+          (rules?.drawdownFloorMicros ?? pnl?.drawdownFloorMicros ?? 0) > 0
+            ? 'Maximum loss limit: the balance this account may not fall below'
+            : 'This account has no reachable loss limit: its maximum loss is larger than the account itself.'
+        }
+      />
+      <MoneyBox
+        label="RP&L"
+        value={result(() =>
+          pnl ? formatMicros(pnl.realizedPnlMicros - pnl.feesMicros, { sign: true }) : '—',
         )}
-        title="Balance plus open P&L"
+        tone={pnl && visibility.pnl ? boxTone(pnl.realizedPnlMicros - pnl.feesMicros) : 'flat'}
+        title="Realized P&L, net of fees, since this account opened"
       />
-      <Metric
-        label="DAY"
-        value={result(() => (rules ? formatMicros(rules.dayPnlMicros, { sign: true }) : '—'))}
-        tone={rules && visibility.pnl ? pnlClass(rules.dayPnlMicros) : 'flat'}
-        title="Equity change since this trading day opened"
+      <MoneyBox
+        label="UP&L"
+        value={result(() =>
+          pnl && pnl.openPnlMicros !== null ? formatMicros(pnl.openPnlMicros, { sign: true }) : '—',
+        )}
+        tone={
+          pnl && pnl.openPnlMicros !== null && visibility.pnl ? boxTone(pnl.openPnlMicros) : 'flat'
+        }
+        title="Open P&L on the positions held right now"
       />
-      <Metric
-        label="OPEN"
-        value={result(() => (rules ? formatMicros(rules.openPnlMicros, { sign: true }) : '—'))}
-        tone={rules && visibility.pnl ? pnlClass(rules.openPnlMicros) : 'flat'}
-      />
-      {/*
-        Shown only when there IS a drawdown rule.
-        A practice account with no maximum loss used to report its whole
-        balance here, which read as a $150,000 limit on a $100,000 account.
-      */}
-      {visibility.rules && rules && rules.remainingDrawdownMicros !== null ? (
-        <Metric
-          label="DD LEFT"
-          value={formatCompactMicros(Math.max(0, rules.remainingDrawdownMicros))}
-          tone={rules.remainingDrawdownMicros <= 0 ? 'neg' : 'flat'}
-          title="Room left before the drawdown floor"
-        />
-      ) : null}
-      {visibility.rules && rules && rules.remainingDailyLossMicros !== null ? (
-        <Metric
-          label="DLL LEFT"
-          value={formatCompactMicros(Math.max(0, rules.remainingDailyLossMicros))}
-          title="Loss allowed before trading stops for the day"
-        />
-      ) : null}
-      {/*
-        A practice account's "target" is a placeholder large enough never to be
-        reached, so showing progress towards it is noise. Programme accounts
-        have a real one and show it.
-      */}
-      {visibility.rules &&
-      rules &&
-      rules.profitTargetMicros > 0 &&
-      account?.accountType !== 'PRACTICE' ? (
-        <Metric
-          label="TARGET"
-          value={`${formatCompactMicros(rules.profitProgressMicros)} / ${formatCompactMicros(rules.profitTargetMicros)}`}
-          tone={rules.profitTargetMet ? 'pos' : 'flat'}
-        />
-      ) : null}
 
       <div className="hdr-spacer" />
 
@@ -248,7 +258,27 @@ function statusTone(status: string): string {
   return 'warn';
 }
 
-function Metric({
+/**
+ * Which way a filled box leans.
+ *
+ * Zero is neutral, not green. "+$0.00 in green" reads as a win that has not
+ * happened.
+ */
+function boxTone(micros: number): 'pos' | 'neg' | 'flat' {
+  if (micros > 0) return 'pos';
+  if (micros < 0) return 'neg';
+  return 'flat';
+}
+
+/**
+ * One of the four primary account figures.
+ *
+ * A filled rectangle, substantial enough to be read at a glance from across a
+ * desk, with the label above the number. White type throughout: on a green or
+ * red fill the colour IS the sign, and tinting the text as well leaves it
+ * harder to read for no extra information.
+ */
+function MoneyBox({
   label,
   value,
   tone = 'flat',
@@ -256,13 +286,18 @@ function Metric({
 }: {
   label: string;
   value: string;
-  tone?: string;
+  tone?: 'pos' | 'neg' | 'flat';
   title?: string;
 }): JSX.Element {
   return (
-    <div className="abar-metric" title={title}>
-      <span className="abar-metric-label">{label}</span>
-      <span className={`num abar-metric-value ${tone}`}>{value}</span>
+    <div
+      className={`abar-box abar-box-${tone}`}
+      title={title}
+      data-testid={`account-box-${label.toLowerCase().replace(/[^a-z]/g, '')}`}
+      data-tone={tone}
+    >
+      <span className="abar-box-label">{label}</span>
+      <span className="num abar-box-value">{value}</span>
     </div>
   );
 }

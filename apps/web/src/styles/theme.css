@@ -60,6 +60,14 @@
   --danger: #ff5a5a;
   --neutral: #74839d;
 
+  /*
+   * Filled result colours, for a box whose background carries the sign.
+   * Darker than the text tokens because white type has to stay legible on
+   * them; the text tokens are tuned for text on the dark workspace.
+   */
+  --pos-fill: #11845e;
+  --neg-fill: #b23a33;
+
   /* Link-group colours for multi-chart symbol linking. */
   --link-blue: #5b9dff;
   --link-green: #29d3a5;
