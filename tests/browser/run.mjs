@@ -37,6 +37,7 @@ const SUITES = [
   'appearance',
   'tablet',
   'visual',
+  'polish',
   'tools',
   'replay-brackets',
   'layout',
