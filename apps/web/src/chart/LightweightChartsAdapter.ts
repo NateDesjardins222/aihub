@@ -97,7 +97,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
   private chart: IChartApi | null = null;
   private priceSeries: ISeriesApi<SeriesType> | null = null;
-  private volumeSeries: ISeriesApi<'Histogram'> | null = null;
   private container: HTMLElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -107,7 +106,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
   /** Blind practice: the clock is shown, the calendar is not. */
   private datesHidden = false;
   private tickSize = 0.25;
-  private volumeVisible = true;
   private autoScale = true;
 
   /** Real bars, untransformed. The transform is applied on the way to the canvas. */
@@ -145,7 +143,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.container = init.container;
     this.pricePrecision = init.pricePrecision;
     this.tickSize = init.tickSize;
-    this.volumeVisible = init.appearance.symbol.volumeVisible;
 
     this.chart = createChart(init.container, {
       ...this.layoutOptions(),
@@ -336,7 +333,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.chart?.remove();
     this.chart = null;
     this.priceSeries = null;
-    this.volumeSeries = null;
     // The cached projection closes over the chart, so it goes with it.
     this.projectionCache = null;
     this.spacingCache = null;
@@ -480,20 +476,15 @@ export class LightweightChartsAdapter implements ChartAdapter {
 
   private createVolumeSeries(): void {
     if (!this.chart) return;
-    this.volumeSeries = this.chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'volume',
-      visible: this.volumeVisible,
-      // Volume has its own hidden scale, so its "last value" would print a
-      // meaningless price label on the price axis.
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    // Volume occupies the lower fifth, overlaid on the same pane.
-    this.chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
-      visible: false,
-    });
+    /*
+     * NO BUILT-IN VOLUME SERIES.
+     *
+     * Volume used to be welded to the price pane and on by default, which made
+     * it the one study a trader could not remove, could not restyle and could
+     * not give a pane of its own. It is a first-class indicator now - Indicators
+     * -> Volume - so it arrives, leaves, restyles and persists through exactly
+     * the same path as every other study, per chart.
+     */
   }
 
   /**
@@ -647,8 +638,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
       previous.scales.priceScaleSide !== appearance.scales.priceScaleSide;
     if (structural) {
       this.createPriceSeries();
-      this.volumeVisible = appearance.symbol.volumeVisible;
-      this.volumeSeries?.applyOptions({ visible: this.volumeVisible });
       this.redraw();
     } else {
       this.applyScaleMode();
@@ -752,9 +741,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
     }
 
     this.priceSeries.update(this.toSeriesPoint(bar));
-    if (this.volumeVisible && this.volumeSeries) {
-      this.volumeSeries.update(this.toVolumePoint(bar));
-    }
     /*
      * Indicators are recomputed from the bars, so the newest one has to reach
      * them - but only its newest POINT has to reach the renderer.
@@ -779,9 +765,6 @@ export class LightweightChartsAdapter implements ChartAdapter {
     if (!this.priceSeries) return;
     const transformed = transformFor(this.chartType)(this.bars);
     this.priceSeries.setData(transformed.map((b) => this.toSeriesPoint(b)));
-    if (this.volumeSeries) {
-      this.volumeSeries.setData(this.bars.map((b) => this.toVolumePoint(b)));
-    }
     this.renderIndicators();
   }
 
@@ -1172,23 +1155,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     } as never;
   }
 
-  private toVolumePoint(bar: NormalizedBar): never {
-    return {
-      time: toTime(bar.time),
-      value: bar.volume,
-      color:
-        bar.close >= bar.open
-          ? this.appearance.symbol.volumeUpColor
-          : this.appearance.symbol.volumeDownColor,
-    } as never;
-  }
-
   // -- view controls -------------------------------------------------------
-
-  setVolumeVisible(visible: boolean): void {
-    this.volumeVisible = visible;
-    this.volumeSeries?.applyOptions({ visible });
-  }
 
   setSessionBreaksVisible(): void {
     // Session gaps are inherent: bars simply do not exist during the break, so

@@ -123,7 +123,6 @@ export interface ChartAdapter {
    */
   applyLiveBar(bar: NormalizedBar): void;
 
-  setVolumeVisible(visible: boolean): void;
   setSessionBreaksVisible(visible: boolean): void;
 
   /**

@@ -218,25 +218,13 @@ export function SettingsDialog(): JSX.Element | null {
                   </Row>
                 </Group>
 
-                <Group title="Volume">
-                  <Row label="Show volume">
-                    <Check
-                      checked={appearance.symbol.volumeVisible}
-                      onChange={(volumeVisible) => set({ symbol: { volumeVisible } })}
-                    />
-                  </Row>
-                  <Row label="Up bars">
-                    <Colour
-                      value={appearance.symbol.volumeUpColor}
-                      onChange={(volumeUpColor) => set({ symbol: { volumeUpColor } })}
-                    />
-                  </Row>
-                  <Row label="Down bars">
-                    <Colour
-                      value={appearance.symbol.volumeDownColor}
-                      onChange={(volumeDownColor) => set({ symbol: { volumeDownColor } })}
-                    />
-                  </Row>
+                <Group title="Price line">
+                  {/*
+                    Volume's colours used to live here, because volume used to
+                    be welded to the price pane. It is an ordinary indicator
+                    now - Indicators -> Volume - and its styling belongs in its
+                    own settings dialog beside every other study's, per chart.
+                  */}
                   <Row label="Last price line">
                     <Check
                       checked={appearance.symbol.lastPriceLineVisible}

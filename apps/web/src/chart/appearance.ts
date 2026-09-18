@@ -32,9 +32,6 @@ export interface SymbolAppearance {
   readonly areaTopColor: string;
   readonly areaBottomColor: string;
   /** Volume histogram. */
-  readonly volumeVisible: boolean;
-  readonly volumeUpColor: string;
-  readonly volumeDownColor: string;
   /** Precision of the last-price marker on the scale. */
   readonly lastPriceLineVisible: boolean;
   readonly highLowMarkersVisible: boolean;
@@ -119,9 +116,6 @@ export const DEFAULT_APPEARANCE: ChartAppearance = {
     lineWidth: 2,
     areaTopColor: 'rgba(77, 141, 255, 0.34)',
     areaBottomColor: 'rgba(77, 141, 255, 0.02)',
-    volumeVisible: true,
-    volumeUpColor: 'rgba(46, 196, 166, 0.34)',
-    volumeDownColor: 'rgba(242, 84, 75, 0.34)',
     lastPriceLineVisible: true,
     highLowMarkersVisible: false,
   },
@@ -218,9 +212,6 @@ export function normalizeAppearance(raw: unknown): ChartAppearance {
       lineWidth: clamp(Number(s.lineWidth), 1, 6, d.symbol.lineWidth),
       areaTopColor: colour(s.areaTopColor, d.symbol.areaTopColor),
       areaBottomColor: colour(s.areaBottomColor, d.symbol.areaBottomColor),
-      volumeVisible: flag(s.volumeVisible, d.symbol.volumeVisible),
-      volumeUpColor: colour(s.volumeUpColor, d.symbol.volumeUpColor),
-      volumeDownColor: colour(s.volumeDownColor, d.symbol.volumeDownColor),
       lastPriceLineVisible: flag(s.lastPriceLineVisible, d.symbol.lastPriceLineVisible),
       highLowMarkersVisible: flag(s.highLowMarkersVisible, d.symbol.highLowMarkersVisible),
     },
