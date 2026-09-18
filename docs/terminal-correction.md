@@ -242,12 +242,36 @@ with the number of indicator panes rather than being a fixed multiple of one.
 
 `stress.spec.mjs` measures the single-chart budget: a pan, a crosshair sweep
 and a wheel zoom with 1, 10, 50, 100 and 250 objects on the chart, requiring
-more than 30fps and no frame over 120ms.
+more than 30fps and no frame over 120ms. Measured (62/62 passed):
+
+| objects | pan | crosshair | wheel |
+| --- | --- | --- | --- |
+| 1 | 60 fps, worst frame 17ms | 61 fps, worst frame 19ms | worst frame 17ms |
+| 10 | 60 fps, worst frame 18ms | 61 fps, worst frame 18ms | worst frame 17ms |
+| 50 | 60 fps, worst frame 18ms | 61 fps, worst frame 17ms | worst frame 19ms |
+| 100 | 61 fps, worst frame 21ms | 61 fps, worst frame 17ms | worst frame 17ms |
+| 250 | 60 fps, worst frame 19ms | 61 fps, worst frame 21ms | worst frame 18ms |
+
+Two hundred and fifty objects cost about 2ms of worst-case frame time over one
+object, which is the point of the screen-bounds cache: the paint pass walks
+cached rectangles rather than re-projecting every anchor.
 
 `perf-panes.spec.mjs` (new) measures what multi-chart added: the same three
 gestures with FOUR charts open, and again with four charts keeping their
 crosshair and their time range in step - which is the worst case, because every
-pointer move then moves four charts.
+pointer move then moves four charts. Measured (11/11 passed):
+
+| charts | pan | crosshair | wheel |
+| --- | --- | --- | --- |
+| one | 61 fps, worst frame 18ms | 61 fps, worst frame 17ms | 61 fps, worst frame 18ms |
+| four open | 60 fps, worst frame 18ms | 61 fps, worst frame 18ms | 61 fps, worst frame 18ms |
+| four in step | 60 fps, worst frame 20ms | 61 fps, worst frame 18ms | 61 fps, worst frame 18ms |
+
+Keeping four charts in step costs nothing measurable in frame rate (61 fps with
+one chart, 61 with four, 61 synced) and about 2ms of worst-case frame time on a
+pan. The suite asserts the synced figure stays above half the single-chart
+figure, so a future regression that makes sync expensive fails the build rather
+than being noticed by a trader.
 
 ### The manual pass
 
@@ -348,6 +372,7 @@ database and the real delayed market data:
 | drag-protect | 25/25 |
 | execution-interaction | 30/30 |
 | stress | 61/62, then 62/62 after the interval check was corrected |
+| perf-panes | 11/11 |
 | visual | 22/22 |
 | tools | 26/26 |
 | replay-brackets | 12/12 |
