@@ -138,11 +138,25 @@ export function Colour({
       event.stopPropagation();
       setOpen(false);
     };
+    /*
+     * A scroll moves the swatch and not the popover.
+     *
+     * The picker is positioned against the viewport so it can escape a dialog
+     * that clips - which also means it does not follow its own anchor when the
+     * list behind it scrolls. Rather than track the anchor, it closes: a
+     * picker that has drifted away from the row it belongs to is worse than
+     * one that is shut.
+     */
+    const away = (): void => setOpen(false);
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', away, true);
+    window.addEventListener('resize', away);
     return () => {
       window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', away, true);
+      window.removeEventListener('resize', away);
     };
   }, [open]);
 
