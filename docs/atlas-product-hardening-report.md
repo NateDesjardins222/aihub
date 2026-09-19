@@ -730,19 +730,19 @@ someone should make deliberately rather than have me churn on a hunch.
 
 | suite | | suite | |
 | --- | --- | --- | --- |
-| terminal | 20/20 | abuse | 19/19 |
-| responsive | 50/50 | live-indicators | 9/9 |
-| chart-navigation | 32/32 | recovery | 15/15 |
-| indicators | 37/37 | appearance | 29/29 |
+| terminal | 21/21 | live-indicators | 9/9 |
+| responsive | 50/50 | recovery | 19/19 |
+| chart-navigation | 32/32 | **reconnect** | **26/26** |
+| indicators | 37/37 | appearance | 43/43 |
 | drawing-pointer | 16/16 | tablet | 15/15 |
-| drawing-engine | 36/36 | visual | 22/22 |
+| drawing-engine | 36/36 | visual | 56/56 |
 | position-tools | 30/30 | polish | 25/25 |
-| fib-levels | 16/16 | tools | 27/27 |
-| multi-chart | 25/25 | replay-brackets | 12/12 |
-| journal-calendar | 21/21 | layout | 8/8 |
-| journal-scale | 16/16 | admin | 28/28 |
-| rectangle | 43/43 | acceptance | 17/17 |
-| line-tools | 68/68 | first-run | 19/19 |
+| fib-levels | 16/16 | first-run | 19/19 |
+| multi-chart | 25/25 | tools | 27/27 |
+| journal-calendar | 21/21 | replay-brackets | 12/12 |
+| journal-scale | 16/16 | layout | 8/8 |
+| rectangle | 43/43 | admin | 28/28 |
+| line-tools | 68/68 | acceptance | 17/17 |
 | remaining-tools | 56/56 | **interaction-pass** | **159/159** |
 | drag-protect | 29/29 | | |
 | execution-interaction | 30/30 | | |
@@ -750,13 +750,14 @@ someone should make deliberately rather than have me churn on a hunch.
 | stress | 62/62 | | |
 | perf-panes | 11/11 | | |
 | pane-resize | 14/14 | | |
+| abuse | 19/19 | | |
 
-**1,029 browser checks and 700 unit tests, all passing.**
+**1,108 browser checks — 949 across 34 suites, plus the 159-check interaction
+pass — and 700 unit tests. All passing, in one run, end to end.**
 
-The full run came back three checks down out of about eight hundred, and
-**none of the three was the product** — each is written up in the commit that
-fixed it, because a test that asks the wrong question is worth exactly as much
-as a bug:
+That is the second full run. **Six checks failed along the way and not one of
+them was the product** — each is written up in the commit that fixed it,
+because a test that asks the wrong question is worth exactly as much as a bug:
 
 * `live-indicators` asked a replay for 45 bars and got 44; what matters is that
   the history exceeds the 22-bar window, which 40 says with margin.
@@ -764,6 +765,23 @@ as a bug:
   They cannot: a price scale is logarithmic or percentage and not both.
 * `acceptance` treated an order refusal with the market shut as an honest
   outcome and then failed on the 422 that same refusal wrote to the console.
+* `drag-protect` read a stop's fill as rgb(217,58,49) and called it a defect.
+  That is **Clean Light's** red: the suites share one account, a theme is a
+  stored preference, and a run that ended in the light theme hands the next
+  suite a terminal painted in different colours. Sign-in now puts the default
+  back, and clicks nothing when it is already there.
+* `pane-resize` asserted the default proportions straight after opening a study
+  pane — but the split its own previous run dragged is still saved, *because
+  that is the feature*. It now asks for the default the way the product says
+  to, with a double-click on the separator.
+* `recovery` died on `route.continue: Route is already handled` — a request
+  parked in a deliberately slow route handler while the route was torn down.
+  Losing that race is not a finding.
+
+The last three are all the same lesson in different clothes: **state that
+persists is state a test inherits.** Everything this milestone made persistent
+— themes, pane splits, panel heights — became a way for one suite to change
+another suite's answer.
 
 ### What still needs work — nothing here is hidden
 
