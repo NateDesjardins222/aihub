@@ -34,6 +34,13 @@ const RUNS = [
     slow: true,
   },
   {
+    id: 'lifecycle',
+    what: 'a second server on a held port, and a clean SIGTERM',
+    command: ['node', ['tools/diagnose-lifecycle.mjs']],
+    needs: [],
+    slow: true,
+  },
+  {
     id: 'authorization',
     what: "a second user attacking the first user's account",
     command: ['node', ['tools/diagnose-authorization.mjs']],

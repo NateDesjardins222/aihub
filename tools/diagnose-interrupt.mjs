@@ -34,6 +34,15 @@ const SYMBOL = 'NQ';
 
 const { browser, page, errors } = await launch({ width: 1500, height: 940 });
 
+/*
+ * A disconnect logs a fetch failure, and this test CAUSES a disconnect on
+ * purpose. Those lines are the offline round working, not the product
+ * throwing, so they do not count against "nothing threw" - anything else
+ * still does.
+ */
+const causedByOffline = (line) =>
+  /ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|Failed to fetch|NetworkError/i.test(line);
+
 try {
   report.watch(page);
   await signIn(page);
@@ -153,10 +162,11 @@ try {
   );
 
   await flatten();
+  const unexpected = errors.filter((line) => !causedByOffline(line));
   report.say(
-    errors.length === 0,
-    'nothing threw through any of it',
-    errors.slice(0, 3).join(' | '),
+    unexpected.length === 0,
+    'nothing threw through any of it, beyond the disconnect this test caused',
+    unexpected.slice(0, 3).join(' | '),
   );
 } finally {
   const failed = report.finish();

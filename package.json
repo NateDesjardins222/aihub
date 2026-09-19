@@ -27,7 +27,8 @@
     "diagnose:torture": "node tools/exec-torture.mjs",
     "diagnose:latency": "node tools/exec-latency.mjs",
     "diagnose:chaos": "node tools/diagnose-chaos.mjs",
-    "diagnose:interrupt": "node tools/diagnose-interrupt.mjs"
+    "diagnose:interrupt": "node tools/diagnose-interrupt.mjs",
+    "diagnose:lifecycle": "node tools/diagnose-lifecycle.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
