@@ -105,10 +105,28 @@ The brief's chain, mapped onto what exists, with the new work marked:
 | Distribution | gateway | **measure:** bytes/sec, incremental updates |
 | Chart/execution/journal | unchanged | **prove unchanged** by regression |
 
-**The contract model is the biggest genuinely new piece**: root, contract
-symbol, exchange, expiry, tick size/value, session calendar, provider mapping,
-active/next, and a roll policy per product family. It is what makes "Atlas
-knows what it is watching" true rather than aspirational.
+**The contract model is further along than it first appeared, and this
+document was wrong about it for an hour.** `packages/contracts/src/instrument.ts`
+already carries a `RollRule` with QUARTERLY / MONTHLY / CUSTOM cycles and three
+expiry rules (third Friday, business days before a day of month, business days
+before month end), plus `rollDaysBeforeExpiry`; `packages/instruments/src/contracts.ts`
+resolves an `ActiveContract` with its code, display name, month, year, last
+trading day and roll date; session windows, maintenance windows and holidays
+are modelled; and `providerSymbols` is already keyed by provider. The claim
+that a contract model had to be built from nothing was made before that file
+was read, and is withdrawn.
+
+What is genuinely missing is narrower and more specific:
+
+* **Contract identity does not reach the database.** Positions and orders are
+  stored against the ROOT. Nothing records that a position was opened in
+  NQZ26, which is what makes "a futures order belongs to a specific contract"
+  true rather than implied.
+* **No next contract, no manual override, no roll transition state**, and no
+  historical contract identity for a trade taken before a roll.
+* **The continuous chart and the tradeable contract are the same object**, so
+  there is nowhere to express "you are looking at continuous NQ and trading
+  NQZ26".
 
 ---
 
