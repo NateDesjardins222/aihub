@@ -118,6 +118,123 @@ Entries are numbered in the order they were found, not by severity.
 | **Still open** | Whether the terminal should read atomically. One refresh cycle of disagreement is small, but it is the class of thing this milestone exists to notice. |
 | **Commit** | see below |
 
+## D-009 — The torture harness read "no positions" when it could not read at all
+
+| | |
+| --- | --- |
+| **Severity** | P1 (test integrity) |
+| **Found by** | asking why 100 torture operations had chosen `buy`, `sell` and `cancel-all` and nothing else |
+| **Symptom** | Six of the nine torture operations need an open position. Across several runs and hundreds of operations, **not one of them was ever chosen**: partial, flatten, reverse, stop, target and clear-stop were skipped every single time, and the harness reported "0 invariant failures" for a run that had only ever submitted and cancelled. |
+| **Reproduction** | Call `apiFetch` four times in a `Promise.all` and print the results: one comes back with a body, three come back `null`. |
+| **Root cause** | Refresh tokens are **single use** — `refresh()` revokes the presented token in the same `UPDATE ... WHERE revoked_at IS NULL RETURNING` that accepts it, which is correct and is exactly the reuse detection you want. The harness's `apiFetch` exchanged the stored refresh token **on every single call**. Four parallel reads therefore presented the same token four times: one won, three got `INVALID_REFRESH`, and the helper reported that as `null`. `read()` then did `positions?.body?.positions ?? []` — and a failed request became *"the account is flat"*. Every invariant in the file is satisfied by an account that is flat, so the run passed. **A read that did not happen is not a read of nothing.** |
+| **Consequence** | Every execution torture run before this one proved almost nothing, and said so in the confident language of a passing test. This is the single worst result in the milestone, and it was in the test, not the product. |
+| **Not a product defect** | The application's own client has always shared one in-flight refresh (`refreshInFlight` in `apps/web/src/api/client.ts`), so the terminal's six parallel reads never collided. The server's rotation is right and stays as it is. |
+| **Fix** | `apiFetch` now shares one in-flight exchange per page, caches the access token, and only exchanges again on a real 401 — the same shape as the product's client. It never reports a failure as emptiness: a call that could not be made returns `{ ok: false, harnessError }`. `exec-torture.mjs`'s `read()` **throws** rather than defaulting to empty arrays. |
+| **Regression test** | The harness reports `operations chosen with a position open: N`, and a run where that is zero is declared VACUOUS and exits non-zero. A silent return to this bug is now a failing run. |
+| **Commit** | see below |
+
+## D-010 — Every partial taken against a short scaled into it
+
+| | |
+| --- | --- |
+| **Severity** | P2 (test integrity) |
+| **Found by** | reading the torture operations again once they could finally run |
+| **Symptom** | With D-009 fixed, the position-dependent operations ran for the first time — and three of them were wrong-sided on a short. |
+| **Root cause** | The API presents a position with `qty` **absolute** and `signedQty` carrying the direction. The harness chose sides with `position.qty > 0`, which is true for a short as well. A partial on a short SOLD more; a stop on a short was placed below the market, where the target belongs; the target was placed where the stop belongs. Nothing failed: a scale-in is a legal order, and a refusal is a legitimate outcome, so the whole class of error was invisible. |
+| **Fix** | Direction comes from `signedQty`, always, with a comment at the operation table saying why. |
+| **Regression test** | The harness itself, which now exercises partials and protective levels on both sides. |
+| **Commit** | see below |
+
+## D-011 — The balance invariant was written from an assumption, not from the engine
+
+| | |
+| --- | --- |
+| **Severity** | P1 (test integrity) |
+| **Found by** | the first torture run that could open a position |
+| **Symptom** | Two failures on the first two operations: *"balance moved -8070000 micros while 0 new trade(s) accounted for 0"*, and *"balance moved 261930000 while 1 new trade accounted for 253860000"*. Neither was a product defect. |
+| **Root cause** | The invariant said the balance may only move by the net P&L of trades that closed. **Commission is charged at every fill, including the fill that opens a position** — and an opening fill closes no trade. The -$8.07 was three contracts of NQ entry commission, and the $8.07 discrepancy on the flatten was the same money, already debited at entry and therefore not owed again at exit. The invariant had been written from what the harness assumed the engine did rather than from what it does: `balance += realizedPnl - fees`, in one statement, on every fill. |
+| **Fix** | Two invariants, from the engine's own rule. **The ledger agrees with itself**: the balance moved by exactly the realized P&L booked less the commission booked — so a balance that moves for any other reason is caught, however small. **The trades explain the realized P&L**: every micro-dollar of realized change is accounted for by trade rows a trader can see. Together they are strictly stronger than the version they replace, and they can actually be satisfied. |
+| **Regression test** | Both run after every torture operation. |
+| **Commit** | see below |
+
+## D-012 — The torture harness could not trade a live market
+
+| | |
+| --- | --- |
+| **Severity** | P3 (test integrity) |
+| **Found by** | a run that happened to start while the exchange was open |
+| **Symptom** | With a live feed the harness waited 220ms for a market order to fill, and every order sat WORKING — so positions never formed, for a completely different reason than D-009. |
+| **Root cause** | The fill wait only existed for the replay branch: a paused recording needs pushing, and the code assumed that was the only case that needed waiting. A live delayed feed prints every few seconds, which is longer than 220ms. |
+| **Fix** | The wait is now unconditional and mode-aware: step the recording when replaying, simply wait when live, in both cases until no MARKET order is left working. |
+| **Commit** | see below |
+
+## D-013 — Reloading two tabs at once signed the trader out of both
+
+| | |
+| --- | --- |
+| **Severity** | P1 |
+| **Found by** | `tools/diagnose-multitab.mjs`, written because D-009 raised the question |
+| **Symptom** | Two tabs of Atlas, both signed in. Reload them at the same moment and the session is gone — from one tab, and usually from both. Measured before the fix: **three of four rounds lost the session**, twice signing out *both* tabs, after which neither could read the account. |
+| **Reproduction** | `node tools/diagnose-multitab.mjs` — one browser context, two pages, `Promise.all([a.reload(), b.reload()])`, four times. |
+| **Root cause** | The access token lives in memory, so a reloaded tab must exchange the stored refresh token before it can read anything. Refresh tokens are single use. Two tabs reloading together present the same token: one wins, one gets a 401. The losing tab then did what a 401 on refresh had always meant — `setRefreshToken(null)` — and **localStorage is shared between tabs**, so it deleted the token the winning tab had just stored. The winner survived until its own next refresh, and then it was gone too. Inside a single tab this could never happen: `refreshInFlight` shares one attempt. Nothing coordinated two tabs. |
+| **Consequence** | A trader with a chart in one window and the journal in another, reloading after a deploy or a network blink, is thrown back to the sign-in form — with positions open. |
+| **Fix** | `navigator.locks.request('atlas.auth.refresh', …)` serialises the exchange browser-wide, and **the token is read inside the lock**, so a tab that waited simply uses whatever the tab ahead of it stored. Where the Lock API is missing the fallback is narrower but still correct: a failed exchange clears the session only if storage still holds the token that failed; a different token there means another tab won, and that one is tried instead. A refresh that could not be sent at all — a dropped connection — no longer clears anything, because a network blink is not a revoked token. The server's rotation and its reuse detection are untouched. |
+| **Regression test** | `apps/web/src/api/client.test.ts`, three cases (adopt the winner's token, sign out only when the stored token is the one that failed, survive a network failure), plus `tools/diagnose-multitab.mjs` at 6/6. Both new cases are proved by mutation: `cross-tab-refresh` and `refresh-network-failure` are CAUGHT. |
+| **Commit** | see below |
+
+---
+
+## Testing the tests — twelve deliberate defects
+
+`tools/diagnose-mutations.mjs` breaks the real source on purpose, twelve times over, runs the
+tests that should notice, and **always restores the file** (`try/finally`, with
+the touched paths verified clean at the end). No intentionally broken code is
+committed; the mutations live as data in the script.
+
+| mutation | what it breaks | result |
+| --- | --- | --- |
+| `fee-accumulation` | fills stop accumulating commission onto the position | CAUGHT |
+| `tick-value` | NQ's tick value is doubled | CAUGHT |
+| `position-side` | a negative quantity no longer reads as SHORT | CAUGHT |
+| `average-entry` | scaling in ignores the new fill when averaging | CAUGHT |
+| `break-even-rounding` | break-even rounds down, leaving the trader short of the fees | CAUGHT |
+| `partial-whole-position` | a partial is allowed to close the whole position | CAUGHT |
+| `audio-on-partial` | every partial fill announces "order filled" | CAUGHT |
+| `position-readout-points` | the position tool reports ticks where it should report points | CAUGHT |
+| `cross-tab-refresh` | the loser of a refresh race stops adopting the winner's token | CAUGHT |
+| `refresh-network-failure` | a dropped connection during refresh signs the trader out | CAUGHT |
+| `audio-on-first-read` | the first authoritative read replays every old fill out loud | SURVIVED |
+| `stale-account-guard` | a late read is written to whatever account is on screen | SURVIVED — by design |
+
+**`audio-on-first-read` survived, and the guard is redundant.** Removing
+`if (previous.orders.size === 0 && previous.positions.size === 0) return [];`
+from `soundsFor` failed nothing. That is not a missing test: with an empty
+previous snapshot, the rule that unknown orders are not new events
+(`if (before === undefined) continue;`) and the rule that a position must have
+been non-zero before it can be reported closed already return `[]` on their
+own. The guard states the intent at the top of the function, where a reader
+looks, and the two rules beneath it enforce it. Both are kept: the comment is
+worth the line.
+
+**`stale-account-guard` survived the unit tests, and the claim was checked
+rather than asserted.** The note in the script said "no unit test covers this;
+the browser suite does". That is the kind of note that is comfortable to write
+and expensive to be wrong about, so the mutation was applied to
+`apps/web/src/trading/store.ts`, the web app rebuilt, and `execution-safety`
+run against it:
+
+```
+FAIL  a double click on BUY sends ONE order                       — 3 order(s) created
+FAIL  three clicks dispatched in one task send ONE order          — 2 order(s) created
+FAIL  two deliberate presses are still two orders                 — 5 order(s) created
+FAIL  and the position carries both                               — 1 contract(s)
+FAIL  account A holds a position                                  — 0 contract(s)
+execution-safety: 11/16 passed
+```
+
+Five failures. The guard is covered. The file was restored from its backup and
+rebuilt before anything was committed.
+
 ---
 
 ## Attempted and held
@@ -141,7 +258,12 @@ and because these are the attacks worth repeating on every future change.
 
 * **D-003 has no regression test yet.** The fix is in; nothing proves it stays.
 * The execution torture harness had never been run when this milestone began,
-  despite being written during the previous one. It has now been run, found
-  D-007 about itself and D-008 about the product, and been fixed.
+  despite being written during the previous one. Running it found four defects
+  in the harness itself (D-007, D-009, D-010, D-012), one wrong invariant
+  (D-011) and one question about the product (D-008). Five of the six findings
+  were in the thing doing the testing. That ratio is the lesson of the
+  milestone so far.
 * D-008's open question: whether the terminal's six parallel reads should be
   atomic.
+* Two tabs *were* tested against refresh-token rotation, because D-009 raised
+  the question. They failed: D-013, now fixed and covered.

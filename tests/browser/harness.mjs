@@ -519,31 +519,81 @@ export async function waitFor(page, read, until, { tries = 40, every = 1_500 } =
  * Call the API from inside the page, as the signed-in user.
  *
  * Some checks need to ask the server something the UI does not show, or to
- * nudge a paused recording. The access token lives in memory in the app, so
- * the refresh token in storage is exchanged for a fresh one here - and stored
- * back, because the exchange rotates it.
+ * nudge a paused recording. The access token lives in memory in the app, so a
+ * refresh token from storage is exchanged for one here.
+ *
+ * THE EXCHANGE IS SHARED, AND THAT IS NOT AN OPTIMISATION. Refresh tokens are
+ * single-use: the server revokes the presented one in the same statement that
+ * accepts it, which is correct, and means two simultaneous exchanges of the
+ * same token leave one caller holding a revoked token. This helper used to
+ * exchange on EVERY call, so four reads in a `Promise.all` produced one
+ * success and three unauthenticated failures - which it then reported as
+ * `null`, and callers read as "the account has no positions". See D-009. The
+ * product's own client has always shared one in-flight refresh; the harness
+ * now does the same, caches the access token, and only exchanges again on a
+ * real 401.
+ *
+ * It also never reports a failure as emptiness. A call that could not be made
+ * comes back `{ ok: false, harnessError }`, which is impossible to mistake for
+ * a successful read of nothing.
  */
 export async function apiFetch(page, path, init = {}) {
-  return page
-    .evaluate(
+  try {
+    return await page.evaluate(
       async ({ path, init }) => {
-        const refreshToken = window.localStorage.getItem('atlas.refreshToken');
-        if (!refreshToken) return null;
-        const session = await fetch('/api/v1/auth/refresh', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        }).then((r) => (r.ok ? r.json() : null));
-        if (!session?.accessToken) return null;
-        window.localStorage.setItem('atlas.refreshToken', session.refreshToken);
-        const response = await fetch(path, {
-          method: init.method ?? 'GET',
-          headers: {
-            authorization: `Bearer ${session.accessToken}`,
-            'content-type': 'application/json',
-          },
-          body: init.body ? JSON.stringify(init.body) : undefined,
-        });
+        const w = /** @type {any} */ (window);
+
+        const exchange = () => {
+          if (w.__atlasHarnessRefresh) return w.__atlasHarnessRefresh;
+          const token = w.localStorage.getItem('atlas.refreshToken');
+          if (!token) return Promise.resolve(null);
+          w.__atlasHarnessRefresh = (async () => {
+            try {
+              const response = await fetch('/api/v1/auth/refresh', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ refreshToken: token }),
+              });
+              if (!response.ok) return null;
+              const session = await response.json();
+              w.localStorage.setItem('atlas.refreshToken', session.refreshToken);
+              w.__atlasHarnessAccess = session.accessToken;
+              return session.accessToken;
+            } catch {
+              return null;
+            } finally {
+              w.__atlasHarnessRefresh = null;
+            }
+          })();
+          return w.__atlasHarnessRefresh;
+        };
+
+        let access = w.__atlasHarnessAccess ?? (await exchange());
+        if (!access) {
+          return { ok: false, status: 0, body: null, harnessError: 'no session to call the API with' };
+        }
+
+        const send = (bearer) =>
+          fetch(path, {
+            method: init.method ?? 'GET',
+            headers: {
+              authorization: `Bearer ${bearer}`,
+              'content-type': 'application/json',
+            },
+            body: init.body ? JSON.stringify(init.body) : undefined,
+          });
+
+        let response = await send(access);
+        if (response.status === 401) {
+          // The cached token expired, or was never good. One retry, shared.
+          w.__atlasHarnessAccess = null;
+          access = await exchange();
+          if (!access) {
+            return { ok: false, status: 401, body: null, harnessError: 'could not refresh the session' };
+          }
+          response = await send(access);
+        }
+
         const text = await response.text();
         try {
           return { ok: response.ok, status: response.status, body: JSON.parse(text) };
@@ -552,8 +602,10 @@ export async function apiFetch(page, path, init = {}) {
         }
       },
       { path, init },
-    )
-    .catch(() => null);
+    );
+  } catch (error) {
+    return { ok: false, status: 0, body: null, harnessError: String(error).slice(0, 200) };
+  }
 }
 
 /**

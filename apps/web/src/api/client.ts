@@ -58,30 +58,84 @@ async function raw(path: string, init: RequestInit): Promise<Response> {
   return fetch(path, { ...init, headers });
 }
 
-/** Refresh the access token. Concurrent callers share one in-flight attempt. */
-async function tryRefresh(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
+/**
+ * Refresh the access token.
+ *
+ * Concurrent callers inside this tab share one in-flight attempt, and callers
+ * in OTHER TABS are serialised behind a browser-wide lock. Both matter, for
+ * the same reason and at different scales.
+ *
+ * Refresh tokens are single use: the server revokes the presented token in the
+ * same statement that accepts it. That is correct - it is how a stolen token
+ * gets caught - but it means two simultaneous exchanges of the same token
+ * leave one caller holding a revoked one. Tabs share localStorage, so the
+ * loser used to call `setRefreshToken(null)` and delete the session the WINNER
+ * had just stored. Reloading two tabs at once signed the trader out of both,
+ * mid-session, with positions open. See D-013.
+ *
+ * `navigator.locks` fixes it properly rather than papering over it: the token
+ * is read INSIDE the lock, so a tab that waited simply uses whatever the tab
+ * ahead of it stored, and the exchanges happen one after another. Nothing
+ * about the server's rotation is weakened.
+ *
+ * Where the Lock API is missing, the fallback is narrower but still correct:
+ * a failed exchange only clears the session if storage still holds the token
+ * we presented. A different token there means another tab won the race and
+ * that token is good - so it is tried, once, instead of signing the trader out.
+ */
+async function exchange(token: string): Promise<boolean> {
+  const response = await fetch('/api/v1/auth/refresh', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ refreshToken: token }),
+  });
+  if (!response.ok) return false;
+  const data = (await response.json()) as { accessToken: string; refreshToken: string };
+  setAccessToken(data.accessToken);
+  setRefreshToken(data.refreshToken);
+  return true;
+}
+
+async function refreshOnce(): Promise<boolean> {
   const token = getRefreshToken();
   if (!token) return false;
+  try {
+    if (await exchange(token)) return true;
+  } catch {
+    // A network failure is not a bad token: keep the session and let the
+    // caller's request fail on its own terms.
+    return false;
+  }
+
+  // Another tab may have rotated it between our read and our request.
+  const current = getRefreshToken();
+  if (current !== null && current !== token) {
+    try {
+      if (await exchange(current)) return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Only now is the session genuinely gone.
+  if (getRefreshToken() === token) {
+    setRefreshToken(null);
+    setAccessToken(null);
+  }
+  return false;
+}
+
+async function tryRefresh(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  if (!getRefreshToken()) return false;
 
   refreshInFlight = (async () => {
     try {
-      const response = await fetch('/api/v1/auth/refresh', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ refreshToken: token }),
-      });
-      if (!response.ok) {
-        setRefreshToken(null);
-        setAccessToken(null);
-        return false;
+      const locks = navigator.locks;
+      if (locks) {
+        return await locks.request('atlas.auth.refresh', () => refreshOnce());
       }
-      const data = (await response.json()) as { accessToken: string; refreshToken: string };
-      setAccessToken(data.accessToken);
-      setRefreshToken(data.refreshToken);
-      return true;
-    } catch {
-      return false;
+      return await refreshOnce();
     } finally {
       refreshInFlight = null;
     }
