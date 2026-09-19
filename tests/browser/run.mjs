@@ -1,8 +1,20 @@
 /**
  * Run every browser suite and report once.
  *
+ *   node tests/browser/run.mjs                    # every suite, in order
+ *   node tests/browser/run.mjs terminal visual    # just these
+ *   node tests/browser/run.mjs --shuffle          # in a random order
+ *   node tests/browser/run.mjs --shuffle --seed 7 # that order again
+ *
  * Sequential on purpose: the suites share one account and one market, and
  * running them together would have them close each other's positions.
+ *
+ * THE ORDER IS PART OF WHAT IS BEING TESTED. A suite that only passes after
+ * the suite before it has left the terminal in some particular state is not a
+ * passing suite, it is a coincidence - and five separate kinds of inherited
+ * state have already been found that way (see D-004 in the diagnostics
+ * ledger). `--shuffle` deals a different order every time, and `--seed`
+ * replays the one that failed.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -47,8 +59,27 @@ const SUITES = [
   'admin',
   'acceptance',
 ];
-const only = process.argv.slice(2);
-const chosen = only.length > 0 ? SUITES.filter((s) => only.includes(s)) : SUITES;
+const argv = process.argv.slice(2);
+const SHUFFLE = argv.includes('--shuffle');
+const SEED = argv.includes('--seed') ? Number(argv[argv.indexOf('--seed') + 1]) : Date.now() % 100_000;
+const only = argv.filter((a) => !a.startsWith('--') && a !== String(SEED));
+let chosen = only.length > 0 ? SUITES.filter((s) => only.includes(s)) : [...SUITES];
+
+if (SHUFFLE) {
+  // Mulberry32, so an order that found something can be dealt again.
+  let a = SEED >>> 0;
+  const random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = chosen.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [chosen[i], chosen[j]] = [chosen[j], chosen[i]];
+  }
+  console.log(`shuffled with --seed ${SEED}:\n  ${chosen.join(' ')}\n`);
+}
 
 mkdirSync(process.env.ATLAS_SHOTS ?? '/tmp/atlas-shots', { recursive: true });
 
@@ -59,5 +90,8 @@ for (const suite of chosen) {
   failures += result.status ?? 1;
 }
 
-console.log(`\n${failures === 0 ? 'all browser suites passed' : `${failures} check(s) failed`}`);
+console.log(
+  `\n${failures === 0 ? 'all browser suites passed' : `${failures} check(s) failed`}` +
+    (SHUFFLE ? ` (order --seed ${SEED})` : ''),
+);
 process.exit(failures === 0 ? 0 : 1);

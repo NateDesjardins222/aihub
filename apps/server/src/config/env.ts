@@ -38,9 +38,52 @@ export type AppEnv = z.infer<typeof envSchema>;
 
 let cached: AppEnv | null = null;
 
+const INSECURE_JWT_DEFAULT = 'dev-only-insecure-secret-change-me';
+
 export function env(): AppEnv {
-  if (!cached) cached = envSchema.parse(process.env);
+  if (!cached) {
+    cached = envSchema.parse(process.env);
+    guardProduction(cached);
+  }
   return cached;
+}
+
+/**
+ * Things that are convenient in development and catastrophic in production.
+ *
+ * The schema gives JWT_SECRET a working default so a developer can clone and
+ * run - but that default is PUBLIC, it is in this file, and a server that signs
+ * real sessions with it can have its tokens forged by anyone who has read the
+ * source. Same for a wide-open CORS origin. A default that is safe only because
+ * nobody deployed it is a P0 waiting for the first deploy, so production refuses
+ * to boot on either rather than running quietly insecure.
+ *
+ * This is a fail-fast, not a policy engine: it names the variable and the fix
+ * and exits, because a misconfigured auth secret is not something to page
+ * someone about at runtime - it is something to catch before the process
+ * listens.
+ */
+function guardProduction(config: AppEnv): void {
+  const problem = productionMisconfiguration(config);
+  if (problem === null) return;
+  // Not a thrown ApiError: nothing is serving yet, and the operator needs to
+  // see exactly this line in the boot log.
+  console.error(`FATAL: ${problem}`);
+  process.exit(78); // EX_CONFIG, the conventional "the configuration is wrong" code.
+}
+
+/**
+ * The one refusal reason, or null. Pure, so it can be tested without exiting.
+ */
+export function productionMisconfiguration(config: AppEnv): string | null {
+  if (config.NODE_ENV !== 'production') return null;
+  if (config.JWT_SECRET === INSECURE_JWT_DEFAULT) {
+    return 'JWT_SECRET is the built-in development default in production. Set JWT_SECRET to a private 32+ byte secret.';
+  }
+  if (config.CORS_ORIGIN === '*') {
+    return 'CORS_ORIGIN is "*" in production. Set it to the terminal\'s own origin.';
+  }
+  return null;
 }
 
 export function isProduction(): boolean {

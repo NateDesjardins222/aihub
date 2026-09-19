@@ -209,6 +209,20 @@ Entries are numbered in the order they were found, not by severity.
 | **Regression test** | `terminal` 21/21 and `responsive` 50/50 at an hour when the exchange is shut. |
 | **Commit** | see below |
 
+## D-016 — Production would boot with a public, forgeable signing secret
+
+| | |
+| --- | --- |
+| **Severity** | P0 |
+| **Found by** | the production-build check — grepping the config for what a real deploy would carry |
+| **Symptom** | `JWT_SECRET` has a working default in the schema — `dev-only-insecure-secret-change-me` — so the project clones and runs. Nothing stopped a **production** server from booting on it. A server that signs real sessions with a secret printed in this repository can have its access tokens forged by anyone who has read the source: mint a token for any user id and the API cannot tell it from a real one. `CORS_ORIGIN` defaulting to `*` is the same class of thing, one notch down. |
+| **Reproduction** | `NODE_ENV=production JWT_SECRET=dev-only-insecure-secret-change-me pnpm --filter @atlas/server start` — before the fix, it listened. |
+| **Root cause** | A default that is safe only because nobody has deployed it yet. Convenient in development, catastrophic the first time it reaches production, and nothing in between said no. |
+| **Fix** | `env()` fails fast in production: with the built-in JWT secret, or a wildcard CORS origin, it prints `FATAL: …` naming the variable and the fix and exits `78` (EX_CONFIG) before the process listens. Development is untouched — the defaults still work, which is their whole point. The check is a pure function, `productionMisconfiguration`, so it is tested without exiting the test runner. |
+| **Verified end to end** | Booting the server with `NODE_ENV=production` and the default secret prints the FATAL line and refuses to listen. |
+| **Regression test** | `apps/server/src/config/env.test.ts` — four cases: the insecure secret and the wildcard origin are both refused in production, a properly configured production server boots, and development is left alone with the defaults. |
+| **Commit** | see below |
+
 ---
 
 ## Testing the tests — twelve deliberate defects
