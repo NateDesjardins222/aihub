@@ -210,6 +210,79 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
+  /*
+   * A theme change repaints EVERYTHING.
+   *
+   * Every token on the root element moves at once, which invalidates every
+   * panel, every border and the chart's own colours - and the chart has to be
+   * told separately, because a canvas does not inherit CSS. If any single
+   * interaction in this terminal is going to drop a frame, it is this one, so
+   * it is measured rather than assumed.
+   */
+  await run('theme switch', async () => {
+    await page.click('[data-testid=apprail-settings]');
+    await page.waitForSelector('.st-nav-item', { timeout: 10_000 });
+    await page.click('.st-nav-item:has-text("Theme")');
+    await page.waitForSelector('[data-theme-card]', { timeout: 10_000 });
+    await page.waitForTimeout(400);
+    for (const theme of ['MIDNIGHT', 'GRAPHITE', 'OLED', 'ATLAS_DARK']) {
+      await page.click(`[data-theme-card=${theme}]`);
+      await page.waitForTimeout(900);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+  });
+
+  /*
+   * And how long the trader waits for it: click to the token actually
+   * changing on the document, which is the moment the terminal looks
+   * different.
+   */
+  {
+    await page.click('[data-testid=apprail-settings]');
+    await page.waitForSelector('.st-nav-item', { timeout: 10_000 });
+    await page.click('.st-nav-item:has-text("Theme")');
+    await page.waitForSelector('[data-theme-card]', { timeout: 10_000 });
+    await page.waitForTimeout(400);
+    const latencies = [];
+    for (const theme of ['MIDNIGHT', 'GRAPHITE', 'OLED', 'ATLAS_DARK', 'MIDNIGHT', 'ATLAS_DARK']) {
+      const took = await page.evaluate(
+        ([id]) =>
+          new Promise((resolve) => {
+            const root = document.documentElement;
+            const before = getComputedStyle(root).getPropertyValue('--bg-base').trim();
+            const card = document.querySelector(`[data-theme-card=${id}]`);
+            if (!card) return resolve(null);
+            const started = performance.now();
+            card.click();
+            const poll = () => {
+              const now = getComputedStyle(root).getPropertyValue('--bg-base').trim();
+              if (now !== before) return resolve(performance.now() - started);
+              if (performance.now() - started > 2_000) return resolve(null);
+              requestAnimationFrame(poll);
+            };
+            requestAnimationFrame(poll);
+          }),
+        [theme],
+      );
+      if (took !== null) latencies.push(Math.round(took));
+      await page.waitForTimeout(700);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (latencies.length > 0) {
+      const sorted = [...latencies].sort((a, b) => a - b);
+      notes.push(
+        `theme applied in ${sorted[0]}-${sorted[sorted.length - 1]}ms ` +
+          `(median ${sorted[Math.floor(sorted.length / 2)]}ms over ${sorted.length} changes)`,
+      );
+      process.stdout.write(
+        `theme switch latency         median ${sorted[Math.floor(sorted.length / 2)]}ms, ` +
+          `worst ${sorted[sorted.length - 1]}ms\n`,
+      );
+    }
+  }
+
   await run('context menu', async () => {
     p = await plot();
     await page.mouse.click(p.at(0.5, 0.5).x, p.at(0.5, 0.5).y, { button: 'right' });

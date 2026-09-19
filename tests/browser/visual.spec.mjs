@@ -17,7 +17,17 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { clearDrawings, createReport, launch, litPixels, paintedBounds, shot, signIn, SHOTS } from './harness.mjs';
+import {
+  clearDrawings,
+  clearIndicators,
+  createReport,
+  launch,
+  litPixels,
+  paintedBounds,
+  shot,
+  signIn,
+  SHOTS,
+} from './harness.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const BASELINE = join(here, 'baselines', 'visual-states.json');
@@ -29,6 +39,8 @@ const { browser, page, errors } = await launch({ width: 1600, height: 950 });
 watch(page);
 
 const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : null;
+/** `--save` re-records the baseline from this run, deliberately. */
+const SAVE = process.argv.includes('--save');
 const captured = {};
 
 /**
@@ -55,10 +67,94 @@ async function capture(name) {
   return captured[name];
 }
 
+/**
+ * Record one SCREEN: where its regions sit and what it is painted with.
+ *
+ * A screen full of text and controls cannot be compared by counting lit
+ * pixels - and comparing its pixels outright would fail every time a figure
+ * in it changed, which is every run. What is stable is the layout: the
+ * fraction of the window each region occupies, how many controls it offers,
+ * and the tokens it is painted with. A panel that loses its border, a dialog
+ * that stops filling its space, a theme that half-applies - all of those move
+ * one of these numbers; a different price does not.
+ */
+async function surface(name, regions) {
+  await page.waitForTimeout(400);
+  await shot(page, `state-${name}`);
+  const viewport = page.viewportSize();
+  const measured = {};
+  for (const [label, selector] of Object.entries(regions)) {
+    const box = await page.locator(selector).first().boundingBox().catch(() => null);
+    measured[label] = box
+      ? {
+          x: Number((box.x / viewport.width).toFixed(2)),
+          y: Number((box.y / viewport.height).toFixed(2)),
+          w: Number((box.width / viewport.width).toFixed(2)),
+          h: Number((box.height / viewport.height).toFixed(2)),
+        }
+      : null;
+  }
+  const controls = await page.evaluate(
+    () => document.querySelectorAll('button, input, select, [role=button]').length,
+  );
+  const tokens = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    const read = (token) => style.getPropertyValue(token).trim();
+    return {
+      bg: read('--bg-base'),
+      panel: read('--bg-panel'),
+      text: read('--text-primary'),
+      accent: read('--accent'),
+      mode: document.documentElement.dataset.themeMode ?? 'dark',
+    };
+  });
+  captured[name] = { kind: 'surface', regions: measured, controls, tokens };
+  return captured[name];
+}
+
+/** Compare a screen's layout, its control count and its colours. */
+function compareSurface(name) {
+  const now = captured[name];
+  const then = baseline?.[name];
+  if (!then || then.kind !== 'surface') {
+    say(true, `${name}: captured (no baseline yet)`, `${now.controls} controls`);
+    return;
+  }
+  const moved = [];
+  for (const [label, box] of Object.entries(now.regions)) {
+    const was = then.regions[label];
+    if (!was || !box) {
+      if (was !== box) moved.push(`${label} ${was ? 'gone' : 'appeared'}`);
+      continue;
+    }
+    for (const key of ['x', 'y', 'w', 'h']) {
+      // Two percent of the window: a region that moves further than that has
+      // been re-laid-out, not merely re-rendered.
+      if (Math.abs(box[key] - was[key]) > 0.02) moved.push(`${label}.${key} ${was[key]}->${box[key]}`);
+    }
+  }
+  say(moved.length === 0, `${name}: laid out where the baseline had it`, moved.join(', ') || 'every region in place');
+
+  const drift = then.controls === 0 ? 0 : Math.abs(now.controls - then.controls) / then.controls;
+  say(
+    drift <= 0.15,
+    `${name}: offers the same controls`,
+    `${then.controls} -> ${now.controls}`,
+  );
+
+  const changed = Object.entries(now.tokens).filter(([key, value]) => then.tokens[key] !== value);
+  say(
+    changed.length === 0,
+    `${name}: painted with the same tokens`,
+    changed.map(([key, value]) => `${key} ${then.tokens[key]}->${value}`).join(', ') || Object.values(now.tokens).join(' '),
+  );
+}
+
 /** Compare one captured state against the baseline, if there is one. */
 function compare(name) {
   const now = captured[name];
   const then = baseline?.[name];
+  if (now?.kind === 'surface') return compareSurface(name);
   if (!then) {
     say(true, `${name}: captured (no baseline yet)`, `${now.lit} px`);
     return;
@@ -73,6 +169,21 @@ function compare(name) {
     `${name}: paints about as much as the baseline`,
     `${then.lit} -> ${now.lit} px (${(drift * 100).toFixed(0)}%)`,
   );
+}
+
+/** Put the terminal on a named theme and close the dialog behind us. */
+async function setTheme(id) {
+  if ((await page.locator('.st-dialog').count()) === 0) {
+    await page.click('[data-testid=apprail-settings]');
+    await page.waitForSelector('.st-nav-item', { timeout: 15_000 });
+  }
+  await page.click('.st-nav-item:has-text("Theme")');
+  await page.waitForSelector('[data-theme-card]', { timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await page.click(`[data-theme-card=${id}]`);
+  await page.waitForTimeout(1_200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1_000);
 }
 
 try {
@@ -149,6 +260,134 @@ try {
   compare('crosshair');
 
   await clearDrawings(page);
+  await page.keyboard.press('Escape');
+
+  /*
+   * ---------------------------------------------------------- the screens --
+   *
+   * The rest of the brief's list is not chart states: they are screens, and
+   * they are compared by their layout rather than by their pixels. See
+   * `surface` above for why.
+   */
+  /*
+   * A known theme first.
+   *
+   * These baselines record the colours each screen is painted with, so they
+   * have to start from a stated theme rather than from whatever the last
+   * suite - or the last crash - left behind.
+   */
+  await setTheme('ATLAS_DARK');
+
+  const SHELL = {
+    accountBar: '.abar',
+    rail: '.apprail',
+    chart: '[data-pane=p1] .chart-canvas',
+    ticket: '.terminal-right',
+    bottom: '.terminal-bottom',
+  };
+
+  // The terminal as a trader leaves it: one chart, blotter open.
+  await surface('terminal-dark', SHELL);
+  compare('terminal-dark');
+
+  // With indicators, one of them in a pane of its own.
+  for (const name of ['Exponential moving', 'Relative strength']) {
+    await page.click('[data-pane=p1] .chdr-btn:has-text("Indicators")');
+    await page.waitForTimeout(400);
+    await page.click(`[data-testid=indicator-catalogue] .pop-item:has-text("${name}")`);
+    await page.waitForTimeout(1_600);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
+  await surface('terminal-indicators', { ...SHELL, legend: '[data-testid=indicator-row]' });
+  compare('terminal-indicators');
+  await clearIndicators(page);
+  await page.waitForTimeout(1_200);
+
+  // Four charts.
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=layout-choices] button[data-layout=FOUR]');
+  await page.waitForTimeout(6_000);
+  await surface('terminal-four-charts', {
+    ...SHELL,
+    second: '[data-pane=p2] .chart-canvas',
+    fourth: '[data-pane=p4] .chart-canvas',
+  });
+  compare('terminal-four-charts');
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
+  await page.waitForTimeout(3_000);
+
+  // The blotter, closed and open again.
+  await page.click('.panel-head .icon-btn[title=Collapse]');
+  await page.waitForTimeout(700);
+  await surface('bottom-panel-closed', SHELL);
+  compare('bottom-panel-closed');
+  await page.click('.panel-head .icon-btn[title=Expand]');
+  await page.waitForTimeout(700);
+  await surface('bottom-panel-open', SHELL);
+  compare('bottom-panel-open');
+
+  // The Journal.
+  await page.click('[data-testid=apprail-journal]');
+  await page.waitForSelector('[data-testid=drawer-journal]', { timeout: 15_000 });
+  await page.waitForTimeout(2_500);
+  await surface('journal', { ...SHELL, journal: '[data-testid=drawer-journal]' });
+  compare('journal');
+  await page.click('[data-testid=drawer-journal] .drawer-close');
+  await page.waitForTimeout(800);
+
+  // Settings, on two of its tabs.
+  await page.click('[data-testid=apprail-settings]');
+  await page.waitForSelector('.st-nav-item', { timeout: 15_000 });
+  await page.waitForTimeout(800);
+  await surface('settings', { dialog: '.st-dialog', nav: '.st-nav', body: '.st-body' });
+  compare('settings');
+  /*
+   * Appearance is the Theme tab: the presets, the seven terminal colours and
+   * the chart's own. There is no separate "Appearance" screen to photograph,
+   * and inventing one for the manifest's sake would be a lie in a baseline.
+   */
+  await page.click('.st-nav-item:has-text("Theme")');
+  await page.waitForSelector('[data-theme-card]', { timeout: 15_000 });
+  await page.waitForTimeout(800);
+  await surface('settings-appearance', {
+    dialog: '.st-dialog',
+    nav: '.st-nav',
+    body: '.st-body',
+    themes: '[data-testid=theme-grid]',
+  });
+  compare('settings-appearance');
+
+  await page.click('[data-theme-card=CLEAN_LIGHT]');
+  await page.waitForTimeout(1_500);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1_200);
+  await surface('terminal-light', SHELL);
+  compare('terminal-light');
+
+  await setTheme('ATLAS_DARK');
+  await surface('terminal-dark-again', SHELL);
+  say(
+    JSON.stringify(captured['terminal-dark-again'].tokens) ===
+      JSON.stringify(captured['terminal-dark'].tokens),
+    'the dark theme comes back exactly as it was',
+    `${captured['terminal-dark'].tokens.bg} -> ${captured['terminal-dark-again'].tokens.bg}`,
+  );
+
+  // Narrow and wide.
+  await page.setViewportSize({ width: 1024, height: 820 });
+  await page.waitForTimeout(2_000);
+  await surface('narrow-1024', SHELL);
+  compare('narrow-1024');
+  await page.setViewportSize({ width: 2560, height: 1400 });
+  await page.waitForTimeout(2_000);
+  await surface('wide-2560', SHELL);
+  compare('wide-2560');
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.waitForTimeout(1_500);
 
   // --- the manifest --------------------------------------------------------
   /*
@@ -159,6 +398,17 @@ try {
   const manifest = {
     'blank chart': 'visual',
     crosshair: 'visual',
+    'chart with indicators': 'visual (state-terminal-indicators)',
+    'multi-chart': 'visual (state-terminal-four-charts)',
+    journal: 'visual (state-journal)',
+    settings: 'visual (state-settings)',
+    appearance: 'visual (state-settings-appearance, the Theme tab)',
+    'dark theme': 'visual (state-terminal-dark)',
+    'light theme': 'visual (state-terminal-light)',
+    'bottom panel open': 'visual (state-bottom-panel-open)',
+    'bottom panel closed': 'visual (state-bottom-panel-closed)',
+    narrow: 'visual (state-narrow-1024)',
+    wide: 'visual (state-wide-2560)',
     rectangle: 'visual',
     'rectangle, selected': 'visual',
     'trend line': 'visual',
@@ -173,7 +423,7 @@ try {
     'order modification': 'execution-interaction (execution-dragging-stop)',
   };
   say(
-    Object.keys(manifest).length === 14,
+    Object.keys(manifest).length === 25,
     'every state in the brief has a suite that captures it',
     Object.entries(manifest)
       .map(([state, suite]) => `${state} <- ${suite}`)
@@ -182,9 +432,9 @@ try {
 
   mkdirSync(dirname(BASELINE), { recursive: true });
   mkdirSync(SHOTS, { recursive: true });
-  if (!baseline) {
+  if (!baseline || SAVE) {
     writeFileSync(BASELINE, `${JSON.stringify(captured, null, 2)}\n`);
-    say(true, 'a baseline was written for the next run', BASELINE);
+    say(true, `a baseline was ${baseline ? 're-recorded' : 'written'} for the next run`, BASELINE);
   }
   writeFileSync(join(SHOTS, 'visual-states.json'), `${JSON.stringify({ captured, manifest }, null, 2)}\n`);
 
@@ -192,6 +442,8 @@ try {
 } finally {
   try {
     await clearDrawings(page);
+    // Whatever happened above, the next suite gets the default theme back.
+    await setTheme('ATLAS_DARK');
   } catch {
     /* the browser may already be gone */
   }
