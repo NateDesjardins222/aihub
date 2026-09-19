@@ -80,6 +80,44 @@ Entries are numbered in the order they were found, not by severity.
 | **Regression test** | The layout guard in `harness.mjs`. |
 | **Commit** | `6714257` |
 
+## D-006 — Every malformed request body was reported as a server fault
+
+| | |
+| --- | --- |
+| **Severity** | P2 |
+| **Found by** | `tools/diagnose-fuzz.mjs` |
+| **Symptom** | Any body that is not valid JSON — a truncated payload, a trailing comma, a bare newline, NUL bytes — came back as **HTTP 500 `INTERNAL_ERROR`, "Unexpected server error."** On every route, authenticated or not. |
+| **Reproduction** | `curl -X POST localhost:4000/api/v1/auth/login -H 'content-type: application/json' -d '{"email":'` |
+| **Root cause** | Atlas installs a **custom** `application/json` content-type parser so that an empty body can mean `{}`. On a parse failure it called `done(err)` with the raw `SyntaxError`, which carries no `statusCode` and no Fastify error code. The error handler's framework branch matches on `statusCode < 500`, could not match, and fell through to the 500. Fastify's own parser raises a `FastifyError` carrying 400 — confirmed by reproducing it in an isolated Fastify instance — and replacing that parser threw the typing away with it. A convenience cost the truth. |
+| **Consequence** | Atlas reported a client's typo as its own failure, and would page whoever watches 5xx rates for it. No leak: the fuzzer's stack-trace, path, SQL and library checks all passed. |
+| **Fix** | The parser now hands back `ApiError.badRequest('MALFORMED_JSON', …)`, which the error handler already maps. Empty bodies still read as `{}`; valid requests are unaffected. |
+| **Regression test** | `tools/diagnose-fuzz.mjs` — five malformed-body cases, each judged for "no 5xx", "not accepted" and "nothing internal leaked". |
+| **Commit** | see below |
+
+## D-007 — The execution torture harness was testing almost nothing
+
+| | |
+| --- | --- |
+| **Severity** | P1 (test integrity) |
+| **Found by** | running it for the first time |
+| **Symptom** | 250 operations reported as a torture test. The breakdown: 87 sells, 89 cancel-alls, 72 buys, 2 clear-stops. **Zero** partials, flattens, reverses, stops or targets — every one of which needs a position. |
+| **Root cause** | Two compounding mistakes of mine. The harness stepped the paused replay four events and waited 220ms after each operation, which is not enough for a market order to fill, so a position almost never existed and every position-dependent operation was skipped. And the balance invariant compared the balance against `starting + every trade the API returns` — but `/trades` returns at most a page of the most recent, and this account has months of history, so the invariant could never be satisfied and reported a failure on the first sequence. An invariant that cannot pass trains you to ignore the output. |
+| **Fix** | The harness now steps the replay until nothing is left working, so positions actually form. The balance invariant is a **delta**: between two snapshots the balance may only move by the net P&L of trades that appeared between them — which holds at any page size and is strictly stronger, because it catches a balance that moved for no reason at all. |
+| **Regression test** | The harness is the test; it now exercises what it claimed to. |
+| **Commit** | see below |
+
+## D-008 — The valuation and the positions can disagree for a moment
+
+| | |
+| --- | --- |
+| **Severity** | P3 |
+| **Found by** | `tools/exec-torture.mjs` |
+| **Symptom** | `/accounts/:id/pnl` reported 2 open contracts while `/positions` reported none. |
+| **Root cause** | Not a defect. Both figures are computed from the same `positions` rows, and the P&L route recomputes the valuation on every request — so a disagreement means the two HTTP reads straddled a fill. The terminal's own `readAll` fetches all six endpoints in parallel, so the account header can briefly disagree with the blotter by one refresh. |
+| **Fix** | None to the product. The harness now **re-reads before it accuses**, and counts a disagreement that corrects itself as read skew rather than a failure — the same discipline the performance gate needed. |
+| **Still open** | Whether the terminal should read atomically. One refresh cycle of disagreement is small, but it is the class of thing this milestone exists to notice. |
+| **Commit** | see below |
+
 ---
 
 ## Attempted and held
@@ -102,6 +140,8 @@ and because these are the attacks worth repeating on every future change.
 ## Open, and honestly open
 
 * **D-003 has no regression test yet.** The fix is in; nothing proves it stays.
-* The execution torture harness (`tools/exec-torture.mjs`) had never been run
-  when this milestone began, despite being written during the previous one.
-  It is running now; whatever it finds lands here.
+* The execution torture harness had never been run when this milestone began,
+  despite being written during the previous one. It has now been run, found
+  D-007 about itself and D-008 about the product, and been fixed.
+* D-008's open question: whether the terminal's six parallel reads should be
+  atomic.

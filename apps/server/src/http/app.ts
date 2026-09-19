@@ -64,8 +64,25 @@ export async function buildApp(): Promise<BuiltApp> {
       }
       try {
         done(null, JSON.parse(body));
-      } catch (err) {
-        done(err as Error, undefined);
+      } catch {
+        /*
+         * A body that is not JSON is the CALLER's mistake.
+         *
+         * Handing back the raw SyntaxError - which is what this did - loses
+         * the one thing the error handler needs: a status. Fastify's own
+         * parser raises a FastifyError carrying 400, but this parser replaced
+         * it to let an empty body mean `{}`, and threw that typing away with
+         * it. So every malformed body, on every route, came back as
+         * `INTERNAL_ERROR` with a 500: Atlas reporting a client's typo as its
+         * own failure, and paging whoever watches 5xx rates for it.
+         */
+        done(
+          ApiError.badRequest(
+            'MALFORMED_JSON',
+            'The request body is not valid JSON.',
+          ) as unknown as Error,
+          undefined,
+        );
       }
     },
   );

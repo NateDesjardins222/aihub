@@ -16,8 +16,9 @@
  *   2. protection fits          - a stop or target is sized to the position
  *   3. terminal is terminal     - nothing FILLED or CANCELED is still working
  *   4. an entry price exists    - iff there is a position to have one
- *   5. the balance reconciles   - starting + every closed trade, to the micro
- *   6. the contract count agrees- the valuation and the position say the same
+ *   5. the balance moves only   - by the net P&L of trades that actually closed
+ *   6. the contract count agrees- the valuation and the positions, confirmed
+ *                                 by a second read before it is believed
  *
  * A failure prints the seed and the operation index, and the same seed replays
  * the same sequence exactly.
@@ -103,23 +104,51 @@ function invariants(snapshot) {
     broken.push(`flat, but an average entry of ${position.avgEntryPrice} remains`);
   }
 
-  if (snapshot.pnl) {
-    const closed = snapshot.trades.reduce((sum, t) => sum + t.netPnlMicros, 0);
-    const expected = snapshot.pnl.startingBalanceMicros + closed;
-    if (expected !== snapshot.pnl.balanceMicros) {
-      broken.push(
-        `balance does not reconcile: starting ${snapshot.pnl.startingBalanceMicros} + closed ${closed} = ${expected}, server says ${snapshot.pnl.balanceMicros}`,
-      );
-    }
-    const open = snapshot.positions.reduce((sum, p) => sum + Math.abs(p.qty), 0);
-    if ((snapshot.pnl.openContracts ?? open) !== open) {
-      broken.push(
-        `contract count disagrees: valuation ${snapshot.pnl.openContracts}, positions ${open}`,
-      );
-    }
-  }
-
   return broken;
+}
+
+/**
+ * The balance invariant, as a DELTA.
+ *
+ * The first version of this compared the balance against starting + every
+ * trade the API returned, and reported a failure on the very first sequence.
+ * It was the invariant that was wrong: `/trades` returns at most a page of the
+ * most recent trades, and this account has months of history behind it, so
+ * "every trade" was never on offer. An invariant that cannot be satisfied is
+ * worse than no invariant - it trains you to ignore the output.
+ *
+ * What IS always true is the delta: between two snapshots, the balance may
+ * only move by the net P&L of the trades that appeared between them. That
+ * holds whatever the page size, and it is a stronger statement - it catches a
+ * balance that moved for no reason, which the absolute form could not.
+ */
+function balanceDelta(before, after) {
+  if (!before?.pnl || !after?.pnl) return null;
+  const known = new Set(before.trades.map((t) => t.id));
+  const fresh = after.trades.filter((t) => !known.has(t.id));
+  const closed = fresh.reduce((sum, t) => sum + t.netPnlMicros, 0);
+  const moved = after.pnl.balanceMicros - before.pnl.balanceMicros;
+  if (moved === closed) return null;
+  return (
+    `balance moved ${moved} micros while ${fresh.length} new trade(s) accounted for ${closed}` +
+    (fresh.length === 0 ? ' - it moved with no closed trade at all' : '')
+  );
+}
+
+/**
+ * Does the valuation's contract count agree with the positions?
+ *
+ * Both are computed from the same rows, so a disagreement means the two HTTP
+ * reads straddled a fill - which is read skew, not a defect, and it corrects
+ * itself on the next read. It is only worth reporting if it PERSISTS, so the
+ * caller re-reads before believing it. Same discipline as the performance
+ * gate: the sharpest rule has to be confirmed before it accuses.
+ */
+function contractMismatch(snapshot) {
+  if (!snapshot.pnl) return null;
+  const open = snapshot.positions.reduce((sum, p) => sum + Math.abs(p.qty), 0);
+  const stated = snapshot.pnl.openContracts ?? open;
+  return stated === open ? null : `valuation ${stated}, positions ${open}`;
 }
 
 async function submit(side, qty) {
@@ -254,6 +283,8 @@ try {
   const counts = new Map();
   let performed = 0;
   let refused = 0;
+  /** Disagreements that corrected themselves on a second read. */
+  let transient = 0;
 
   for (let sequence = 0; sequence < SEQUENCES; sequence += 1) {
     const random = rng(SEED + sequence * 7919);
@@ -277,12 +308,53 @@ try {
       // cannot masquerade as a passing torture test.
       if (result && result.ok === false) refused += 1;
 
-      // Give the matcher a market to work against, then look at the damage.
-      if (state.market.mode === 'replay') await stepReplay(page, 4);
+      /*
+       * Let the order actually FILL before looking at the damage.
+       *
+       * The first run of this harness performed 250 operations and never once
+       * exercised a partial, a flatten, a reverse or a protective level -
+       * every one of them needs a position, and in a paused replay a market
+       * order sits working until the recording moves. It was measuring
+       * submit-and-cancel and calling it a torture test.
+       *
+       * So the replay is stepped until nothing is left working, or until it is
+       * clear that nothing will fill. That is the difference between a test
+       * that opens positions and one that only asks for them.
+       */
+      if (state.market.mode === 'replay') {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          await stepReplay(page, 8);
+          await page.waitForTimeout(160);
+          const pending = await apiFetch(page, `/api/v1/orders?accountId=${state.accountId}`);
+          const working = (pending?.body?.orders ?? []).filter(
+            (o) => o.type === 'MARKET' && isWorking(o),
+          );
+          if (working.length === 0) break;
+        }
+      }
       await page.waitForTimeout(220);
 
       const after = await read();
       const broken = invariants(after);
+
+      const moved = balanceDelta(snapshot, after);
+      if (moved) broken.push(moved);
+
+      /*
+       * The contract count is re-read before it is believed: both figures come
+       * from the same rows, so a disagreement usually means the two requests
+       * straddled a fill. One that is still there a moment later is a real
+       * disagreement between two things the trader can see at once.
+       */
+      const skew = contractMismatch(after);
+      if (skew) {
+        await page.waitForTimeout(600);
+        const again = await read();
+        const persisted = contractMismatch(again);
+        if (persisted) broken.push(`contract count disagrees and stayed that way: ${persisted}`);
+        else transient += 1;
+      }
+
       for (const reason of broken) {
         failures.push({ sequence, op, operation: chosen.name, reason });
       }
@@ -318,6 +390,7 @@ try {
     `  ${[...counts.entries()].map(([name, n]) => `${name} ${n}`).join(', ')}`,
   );
   console.log(`refused by the server: ${refused} (a refusal is an outcome, not a failure)`);
+  console.log(`read skew that corrected itself on a second read: ${transient}`);
   console.log(`invariant failures:   ${failures.length}`);
   for (const failure of failures.slice(0, 20)) {
     console.log(
