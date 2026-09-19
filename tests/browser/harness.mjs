@@ -110,8 +110,44 @@ export async function signIn(page) {
   await page.waitForTimeout(3_500);
   await returnToLive(page);
   await returnToSingleChart(page);
+  await returnToDefaultChart(page);
   await returnToDefaultTheme(page);
   await returnToDefaultExecution(page);
+}
+
+/**
+ * Every suite starts on the same chart: NQ, one minute.
+ *
+ * Eleven suites say which instrument they want. The drawing suites do not -
+ * they are about tools, not instruments - so they inherited whatever the last
+ * suite left, and when that was ES at five minutes a fib drawn at the same
+ * plot fractions came out narrow enough that the pixel scan looking for its
+ * levels found none. Five failures, one cause, and nothing wrong with the
+ * product: the suite simply never said what it was drawing on.
+ *
+ * A suite that wants something else still calls `useSymbol` afterwards, and a
+ * suite that tests switching now starts from a stated place rather than an
+ * inherited one.
+ */
+export async function returnToDefaultChart(page) {
+  let changed = false;
+  const symbol = ((await page.textContent('[data-pane=p1] .chdr-symbol-root').catch(() => '')) ?? '')
+    .trim()
+    .toUpperCase();
+  if (symbol !== 'NQ') {
+    await useSymbol(page, 'NQ');
+    changed = true;
+  }
+  const active = ((await page.textContent('[data-pane=p1] .chdr-tf-on').catch(() => '')) ?? '').trim();
+  if (active !== '1m') {
+    const minute = page.locator('[data-pane=p1] .chdr-tf:text-is("1m")');
+    if ((await minute.count()) > 0) {
+      await minute.first().click();
+      await page.waitForTimeout(2_000);
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
