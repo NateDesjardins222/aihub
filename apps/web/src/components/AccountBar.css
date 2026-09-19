@@ -253,6 +253,7 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
+  min-width: 0;
   transform: translateY(var(--abar-ink-shift, 0));
 }
 
@@ -322,6 +323,10 @@
 @media (max-width: 1400px) {
   .abar-box {
     padding: 0 9px;
+  }
+
+  /* The gap lives on the group now, so the narrow rule has to follow it. */
+  .abar-box-inner {
     gap: 6px;
   }
 }
@@ -335,10 +340,29 @@
   .abar-box {
     height: 28px;
     padding: 0 7px;
+  }
+
+  .abar-box-inner {
     gap: 5px;
   }
 
   .abar-box-value {
     font-size: var(--fs-md);
+  }
+}
+
+/*
+ * Narrow enough that reserving digit room costs more than it saves.
+ *
+ * The ten characters the box holds open so the bar does not resize itself as
+ * money moves are worth it at 1680px and not at 1024px, where the four boxes
+ * are already being squeezed by the window. Below that width the figure takes
+ * the space it needs and no more, and a changing digit count moves the bar a
+ * little - which is the better trade when the alternative is a number that
+ * does not fit inside its own box.
+ */
+@media (max-width: 1300px) {
+  .abar-box-value {
+    min-width: 0;
   }
 }

@@ -208,25 +208,22 @@ export function OrderTicket(): JSX.Element {
   return (
     <div className="tk" data-testid="order-ticket">
       {/*
-        WHICH ACCOUNT, at the moment of deciding.
-        
-        It is in the account bar too, at the other end of a 1600px window. A
-        trader about to press BUY is looking HERE, and "which account was I
-        on?" is not a question worth a glance across the screen - least of all
-        for someone running several.
-      */}
-      <div className="tk-account" data-testid="ticket-account" title={account?.name ?? ''}>
-        <span className="tk-account-name">{account?.name ?? 'No account'}</span>
-        <span className="tk-account-tag">SIM</span>
-      </div>
+        WHAT IS ABOUT TO BE TRADED, AND WHOSE MONEY - on one line.
 
-      <label className="tk-field">
-        <span className="tk-label">Contract</span>
-        <div className="tk-contract">
+        The account is in the account bar too, at the other end of a 1600px
+        window; a trader about to press BUY is looking HERE, and "which
+        account was I on?" is not a question worth a glance across the screen
+        for someone running several. But it does not get a row of its own:
+        it shares the row the contract already had, which costs the ticket
+        nothing and puts both answers in one glance.
+      */}
+      <div className="tk-head" data-testid="ticket-account" title={account?.name ?? ''}>
+        <span className="tk-head-account">{account?.name ?? 'No account'}</span>
+        <span className="tk-head-contract">
           <span className="num">{instrument.activeContract.code}</span>
           <span className="tk-contract-root">{instrument.root}</span>
-        </div>
-      </label>
+        </span>
+      </div>
 
       <label className="tk-field">
         <span className="tk-label">Order type</span>

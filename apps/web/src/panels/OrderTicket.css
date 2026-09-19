@@ -383,22 +383,24 @@
 }
 
 /*
- * The account this ticket trades.
+ * The account and the contract, on one line.
  *
- * Quiet, because it is a statement of fact rather than a control: the trader
- * changes accounts in the account bar. It earns its line by being the answer
- * to the one question nobody should have to look across the window for.
+ * Two facts, no controls: the trader changes either of them elsewhere. It
+ * replaced the Contract field rather than being added above it, because the
+ * ticket has a height budget and a row that only states something has to earn
+ * its place by taking another row's.
  */
-.tk-account {
+.tk-head {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
-  padding-bottom: 2px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.tk-account-name {
+.tk-head-account {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -409,13 +411,10 @@
   font-weight: 600;
 }
 
-.tk-account-tag {
+.tk-head-contract {
   flex: 0 0 auto;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--bg-active);
-  color: var(--text-muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: var(--fs-sm);
 }

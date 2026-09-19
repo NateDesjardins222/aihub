@@ -110,6 +110,42 @@ export async function signIn(page) {
   await page.waitForTimeout(3_500);
   await returnToLive(page);
   await returnToDefaultTheme(page);
+  await returnToDefaultExecution(page);
+}
+
+/**
+ * Put the execution defaults back if a previous suite changed them.
+ *
+ * The same lesson as the theme, in a place where it costs money rather than
+ * colour: `bracketMode` is a stored preference, so a suite that switched it to
+ * AUTO hands the next one a terminal that attaches a stop and a target to
+ * every fill - and `terminal` then fails an assertion about protection
+ * appearing "merely because bracket mode is on", which is exactly what it was
+ * written to catch. State that persists is state a test inherits.
+ *
+ * Nothing is clicked when the defaults are already the defaults.
+ */
+export async function returnToDefaultExecution(page) {
+  await page.click('[data-testid=apprail-settings]').catch(() => undefined);
+  if ((await page.locator('.st-nav-item').count()) === 0) return false;
+  await page.click('.st-nav-item:has-text("Execution defaults")');
+  await page.waitForTimeout(400);
+
+  const nothing = page
+    .locator('.st-row:has(.st-row-label:text-is("On a fill")) .st-choice-btn:text-is("Nothing")')
+    .first();
+  let changed = false;
+  if ((await nothing.count()) > 0) {
+    const classes = (await nothing.getAttribute('class')) ?? '';
+    if (!classes.includes('st-choice-on')) {
+      await nothing.click();
+      changed = true;
+      await page.waitForTimeout(400);
+    }
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
+  return changed;
 }
 
 /**
