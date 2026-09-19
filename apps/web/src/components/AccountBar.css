@@ -13,6 +13,30 @@
   overflow: hidden;
 }
 
+/*
+ * NOTHING IN THIS BAR SHRINKS BELOW WHAT IT SAYS, EXCEPT THE ONE THING THAT
+ * CAN AFFORD TO.
+ *
+ * Flex items shrink by default, and every child here sets `white-space:
+ * nowrap` - so a crowded bar did not wrap the text, it CLIPPED it. At 1280px
+ * the balance box held 137px of "$100,000.00" in 134px of box, and at 1024px
+ * it held 121px in 86px: a trader's settled cash, cut off mid-figure, at six
+ * different window widths. It was invisible in a maximised window and caught
+ * by the responsive suite, which is exactly what that suite is for.
+ *
+ * The account select is the one element that may give way, because a
+ * shortened account NAME is still a name and the trader picked it, while a
+ * shortened BALANCE is a different number.
+ */
+.abar > * {
+  flex: 0 0 auto;
+}
+
+.abar-account {
+  flex: 0 1 auto;
+  min-width: 84px;
+}
+
 .abar-brand {
   display: flex;
   align-items: center;

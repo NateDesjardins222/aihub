@@ -63,14 +63,25 @@ async function send(path, { method = 'POST', token = null, raw = null, body = un
   }
 }
 
-function judge(name, result) {
+/*
+ * Three questions about one response, and `mustRefuse` decides whether the
+ * third is asked.
+ *
+ * Most of what this file sends is garbage, and garbage must be refused. Some
+ * of it is merely UNUSUAL - `2e4` is twenty thousand however it is spelled,
+ * and `-0` is zero - and a server that accepts those is right to. Demanding a
+ * refusal there would be demanding a bug.
+ */
+function judge(name, result, { mustRefuse = true } = {}) {
   check(result.status !== 0, `${name}: the server answered at all`, result.text?.slice(0, 80));
   check(result.status < 500, `${name}: no 5xx`, `HTTP ${result.status}`);
-  check(
-    result.status < 200 || result.status >= 300,
-    `${name}: was refused rather than accepted`,
-    `HTTP ${result.status}`,
-  );
+  if (mustRefuse) {
+    check(
+      result.status < 200 || result.status >= 300,
+      `${name}: was refused rather than accepted`,
+      `HTTP ${result.status}`,
+    );
+  }
   const leak = LEAKS.find((pattern) => pattern.test(result.text ?? ''));
   check(leak === undefined, `${name}: nothing internal leaked`, leak ? `matched ${leak}` : '');
 }
@@ -181,6 +192,156 @@ for (const [name, path] of [
   const result = await send(path, { method: 'GET', token });
   check(result.status < 500, `bars with ${name}: no 5xx`, `HTTP ${result.status}`);
 }
+
+// ------------------------------------------ numbers that are not numbers --
+
+/*
+ * NaN, Infinity and the numbers next to them, against every route that takes
+ * money or a price.
+ *
+ * The order route was already fuzzed this way. These are the routes that were
+ * not, and they are the ones where a bad number is expensive: a protective
+ * level is what stands between an account and an unbounded loss, the
+ * simulation environment decides how orders fill, and the rules decide when
+ * trading stops. `Infinity` cannot survive JSON, but `1e400` parses to it,
+ * `-0` is a real value that compares equal to zero, and a number beyond
+ * 2^53 stops being the number that was sent.
+ */
+/*
+ * TWO OF THESE ARE LEGITIMATE, AND THIS ROUTE PERSISTS WHAT IT ACCEPTS.
+ *
+ * A latency of twenty seconds is a legal simulation environment, so the fuzzer
+ * would leave the demo account unable to fill anything and every suite that
+ * ran afterwards would fail for reasons nothing in it could explain. The
+ * environment is read first and written back at the end. Nothing else here
+ * changes durable state.
+ */
+const environmentBefore = await send(`/api/v1/accounts/${accountId}/environment`, {
+  method: 'GET',
+  token,
+});
+check(
+  environmentBefore.status === 200,
+  'the simulation environment can be read before it is abused',
+  `HTTP ${environmentBefore.status}`,
+);
+
+const NOT_NUMBERS = [
+  ['NaN as a string', 'NaN', { mustRefuse: true }],
+  ['Infinity written as 1e400', 1e400, { mustRefuse: true }],
+  ['negative Infinity written as -1e400', -1e400, { mustRefuse: true }],
+  ['beyond the safe integers', 9007199254740993, { mustRefuse: true }],
+  ['a number as a string', '20000', { mustRefuse: true }],
+  ['a boolean', true, { mustRefuse: true }],
+  ['an array', [20000], { mustRefuse: true }],
+  ['an object', { valueOf: 20000 }, { mustRefuse: true }],
+  // Unusual, not wrong. Accepting these is correct behaviour.
+  ['negative zero', -0, { mustRefuse: false }],
+  ['a number in exponential notation', 2e4, { mustRefuse: false }],
+];
+
+for (const [name, value, how] of NOT_NUMBERS) {
+  judge(
+    `a stop price that is ${name}`,
+    await send('/api/v1/positions/NQ/protect', { token, body: { accountId, stopPrice: value } }),
+    how,
+  );
+  judge(
+    `a target price that is ${name}`,
+    await send('/api/v1/positions/NQ/protect', { token, body: { accountId, targetPrice: value } }),
+    how,
+  );
+}
+
+// The same, as RAW JSON - `NaN` and `Infinity` are not JSON at all, and a
+// parser that accepts them is a parser that will hand one to the engine.
+for (const [name, raw] of [
+  ['a bare NaN literal', `{"accountId":"${accountId}","stopPrice":NaN}`],
+  ['a bare Infinity literal', `{"accountId":"${accountId}","stopPrice":Infinity}`],
+  ['a bare -Infinity literal', `{"accountId":"${accountId}","stopPrice":-Infinity}`],
+  ['an undefined literal', `{"accountId":"${accountId}","stopPrice":undefined}`],
+]) {
+  judge(`a stop price sent as ${name}`, await send('/api/v1/positions/NQ/protect', { token, raw }));
+}
+
+// The simulation environment: latency, slippage and commission are integers
+// with stated bounds, and every one of them changes how money is made.
+for (const [name, value, how] of NOT_NUMBERS) {
+  judge(
+    `a latency of ${name}`,
+    await send(`/api/v1/accounts/${accountId}/environment`, {
+      method: 'PUT',
+      token,
+      body: { latencyMs: value },
+    }),
+    how,
+  );
+}
+for (const [name, patch] of [
+  ['a negative latency', { latencyMs: -1 }],
+  ['a latency of a day', { latencyMs: 86_400_000 }],
+  ['a fractional latency', { latencyMs: 1.5 }],
+  ['negative slippage', { marketSlippageTicks: -4 }],
+  ['absurd slippage', { marketSlippageTicks: 1e6 }],
+  ['a negative commission override', { commissionPerSideMicrosOverride: -1 }],
+  ['zero contracts per fill', { maxContractsPerFill: 0 }],
+  ['a negative contracts per fill', { maxContractsPerFill: -10 }],
+  ['an unknown fill model', { fillModel: 'MAGIC' }],
+]) {
+  judge(
+    `the environment with ${name}`,
+    await send(`/api/v1/accounts/${accountId}/environment`, { method: 'PUT', token, body: patch }),
+  );
+}
+
+// Amending an order: the same numbers, on the route that changes a live one.
+for (const [name, value, how] of NOT_NUMBERS.filter((n) => n[2].mustRefuse)) {
+  judge(
+    `an amend to a quantity of ${name}`,
+    await send(`/api/v1/orders/00000000-0000-4000-8000-000000000000?accountId=${accountId}`, {
+      method: 'PATCH',
+      token,
+      body: { qty: value },
+    }),
+    how,
+  );
+}
+
+// Put the environment back, and leave no protective level behind.
+if (environmentBefore.status === 200) {
+  const saved = JSON.parse(environmentBefore.text);
+  const restore = await send(`/api/v1/accounts/${accountId}/environment`, {
+    method: 'PUT',
+    token,
+    body: {
+      fillModel: saved.fillModel,
+      useBarRange: saved.useBarRange,
+      intrabarPolicy: saved.intrabarPolicy,
+      latencyMs: saved.latencyMs,
+      marketSlippageTicks: saved.marketSlippageTicks,
+      stopSlippageTicks: saved.stopSlippageTicks,
+      maxContractsPerFill: saved.maxContractsPerFill,
+      requireThroughTradeForLimit: saved.requireThroughTradeForLimit,
+      feesEnabled: saved.feesEnabled,
+      commissionPerSideMicrosOverride: saved.commissionPerSideMicrosOverride,
+    },
+  });
+  check(restore.status === 200, 'the simulation environment is put back exactly as it was', `HTTP ${restore.status}`);
+  const now = await send(`/api/v1/accounts/${accountId}/environment`, { method: 'GET', token });
+  check(
+    now.status === 200 && JSON.parse(now.text).latencyMs === saved.latencyMs,
+    'and reads back the latency it started with',
+  );
+}
+await send('/api/v1/positions/NQ/protect', {
+  token,
+  body: { accountId, stopPrice: null, targetPrice: null },
+});
+
+// And the account still values. A fuzzer that quietly moved money would be
+// the worst possible outcome of running one.
+const settled = await send(`/api/v1/accounts/${accountId}/pnl`, { method: 'GET', token });
+check(settled.status === 200, 'the account still values after the numeric abuse', `HTTP ${settled.status}`);
 
 // ------------------------------------------------------------ preferences --
 

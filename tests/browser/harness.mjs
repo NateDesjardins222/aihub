@@ -624,10 +624,67 @@ export async function apiFetch(page, path, init = {}) {
  */
 export async function tradableMarket(page, { symbol = 'NQ' } = {}) {
   const status = await apiFetch(page, `/api/v1/marketdata/quote?symbol=${encodeURIComponent(symbol)}`);
-  const blocked = status?.body?.freshness?.blocksOrderEntry === true;
+
+  /*
+   * TWO GATES STAND BETWEEN AN ORDER AND A FILL, AND THIS ONLY ASKED ONE.
+   *
+   * Freshness answers "how long ago did an observation ARRIVE" - the right
+   * question for a feed that has gone quiet. The market era answers "is this
+   * instrument trading" - and at 16:09 Chicago, in the CME's daily maintenance
+   * break, the answer is no while the last print is only minutes old.
+   *
+   * So the quote came back FRESH with `blocksOrderEntry: false`, this helper
+   * reported a live market, the suite clicked BUY, and the engine refused with
+   * "Market closed - NQ is closed: the feed stopped updating at the session
+   * break." The suite then said "No active position", which reads like a
+   * broken product and is really a harness that asked the wrong gate. It
+   * failed by the hour - passing all morning and failing for one hour every
+   * afternoon - which is the kind of failure that gets called flaky and
+   * ignored.
+   *
+   * Both gates, now. Anything other than an open market goes to the recording.
+   */
+  const freshnessBlocks = status?.body?.freshness?.blocksOrderEntry === true;
+  const era = status?.body?.marketState?.state ?? null;
+  const blocked = freshnessBlocks || (era !== null && era !== 'OPEN');
 
   if (!blocked) {
-    return { mode: 'live', fill: async () => page.waitForTimeout(6_000) };
+    /*
+     * WAIT FOR A PRINT, NOT FOR A CLOCK.
+     *
+     * A market order fills on the next observation, and this feed is delayed
+     * one-minute bars - so a print arrives about once a minute, and the six
+     * second wait this used to do was enough only if the test happened to
+     * click just before one. The rest of the time the suite reported "No
+     * active position", which reads like a broken product and is really a
+     * harness that did not wait. It failed by the hour, which is the worst way
+     * for a test to fail: it looks like flakiness and gets ignored.
+     *
+     * So the wait is for the CONDITION - a quote newer than the one that stood
+     * when the order was sent - with a budget generous enough for a minute
+     * bar and a cutoff that reports rather than pretends.
+     */
+    const quoteAt = async () => {
+      const quote = await apiFetch(page, `/api/v1/marketdata/quote?symbol=${encodeURIComponent(symbol)}`);
+      return quote?.body?.ts ?? quote?.body?.quote?.ts ?? quote?.body?.last ?? null;
+    };
+    return {
+      mode: 'live',
+      fill: async (budgetMs = 90_000) => {
+        const started = Date.now();
+        const before = await quoteAt();
+        while (Date.now() - started < budgetMs) {
+          await page.waitForTimeout(2_000);
+          const now = await quoteAt();
+          if (now !== null && now !== before) {
+            // The print has landed; give the engine and the terminal a beat.
+            await page.waitForTimeout(1_500);
+            return true;
+          }
+        }
+        return false;
+      },
+    };
   }
 
   await page.click('[data-testid=apprail-practice]');
@@ -644,13 +701,31 @@ export async function tradableMarket(page, { symbol = 'NQ' } = {}) {
   await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
   await page.waitForTimeout(1_000);
 
-  return {
-    mode: 'replay',
-    fill: async (count = 12) => {
-      await stepReplay(page, count);
-      await page.waitForTimeout(1_500);
-    },
-  };
+  return { mode: 'replay', fill: (count) => nudgeRecording(page, count) };
+}
+
+/**
+ * Move the recording enough for an order that was JUST SENT to find a market.
+ *
+ * In rounds, not in one push, because a click is not a request. `page.click`
+ * returns when the browser has dispatched the event; the POST it starts is
+ * still in flight. A single step raced it: the market moved, the order arrived
+ * a moment later, and then nothing else ever happened - the order sat WORKING
+ * and the suite reported "No active position" as though the product had
+ * dropped it. Several nudges spread over a couple of seconds mean the order is
+ * on the server before the last of them.
+ */
+async function nudgeRecording(page, count = 12) {
+  const rounds = 3;
+  const each = Math.max(1, Math.ceil(count / rounds));
+  // Let an in-flight submit land before the first event.
+  await page.waitForTimeout(700);
+  for (let round = 0; round < rounds; round += 1) {
+    await stepReplay(page, each);
+    await page.waitForTimeout(500);
+  }
+  await page.waitForTimeout(800);
+  return true;
 }
 
 /** Advance a paused recording by `count` market events. */

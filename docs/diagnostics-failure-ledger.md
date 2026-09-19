@@ -182,6 +182,33 @@ Entries are numbered in the order they were found, not by severity.
 | **Regression test** | `apps/web/src/api/client.test.ts`, three cases (adopt the winner's token, sign out only when the stored token is the one that failed, survive a network failure), plus `tools/diagnose-multitab.mjs` at 6/6. Both new cases are proved by mutation: `cross-tab-refresh` and `refresh-network-failure` are CAUGHT. |
 | **Commit** | see below |
 
+## D-014 — The account bar clipped the trader's own balance
+
+| | |
+| --- | --- |
+| **Severity** | P2 |
+| **Found by** | the `responsive` suite, on the first full run of this milestone |
+| **Symptom** | At **1440, 1366, 1280, 1152, 1024 and 900 pixels** the four figure boxes were narrower than the figures inside them: 137px of `$100,000.00` in a 134px box at 1280, and 121px in an 86px box at 1024. The balance was cut off mid-number. The indicator-legend and two-chart checks failed for the same reason at the same widths. |
+| **Reproduction** | `node tests/browser/responsive.spec.mjs` — 16 failures, every one of them the account bar. |
+| **Root cause** | `.abar` is a flex row and every child of it sets `white-space: nowrap`. Flex items shrink by default, so a crowded bar did not wrap the text — it **clipped** it. Nothing in the bar declared what may give way when there is not enough room, so everything gave way equally, including the numbers. |
+| **Consequence** | Invisible in a maximised window, which is where the work was done, and present on every laptop screen. A settled balance that reads `$100,000.0` is not a small visual defect. |
+| **Fix** | `.abar > * { flex: 0 0 auto }` — nothing in the bar shrinks below what it says. The account select is the single exception (`flex: 0 1 auto; min-width: 84px`), because a shortened account **name** is still the name the trader chose, and a shortened **balance** is a different number. |
+| **Regression test** | `responsive` at 50/50, including 900x680 and the two-chart layouts. |
+| **Commit** | see below |
+
+## D-015 — The suite asked one of the two gates that stand in front of an order
+
+| | |
+| --- | --- |
+| **Severity** | P1 (test integrity) |
+| **Found by** | `terminal` failing "a market order opens a position" and then dying on a 30s timeout, taking six later suites with it |
+| **Symptom** | `terminal` could not open a position, then timed out clicking a disabled Close button, crashed, and left the browser state that made `remaining-tools` report 33/51, `position-tools` 26/30, `indicators` 32/37 and four more suites short. **56 of the run's 59 failed checks came from this one failure**; `remaining-tools` scores 56/56 on its own. |
+| **Root cause** | Two independent gates stand between an order and a fill. **Freshness** answers "how long ago did an observation arrive"; the **market era** answers "is this instrument trading at all". `tradableMarket` consulted only freshness. At 16:09 Chicago — inside the CME's daily maintenance break — the last print was minutes old, so freshness said FRESH and `blocksOrderEntry: false`, while the era said CLOSED and the engine refused with *"Market closed — NQ is closed: the feed stopped updating at the session break."* The helper reported a live market and the suite traded into a shut one. It passed all morning and failed for one hour every afternoon, which is precisely the failure shape that gets called flaky and ignored. |
+| **Second cause, found on the way** | A click is not a request. `page.click` returns once the event is dispatched; the POST it starts is still in flight. The replay was nudged once, immediately — the market moved, the order arrived a moment later, and nothing else ever happened. The order sat WORKING and the suite reported "No active position" as though the product had dropped it. |
+| **Fix** | `tradableMarket` blocks on either gate, so anything other than an open market goes to the recording. `nudgeRecording` steps the recording in rounds over a couple of seconds, after a pause that lets an in-flight submit land. |
+| **Regression test** | `terminal` 21/21 and `responsive` 50/50 at an hour when the exchange is shut. |
+| **Commit** | see below |
+
 ---
 
 ## Testing the tests — twelve deliberate defects
@@ -267,3 +294,7 @@ and because these are the attacks worth repeating on every future change.
   atomic.
 * Two tabs *were* tested against refresh-token rotation, because D-009 raised
   the question. They failed: D-013, now fixed and covered.
+* **The previous milestone was pushed without a full browser run.** D-014 was
+  waiting in `responsive` the whole time, and D-015 made the first run of this
+  milestone report 59 failures of which 56 were one suite's crash. A full run
+  is now the last step before a push, not an optional one.

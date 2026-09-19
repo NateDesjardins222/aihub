@@ -18,7 +18,16 @@
     "test:browser": "node tests/browser/run.mjs",
     "audit:candles": "node tools/candle-audit.mjs",
     "audit:latency": "node tools/latency-probe.mjs",
-    "audit:drawings": "node tools/drawing-matrix.mjs"
+    "audit:drawings": "node tools/drawing-matrix.mjs",
+    "diagnose": "node tools/diagnose-all.mjs",
+    "diagnose:mutations": "node tools/diagnose-mutations.mjs",
+    "diagnose:authorization": "node tools/diagnose-authorization.mjs",
+    "diagnose:fuzz": "node tools/diagnose-fuzz.mjs",
+    "diagnose:multitab": "node tools/diagnose-multitab.mjs",
+    "diagnose:torture": "node tools/exec-torture.mjs",
+    "diagnose:latency": "node tools/exec-latency.mjs",
+    "diagnose:chaos": "node tools/diagnose-chaos.mjs",
+    "diagnose:interrupt": "node tools/diagnose-interrupt.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
