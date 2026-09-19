@@ -219,7 +219,12 @@ export function OrderTicket(): JSX.Element {
       */}
       <div className="tk-head" data-testid="ticket-account" title={account?.name ?? ''}>
         <span className="tk-head-account">{account?.name ?? 'No account'}</span>
-        <span className="tk-head-contract">
+        {/*
+          The class stays `tk-contract`: it is what this element IS, and
+          renaming it while folding the row cost a suite thirty seconds of
+          timeout and left a two-chart layout behind that broke five more.
+        */}
+        <span className="tk-contract">
           <span className="num">{instrument.activeContract.code}</span>
           <span className="tk-contract-root">{instrument.root}</span>
         </span>

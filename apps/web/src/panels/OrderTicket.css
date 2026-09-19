@@ -411,7 +411,7 @@
   font-weight: 600;
 }
 
-.tk-head-contract {
+.tk-head .tk-contract {
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;

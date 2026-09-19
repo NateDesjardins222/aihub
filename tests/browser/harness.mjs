@@ -109,8 +109,29 @@ export async function signIn(page) {
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(3_500);
   await returnToLive(page);
+  await returnToSingleChart(page);
   await returnToDefaultTheme(page);
   await returnToDefaultExecution(page);
+}
+
+/**
+ * One chart, whatever the last suite left behind.
+ *
+ * The layout is a stored preference, so a suite that died while showing four
+ * charts hands the next one a terminal where `.chart-canvas` matches several
+ * elements - and Playwright's strict mode turns that into an immediate throw.
+ * That is how ONE timeout in `multi-chart` took five more suites down with it:
+ * not one failure, but six, five of which said nothing about the product.
+ *
+ * Nothing is clicked when there is already a single chart.
+ */
+export async function returnToSingleChart(page) {
+  if ((await page.locator('[data-testid=chart-pane]').count()) <= 1) return false;
+  await page.click('[data-testid=layout-button]');
+  await page.waitForTimeout(400);
+  await page.click('[data-testid=layout-choices] button[data-layout=ONE]');
+  await page.waitForTimeout(2_500);
+  return true;
 }
 
 /**
