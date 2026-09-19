@@ -334,6 +334,15 @@ Appearance came last and was the smallest part: five themes, a colour control,
 six pixels of account bar. `docs/atlas-product-hardening-report.md` is the
 completion report.
 
+Three more came out of the last pass, each from using the thing rather than
+testing it. Reading the blotter with a real position in it: eleven columns
+spread across fourteen hundred pixels, so one row took a sweep of the head to
+read. Dropping the socket on purpose: the reconnection was already good, but
+nothing told the trader the feed had gone — a dead stream is the one failure
+that looks like nothing. And running the suites in the evening: three of them
+could only pass while the exchange was open, which made a closed market look
+like a broken product.
+
 ## Known issues carried in from before
 
 * The vendor feed is 602 seconds delayed at p50 and cannot support sub-minute

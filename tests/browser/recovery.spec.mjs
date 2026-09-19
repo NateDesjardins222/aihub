@@ -12,7 +12,15 @@
  * it, their own drawing back where they left it, or a message saying what went
  * wrong. "No exception was thrown" is not a passing grade.
  */
-import { createReport, launch, signIn, clearDrawings, shot, useSymbol } from './harness.mjs';
+import {
+  createReport,
+  launch,
+  signIn,
+  clearDrawings,
+  shot,
+  useSymbol,
+  waitFor,
+} from './harness.mjs';
 
 const { say, finish, watch } = createReport('recovery');
 const { browser, page, errors } = await launch({ width: 1600, height: 950 });
@@ -205,6 +213,81 @@ try {
   await page.waitForTimeout(4_000);
   const cleared = (await page.locator('[data-testid=save-error]').count()) === 0;
   say(cleared, 'and the warning goes away when saving works again');
+
+  // --- a slow endpoint -----------------------------------------------------
+  /*
+   * Not dead, just late.
+   *
+   * Four seconds is the worst kind of failure to handle: nothing is wrong, so
+   * nothing raises an error, and a terminal that decides the chart is empty
+   * while the answer is still in the post throws away the trader's place in
+   * the market. What it must do is keep the chart it has, say it is working,
+   * and then draw the bars when they land.
+   */
+  await page.route('**/api/v1/marketdata/bars**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    await route.continue();
+  });
+  const slowStarted = Date.now();
+  await page.click('.chdr-tf:text-is("5m")');
+  await page.waitForTimeout(1_200);
+  const midFlight = await page.evaluate(() => ({
+    canvases: document.querySelectorAll('canvas').length,
+    busy: document.querySelectorAll('[data-testid=chart-loading], .chart-loading, [aria-busy=true]').length,
+    body: (document.body.innerText ?? '').length,
+  }));
+  say(
+    midFlight.canvases > 0 && midFlight.body > 200,
+    'a slow response does not blank the terminal while it waits',
+    JSON.stringify(midFlight),
+  );
+  const landed = await waitFor(
+    page,
+    () => page.evaluate(() => window.__atlasChartView?.()?.span ?? 0),
+    (span) => span > 0,
+    { tries: 20, every: 1_000 },
+  );
+  say(landed.ok, 'and the bars arrive when they arrive', `${Date.now() - slowStarted}ms, span ${landed.value}`);
+  await page.unroute('**/api/v1/marketdata/bars**');
+  await page.click('.chdr-tf:text-is("1m")');
+  await page.waitForTimeout(3_000);
+
+  // --- a stale request that finishes late ----------------------------------
+  /*
+   * The race a terminal loses quietly.
+   *
+   * Ask for ES, wait a moment, ask for NQ: the ES answer is still coming, and
+   * it lands AFTER the NQ one. A chart that draws whatever answer arrives last
+   * is then showing NQ's name over ES's bars - no error, no warning, and a
+   * trader reading prices that belong to another instrument.
+   *
+   * The first request is held for four seconds, the second passes straight
+   * through, and the check is what the chart holds a moment after the late
+   * answer lands.
+   */
+  let held = 0;
+  await page.route('**/api/v1/marketdata/bars**', async (route) => {
+    held += 1;
+    if (held === 1) await new Promise((resolve) => setTimeout(resolve, 4_500));
+    await route.continue();
+  });
+  await useSymbol(page, 'ES');
+  await page.waitForTimeout(1_000);
+  await useSymbol(page, 'NQ');
+  // Well past the held request's arrival.
+  await page.waitForTimeout(9_000);
+  const settledOn = await page.evaluate(() => {
+    const line = document.querySelector('[data-pane=p1] [data-testid=status-line]');
+    return (line?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  });
+  const price = await page.evaluate(() => window.__atlasChartView?.()?.span ?? 0);
+  say(
+    /^NQ/.test(settledOn) && price > 0,
+    'a request that finishes late does not overwrite the symbol that replaced it',
+    `${settledOn} | span ${price}`,
+  );
+  await page.unroute('**/api/v1/marketdata/bars**');
+  await page.waitForTimeout(2_000);
 
   say(errors.length < 40, 'the console is not a wall of noise', `${errors.length} messages in all`);
 } finally {

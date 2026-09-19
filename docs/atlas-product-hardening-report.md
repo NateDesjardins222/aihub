@@ -12,7 +12,8 @@ than quietly replaced. Three words are used and are not interchangeable:
 
 * **IMPLEMENTED** — the code is there.
 * **AUTOMATED TESTED** — a check drives it and passes.
-* **MANUALLY VERIFIED** — it was used by hand and what was seen is written down.
+* **MANUALLY BROWSER VERIFIED** — it was used by hand in a browser and what was
+  seen is written down.
 
 The measurements themselves live in `docs/atlas-product-hardening-plan.md`,
 which was written before any UI was changed, exactly as the brief asked.
@@ -38,14 +39,14 @@ which was written before any UI was changed, exactly as the brief asked.
 | P1 resizable indicator panes | implemented, persisted, 14 checks |
 | P1 account panel a bit bigger | 36px → 42px bar, 15px tabular figures |
 | P1 declutter, visual system | one real finding; the rest deliberately left alone |
-| P1 customisation, themes, colour | five themes with live preview, a colour control of our own |
+| P1 customisation, themes, colour | five themes with live preview, custom themes you can save, rename, duplicate, delete and default, a colour control of our own, applied in 12ms |
 | P2 micro-interactions, menus, panels | audited from computed style, 25 checks |
 | P2 responsive 2560 → 900, tablet | extended both ends; two defects found and fixed |
 | P2 journal at scale | 1,435 trades; found a truncation the UI was hiding |
 | P2 execution UX stress | 13 checks against the engine's own state |
-| P2 failure and recovery, reloads | 14 checks |
+| P2 failure and recovery, reloads | 17 checks, plus 26 on the socket: dropped, refused, and told to the trader |
 | P3 performance regression harness | `tools/perf-check.mjs`, proved both ways |
-| P3 visual regression harness | `tests/browser/visual.spec.mjs`, 22 checks |
+| P3 visual regression harness | `tests/browser/visual.spec.mjs`: 8 chart states and 12 screens, proved both ways |
 | P3 150+ manual interaction checks | **159**, each with a readable consequence |
 
 ---
@@ -437,8 +438,26 @@ light canvas, an opacity slider, the hex to type when it matters, and the
 colours just used. It renders through a portal because it lives inside dialogs
 that clip, and it takes Escape before the dialog does.
 
-**IMPLEMENTED. AUTOMATED TESTED** (`appearance.spec.mjs`, 19 checks).
-**MANUALLY VERIFIED** — screenshots of every theme and of the picker.
+**A theme is a place to keep work, not just a preset.** Apply, customise, save
+as your own, rename, duplicate, delete, set as the default, reset. Changing a
+colour on a preset does not quietly redefine the preset: it becomes your own
+theme when you save it, and the preset is still there underneath. Deleting the
+theme you are wearing falls back rather than leaving the terminal undressed.
+
+**Seven colours build the terminal itself** — workspace, panels, borders, text,
+accent, profit, loss — and the families around them (bright, dim, the
+background tints) are derived with `color-mix` rather than typed out, so a
+changed accent moves its own hover and its own fill with it.
+
+**How long a theme takes to apply: 11–13ms**, median 12 over six changes,
+measured from the click to the moment `--bg-base` actually changes on the
+document. The frame cost of the switch — which repaints every panel and hands
+the chart a new palette — is p95 **16.8ms**, worst **33ms**, nothing over 50ms.
+Two frames.
+
+**IMPLEMENTED. AUTOMATED TESTED** (`appearance.spec.mjs`, 43 checks).
+**MANUALLY BROWSER VERIFIED** — screenshots of every theme, of the picker, and
+of the terminal in both the dark and the light theme.
 
 ---
 
@@ -470,6 +489,23 @@ Dragged taller, collapsed to 22px, reopened at the height it had rather than at
 a default, and the height survives a reload (370px → 370px). Five tabs open and
 mark themselves active. **AUTOMATED TESTED** in `responsive` and in the
 interaction pass.
+
+**And then it was read rather than tested.** Opened with a real position in it,
+the table had divided the panel's whole width between its eleven columns: the
+symbol at the far left, the Close button fourteen hundred pixels away, the
+figures scattered in between. One row took a sweep of the head to read and two
+rows lined up with each other nowhere. Every data column now takes the width of
+its content and an empty trailing column absorbs the slack, so the numbers sit
+together on the left in columns that line up down the page — which is the only
+reason a blotter is a table at all.
+
+The rule under every row went with it. Twelve rows drew twelve full-width
+lines in a panel whose entire job is the figures; a lighter rule *between*
+rows separates them with half the furniture, and the hover does the rest. No
+number became a coloured badge.
+
+**IMPLEMENTED. MANUALLY BROWSER VERIFIED** — positions, orders and trades each
+photographed with real rows in them, before and after.
 
 ---
 
@@ -536,7 +572,7 @@ screen, seven in the engine. Flatten leaves nothing working. A reload agrees.
 
 ## 27. Failure, recovery, startup and reload
 
-`recovery.spec.mjs`, 14 checks.
+`recovery.spec.mjs`, 17 checks.
 
 * **Twenty-five reloads:** median 271ms to a chart with candles on it, worst
   438ms, the workspace back all twenty-five times, no drift in DOM nodes or
@@ -552,6 +588,60 @@ screen, seven in the engine. Flatten leaves nothing working. A reload agrees.
   being swallowed — a silent failed save is only discovered on the next reload,
   when the work is already gone — and the warning clears when saving works
   again.
+* **The bars endpoint slow, not dead:** held for four seconds, the terminal
+  keeps the chart it has rather than deciding the market is empty, and draws
+  the new bars when they land.
+* **A stale request that finishes late:** ES asked for, held four and a half
+  seconds, NQ asked for and answered first. The late ES answer does not land on
+  NQ's chart — which is the race a terminal loses *quietly*, with no error and
+  no warning, showing one instrument's name over another's prices.
+
+### The socket, dropped — `reconnect.spec.mjs`, 26 checks
+
+The stream is dropped for real rather than mocked. A probe installed before the
+application starts wraps `WebSocket`, so every instance it opens, every frame
+it sends and every frame it receives is on the record; closing the live one is
+what a network does, and pointing the next attempts at a dead port is what a
+server being down looks like from a browser.
+
+| What was done to it | What happened |
+| --- | --- |
+| At rest | One socket, not one per panel; seven channels, each asked for once |
+| One drop | Back in **505ms**, one live socket, frames flowing again |
+| The re-subscribe | Same seven channels, none twice, none lost |
+| The resume | One `resume` per stream, carrying the last sequence seen |
+| Five drops in a row | Five recoveries, **one** live socket at the end — not five zombies on the same ticks |
+| Server refusing | Retried **4 times in 9 seconds**, not 400; nothing pretending to be connected |
+| Server back | Reconnects by itself in ~7s, data flowing, no reload |
+| Through all of it | Chart intact, no console error that this test did not ask for |
+
+**One thing was missing and is now there.** The reconnection was already good —
+backoff with jitter, re-subscribe, resume from the last sequence — but nothing
+ever *told the trader*. A dead feed is the one failure that looks like nothing:
+the chart keeps its last candle, the numbers keep their last value, and the
+freshness poll would not call it stale for twelve minutes. The account bar now
+says **RECONNECTING**, after a second and a half so that the ordinary
+half-second repair never reaches the screen, and goes quiet the moment frames
+flow again. The suite asserts both halves: that it appears when the feed is
+gone, and that a drop which repairs itself is not announced.
+
+Reading that bar out of hours also found it saying **CLOSED** and **MARKET
+CLOSED** — two pills, one fact. The feed pill now speaks only when the session
+does not already explain it.
+
+### A market to test in, at any hour
+
+Three suites open a position, and the platform correctly refuses order entry on
+a shut feed — so outside exchange hours they failed with "No active position",
+which reads like a broken product rather than a closed market. `tradableMarket`
+trades the live feed when it is live and a paused recording when it is not.
+`terminal` now runs green at six in the evening, and says which market it ran
+against.
+
+While fixing it, a second one: the harness recognised "a replay is running" by
+a warn-toned pill in the account bar — and out of hours the feed's own MARKET
+CLOSED pill is warn too, so every sign-in was being routed through the practice
+drawer to leave a replay that was never running. The pill has a test id now.
 
 ---
 
@@ -567,8 +657,30 @@ three. **Proved both ways** — a real run exits 0 and names what got faster; a
 doctored run exits 1 naming all three reasons while ignoring a 2.7ms wobble.
 
 **The visual harness.** `tests/browser/visual.spec.mjs` compares the structure
-of each chart state — what is painted and where — against a stored baseline,
-because exact-pixel comparison over live market data would be dishonest.
+of each state against a stored baseline, because exact-pixel comparison over
+live market data would be dishonest — the same chart looks different an hour
+later.
+
+For the **chart states** that is what is painted on the drawing layer and where:
+a blank chart, the crosshair, and a rectangle, trend line, horizontal line and
+fib each selected and not, so a selection that stopped showing handles would be
+caught.
+
+For the **screens** — which are text and controls, not paint — it is their
+layout: where each region sits as a fraction of the window, how many controls
+the screen offers, and the tokens it is painted with. Twelve of them: the
+terminal dark and light, with indicators, four charts, the blotter open and
+closed, the Journal, Settings and its Theme tab, and the terminal at 1024 and
+at 2560. A panel that loses its border, a dialog that stops filling its space
+or a theme that half-applies moves one of those numbers; a different price does
+not.
+
+**Proved both ways.** A doctored baseline — one region narrowed by nine percent
+of the window, one control count halved, one background colour changed — fails
+on exactly those three and on nothing else.
+
+It also puts the default theme back on its way out, crash or no crash: it had
+been reading its own previous run's light theme as the dark one's baseline.
 
 **The interaction pass.** `tests/browser/interaction-pass.mjs`, **159 checks**,
 run twice. Every one performs a real click, drag, keystroke or wheel and reads
@@ -656,7 +768,9 @@ as a bug:
 3. **The end-to-end A/B of the tick fix was never run under a live moving
    market.** The component measurements are solid; the whole-system one waits
    for a busy session.
-4. **Endurance was 18 minutes, not six hours.**
+4. **Endurance was sixty minutes, not six hours**, and the heap floor rose
+   2.7MB across that hour. Extrapolated it is harmless; extrapolation is not
+   observation, and the six-hour run has not been done.
 5. **Bollinger is still the only multi-line indicator with per-line controls**,
    and fans, arcs and time zones are not built.
 6. **The Quotes tab is not built** — it names itself and the milestone that
@@ -667,3 +781,11 @@ as a bug:
 8. **The indicator legend still restacks when a study is removed.** The
    accidental second removal is fixed; the movement itself is inherent to a
    list and was left alone.
+9. **Three suites cannot exercise a live market out of hours.** They now run
+   against a paused recording instead, which is a faithful market but not the
+   live one: the delayed-feed path in `terminal`, `first-run` and the manual
+   walkthrough is exercised during exchange hours only.
+10. **The reconnect suite drops the socket from inside the page.** That is a
+   real close and a real reconnect, but a proxy timing out a connection or a
+   machine waking from sleep are not the same event, and neither has been
+   tested.
