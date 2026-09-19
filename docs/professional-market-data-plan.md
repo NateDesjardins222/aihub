@@ -183,7 +183,32 @@ built and proven, and that is what the implementation phases will do.
 
 ---
 
-## 6. Status of this document
+## 6. The baseline, measured
+
+Recorded before any market-data implementation, on a clean tree at `2da6bb5`,
+on branch `claude/futures-trading-simulator-v8qefu`:
+
+| | |
+| --- | --- |
+| Browser suites | **35** |
+| Browser checks | **965**, 0 failures |
+| Manual interaction pass | **159/159** |
+| Unit tests | **728** across 40 files |
+| Performance gate | passing (re-proved both ways at the end of Product Hardening) |
+| Visual gate | 8 chart states + 12 screens; one region re-recorded for DM Sans |
+| Working tree | clean |
+
+Getting to that number took five separate pieces of **inherited state** out of
+the suite: the theme, the execution defaults, the chart layout, the chart's
+symbol and timeframe, and a drag expressed in pixels rather than ticks. Every
+one produced failures that looked like product defects and were not. They are
+worth naming here because a market-data milestone will reorder these suites
+again, and the same class of false signal would otherwise be attributed to the
+new provider.
+
+---
+
+## 7. Status of this document
 
 Phase 0 autopsy: **complete**. Phase 1 research: **complete**, in
 `docs/market-data-provider-evaluation.md`. Phase 2 recommendation: **Databento
