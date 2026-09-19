@@ -74,6 +74,36 @@ async function openPosition(side) {
 }
 
 /** Pull a protective level off the position marker. */
+/**
+ * How many pixels are worth `ticks` ticks on the chart right now.
+ *
+ * A pixel is not a distance in a market. This suite trades a PAUSED replay,
+ * whose chart holds a handful of bars, so the price axis can be six points
+ * tall - and the 120 pixels that are forty ticks on an ordinary chart become
+ * four, which is close enough that the engine refuses the level or the market
+ * is already through it. Asking the chart how tall a tick is makes the same
+ * gesture mean the same thing on every view.
+ */
+async function pixelsForTicks(ticks, tickSize = 0.25) {
+  const range = await page
+    .evaluate(() => window.__atlasChartView?.()?.priceRange ?? null)
+    .catch(() => null);
+  const box = await page.locator('[data-pane=p1] .chart-canvas').boundingBox();
+  if (!range || !box || range <= 0) return ticks * 3; // a sane fallback
+  const pixelsPerPoint = box.height / range;
+  const wanted = ticks * tickSize * pixelsPerPoint;
+  /*
+   * ...but never further than the chart can show.
+   *
+   * Forty ticks is ten NQ points, and this replay's axis is six points tall:
+   * asking for it drags the pointer off the plot entirely, and the level is
+   * dropped somewhere the chart never saw. A third of the visible height is
+   * far enough for the engine to accept the level and close enough that the
+   * gesture stays on the chart.
+   */
+  return Math.max(24, Math.round(Math.min(wanted, box.height * 0.33)));
+}
+
 async function dragOffMarker(dy) {
   const marker = await page.locator('[data-testid=marker-position]').boundingBox();
   const from = { x: marker.x + marker.width / 2, y: marker.y + marker.height / 2 };
@@ -256,8 +286,9 @@ try {
   say(/LONG/.test(await positionText()), 'the position is untouched by opening its menu');
 
   // ===== 3. the five things, told apart ====================================
-  await dragOffMarker(-120); // a target above a long
-  await dragOffMarker(120); // and a stop below it
+  // Forty ticks either side, whatever the view happens to be showing.
+  await dragOffMarker(-(await pixelsForTicks(40))); // a target above a long
+  await dragOffMarker(await pixelsForTicks(40)); // and a stop below it
   const distinct = {
     position: await rule('position'),
     stop: await rule('stop'),

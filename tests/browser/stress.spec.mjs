@@ -21,7 +21,19 @@ const COUNTS = [1, 10, 50, 100, 250];
 
 /** Write N drawings into the trader's stored drawings, then reload. */
 async function seed(count) {
-  const result = await page.evaluate(async (count) => {
+  /*
+   * Seed on the timeframe the chart is ACTUALLY showing.
+   *
+   * This used to ask for 5m bars and assume the chart was on 5m, which it was
+   * only because an earlier suite had left it there. The moment sign-in began
+   * handing every suite the same chart - NQ at one minute - the objects were
+   * anchored to times spanning thirty-three hours while the view showed two
+   * and a half, and "nothing is painted" became a statement about the
+   * viewport rather than about the drawings.
+   */
+  const timeframe =
+    ((await page.textContent('[data-pane=p1] .chdr-tf-on').catch(() => '')) ?? '').trim() || '5m';
+  const result = await page.evaluate(async ({ count, timeframe }) => {
     const refreshToken = window.localStorage.getItem('atlas.refreshToken');
     const session = await fetch('/api/v1/auth/refresh', {
       method: 'POST',
@@ -34,9 +46,10 @@ async function seed(count) {
       'content-type': 'application/json',
     };
 
-    const bars = await fetch('/api/v1/marketdata/bars?symbol=NQ&timeframe=5m&limit=400', {
-      headers: auth,
-    }).then((r) => r.json());
+    const bars = await fetch(
+      `/api/v1/marketdata/bars?symbol=NQ&timeframe=${timeframe}&limit=400`,
+      { headers: auth },
+    ).then((r) => r.json());
     const all = bars.bars ?? [];
     if (all.length < 40) return { status: 0, bytes: 0, error: `only ${all.length} bars` };
     /*
@@ -87,7 +100,7 @@ async function seed(count) {
     const body = JSON.stringify({ drawings });
     const response = await fetch('/api/v1/drawings', { method: 'PUT', headers: auth, body });
     return { status: response.status, bytes: body.length };
-  }, count);
+  }, { count, timeframe });
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
