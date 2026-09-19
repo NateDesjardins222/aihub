@@ -40,6 +40,9 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(cors, {
     origin: env().CORS_ORIGIN === '*' ? true : env().CORS_ORIGIN.split(','),
     credentials: true,
+    // The browser cannot read a response header it has not been told about,
+    // and the execution instrument needs the server's own timing.
+    exposedHeaders: ['x-atlas-ms'],
   });
 
   await app.register(rateLimit, {
@@ -107,6 +110,26 @@ export async function buildApp(): Promise<BuiltApp> {
     return reply
       .code(500)
       .send({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected server error.' } });
+  });
+
+  /*
+   * How long the server itself took.
+   *
+   * The browser can time a round trip, but a round trip is wire plus server
+   * and a trader with a slow fill deserves to know which. Every response
+   * carries the handler's own duration, so the execution instrument can
+   * report "the server decided in 3ms and the wire cost 40" rather than one
+   * number that explains nothing.
+   */
+  app.addHook('onRequest', async (request) => {
+    (request as { atlasStart?: number }).atlasStart = performance.now();
+  });
+  app.addHook('onSend', async (request, reply, payload) => {
+    const started = (request as { atlasStart?: number }).atlasStart;
+    if (started !== undefined) {
+      reply.header('x-atlas-ms', (performance.now() - started).toFixed(1));
+    }
+    return payload;
   });
 
   app.get('/health', async () => ({

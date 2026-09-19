@@ -86,3 +86,51 @@ export function bracketLevels(
         : null,
   };
 }
+
+/**
+ * Where a break-even stop goes.
+ *
+ * At the TRUE average entry the server reports - not at the price the trader
+ * clicked, not at the first fill, not at a number the client kept its own copy
+ * of. On a position built in three fills at three prices, only one of those is
+ * break even.
+ *
+ * `roundTurnMicros` is the cost of getting in and out again for ONE contract.
+ * When it is included, the stop moves far enough past the entry to cover it,
+ * rounded UP to a whole tick and away from the entry: a break-even stop that
+ * comes out a dollar behind is not break even, and rounding the trader's way
+ * would be a lie told in their favour, which is still a lie.
+ */
+export function breakEvenPrice(
+  position: ApiPosition,
+  tickSize: number,
+  tickValueMicros: number,
+  roundTurnMicros: number,
+  includeFees: boolean,
+): number | null {
+  if (position.avgEntryPrice === null || position.qty === 0) return null;
+  const entry = position.avgEntryPrice;
+  if (!includeFees || roundTurnMicros <= 0 || tickValueMicros <= 0) {
+    return snapPrice(entry, tickSize);
+  }
+  const ticks = Math.ceil(roundTurnMicros / tickValueMicros);
+  const direction = position.signedQty > 0 ? 1 : -1;
+  return snapPrice(entry + direction * ticks * tickSize, tickSize);
+}
+
+/**
+ * How many contracts a percentage means.
+ *
+ * Futures come in whole contracts, so a fraction has to land on an integer,
+ * and two rules decide which one: never zero - an order for no contracts is
+ * not an order - and never the whole position, because a partial that closes
+ * everything is a flatten wearing a disguise. A one-lot therefore has no
+ * partial at all, and the controls are disabled rather than quietly rounding
+ * to something the trader did not ask for.
+ */
+export function partialQty(qty: number, fraction: number): number {
+  const size = Math.abs(Math.trunc(qty));
+  if (size < 2) return 0;
+  const wanted = Math.round(size * fraction);
+  return Math.max(1, Math.min(size - 1, wanted));
+}

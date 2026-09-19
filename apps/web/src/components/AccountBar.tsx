@@ -309,8 +309,18 @@ function MoneyBox({
       data-testid={`account-box-${label.toLowerCase().replace(/[^a-z]/g, '')}`}
       data-tone={tone}
     >
-      <span className="abar-box-label">{label}</span>
-      <span className="num abar-box-value">{value}</span>
+      {/*
+        ONE GROUP, CENTRED - not two spans each finding their own way.
+
+        The label and the figure are different sizes in different faces, so
+        aligning them individually inside the box left the pair sitting low
+        and slightly differently in each of the four boxes. They are now a
+        single baseline-aligned group, and it is that GROUP the box centres.
+      */}
+      <span className="abar-box-inner">
+        <span className="abar-box-label">{label}</span>
+        <span className="num abar-box-value">{value}</span>
+      </span>
     </div>
   );
 }

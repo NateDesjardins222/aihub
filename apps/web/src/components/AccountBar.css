@@ -214,28 +214,71 @@
  * enough to read at a glance from a normal seating distance, not enough to
  * notice as chrome.
  */
+/*
+ * THE FOUR FIGURES A TRADER LOOKS AT.
+ *
+ * Every one of them is the same shape: a fixed height, a centred group, the
+ * same padding and the same gap. The box centres the GROUP; the group aligns
+ * the label to the figure's baseline. Four boxes hand-tuned one at a time is
+ * how they came to sit slightly differently from each other, so there is one
+ * rule here and the boxes have no say in it.
+ *
+ * `--abar-ink-shift` is the one optical adjustment. A line box is not the ink
+ * inside it: with the label and the figure in different faces at different
+ * sizes, centring the boxes leaves the visible marks a fraction low, because
+ * the space a line box reserves below the baseline for descenders is bigger
+ * than the space above the caps. The shift is measured - see the browser
+ * check in `execution-ui.spec.mjs` - rather than guessed.
+ */
 .abar-box {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
   height: 30px;
   padding: 0 13px;
   border-radius: 5px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   white-space: nowrap;
+  /*
+   * Wide enough for the figures a real account shows, so the bar does not
+   * resize itself as money moves. In `ch` of the tabular face rather than a
+   * pixel count copied off one screenshot: it follows the font, and every
+   * digit in that face is the same width by definition.
+   */
+  min-width: var(--abar-box-min, 0);
+}
+
+.abar-box-inner {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  transform: translateY(var(--abar-ink-shift, 0));
 }
 
 .abar-box-label {
   font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.06em;
+  line-height: 1;
   color: var(--text-secondary);
 }
 
 .abar-box-value {
   font-size: var(--fs-lg);
   font-weight: 600;
+  line-height: 1;
+  /*
+   * Room for the figure, in the figure's OWN units.
+   *
+   * Ten characters of a tabular face - every digit the same width by
+   * definition - which covers everything from $0.00 to $99,999.99 and every
+   * negative down to -$9,999.99 without the box changing size as the money
+   * moves. A larger balance widens it once, at startup, and then it is still.
+   * Not a pixel count copied off one screenshot: it follows the font.
+   */
+  min-width: 10ch;
+  text-align: right;
   /* Tabular figures: a P&L that changes must not make the box twitch. */
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;

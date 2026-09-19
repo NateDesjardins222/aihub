@@ -23,6 +23,24 @@ export interface ExecutionDefaults {
   readonly targetTicks: number;
   /** Ask before an order that would reverse an open position. */
   readonly confirmReverse: boolean;
+  /**
+   * Does break even mean the entry, or the entry plus getting out again?
+   *
+   * Stated rather than assumed, because both answers are defensible and a
+   * platform that silently picks one is telling a trader their stop is
+   * somewhere it is not.
+   */
+  readonly breakEvenIncludesFees: boolean;
+  /**
+   * Ask once before sending, instead of sending on the first press.
+   *
+   * OFF by default, because one-click IS the default: a trader who has chosen
+   * a side and a size has made the decision, and a dialog between them and
+   * the market is a platform second-guessing them. On, the button arms itself
+   * for a few seconds and the second press sends - which is a catch, not a
+   * dialog, and never covers the chart.
+   */
+  readonly confirmOrders: boolean;
 }
 
 export const DEFAULT_EXECUTION: ExecutionDefaults = {
@@ -31,6 +49,8 @@ export const DEFAULT_EXECUTION: ExecutionDefaults = {
   stopTicks: 40,
   targetTicks: 80,
   confirmReverse: true,
+  breakEvenIncludesFees: false,
+  confirmOrders: false,
 };
 
 interface ExecutionState {
@@ -62,6 +82,8 @@ export const useExecution = create<ExecutionState>((set, get) => ({
         stopTicks: clampTicks(input.stopTicks, DEFAULT_EXECUTION.stopTicks),
         targetTicks: clampTicks(input.targetTicks, DEFAULT_EXECUTION.targetTicks),
         confirmReverse: input.confirmReverse !== false,
+        breakEvenIncludesFees: input.breakEvenIncludesFees === true,
+        confirmOrders: input.confirmOrders === true,
       },
     });
   },

@@ -12,6 +12,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { useWorkspace, type SettingsTab } from '../state/workspace';
 import { useExecution } from '../state/execution';
+import { useAudio } from '../state/audio-store';
+import { SOUND_LABEL, tradingAudio, type TradingSound } from '../audio/trading-audio';
 import { useChartStore } from '../state/chart-store';
 import { DEFAULT_APPEARANCE } from '../chart/appearance';
 import { indicatorDef } from '../chart/indicators/registry';
@@ -56,6 +58,9 @@ export function SettingsDialog(): JSX.Element | null {
   const reset = useChartStore((s) => s.resetAppearance);
   const [confirmReset, setConfirmReset] = useState(false);
   const execution = useExecution((s) => s.defaults);
+  const audio = useAudio((s) => s.settings);
+  const setAudio = useAudio((s) => s.set);
+  const setAudioEvent = useAudio((s) => s.setEvent);
   const setExecution = useExecution((s) => s.set);
 
   /*
@@ -650,10 +655,97 @@ export function SettingsDialog(): JSX.Element | null {
                       suffix="ticks"
                     />
                   </Row>
+                  <Row
+                    label="Break even"
+                    hint="Where the BE control puts the stop"
+                  >
+                    <Choice
+                      value={execution.breakEvenIncludesFees ? 'FEES' : 'ENTRY'}
+                      options={[
+                        { id: 'ENTRY', label: 'At the average entry' },
+                        { id: 'FEES', label: 'Entry plus the round turn' },
+                      ]}
+                      onChange={(id) => setExecution({ breakEvenIncludesFees: id === 'FEES' })}
+                    />
+                  </Row>
                   <p className="st-note">
                     These distances are also where a level first lands when it is dragged off the
                     position marker. Whatever creates them, they are real working orders in an OCO
                     pair, sized to the position and matched by the same engine as everything else.
+                  </p>
+                </Group>
+
+                <Group title="Confirmation">
+                  <Row
+                    label="Before sending"
+                    hint="One-click is the default: a chosen side and size is a decision, not a draft"
+                  >
+                    <Choice
+                      value={execution.confirmOrders ? 'ARM' : 'ONE_CLICK'}
+                      options={[
+                        { id: 'ONE_CLICK', label: 'Send on the first press' },
+                        { id: 'ARM', label: 'Ask on the button' },
+                      ]}
+                      onChange={(id) => setExecution({ confirmOrders: id === 'ARM' })}
+                    />
+                  </Row>
+                  <p className="st-note">
+                    Asking happens on the BUY or SELL button itself, which turns into CONFIRM for a
+                    few seconds - never in a dialog over the chart, and never more than once.
+                    Changing the size or the instrument disarms it.
+                  </p>
+                </Group>
+
+                <Group title="Trading sounds">
+                  <Row
+                    label="Play sounds"
+                    hint="Every sound follows the server's answer, never the click"
+                  >
+                    <Check
+                      checked={audio.enabled}
+                      name="Play trading sounds"
+                      onChange={(enabled) => setAudio({ enabled })}
+                    />
+                  </Row>
+                  <Row label="Volume">
+                    <Slider
+                      value={audio.volume}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onChange={(volume) => setAudio({ volume })}
+                      format={(value) => `${Math.round(value * 100)}%`}
+                    />
+                  </Row>
+                  {(Object.keys(SOUND_LABEL) as TradingSound[]).map((sound) => (
+                    <Row key={sound} label={SOUND_LABEL[sound]}>
+                      <div className="st-inline">
+                        <Check
+                          checked={audio.events[sound]}
+                          name={SOUND_LABEL[sound]}
+                          onChange={(on) => setAudioEvent(sound, on)}
+                        />
+                        <button
+                          className="chip"
+                          data-testid={`audio-preview-${sound}`}
+                          onClick={() => tradingAudio.play(sound, true)}
+                          title="Hear it"
+                        >
+                          Preview
+                        </button>
+                      </div>
+                    </Row>
+                  ))}
+                  <p className="st-note">
+                    A fill is announced when the SERVER says it filled - pressing Buy makes no
+                    sound, and an order that never fills is never announced. An order that fills in
+                    several pieces is announced once, when the last piece lands.
+                    <br />
+                    <br />
+                    The voice assets are not final: what you are hearing now are plain development
+                    tones. The finished recordings drop into{' '}
+                    <code>apps/web/public/audio/</code> under the names in{' '}
+                    <code>trading-audio.ts</code>, and nothing else has to change.
                   </p>
                 </Group>
               </>

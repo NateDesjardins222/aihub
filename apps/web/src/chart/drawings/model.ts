@@ -376,6 +376,59 @@ export function positionMetrics(
   };
 }
 
+/**
+ * The three lines of a position tool's readout, as words.
+ *
+ * Pure, and out of the painter, because what these say is worth testing and a
+ * canvas cannot be read back. The order is deliberate: POINTS first, then the
+ * ratio - "how far" and "how many times my risk" are the two questions a
+ * planning tool exists to answer, and the money is an optional extra that only
+ * appears when a contract count has been set.
+ */
+export interface PositionReadout {
+  readonly entry: string;
+  readonly reward: string;
+  readonly risk: string;
+}
+
+export function positionReadout(
+  metrics: PositionMetrics,
+  options: {
+    readonly pricePrecision: number;
+    readonly tickValue: number;
+    readonly showTicks?: boolean;
+    readonly showMoney?: boolean;
+    readonly showRatio?: boolean;
+  },
+): PositionReadout {
+  const { pricePrecision, tickValue } = options;
+  const showTicks = options.showTicks !== false;
+  const showMoney = options.showMoney !== false;
+  const showRatio = options.showRatio !== false;
+  const cash = metrics.qty > 0 && tickValue > 0;
+
+  const money = (value: number): string =>
+    `$${Math.round(Math.abs(value)).toLocaleString('en-US')}`;
+  const points = (value: number, sign: string): string =>
+    `${sign}${value.toFixed(pricePrecision)} pts`;
+
+  const reward = [points(metrics.rewardPrice, '+')];
+  if (showRatio && metrics.ratio !== null) reward.push(`${metrics.ratio.toFixed(2)}R`);
+  if (showTicks) reward.push(`${metrics.rewardTicks}t`);
+  if (cash && showMoney) reward.push(money(metrics.rewardMoney));
+
+  const risk = [points(metrics.riskPrice, '\u2212')];
+  if (showTicks) risk.push(`${metrics.riskTicks}t`);
+  if (cash && showMoney) risk.push(money(metrics.riskMoney));
+  if (metrics.riskPercent !== null) risk.push(`${metrics.riskPercent.toFixed(2)}%`);
+
+  return {
+    entry: `Entry ${metrics.entry.toFixed(pricePrecision)}`,
+    reward: reward.join('   '),
+    risk: risk.join('   '),
+  };
+}
+
 /** The Fibonacci levels drawn by FIB_RETRACEMENT, as fractions of the range. */
 export const FIB_LEVELS: readonly number[] = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 

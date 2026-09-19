@@ -28,6 +28,7 @@ const SUITES = [
   'drag-protect',
   'execution-interaction',
   'execution-stress',
+  'execution-safety',
   'stress',
   'perf-panes',
   'pane-resize',

@@ -10,6 +10,9 @@
  */
 import { create } from 'zustand';
 import { marketStream } from '../market/stream';
+import { execLatency } from './exec-latency';
+import { tradingAudio } from '../audio/trading-audio';
+import { EMPTY_SNAPSHOT, snapshotOf, soundsFor } from '../audio/execution-events';
 import {
   tradingApi,
   type ApiAccountPnl,
@@ -65,6 +68,10 @@ let detach: (() => void) | null = null;
  * debounce to let a burst of frames settle into a single read.
  */
 const REFRESH_DEBOUNCE_MS = 250;
+
+/** The last authoritative picture a sound was decided from, and whose it was. */
+let lastSounded = EMPTY_SNAPSHOT;
+let soundAccount: string | null = null;
 let refreshTimer: number | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let refreshQueued = false;
@@ -87,6 +94,11 @@ export const useTrading = create<TradingState>((set, get) => ({
   attach(accountId) {
     if (get().accountId === accountId) return;
     detach?.();
+    // A different account's picture is not this account's history: forget it,
+    // so the first read of the new one is silent rather than announcing the
+    // difference between two unrelated accounts.
+    lastSounded = EMPTY_SNAPSHOT;
+    soundAccount = null;
     set({
       accountId,
       orders: [],
@@ -207,6 +219,49 @@ export const useTrading = create<TradingState>((set, get) => ({
         tradingApi.pnl(accountId),
         tradingApi.rules(accountId).catch(() => null),
       ]);
+      /*
+       * THE ANSWER TO A QUESTION NOBODY IS ASKING ANY MORE.
+       *
+       * Six reads are in flight for the account that was selected when this
+       * started. A trader who switches accounts while they are travelling
+       * gets them back AFTER the switch - and writing them would put account
+       * A's orders, positions, trades and P&L into a terminal that is now
+       * showing account B, with nothing on screen to say so. The chart solved
+       * this for market data with a load token; this is the same guard for
+       * money.
+       */
+      if (get().accountId !== accountId) return;
+      /*
+       * The order the trader asked for is now in authoritative state.
+       *
+       * This is the moment the round trip actually closes: not when the POST
+       * returned, but when the server's own view of the account carries the
+       * order. The instrument stops its clock here and takes the paint
+       * measurement from the frame this state produces.
+       */
+      for (const order of orders.orders) execLatency.reconciled(order.clientOrderId);
+
+      /*
+       * The only place a trading sound is decided.
+       *
+       * Server state against server state: an order that reached FILLED, a
+       * position that reached zero. No click reaches this code, which is why
+       * pressing BUY can never announce a fill that did not happen, and an
+       * order that never fills is never announced.
+       *
+       * The snapshot is per account and starts empty, so the first read after
+       * a reload or an account switch is silent - everything in it already
+       * happened, and a terminal that greets a trader by replaying this
+       * morning's fills is broken.
+       */
+      if (soundAccount === accountId) {
+        for (const sound of soundsFor(lastSounded, orders.orders, positions.positions)) {
+          tradingAudio.play(sound);
+        }
+      }
+      lastSounded = snapshotOf(orders.orders, positions.positions);
+      soundAccount = accountId;
+
       set({
         orders: orders.orders,
         positions: positions.positions,
@@ -218,9 +273,12 @@ export const useTrading = create<TradingState>((set, get) => ({
         error: null,
       });
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : 'Failed to load trading state.' });
+      // An error belongs to the account that asked for it, too.
+      if (get().accountId === accountId) {
+        set({ error: err instanceof Error ? err.message : 'Failed to load trading state.' });
+      }
     } finally {
-      set({ loading: false });
+      if (get().accountId === accountId) set({ loading: false });
     }
   },
 
@@ -228,7 +286,11 @@ export const useTrading = create<TradingState>((set, get) => ({
     const accountId = get().accountId;
     if (!accountId) return;
     try {
-      set({ pnl: await tradingApi.pnl(accountId) });
+      const pnl = await tradingApi.pnl(accountId);
+      // Same guard as readAll: a valuation that lands after the trader has
+      // moved on belongs to an account they are no longer looking at.
+      if (get().accountId !== accountId) return;
+      set({ pnl });
     } catch {
       /* the next refresh will pick it up */
     }

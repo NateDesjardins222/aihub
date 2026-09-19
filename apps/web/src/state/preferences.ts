@@ -20,6 +20,8 @@ import { useChartStore, type StoredChart } from './chart-store';
 import { useLayout, type StoredLayout } from './layout-store';
 import { useWorkspace } from './workspace';
 import { useExecution, type ExecutionDefaults } from './execution';
+import { useAudio } from './audio-store';
+import type { AudioSettings } from '../audio/trading-audio';
 
 interface StoredPreferences {
   motion?: Partial<MotionSettings>;
@@ -30,6 +32,7 @@ interface StoredPreferences {
   layout?: StoredLayout;
   workspace?: { favouriteTimeframes?: readonly Timeframe[] };
   execution?: Partial<ExecutionDefaults>;
+  audio?: Partial<AudioSettings>;
 }
 
 const WRITE_DEBOUNCE_MS = 600;
@@ -80,6 +83,7 @@ function write(): void {
       layout: useLayout.getState().snapshot(),
       workspace: { favouriteTimeframes: useWorkspace.getState().favouriteTimeframes },
       execution: useExecution.getState().snapshot(),
+      audio: useAudio.getState().snapshot(),
     };
     void preferencesApi
       .write(preferences as Record<string, unknown>)
@@ -171,6 +175,7 @@ export async function attachPreferences(): Promise<void> {
     });
     if (stored.workspace) useWorkspace.getState().restore(stored.workspace);
     if (stored.execution) useExecution.getState().restore(stored.execution);
+    if (stored.audio) useAudio.getState().restore(stored.audio);
   } catch {
     // A trader with no stored preferences is not an error; they get the
     // defaults, and the first change they make saves them.

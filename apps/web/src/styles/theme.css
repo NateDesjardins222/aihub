@@ -83,7 +83,12 @@
   --link-purple: #b184f5;
   --link-red: #ff5a5a;
 
-  --font-ui: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /*
+   * DM Sans for everything a trader READS, JetBrains Mono for everything they
+   * COUNT. Both are bundled rather than fetched, so the terminal is the same
+   * on every machine and does not depend on a font CDN to be legible.
+   */
+  --font-ui: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Type scale. */

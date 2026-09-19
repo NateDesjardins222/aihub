@@ -311,3 +311,34 @@
 .pm .dm-menu {
   pointer-events: auto;
 }
+
+/*
+ * A refusal, said where the gesture happened.
+ *
+ * Under the status line, in the middle, over the plot but out of the way of
+ * the price action: the trader's eye is already there because they just
+ * dropped something. It is a statement, not a dialog - nothing to dismiss,
+ * nothing to click - and it removes itself.
+ */
+.pm-refused {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 62%;
+  padding: 5px 11px;
+  background: var(--short-bg);
+  border: 1px solid var(--short);
+  border-radius: 5px;
+  color: var(--short-bright);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  z-index: 7;
+}
+
+/* With a replay banner in the same place, the refusal goes under it. */
+.pm-paused ~ .pm-refused {
+  top: 62px;
+}

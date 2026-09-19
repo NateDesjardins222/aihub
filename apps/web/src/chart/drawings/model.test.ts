@@ -18,6 +18,7 @@ import {
   isPositionTool,
   magnetAnchor,
   moveAnchor,
+  positionReadout,
   translate,
   positionAnchors,
   positionMetrics,
@@ -676,5 +677,71 @@ describe('position tools', () => {
     expect(hitTest(long, projection, { x: 30, y: 45 }, false)).toEqual({ kind: 'BODY' });
     expect(hitTest(long, projection, { x: 30, y: 20 }, false)).toBeNull();
     expect(hitTest(long, projection, { x: 200, y: 45 }, false)).toBeNull();
+  });
+});
+
+describe('positionReadout', () => {
+  const metrics = {
+    entry: 20000,
+    target: 20050,
+    stop: 20020,
+    rewardPrice: 50,
+    riskPrice: 20,
+    rewardTicks: 200,
+    riskTicks: 80,
+    ratio: 2.5,
+    qty: 2,
+    rewardMoney: 2000,
+    riskMoney: 800,
+    riskPercent: 1.6,
+  };
+
+  it('leads with the points and the ratio', () => {
+    const readout = positionReadout(metrics, { pricePrecision: 2, tickValue: 5 });
+    // "How far" and "how many times my risk" come before anything else.
+    expect(readout.reward.startsWith('+50.00 pts   2.50R')).toBe(true);
+  });
+
+  it('shows the risk as a distance too', () => {
+    const readout = positionReadout(metrics, { pricePrecision: 2, tickValue: 5 });
+    expect(readout.risk.startsWith('−20.00 pts')).toBe(true);
+  });
+
+  it('leaves the money out when no contracts have been set', () => {
+    const readout = positionReadout(
+      { ...metrics, qty: 0, riskPercent: null },
+      { pricePrecision: 2, tickValue: 5 },
+    );
+    expect(readout.reward).not.toMatch(/\$/);
+    expect(readout.risk).not.toMatch(/\$/);
+  });
+
+  it('adds the money when they have', () => {
+    const readout = positionReadout(metrics, { pricePrecision: 2, tickValue: 5 });
+    expect(readout.reward).toContain('$2,000');
+    expect(readout.risk).toContain('$800');
+  });
+
+  it('can be asked for the points alone', () => {
+    const readout = positionReadout(metrics, {
+      pricePrecision: 2,
+      tickValue: 5,
+      showTicks: false,
+      showMoney: false,
+      showRatio: false,
+    });
+    expect(readout.reward).toBe('+50.00 pts');
+  });
+
+  it('states the entry price plainly', () => {
+    expect(positionReadout(metrics, { pricePrecision: 2, tickValue: 5 }).entry).toBe('Entry 20000.00');
+  });
+
+  it('has no ratio to show when there is no risk', () => {
+    const readout = positionReadout(
+      { ...metrics, riskPrice: 0, riskTicks: 0, ratio: null, riskMoney: 0, riskPercent: null },
+      { pricePrecision: 2, tickValue: 5 },
+    );
+    expect(readout.reward).not.toMatch(/R\b/);
   });
 });

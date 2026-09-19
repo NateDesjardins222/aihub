@@ -293,3 +293,129 @@
   font-size: var(--fs-sm);
   line-height: 1.4;
 }
+
+/*
+ * A submission that is still in the air.
+ *
+ * Deliberately quiet: this is not a confirmation, and a trader glancing at it
+ * must not read "sending" as "filled". It says what was asked for and that
+ * Atlas is waiting for the answer, and it disappears the moment one arrives -
+ * after which the position line and the blotter are the truth.
+ */
+.tk-pending {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* One slow breath, not a strobe: a trader stares at this for hours. */
+  animation: tk-pending-breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes tk-pending-breathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-pending-dot { animation: none; opacity: 0.8; }
+}
+
+/*
+ * Managing a position that already exists.
+ *
+ * Four small controls on one line, and only while there is something to
+ * manage. They are deliberately quieter than BUY and SELL: opening a position
+ * is the decision, adjusting one is housekeeping, and the two should not
+ * compete for the eye.
+ */
+.tk-manage {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.tk-manage-btn {
+  height: var(--h-dense);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-manage-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.tk-manage-btn:disabled {
+  opacity: 0.4;
+}
+
+/*
+ * An armed button, when the trader has asked to be asked.
+ *
+ * The button becomes the question - no dialog, nothing over the chart - and
+ * it is obvious without being loud: a brighter edge and the word CONFIRM.
+ * It disarms itself after a few seconds, because a button left armed is a
+ * trap rather than a safeguard.
+ */
+.tk-armed {
+  outline: 2px solid var(--text-primary);
+  outline-offset: -2px;
+}
+
+/*
+ * The account this ticket trades.
+ *
+ * Quiet, because it is a statement of fact rather than a control: the trader
+ * changes accounts in the account bar. It earns its line by being the answer
+ * to the one question nobody should have to look across the window for.
+ */
+.tk-account {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tk-account-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.tk-account-tag {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-active);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}

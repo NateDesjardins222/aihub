@@ -15,6 +15,7 @@ import {
   handlePoints,
   isPositionTool,
   positionMetrics,
+  positionReadout,
   project,
   type Drawing,
   type Point,
@@ -298,7 +299,7 @@ export function drawDrawing(
     }
     case 'LONG_POSITION':
     case 'SHORT_POSITION': {
-      drawPosition(ctx, drawing, projection, points, pricePrecision, market);
+      drawPosition(ctx, drawing, projection, points, pricePrecision, market, state);
       break;
     }
     default: {
@@ -399,6 +400,7 @@ function drawPosition(
   points: ReadonlyArray<Point | null>,
   pricePrecision: number,
   market: PaintMarket,
+  state: PaintState,
 ): void {
   const entry = points[ENTRY];
   const target = points[TARGET];
@@ -443,78 +445,74 @@ function drawPosition(
   ctx.lineTo(right, Math.round(entry.y) + 0.5);
   ctx.stroke();
 
-  // --- the readout ---------------------------------------------------------
-  const showTicks = option(drawing, 'showTicks', true);
-  const showMoney = option(drawing, 'showMoney', true);
-  const showRatio = option(drawing, 'showRatio', true);
-  const fontSize = drawing.style.fontSize;
-  ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, monospace`;
-  ctx.textBaseline = 'middle';
-
-  const money = (value: number): string =>
-    `$${Math.round(Math.abs(value)).toLocaleString('en-US')}`;
-
-  const row = (label: string, price: number, ticks: number, cash: number | null): string => {
-    const out = [`${label} ${price.toFixed(pricePrecision)}`];
-    if (showTicks) out.push(`${ticks}t`);
-    if (cash !== null && showMoney) out.push(money(cash));
-    return out.join('   ');
-  };
-
-  const cash = metrics.qty > 0 && market.tickValue > 0;
-  const labels: Array<{ y: number; text: string; color: string }> = [
-    {
-      y: target.y,
-      text: row('Target', metrics.target, metrics.rewardTicks, cash ? metrics.rewardMoney : null),
-      color: profitColor,
-    },
-    {
-      y: stop.y,
-      text: row('Stop', metrics.stop, metrics.riskTicks, cash ? -metrics.riskMoney : null),
-      color: lossColor,
-    },
-  ];
   /*
-   * Each label at the middle of its OWN zone, and nothing where there is no
-   * room for it.
+   * --- the readout, WHEN IT IS ASKED FOR ---------------------------------
    *
-   * Drawn beside their lines, the three readouts collided the moment the
-   * zones were a few candles tall - a 40-tick target on a one-minute chart is
-   * about twenty-five pixels - and three overlapping rows of numbers is worse
-   * than none.
-   */
-  /*
-   * Behind every row, a little of the chart's own background.
+   * THE GEOMETRY SHOWS THE TRADE. THE NUMBERS APPEAR WHEN YOU INSPECT IT.
    *
-   * Numbers read over a candle wick are not numbers. The backing is the
-   * workspace colour at 62%, sized to the text, so the price action is still
-   * visible through it.
+   * At rest this tool is two coloured zones and an entry line, and that is
+   * deliberate: a chart with four planned trades on it used to carry twelve
+   * rows of text, and the plan - which is a shape, read at a glance - was the
+   * thing hardest to see. Hovering or selecting one brings its numbers back.
+   *
+   * What comes back first is what a trader actually asks a planning tool:
+   * how far, and how many times my risk. Points and R. The money follows only
+   * when a contract count has been set, and the account percentage only when
+   * an account size has - neither is invented, and neither is on screen by
+   * default.
    */
-  const textRow = (text: string, x: number, y: number, color: string): void => {
-    const width = ctx.measureText(text).width;
-    ctx.fillStyle = 'rgba(7, 9, 13, 0.62)';
-    ctx.fillRect(x - 3, y - fontSize * 0.72, width + 6, fontSize * 1.45);
-    ctx.fillStyle = withAlpha(color, 1);
-    ctx.fillText(text, x, y);
-  };
+  const inspected = state === 'HOVER' || state === 'SELECTED' || state === 'PENDING';
+  if (inspected) {
+    const fontSize = drawing.style.fontSize;
+    ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, monospace`;
+    ctx.textBaseline = 'middle';
 
-  for (const label of labels) {
-    const height = Math.abs(label.y - entry.y);
-    if (height < fontSize + 2) continue;
-    textRow(label.text, left + 6, (label.y + entry.y) / 2, label.color);
+    const readout = positionReadout(metrics, {
+      pricePrecision,
+      tickValue: market.tickValue,
+      showTicks: option(drawing, 'showTicks', true),
+      showMoney: option(drawing, 'showMoney', true),
+      showRatio: option(drawing, 'showRatio', true),
+    });
+
+    /*
+     * Behind every row, a little of the chart's own background.
+     *
+     * Numbers read over a candle wick are not numbers. The backing is the
+     * workspace colour at 62%, sized to the text, so the price action is
+     * still visible through it.
+     */
+    const textRow = (text: string, x: number, y: number, color: string): void => {
+      const width = ctx.measureText(text).width;
+      ctx.fillStyle = 'rgba(7, 9, 13, 0.62)';
+      ctx.fillRect(x - 3, y - fontSize * 0.72, width + 6, fontSize * 1.45);
+      ctx.fillStyle = withAlpha(color, 1);
+      ctx.fillText(text, x, y);
+    };
+
+    /*
+     * Each row at the middle of its OWN zone, and nothing where there is no
+     * room for it. A 40-tick target on a one-minute chart is about
+     * twenty-five pixels, and two rows of numbers overlapping is worse than
+     * one row missing.
+     */
+    const rows: Array<{ y: number; text: string; color: string }> = [
+      { y: target.y, text: readout.reward, color: profitColor },
+      { y: stop.y, text: readout.risk, color: lossColor },
+    ];
+    for (const row of rows) {
+      if (Math.abs(row.y - entry.y) < fontSize + 2) continue;
+      textRow(row.text, left + 6, (row.y + entry.y) / 2, row.color);
+    }
+
+    // The entry price itself, above the box and clear of both zones.
+    textRow(
+      readout.entry,
+      left + 6,
+      Math.min(target.y, stop.y, entry.y) - fontSize * 0.8,
+      drawing.style.color,
+    );
   }
-
-  // The summary sits ABOVE the box, clear of both zones.
-  const summary: string[] = [`Entry ${metrics.entry.toFixed(pricePrecision)}`];
-  if (showRatio && metrics.ratio !== null) summary.push(`R:R ${metrics.ratio.toFixed(2)}`);
-  if (metrics.qty > 0) summary.push(`${metrics.qty}x`);
-  if (metrics.riskPercent !== null) summary.push(`${metrics.riskPercent.toFixed(2)}% of account`);
-  textRow(
-    summary.join('   '),
-    left + 6,
-    Math.min(target.y, stop.y, entry.y) - fontSize * 0.8,
-    drawing.style.color,
-  );
 
   if (drawing.style.showPrice) {
     priceTag(ctx, projection, entry.y, metrics.entry, drawing.style.color, pricePrecision);

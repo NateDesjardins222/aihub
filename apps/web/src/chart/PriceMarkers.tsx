@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { ChartAdapter } from './ChartAdapter';
 import { newClientOrderId, tradingApi, type ApiOrder, type ApiPosition } from '../trading/api';
+import { describeRejection } from '../trading/rejection';
 import { useTrading } from '../trading/store';
 import { MASK, useTraining } from '../state/training';
 import { useSession } from '../state/session';
@@ -121,6 +122,20 @@ export function PriceMarkers({
   const positions = useTrading((s) => s.positions);
   const refresh = useTrading((s) => s.refresh);
   const setRejection = useTrading((s) => s.setRejection);
+  const rejection = useTrading((s) => s.lastRejection);
+
+  /*
+   * A refusal takes itself away.
+   *
+   * Long enough to read twice, and gone before it becomes part of the
+   * furniture. It is not an error log; it is one sentence about the thing the
+   * trader just tried to do.
+   */
+  useEffect(() => {
+    if (!rejection) return undefined;
+    const timer = window.setTimeout(() => setRejection(null), 7_000);
+    return () => window.clearTimeout(timer);
+  }, [rejection, setRejection]);
   const showPnl = useTraining((s) => s.visibility.pnl);
   const focus = useSession((s) => s.chartFocus);
   const clearFocus = useSession((s) => s.focusTrade);
@@ -198,8 +213,14 @@ export function PriceMarkers({
         const detail = err as { code?: string; message?: string };
         setRejection({
           code: detail.code ?? 'ERROR',
-          message: detail.message ?? 'The request was not accepted.',
+          message: describeRejection(err) || (detail.message ?? 'The request was not accepted.'),
         });
+        // The chart is showing the level where the trader dropped it and the
+        // server has just said no. Read authoritative state back so the line
+        // returns to where the order actually is - a chart that keeps the
+        // refused position is the client and the server disagreeing in
+        // silence, which is the one thing a trading terminal must never do.
+        await refresh().catch(() => undefined);
       } finally {
         setBusy(false);
       }
@@ -785,6 +806,20 @@ export function PriceMarkers({
         <div className="pm-paused" title="The replay is paused: nothing can fill until it moves">
           <Icon name="pause" size={11} />
           REPLAY PAUSED
+        </div>
+      ) : null}
+
+      {/*
+        WHAT THE SERVER SAID NO TO.
+
+        A refusal used to be recorded in the store and shown nowhere at all:
+        a stop dragged somewhere the engine will not take it simply sprang
+        back, with no word about why. It says why now, where the gesture
+        happened, and it takes itself away.
+      */}
+      {rejection ? (
+        <div className="pm-refused" role="alert" data-testid="marker-rejected">
+          {rejection.message}
         </div>
       ) : null}
 

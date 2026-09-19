@@ -90,12 +90,29 @@ async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/**
+ * The server's own processing time for the last request, in milliseconds.
+ *
+ * Read from the `x-atlas-ms` header the API sets on every response. It is
+ * what separates "Atlas took a while to decide" from "the wire took a while",
+ * and the execution instrument reports the two as different numbers rather
+ * than as one unhelpful total.
+ */
+let lastServerMs: number | null = null;
+
+export function serverMsOfLastRequest(): number | null {
+  return lastServerMs;
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response = await raw(path, init);
 
   if (response.status === 401 && (await tryRefresh())) {
     response = await raw(path, init);
   }
+
+  const stamp = Number(response.headers.get('x-atlas-ms'));
+  lastServerMs = Number.isFinite(stamp) ? stamp : null;
 
   const body = await parse(response);
   if (!response.ok) {
