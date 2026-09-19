@@ -223,6 +223,19 @@ Entries are numbered in the order they were found, not by severity.
 | **Regression test** | `apps/server/src/config/env.test.ts` — four cases: the insecure secret and the wildcard origin are both refused in production, a properly configured production server boots, and development is left alone with the defaults. |
 | **Commit** | see below |
 
+## D-017 — The suites were not order-independent, and a shuffle proved it
+
+| | |
+| --- | --- |
+| **Severity** | P1 (test integrity) |
+| **Found by** | `node tests/browser/run.mjs --shuffle` — running the suites in a dealt order rather than the one they were written in |
+| **Symptom** | In the fixed order, 34 of 35 suites passed (the 35th a self-inflicted API restart). Dealt a random order, **27 checks failed across 15 suites**, and — the tell — several failed **run in isolation too**, which meant the fixed order had been hiding real coupling, not creating it. |
+| **Root causes, two** | **(a) Account litter the market could not sweep.** Sign-in's `returnToLive` switches the market provider, which the engine refuses while a position is open (`OPEN_POSITION_BLOCKS_SWITCH`, HTTP 400 — correct). A suite that died holding a position left that 400 in the console, and the next suite failed its own "no page errors" check on it. Worse, the position could not always be flattened: the engine will not fill a market order into a CLOSED session era, so a position left open while the exchange was trading became un-closeable once it shut. **(b) Inherited chart style.** The style button's tooltip is the current style's name; `drawing-engine` switches to Bars and waited, in a later step, on `.chdr-icon[title="Candles"]` — which no longer existed once the style was Bars. Run cold, it timed out on its own leftover. |
+| **Fix** | `returnToLive` now clears open positions **before** switching, so the refused 400 never happens, and falls back to the account's administrative **reset** when a closed market makes a position un-flattenable — the right tool for a test account's litter. `returnToDefaultChart` resets the chart style to Candles, the same way it already reset the symbol and timeframe. |
+| **Regression test** | `drawing-engine` passes 36/36 run cold and run twice back to back; the `--shuffle` runner exists so this class is caught deliberately rather than by luck. |
+| **Note** | This is the same lesson as D-004, one layer deeper: five kinds of inherited state were found then, two more here. The suites now reset symbol, timeframe, **style**, theme, execution defaults, layout, live-vs-replay, and any open position, at every sign-in. |
+| **Commit** | see below |
+
 ---
 
 ## Testing the tests — twelve deliberate defects

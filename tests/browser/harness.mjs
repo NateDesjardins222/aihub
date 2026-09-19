@@ -147,6 +147,37 @@ export async function returnToDefaultChart(page) {
       changed = true;
     }
   }
+
+  /*
+   * And the chart STYLE, for the same reason as the symbol.
+   *
+   * The style button's tooltip is the current style's name, so a suite that
+   * switched to Bars and did not switch back hands the next one a header whose
+   * style control is labelled "Bars" - and any suite that waits on
+   * `.chdr-icon[title="Candles"]` to open the style menu then times out on a
+   * selector that no longer exists. `drawing-engine` run cold did exactly that.
+   * Style is a stored preference like the rest, so it is put back to Candles.
+   */
+  const otherStyles = [
+    'Hollow candles',
+    'Bars',
+    'Line',
+    'Line with markers',
+    'Area',
+    'Baseline',
+    'Heikin Ashi',
+    'Renko',
+  ];
+  for (const style of otherStyles) {
+    const button = page.locator(`[data-pane=p1] .chdr-icon[title="${style}"]`);
+    if ((await button.count()) === 0) continue;
+    await button.first().click().catch(() => undefined);
+    await page.waitForTimeout(300);
+    await page.click('.popover .pop-item:has-text("Candles")').catch(() => undefined);
+    await page.waitForTimeout(600);
+    changed = true;
+    break;
+  }
   return changed;
 }
 
@@ -286,17 +317,20 @@ export async function returnToLive(page) {
           body: JSON.stringify({ provider: 'live' }),
         });
 
-      if ((await toLive()).ok) return;
-
       /*
-       * Refused, which means something is still open.
+       * CLEAR WHAT IS OPEN BEFORE ASKING, NOT AFTER BEING REFUSED.
        *
-       * A suite that died mid-trade leaves a position and its protective
-       * orders behind, and the platform - correctly - will not change the
-       * market underneath them. For a TEST account that is not a decision to
-       * respect: it is the previous run's litter, and every suite after it
-       * would be handed a chart with three bars on it. Cancel, flatten in the
-       * market the position belongs to, and then go home.
+       * The platform will not change the market a position is priced against,
+       * and it is right not to - `OPEN_POSITION_BLOCKS_SWITCH`, HTTP 400. This
+       * used to switch first and clean up on the refusal, which worked, but the
+       * refused POST left a 400 in the browser console - and a suite run cold,
+       * after a torture or a probe left a position behind, then failed its own
+       * "no page errors" check on litter the harness itself had caused. It
+       * reproduced in isolation, which is what unmasked it. See D-017.
+       *
+       * So the litter is cleared unconditionally first: for a TEST account a
+       * leftover position is the previous run's, not a decision to respect.
+       * Only then is the switch asked, and it succeeds on the first try.
        */
       const accounts = await fetch('/api/v1/accounts', { headers: auth })
         .then((r) => r.json())
@@ -330,6 +364,30 @@ export async function returnToLive(page) {
             .then((r) => r.json())
             .catch(() => null);
           if (!now || (now.openContracts ?? 0) === 0) break;
+        }
+
+        /*
+         * If flattening did not clear it, RESET the account.
+         *
+         * The engine will not fill a market order into a CLOSED session era -
+         * correctly - so a suite that died holding a position while the
+         * exchange was open cannot be flattened once it shuts. The position is
+         * then un-closeable by trading until the market reopens, and every
+         * cold run after it fails on litter nothing could sweep. For a test
+         * account the administrative reset is exactly the right tool: it starts
+         * the account flat with no history, which is the clean slate a suite
+         * assumes. It runs only as a fallback, only for an account still
+         * holding something.
+         */
+        const stuck = await fetch(`/api/v1/accounts/${account.id}/pnl`, { headers: auth })
+          .then((r) => r.json())
+          .catch(() => null);
+        if (stuck && (stuck.openContracts ?? 0) !== 0) {
+          await fetch(`/api/v1/accounts/${account.id}/reset`, {
+            method: 'POST',
+            headers: auth,
+            body: JSON.stringify({}),
+          }).catch(() => undefined);
         }
       }
       await toLive();
