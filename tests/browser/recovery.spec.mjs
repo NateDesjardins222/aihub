@@ -224,22 +224,36 @@ try {
    * the market. What it must do is keep the chart it has, say it is working,
    * and then draw the bars when they land.
    */
+  /*
+   * `continue()` can lose the race with `unroute`, and that is not a finding:
+   * a request parked in this handler while the route is torn down has already
+   * been dealt with by the time the sleep ends.
+   */
+  const continueQuietly = (route) => route.continue().catch(() => undefined);
   await page.route('**/api/v1/marketdata/bars**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 4_000));
-    await route.continue();
+    await continueQuietly(route);
   });
   const slowStarted = Date.now();
   await page.click('.chdr-tf:text-is("5m")');
   await page.waitForTimeout(1_200);
-  const midFlight = await page.evaluate(() => ({
-    canvases: document.querySelectorAll('canvas').length,
-    busy: document.querySelectorAll('[data-testid=chart-loading], .chart-loading, [aria-busy=true]').length,
-    body: (document.body.innerText ?? '').length,
-  }));
+  const midFlight = await page.evaluate(() => {
+    const overlay = document.querySelector('[data-pane=p1] .chart-overlay');
+    return {
+      canvases: document.querySelectorAll('canvas').length,
+      waiting: (overlay?.textContent ?? '').trim(),
+      body: (document.body.innerText ?? '').length,
+    };
+  });
   say(
     midFlight.canvases > 0 && midFlight.body > 200,
     'a slow response does not blank the terminal while it waits',
     JSON.stringify(midFlight),
+  );
+  say(
+    midFlight.waiting.length > 0,
+    'and says it is waiting rather than showing a chart that has simply stopped',
+    midFlight.waiting || 'nothing said',
   );
   const landed = await waitFor(
     page,
@@ -269,7 +283,7 @@ try {
   await page.route('**/api/v1/marketdata/bars**', async (route) => {
     held += 1;
     if (held === 1) await new Promise((resolve) => setTimeout(resolve, 4_500));
-    await route.continue();
+    await continueQuietly(route);
   });
   await useSymbol(page, 'ES');
   await page.waitForTimeout(1_000);

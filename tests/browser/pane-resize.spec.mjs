@@ -83,22 +83,37 @@ try {
   const single = await paneHeights();
   say(single.length === 1, 'a chart with no study has one pane', `${single.join('/')}px`);
 
+  const plot = await page.locator('.chart-canvas').boundingBox();
+  const x = plot.x + plot.width * 0.4;
+
   await addIndicator('Relative strength');
-  const withRsi = await paneHeights();
-  say(withRsi.length === 2, 'a study opens a pane of its own', `${withRsi.join('/')}px`);
+  const opened = await settled();
+  say(opened.length === 2, 'a study opens a pane of its own', `${opened.join('/')}px`);
+
+  /*
+   * Back to the default proportions first - deliberately.
+   *
+   * A split this suite dragged on its LAST run is still saved, because that is
+   * the feature: a pane keeps the size its trader gave it. So the default
+   * cannot be asserted straight after opening a pane; it has to be asked for,
+   * the way the product says to ask - a double-click on the separator.
+   */
+  const opening = (await handles())[0];
+  if (opening) {
+    await page.mouse.dblclick(x, opening.y);
+    await page.waitForTimeout(900);
+  }
+  const withRsi = await settled();
   say(
     withRsi[0] > withRsi[1] * 2,
-    'and the price keeps most of the height',
-    `${withRsi.join('/')}px`,
+    'and a double-click puts the price back in most of the height',
+    `${opened.join('/')} -> ${withRsi.join('/')}px`,
   );
 
   const grips = await handles();
   say(grips.length === 1, 'there is a grip between them', JSON.stringify(grips));
   say((grips[0]?.h ?? 0) >= 8, 'and it is a target a hand can hit', `${grips[0]?.h}px tall`);
   say(!!grips[0]?.title, 'which says what it does', grips[0]?.title ?? '');
-
-  const box = await page.locator('.chart-canvas').boundingBox();
-  const x = box.x + box.width * 0.4;
 
   // --- drag ---------------------------------------------------------------
   const dragTo = async (dy) => {

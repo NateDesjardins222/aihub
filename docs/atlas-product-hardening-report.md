@@ -572,7 +572,7 @@ screen, seven in the engine. Flatten leaves nothing working. A reload agrees.
 
 ## 27. Failure, recovery, startup and reload
 
-`recovery.spec.mjs`, 17 checks.
+`recovery.spec.mjs`, 19 checks.
 
 * **Twenty-five reloads:** median 271ms to a chart with candles on it, worst
   438ms, the workspace back all twenty-five times, no drift in DOM nodes or
@@ -589,12 +589,19 @@ screen, seven in the engine. Flatten leaves nothing working. A reload agrees.
   when the work is already gone — and the warning clears when saving works
   again.
 * **The bars endpoint slow, not dead:** held for four seconds, the terminal
-  keeps the chart it has rather than deciding the market is empty, and draws
-  the new bars when they land.
+  keeps the chart it has rather than deciding the market is empty, says
+  "Loading real market history…" while it waits, and draws the new bars when
+  they land. (The first version of this check looked for a loading marker
+  under the wrong selector and found none. Had it been written up as it read,
+  the report would have claimed a missing loading state that has been there
+  all along.)
 * **A stale request that finishes late:** ES asked for, held four and a half
   seconds, NQ asked for and answered first. The late ES answer does not land on
   NQ's chart — which is the race a terminal loses *quietly*, with no error and
-  no warning, showing one instrument's name over another's prices.
+  no warning, showing one instrument's name over another's prices. The
+  mechanism was already there (`loadTokenRef` discards the answer to a
+  question nobody is asking any more); what was missing was anything proving
+  it.
 
 ### The socket, dropped — `reconnect.spec.mjs`, 26 checks
 

@@ -109,6 +109,35 @@ export async function signIn(page) {
   await page.waitForSelector('.chart-canvas canvas', { timeout: 40_000 });
   await page.waitForTimeout(3_500);
   await returnToLive(page);
+  await returnToDefaultTheme(page);
+}
+
+/**
+ * Put the terminal back on the default theme if a previous suite left it
+ * somewhere else.
+ *
+ * The suites share one account, and a theme is a stored preference, so a run
+ * that ended in Clean Light hands the next suite a terminal painted in
+ * different colours - which is how `drag-protect` came to read a stop's fill
+ * as rgb(217,58,49) and call it a defect. Nothing is clicked when the theme
+ * is already the default, so this costs nothing in the ordinary case.
+ */
+export async function returnToDefaultTheme(page) {
+  const current = await page
+    .evaluate(() => document.documentElement.dataset.theme ?? null)
+    .catch(() => null);
+  if (current === null || current === 'ATLAS_DARK') return current;
+
+  await page.click('[data-testid=apprail-settings]');
+  await page.waitForSelector('.st-nav-item', { timeout: 15_000 });
+  await page.click('.st-nav-item:has-text("Theme")');
+  await page.waitForSelector('[data-theme-card]', { timeout: 15_000 });
+  await page.waitForTimeout(400);
+  await page.click('[data-theme-card=ATLAS_DARK]');
+  await page.waitForTimeout(1_200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1_000);
+  return current;
 }
 
 /**
