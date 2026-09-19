@@ -663,6 +663,22 @@ over 50ms may not start having them; long tasks may not grow by more than
 three. **Proved both ways** — a real run exits 0 and names what got faster; a
 doctored run exits 1 naming all three reasons while ignoring a 2.7ms wobble.
 
+**And then the gate itself was wrong, and was fixed.** The final run fired on
+`bottom panel resize` and `order panel resize` — each had gained a single
+frame over 50ms. An interleaved A/B against the build from before this
+milestone's last change produced the same stray frames on the UNCHANGED build,
+in two runs out of eight, on each scenario: those two are the only scenarios
+already sitting at p95 33ms, so one scheduling hiccup crosses the line. The
+rule now re-measures the accused scenario — only that one, so it costs a
+minute rather than a run — and the claim stands only if it happens again.
+Re-proved both ways: the doctored run still fails on p95 and long tasks
+immediately, an over-50 claim that repeats is counted, and one that does not
+is reported and dismissed rather than silently dropped.
+
+That is the second measuring instrument this milestone had to correct before
+it could be believed, and it is the same lesson as the first: **an instrument
+that cries wolf and an instrument that sleeps are the same instrument.**
+
 **The visual harness.** `tests/browser/visual.spec.mjs` compares the structure
 of each state against a stored baseline, because exact-pixel comparison over
 live market data would be dishonest — the same chart looks different an hour

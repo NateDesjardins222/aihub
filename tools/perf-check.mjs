@@ -16,8 +16,10 @@
  *
  *   - p95 has to get worse by BOTH 8ms and a half again before it counts. A
  *     16.7ms frame becoming 18ms is noise; becoming 33ms is a dropped frame.
- *   - a scenario that had no frame over 50ms may not start having them. That
- *     is the threshold a hand feels, and zero is a fact rather than an average.
+ *   - a scenario that had no frame over 50ms may not start having them - and
+ *     the claim is re-measured before it counts. That is the threshold a hand
+ *     feels, and zero is a fact rather than an average, but a single stray
+ *     frame on a shared machine happens to an unchanged build too.
  *   - long tasks may not grow by more than three. A long task is 50ms of the
  *     main thread with nothing else able to run.
  *
@@ -68,6 +70,10 @@ const byName = new Map(baseline.rows.map((row) => [row.scenario, row]));
 const regressions = [];
 const improvements = [];
 const missing = [];
+/** Over-50ms claims, held back until a second run agrees with them. */
+const suspects = [];
+/** Claims a second run did not repeat. Reported, not counted. */
+const dismissed = [];
 
 for (const now of run.rows) {
   const then = byName.get(now.scenario);
@@ -89,7 +95,12 @@ for (const now of run.rows) {
   const over50Then = number(then.over50) ?? 0;
   const over50Now = number(now.over50) ?? 0;
   if (over50Then === 0 && over50Now > 0) {
-    regressions.push(`${now.scenario}: frames over 50ms 0 → ${over50Now}`);
+    // Not called yet: this one is confirmed by a second measurement below.
+    suspects.push({
+      scenario: now.scenario,
+      claim: `frames over 50ms 0 → ${over50Now}`,
+      count: over50Now,
+    });
   }
 
   const longThen = number(then.longTasks) ?? 0;
@@ -105,12 +116,70 @@ for (const row of baseline.rows) {
   }
 }
 
+/*
+ * A dropped frame has to happen twice.
+ *
+ * "This scenario had no frame over 50ms and now it does" is the sharpest rule
+ * here, and on a shared machine it is also the easiest to trip by accident: an
+ * interleaved A/B of the two panel-resize scenarios produced a stray 50ms
+ * frame on BOTH the changed build and the unchanged one, in two runs out of
+ * eight, on each. A single hiccup crossing the threshold is not a regression
+ * and a gate that calls it one gets switched off.
+ *
+ * So the claim is re-measured - only the accused scenarios, so it costs a
+ * minute rather than a run - and it stands only if it happens again. That
+ * keeps the rule strict about the thing it is for (a scenario that has started
+ * dropping frames drops them repeatedly) without keeping it strict about the
+ * machine.
+ */
+if (suspects.length > 0) {
+  console.log(
+    `\nre-measuring ${suspects.length} scenario(s) that gained a frame over 50ms...\n`,
+  );
+  const confirmPath = join(tmpdir(), `atlas-perf-confirm-${Date.now()}.json`);
+  try {
+    execFileSync(
+      'node',
+      [
+        'tools/perf-baseline.mjs',
+        '--json',
+        confirmPath,
+        '--only',
+        suspects.map((s) => s.scenario).join(','),
+      ],
+      { stdio: 'inherit' },
+    );
+    const again = JSON.parse(readFileSync(confirmPath, 'utf8'));
+    rmSync(confirmPath, { force: true });
+    for (const suspect of suspects) {
+      const row = again.rows.find((r) => r.scenario === suspect.scenario);
+      const overAgain = number(row?.over50) ?? 0;
+      if (row && overAgain > 0) {
+        regressions.push(`${suspect.scenario}: ${suspect.claim} (confirmed: ${overAgain} again)`);
+      } else {
+        dismissed.push(`${suspect.scenario}: ${suspect.claim}, and did not happen again`);
+      }
+    }
+  } catch {
+    // The confirming run could not be taken; report the claim rather than
+    // swallowing it, and say it is unconfirmed.
+    for (const suspect of suspects) {
+      regressions.push(`${suspect.scenario}: ${suspect.claim} (unconfirmed - re-run failed)`);
+    }
+  }
+}
+
 console.log(`\nbaseline recorded ${baseline.recordedAt}`);
 console.log(`this run       ${run.recordedAt}`);
 console.log(`scenarios      ${run.rows.length} measured, ${baseline.rows.length} in the baseline`);
 
 if (improvements.length > 0) {
   console.log(`\nfaster:\n${improvements.map((line) => `  ${line}`).join('\n')}`);
+}
+if (dismissed.length > 0) {
+  console.log(
+    `\nnot a regression — measured again and gone:\n${dismissed.map((line) => `  ${line}`).join('\n')}`,
+  );
 }
 if (missing.length > 0) {
   console.log(`\nnot compared:\n${missing.map((line) => `  ${line}`).join('\n')}`);
