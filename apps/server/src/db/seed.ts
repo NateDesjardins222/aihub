@@ -272,6 +272,17 @@ async function main(): Promise<void> {
     }
     console.log(`products published: ${published} (${TEMPLATES.length} total)`);
 
+    // Demo and owner accounts carry KNOWN, published credentials. They exist so
+    // a developer can clone and sign in; seeding them into a real deployment
+    // would hand anyone who has read this file a SUPER_ADMIN login. So they are
+    // development-only, by refusal, not by convention.
+    const seedDemoAccounts = process.env['NODE_ENV'] !== 'production';
+    if (!seedDemoAccounts) {
+      console.log(
+        'skipping demo and owner accounts: NODE_ENV=production. Create the first operator out of band.',
+      );
+    }
+    if (seedDemoAccounts) {
     const demoEmail = 'demo@atlasfutures.local';
     let [demo] = await db.select().from(users).where(eq(users.email, demoEmail));
     if (!demo) {
@@ -375,6 +386,7 @@ async function main(): Promise<void> {
       }
       console.log(`demo accounts provisioned: ${created}`);
     }
+    } // end seedDemoAccounts
   } finally {
     await sql.end({ timeout: 5 });
   }

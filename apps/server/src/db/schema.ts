@@ -202,6 +202,42 @@ export const accountProfileVersions = pgTable(
   (t) => [uniqueIndex('account_profile_versions_key').on(t.profileId, t.version)],
 );
 
+/**
+ * A working draft of a product's terms, before it becomes a version.
+ *
+ * A version is immutable; a draft is the opposite - it is where an operator
+ * composes and revises an edit until it is right, then publishes it. Publishing
+ * a draft writes version N+1 and clears the draft. There is at most one draft
+ * per product key per firm, so two operators editing the same product see one
+ * shared work-in-progress rather than silently clobbering each other's fields.
+ *
+ * `profileId` is null for a brand-new product that has never been published;
+ * `baseVersion` is the version the draft was started from, so the UI can warn
+ * if a newer version was published underneath it.
+ */
+export const accountProfileDrafts = pgTable(
+  'account_profile_drafts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    profileId: uuid('profile_id').references(() => accountProfiles.id, { onDelete: 'cascade' }),
+    key: varchar('key', { length: 60 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    accountType: varchar('account_type', { length: 20 }).notNull(),
+    description: text('description'),
+    config: jsonb('config').notNull(),
+    notes: text('notes'),
+    /** The published version this draft was started from; null for a new product. */
+    baseVersion: integer('base_version'),
+    updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('account_profile_drafts_org_key').on(t.organizationId, t.key)],
+);
+
 export const accounts = pgTable(
   'accounts',
   {

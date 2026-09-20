@@ -238,6 +238,33 @@ Entries are numbered in the order they were found, not by severity.
 
 ---
 
+## D-018 — Keyset pagination truncated the cursor and skipped whole batches
+
+| | |
+| --- | --- |
+| **Severity** | P1 (data completeness) — found and fixed within the same milestone, before commit |
+| **Found by** | Owner V2 scale work: walking all 10,000 traders by cursor and counting the distinct rows returned |
+| **Symptom** | The first `nextCursor` page worked, but a full walk returned only **3,737 of 10,037 traders** before the cursor went null and the walk stopped "cleanly". Pages did not overlap, so it looked correct — it was silently dropping rows. |
+| **Root cause** | The cursor encoded `created_at` as a JavaScript `Date` via `getTime()` — **millisecond** precision. Postgres stores `created_at` at **microsecond** precision, and the bulk fixtures inserted 500 rows per statement, so every row in a batch shared one microsecond-precise timestamp. The keyset predicate `(created_at, id) < (cursorMs, cursorId)` compared a microsecond value against a millisecond-truncated bound: every same-batch row read as *greater than* the truncated cursor and was excluded, so paging jumped past the rest of each batch. A JS `Date` cannot even represent the microseconds, so the precision was lost before it reached the query. |
+| **Fix** | The cursor now carries Postgres's own full-precision timestamp text (`created_at::text`, selected alongside the row) and the predicate binds it back as `::timestamptz`. No truncation, and the comparison stays a direct column comparison so the `(organization_id, created_at desc)` index still drives it. |
+| **Regression check** | A full cursor walk now returns **10,037 distinct traders in 51 pages** with no overlap and clean termination. |
+| **Note** | The bug was mostly masked by the fixtures' shared timestamps; single-row production inserts would have hidden it far longer, losing a handful of rows per page in a way nobody would notice until an audit. Measuring at real scale is what surfaced it. |
+
+---
+
+## D-019 — The seed would have created a known-credential super-admin in production
+
+| | |
+| --- | --- |
+| **Severity** | P0 if ever deployed — found by the V2 production-safety re-check, fixed before commit |
+| **Found by** | Reading `apps/server/src/db/seed.ts` against the V2 constraint "treat demo/seed credentials as development-only" |
+| **Symptom** | `db:seed` unconditionally created `owner@atlasfutures.local` / `atlas-owner-2026` as **SUPER_ADMIN** and `demo@...` with a published password. Nothing stopped it running against a production database, which would hand anyone who has read this repository a full operator login. |
+| **Root cause** | The seed predates the Owner Control Center; the owner seat was added in V1 for local sign-in with no environment guard. The config layer already refuses to boot production on a default JWT secret or wildcard CORS (D-016), but the seed script bypasses that guard entirely. |
+| **Fix** | The demo and owner accounts — and the demo's journal tags and practice accounts — are now gated behind `NODE_ENV !== 'production'`. Products (ordinary configuration) still seed everywhere; the known-credential accounts do not, and the script logs that it skipped them and that the first operator must be created out of band. |
+| **Note** | The V2 brief named exactly this — "no seeded owner credentials unintentionally enabled in production behavior" — and it was real, not hypothetical. Left as it was, the very feature this milestone hardened would have shipped its own backdoor. |
+
+---
+
 ## Testing the tests — twelve deliberate defects
 
 `tools/diagnose-mutations.mjs` breaks the real source on purpose, twelve times over, runs the

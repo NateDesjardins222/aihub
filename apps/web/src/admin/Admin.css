@@ -609,3 +609,64 @@
   padding: 12px 4px 2px;
   font-size: var(--fs-xs);
 }
+
+/* --- product editor ------------------------------------------------------ */
+.adm-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.adm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.adm-form-grid .adm-field {
+  margin: 10px 0;
+}
+.adm-field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.adm-field select {
+  height: var(--h-primary);
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+}
+.adm-diff td {
+  padding: 6px 10px;
+}
+.adm-diff-to {
+  color: var(--accent);
+}
+.adm-ok {
+  color: var(--long, #2ec4a6);
+  font-size: var(--fs-sm);
+}
+.adm-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.adm-btn-primary:disabled {
+  opacity: 0.5;
+}
+@media (max-width: 900px) {
+  .adm-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.adm-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 2px 2px;
+  font-size: var(--fs-sm);
+}

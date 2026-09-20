@@ -7,14 +7,22 @@
  * not a filtered list.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
 import { getDb } from '../db/client.js';
-import { accounts, auditLog, organizations, users } from '../db/schema.js';
+import {
+  accountProfileVersions,
+  accountProfiles,
+  accounts,
+  auditLog,
+  organizations,
+  users,
+} from '../db/schema.js';
 import { hashPassword } from '../auth/password.js';
-import { publishProfileVersion } from '../platform/profiles.js';
+import { publishProfileVersion, resolveProfileVersion } from '../platform/profiles.js';
 import { defaultOrganizationId, provisionAccount } from '../platform/provisioning.js';
+import { accountProfileDrafts } from '../db/schema.js';
 import { hashProvisioningKey } from './routes/provisioning.js';
 import { provisioningKeys } from '../db/schema.js';
 
@@ -57,7 +65,7 @@ async function makeUser(role: string, organization = organizationId): Promise<{ 
 }
 
 function call(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   url: string,
   token: string | null,
   payload?: unknown,
@@ -192,7 +200,17 @@ afterAll(async () => {
   // purpose: its product versions reference it, and a published version is
   // immutable by design - there is nothing to gain from fighting that in a
   // test database.
-  for (const id of created) await db.delete(users).where(eq(users.id, id));
+  // Best-effort: a SUPER_ADMIN who published an immutable product version is
+  // referenced by a row that cannot be updated or deleted, so its author record
+  // outlives the test. That is the immutability guarantee doing its job, not a
+  // leak to fight - leave such a user behind, as we already do the second firm.
+  for (const id of created) {
+    try {
+      await db.delete(users).where(eq(users.id, id));
+    } catch {
+      /* referenced by an immutable version; intentionally left behind */
+    }
+  }
   await app.close();
 });
 
@@ -607,5 +625,287 @@ describe('the surveillance, risk and system views', () => {
       const res = await call('GET', `/api/v1/admin${path}`, null);
       expect(res.status).toBe(401);
     }
+  });
+});
+
+describe('product configuration: drafts, versions and immutability', () => {
+  const M2 = 1_000_000;
+  function config(maxContracts: number) {
+    return {
+      rules: {
+        accountSizeMicros: 50_000 * M2,
+        profitTargetMicros: 3_000 * M2,
+        maxLossMicros: 2_000 * M2,
+        drawdownType: 'STATIC',
+        trailingLockAtMicros: null,
+        dailyLossLimitMicros: null,
+        dailyLossPolicy: 'LOCK_DAY',
+        consistencyFormula: 'BEST_DAY_OVER_TOTAL',
+        consistencyThreshold: null,
+        minTradingDays: 0,
+        minWinningDays: 0,
+        maxTradingDays: null,
+        minDailyPnlToCountMicros: 0,
+        minWinningDayPnlMicros: 1,
+        maxContracts,
+        microsCountAsFraction: true,
+        flattenOnBreach: true,
+      },
+      execution: null,
+      instruments: { allowed: null, maxContracts, perInstrument: {} },
+      display: { startingBalanceMicros: 50_000 * M2 },
+      payoutRules: null,
+    };
+  }
+
+  let key = '';
+  let editorTraderId = '';
+
+  beforeAll(async () => {
+    key = `prodcfg-${crypto.randomUUID().slice(0, 8)}`;
+    editorTraderId = (await makeUser('TRADER')).id;
+  });
+
+  afterAll(async () => {
+    await db.delete(accountProfileDrafts).where(eq(accountProfileDrafts.key, key));
+  });
+
+  it('composes a brand-new product as a draft before it is a version', async () => {
+    const put = await call('PUT', `/api/v1/admin/profiles/${key}/draft`, tokens['SUPER_ADMIN']!, {
+      name: 'Config Suite 50K',
+      accountType: 'EVALUATION',
+      config: config(5),
+    });
+    expect(put.status).toBe(200);
+    expect(put.json.draft.baseVersion).toBeNull();
+
+    // Until published, the product exists only as a draft.
+    const get = await call('GET', `/api/v1/admin/profiles/${key}`, tokens['SUPPORT']!);
+    expect(get.status).toBe(200);
+    expect(get.json.profile).toBeNull();
+    expect(get.json.versions).toHaveLength(0);
+    expect(get.json.draft.name).toBe('Config Suite 50K');
+  });
+
+  it('publishes the draft as version 1 and clears the draft', async () => {
+    const pub = await call('POST', `/api/v1/admin/profiles/${key}/publish`, tokens['SUPER_ADMIN']!, {});
+    expect(pub.status).toBe(201);
+    expect(pub.json.version).toBe(1);
+
+    const get = await call('GET', `/api/v1/admin/profiles/${key}`, tokens['SUPPORT']!);
+    expect(get.json.profile.status).toBe('ACTIVE');
+    expect(get.json.versions).toHaveLength(1);
+    expect(get.json.draft).toBeNull();
+  });
+
+  it('keeps an account on its version when a new version is published', async () => {
+    // Account A is provisioned from version 1 (maxContracts 5).
+    const a = await provisionAccount(db, {
+      organizationId,
+      userId: editorTraderId,
+      profileKey: key,
+      displayName: 'Pinned to V1',
+    });
+
+    // The operator drafts and publishes version 2 with different terms.
+    await call('PUT', `/api/v1/admin/profiles/${key}/draft`, tokens['SUPER_ADMIN']!, {
+      name: 'Config Suite 50K',
+      accountType: 'EVALUATION',
+      config: config(20),
+    });
+    const pub = await call('POST', `/api/v1/admin/profiles/${key}/publish`, tokens['SUPER_ADMIN']!, {});
+    expect(pub.json.version).toBe(2);
+
+    // Account A still reports version 1 and still resolves to the V1 terms.
+    const detail = await call('GET', `/api/v1/admin/accounts/${a.accountId}`, tokens['SUPPORT']!);
+    const [row] = await db.select().from(accounts).where(eq(accounts.id, a.accountId));
+    const resolved = await resolveProfileVersion(db, row!.profileVersionId!);
+    expect(resolved!.version).toBe(1);
+    expect(resolved!.config.rules.maxContracts).toBe(5);
+    expect(detail.status).toBe(200);
+
+    // A new account provisioned now gets version 2.
+    const b = await provisionAccount(db, {
+      organizationId,
+      userId: editorTraderId,
+      profileKey: key,
+      displayName: 'Provisioned on V2',
+    });
+    const [rowB] = await db.select().from(accounts).where(eq(accounts.id, b.accountId));
+    const resolvedB = await resolveProfileVersion(db, rowB!.profileVersionId!);
+    expect(resolvedB!.version).toBe(2);
+    expect(resolvedB!.config.rules.maxContracts).toBe(20);
+  });
+
+  it('returns the version history newest first', async () => {
+    const get = await call('GET', `/api/v1/admin/profiles/${key}`, tokens['SUPPORT']!);
+    expect(get.json.versions.map((v: { version: number }) => v.version)).toEqual([2, 1]);
+  });
+
+  it('retiring a product stops new provisioning but not existing accounts', async () => {
+    const patch = await call('PATCH', `/api/v1/admin/profiles/${key}/status`, tokens['SUPER_ADMIN']!, {
+      status: 'RETIRED',
+      reason: 'end of season',
+    });
+    expect(patch.status).toBe(200);
+    expect(patch.json.status).toBe('RETIRED');
+
+    // Provisioning a new account from a retired product is refused.
+    await expect(
+      provisionAccount(db, { organizationId, userId: editorTraderId, profileKey: key }),
+    ).rejects.toThrow();
+
+    // Reactivating restores provisioning.
+    const back = await call('PATCH', `/api/v1/admin/profiles/${key}/status`, tokens['SUPER_ADMIN']!, {
+      status: 'ACTIVE',
+      reason: 'new season',
+    });
+    expect(back.json.status).toBe('ACTIVE');
+    const c = await provisionAccount(db, { organizationId, userId: editorTraderId, profileKey: key });
+    expect(c.accountId).toBeTruthy();
+  });
+
+  it('records the retire and reactivate in the audit log', async () => {
+    const res = await call('GET', `/api/v1/admin/audit?action=profile.retired`, tokens['SUPPORT']!);
+    expect(res.status).toBe(200);
+    expect(res.json.entries.some((e: { reason: string }) => e.reason === 'end of season')).toBe(true);
+  });
+
+  it('rejects a draft whose configuration the engine could not accept', async () => {
+    const bad = await call('PUT', `/api/v1/admin/profiles/${key}/draft`, tokens['SUPER_ADMIN']!, {
+      name: 'Config Suite 50K',
+      accountType: 'EVALUATION',
+      config: { rules: { maxContracts: -1 } },
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error?.code ?? bad.json.code).toBe('INVALID_CONFIG');
+    await call('DELETE', `/api/v1/admin/profiles/${key}/draft`, tokens['SUPER_ADMIN']!);
+  });
+
+  it('refuses to publish when there is no draft', async () => {
+    const pub = await call('POST', `/api/v1/admin/profiles/${key}/publish`, tokens['SUPER_ADMIN']!, {});
+    expect(pub.status).toBe(400);
+  });
+
+  it('lets only a SUPER_ADMIN draft, publish, and change product status', async () => {
+    for (const role of ['TRADER', 'SUPPORT', 'ADMIN'] as const) {
+      const draft = await call('PUT', `/api/v1/admin/profiles/${key}/draft`, tokens[role]!, {
+        name: 'x',
+        accountType: 'EVALUATION',
+        config: config(5),
+      });
+      expect(draft.status).toBe(403);
+      const patch = await call('PATCH', `/api/v1/admin/profiles/${key}/status`, tokens[role]!, {
+        status: 'RETIRED',
+        reason: 'nope',
+      });
+      expect(patch.status).toBe(403);
+    }
+  });
+
+  it('discards a draft on request', async () => {
+    await call('PUT', `/api/v1/admin/profiles/${key}/draft`, tokens['SUPER_ADMIN']!, {
+      name: 'Config Suite 50K',
+      accountType: 'EVALUATION',
+      config: config(7),
+    });
+    const del = await call('DELETE', `/api/v1/admin/profiles/${key}/draft`, tokens['SUPER_ADMIN']!);
+    expect(del.status).toBe(200);
+    expect(del.json.discarded).toBe(true);
+    const get = await call('GET', `/api/v1/admin/profiles/${key}`, tokens['SUPPORT']!);
+    expect(get.json.draft).toBeNull();
+  });
+});
+
+describe('concurrency: races an operator can actually cause', () => {
+  it('never lets two concurrent publishes share a version number', async () => {
+    const key = `race-${crypto.randomUUID().slice(0, 8)}`;
+    const M2 = 1_000_000;
+    const cfg = (mc: number) => ({
+      rules: {
+        accountSizeMicros: 50_000 * M2,
+        profitTargetMicros: 3_000 * M2,
+        maxLossMicros: 2_000 * M2,
+        drawdownType: 'STATIC',
+        trailingLockAtMicros: null,
+        dailyLossLimitMicros: null,
+        dailyLossPolicy: 'LOCK_DAY',
+        consistencyFormula: 'BEST_DAY_OVER_TOTAL',
+        consistencyThreshold: null,
+        minTradingDays: 0,
+        minWinningDays: 0,
+        maxTradingDays: null,
+        minDailyPnlToCountMicros: 0,
+        minWinningDayPnlMicros: 1,
+        maxContracts: mc,
+        microsCountAsFraction: true,
+        flattenOnBreach: true,
+      },
+      execution: null,
+      instruments: { allowed: null, maxContracts: mc, perInstrument: {} },
+      display: { startingBalanceMicros: 50_000 * M2 },
+      payoutRules: null,
+    });
+
+    // Ten operators publish the same product at the same instant.
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, i) =>
+        publishProfileVersion(db, {
+          organizationId,
+          key,
+          name: 'Race 50K',
+          accountType: 'EVALUATION',
+          config: cfg(i + 1),
+        }),
+      ),
+    );
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    expect(ok).toBeGreaterThan(0);
+
+    // Whatever committed, the version numbers are unique and contiguous from 1:
+    // the unique (profile_id, version) index makes a doubled version impossible.
+    const [profile] = await db
+      .select()
+      .from(accountProfiles)
+      .where(and(eq(accountProfiles.organizationId, organizationId), eq(accountProfiles.key, key)));
+    const versions = await db
+      .select({ version: accountProfileVersions.version })
+      .from(accountProfileVersions)
+      .where(eq(accountProfileVersions.profileId, profile!.id))
+      .orderBy(accountProfileVersions.version);
+    const nums = versions.map((v) => v.version);
+    expect(new Set(nums).size).toBe(nums.length); // no duplicates
+    expect(nums).toEqual(Array.from({ length: nums.length }, (_, i) => i + 1)); // 1..N contiguous
+    expect(nums.length).toBe(ok); // exactly the ones that committed
+  });
+
+  it('keeps the audit chain intact under concurrent actions on one account', async () => {
+    // Fire a burst of hold/release at the same account at once.
+    const burst = await Promise.allSettled([
+      call('POST', `/api/v1/admin/accounts/${traderAccountId}/lock`, tokens['ADMIN']!, {
+        confirm: true,
+        reason: 'concurrent burst 1',
+      }),
+      call('POST', `/api/v1/admin/accounts/${traderAccountId}/unlock`, tokens['ADMIN']!, {
+        confirm: true,
+        reason: 'concurrent burst 2',
+      }),
+      call('POST', `/api/v1/admin/accounts/${traderAccountId}/lock`, tokens['ADMIN']!, {
+        confirm: true,
+        reason: 'concurrent burst 3',
+      }),
+      call('POST', `/api/v1/admin/accounts/${traderAccountId}/unlock`, tokens['ADMIN']!, {
+        confirm: true,
+        reason: 'concurrent burst 4',
+      }),
+    ]);
+    // Requests are answered (some may 409 if the state does not permit them);
+    // none corrupts anything.
+    expect(burst.every((r) => r.status === 'fulfilled')).toBe(true);
+
+    // The hash-chained audit log still verifies end to end.
+    const verify = await call('GET', `/api/v1/admin/audit/verify`, tokens['SUPPORT']!);
+    expect(verify.status).toBe(200);
+    expect(verify.json.ok).toBe(true);
   });
 });

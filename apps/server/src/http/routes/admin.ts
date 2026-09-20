@@ -59,7 +59,17 @@ import {
 } from '../../platform/account-service.js';
 import { accountAudit, recordAudit, verifyAuditChain } from '../../platform/audit.js';
 import { events } from '../../platform/events.js';
-import { listProfiles, publishProfileVersion, ProfileError } from '../../platform/profiles.js';
+import {
+  discardDraft,
+  getDraft,
+  listProfileVersions,
+  listProfiles,
+  publishDraft,
+  publishProfileVersion,
+  saveDraft,
+  setProfileStatus,
+  ProfileError,
+} from '../../platform/profiles.js';
 import type { Actor } from '../../platform/actor.js';
 
 interface AdminDeps {
@@ -96,6 +106,35 @@ function actorFor(request: { user?: { id: string; email: string; role: string };
     label: request.user?.email ?? null,
     ip: request.ip ?? null,
   };
+}
+
+/**
+ * Keyset pagination cursor: the (createdAt, id) of the last row on a page.
+ *
+ * Keyset, not OFFSET: page 50 of a firm's traders costs the same as page 1,
+ * because the database seeks straight to the cursor on the composite index
+ * rather than counting past everything before it. The cursor is opaque to the
+ * client - it hands back exactly what the server gave it.
+ */
+function encodeCursor(createdAtText: string, id: string): string {
+  return Buffer.from(`${createdAtText}|${id}`).toString('base64url');
+}
+
+function decodeCursor(raw: string | undefined): { createdAt: string; id: string } | null {
+  if (!raw) return null;
+  try {
+    const decoded = Buffer.from(raw, 'base64url').toString('utf8');
+    const sep = decoded.lastIndexOf('|');
+    if (sep < 0) return null;
+    const createdAt = decoded.slice(0, sep);
+    const id = decoded.slice(sep + 1);
+    // The timestamp is Postgres's own microsecond-precision text, so paging
+    // never truncates it to milliseconds and skips rows sharing a batch insert.
+    if (!createdAt || !/^[0-9a-f-]{36}$/.test(id)) return null;
+    return { createdAt, id };
+  } catch {
+    return null;
+  }
 }
 
 /** Everything an admin route does is scoped to their own organisation. */
@@ -243,14 +282,31 @@ export function adminRoutes(deps: AdminDeps) {
         .object({
           q: z.string().max(120).optional(),
           limit: z.coerce.number().int().min(1).max(200).default(50),
+          cursor: z.string().max(200).optional(),
         })
         .parse(request.query);
       const organizationId = await organizationOf(request.user!.id);
 
       const term = query.q?.trim();
+      const after = decodeCursor(query.cursor);
+      const conditions = [eq(users.organizationId, organizationId)];
+      if (term) {
+        conditions.push(
+          or(ilike(users.email, `%${term}%`), ilike(users.displayName, `%${term}%`))!,
+        );
+      }
+      if (after) {
+        conditions.push(
+          sql`(${users.createdAt}, ${users.id}) < (${after.createdAt}::timestamptz, ${after.id}::uuid)`,
+        );
+      }
+
+      // One more than asked, to know whether a next page exists without a count.
       const rows = await db
         .select({
           user: users,
+          /* Postgres's own full-precision timestamp text, for a lossless cursor. */
+          sortTs: sql<string>`${users.createdAt}::text`,
           /*
            * Written with explicit identifiers rather than interpolated
            * columns. A column interpolated into a sub-select renders
@@ -262,19 +318,16 @@ export function adminRoutes(deps: AdminDeps) {
           )`,
         })
         .from(users)
-        .where(
-          term
-            ? and(
-                eq(users.organizationId, organizationId),
-                or(ilike(users.email, `%${term}%`), ilike(users.displayName, `%${term}%`)),
-              )
-            : eq(users.organizationId, organizationId),
-        )
-        .orderBy(desc(users.createdAt))
-        .limit(query.limit);
+        .where(and(...conditions))
+        .orderBy(desc(users.createdAt), desc(users.id))
+        .limit(query.limit + 1);
 
+      const page = rows.slice(0, query.limit);
+      const last = page[page.length - 1];
       return reply.send({
-        users: rows.map((row) => ({ ...presentUser(row.user), accountCount: row.accounts })),
+        users: page.map((row) => ({ ...presentUser(row.user), accountCount: row.accounts })),
+        nextCursor:
+          rows.length > query.limit && last ? encodeCursor(last.sortTs, last.user.id) : null,
       });
     });
 
@@ -464,10 +517,12 @@ export function adminRoutes(deps: AdminDeps) {
           q: z.string().max(120).optional(),
           status: z.string().max(20).optional(),
           limit: z.coerce.number().int().min(1).max(200).default(50),
+          cursor: z.string().max(200).optional(),
         })
         .parse(request.query);
       const organizationId = await organizationOf(request.user!.id);
       const term = query.q?.trim();
+      const after = decodeCursor(query.cursor);
 
       const filters = [eq(accounts.organizationId, organizationId)];
       if (query.status) filters.push(eq(accounts.status, query.status));
@@ -480,6 +535,11 @@ export function adminRoutes(deps: AdminDeps) {
           )!,
         );
       }
+      if (after) {
+        filters.push(
+          sql`(${accounts.createdAt}, ${accounts.id}) < (${after.createdAt}::timestamptz, ${after.id}::uuid)`,
+        );
+      }
 
       const rows = await db
         .select({
@@ -487,6 +547,7 @@ export function adminRoutes(deps: AdminDeps) {
           user: users,
           profile: accountProfiles,
           version: accountProfileVersions,
+          sortTs: sql<string>`${accounts.createdAt}::text`,
           openContracts: sql<number>`(
             select coalesce(sum(abs(p.qty)), 0)::int from "positions" p
             where p.account_id = "accounts"."id" and p.qty <> 0
@@ -500,16 +561,20 @@ export function adminRoutes(deps: AdminDeps) {
         .leftJoin(accountProfileVersions, eq(accounts.profileVersionId, accountProfileVersions.id))
         .leftJoin(accountProfiles, eq(accountProfileVersions.profileId, accountProfiles.id))
         .where(and(...filters))
-        .orderBy(desc(accounts.createdAt))
-        .limit(query.limit);
+        .orderBy(desc(accounts.createdAt), desc(accounts.id))
+        .limit(query.limit + 1);
 
+      const page = rows.slice(0, query.limit);
+      const last = page[page.length - 1];
       return reply.send({
-        accounts: rows.map((row) => ({
+        accounts: page.map((row) => ({
           ...presentAccountRow(row.account, row.profile, row.version),
           owner: { id: row.user.id, email: row.user.email, displayName: row.user.displayName },
           openContracts: row.openContracts,
           lastTradedAt: row.lastTradedAt ? new Date(row.lastTradedAt).getTime() : null,
         })),
+        nextCursor:
+          rows.length > query.limit && last ? encodeCursor(last.sortTs, last.account.id) : null,
       });
     });
 
@@ -825,6 +890,161 @@ export function adminRoutes(deps: AdminDeps) {
         } catch (err) {
           mapActionError(err);
         }
+      },
+    );
+
+    /*
+     * One product, in full: its identity, every published version (the version
+     * history, newest first), and the working draft if one exists. This is what
+     * the editor loads. The full config of each version travels with it so the
+     * client can show a field-level change preview - the diff is presentation,
+     * not a thing the server needs a separate endpoint for.
+     */
+    app.get<{ Params: { key: string } }>('/profiles/:key', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const [profile] = await db
+        .select()
+        .from(accountProfiles)
+        .where(
+          and(
+            eq(accountProfiles.organizationId, organizationId),
+            eq(accountProfiles.key, request.params.key),
+          ),
+        );
+
+      const draft = await getDraft(db, organizationId, request.params.key);
+      if (!profile) {
+        // A brand-new product exists only as a draft until its first publish.
+        if (!draft) throw ApiError.notFound('PROFILE_NOT_FOUND', 'No such product.');
+        return reply.send({ profile: null, versions: [], draft: presentDraft(draft) });
+      }
+
+      const versions = await listProfileVersions(db, profile.id);
+      return reply.send({
+        profile: {
+          id: profile.id,
+          key: profile.key,
+          name: profile.name,
+          accountType: profile.accountType,
+          status: profile.status,
+          description: profile.description,
+          createdAt: profile.createdAt.getTime(),
+          updatedAt: profile.updatedAt.getTime(),
+        },
+        versions: versions.map((v) => ({
+          id: v.id,
+          version: v.version,
+          config: v.config,
+          notes: v.notes,
+          createdByUserId: v.createdByUserId,
+          publishedAt: v.publishedAt.getTime(),
+        })),
+        draft: draft ? presentDraft(draft) : null,
+      });
+    });
+
+    // ------------------------------------------------------------- product draft
+    const draftBody = z.object({
+      name: z.string().min(1).max(120),
+      accountType: z.string().min(1).max(20),
+      description: z.string().max(500).nullable().optional(),
+      notes: z.string().max(500).nullable().optional(),
+      config: z.unknown(),
+    });
+
+    app.put<{ Params: { key: string } }>(
+      '/profiles/:key/draft',
+      { preHandler: requireRole('SUPER_ADMIN'), config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const key = z
+          .string()
+          .min(1)
+          .max(60)
+          .regex(/^[a-z0-9-]+$/, 'Use lower case letters, numbers and hyphens.')
+          .parse(request.params.key);
+        const body = draftBody.parse(request.body);
+        const organizationId = await organizationOf(request.user!.id);
+        try {
+          const saved = await saveDraft(db, {
+            organizationId,
+            key,
+            name: body.name,
+            accountType: body.accountType,
+            description: body.description ?? null,
+            notes: body.notes ?? null,
+            config: body.config,
+            updatedByUserId: request.user!.id,
+          });
+          return reply.send({ draft: presentDraft(saved) });
+        } catch (err) {
+          mapActionError(err);
+        }
+      },
+    );
+
+    app.delete<{ Params: { key: string } }>(
+      '/profiles/:key/draft',
+      { preHandler: requireRole('SUPER_ADMIN') },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        const removed = await discardDraft(db, organizationId, request.params.key);
+        return reply.send({ discarded: removed });
+      },
+    );
+
+    app.post<{ Params: { key: string } }>(
+      '/profiles/:key/publish',
+      { preHandler: requireRole('SUPER_ADMIN'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        try {
+          const published = await publishDraft(db, organizationId, request.params.key, request.user!.id);
+          await recordProfilePublication(organizationId, actorFor(request), published);
+          return reply.code(201).send({
+            profileId: published.profileId,
+            key: published.profileKey,
+            version: published.version,
+          });
+        } catch (err) {
+          mapActionError(err);
+        }
+      },
+    );
+
+    // ------------------------------------------------------ activate / deactivate
+    app.patch<{ Params: { key: string } }>(
+      '/profiles/:key/status',
+      { preHandler: requireRole('SUPER_ADMIN') },
+      async (request, reply) => {
+        const body = z
+          .object({ status: z.enum(['ACTIVE', 'RETIRED']), reason: z.string().min(3).max(500) })
+          .parse(request.body);
+        const organizationId = await organizationOf(request.user!.id);
+        const [profile] = await db
+          .select()
+          .from(accountProfiles)
+          .where(
+            and(
+              eq(accountProfiles.organizationId, organizationId),
+              eq(accountProfiles.key, request.params.key),
+            ),
+          );
+        if (!profile) throw ApiError.notFound('PROFILE_NOT_FOUND', 'No such product.');
+        if (profile.status === body.status) {
+          return reply.send({ profileId: profile.id, key: profile.key, status: profile.status });
+        }
+        const updated = await setProfileStatus(db, organizationId, profile.id, body.status);
+        await recordAudit(db, {
+          organizationId,
+          actor: actorFor(request),
+          subjectType: 'PROFILE',
+          subjectId: profile.id,
+          action: body.status === 'RETIRED' ? 'profile.retired' : 'profile.reactivated',
+          prevState: { status: profile.status },
+          newState: { status: body.status },
+          reason: body.reason,
+        });
+        return reply.send({ profileId: updated!.id, key: updated!.key, status: updated!.status });
       },
     );
 
@@ -1191,6 +1411,34 @@ function presentAccountRow(
     instrumentLimits: account.instrumentLimits ?? null,
     activatedAt: account.activatedAt?.getTime() ?? null,
     createdAt: account.createdAt.getTime(),
+  };
+}
+
+function presentDraft(draft: {
+  id: string;
+  profileId: string | null;
+  key: string;
+  name: string;
+  accountType: string;
+  description: string | null;
+  config: unknown;
+  notes: string | null;
+  baseVersion: number | null;
+  updatedByUserId: string | null;
+  updatedAt: Date;
+}) {
+  return {
+    id: draft.id,
+    profileId: draft.profileId,
+    key: draft.key,
+    name: draft.name,
+    accountType: draft.accountType,
+    description: draft.description,
+    config: draft.config,
+    notes: draft.notes,
+    baseVersion: draft.baseVersion,
+    updatedByUserId: draft.updatedByUserId,
+    updatedAt: draft.updatedAt.getTime(),
   };
 }
 

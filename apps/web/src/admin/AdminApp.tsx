@@ -18,6 +18,7 @@ import { AdminUserPage } from './pages/UserPage';
 import { AdminAccountsPage } from './pages/AccountsPage';
 import { AdminAccountPage } from './pages/AccountPage';
 import { AdminProductsPage } from './pages/ProductsPage';
+import { AdminProductPage } from './pages/ProductPage';
 import { AdminTradingPage } from './pages/TradingPage';
 import { AdminRiskPage } from './pages/RiskPage';
 import { AdminSystemPage } from './pages/SystemPage';
@@ -32,6 +33,7 @@ export type AdminRoute =
   | { name: 'TRADING' }
   | { name: 'RISK' }
   | { name: 'PRODUCTS' }
+  | { name: 'PRODUCT'; key: string }
   | { name: 'SYSTEM' };
 
 export function parseAdminRoute(pathname: string): AdminRoute {
@@ -46,7 +48,9 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   }
   if (parts[0] === 'trading') return { name: 'TRADING' };
   if (parts[0] === 'risk') return { name: 'RISK' };
-  if (parts[0] === 'products') return { name: 'PRODUCTS' };
+  if (parts[0] === 'products') {
+    return parts[1] ? { name: 'PRODUCT', key: decodeURIComponent(parts[1]) } : { name: 'PRODUCTS' };
+  }
   if (parts[0] === 'system') return { name: 'SYSTEM' };
   return { name: 'OVERVIEW' };
 }
@@ -67,6 +71,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/risk';
     case 'PRODUCTS':
       return '/admin/products';
+    case 'PRODUCT':
+      return `/admin/products/${encodeURIComponent(route.key)}`;
     case 'SYSTEM':
       return '/admin/system';
     default:
@@ -158,7 +164,10 @@ export function AdminApp(): JSX.Element {
         ) : null}
         {route.name === 'TRADING' ? <AdminTradingPage go={go} /> : null}
         {route.name === 'RISK' ? <AdminRiskPage go={go} /> : null}
-        {route.name === 'PRODUCTS' ? <AdminProductsPage /> : null}
+        {route.name === 'PRODUCTS' ? <AdminProductsPage go={go} /> : null}
+        {route.name === 'PRODUCT' ? (
+          <AdminProductPage productKey={route.key} go={go} maySuper={role === 'SUPER_ADMIN'} />
+        ) : null}
         {route.name === 'SYSTEM' ? <AdminSystemPage /> : null}
       </main>
     </div>
@@ -169,6 +178,7 @@ function sameSection(current: AdminRoute, target: AdminRoute): boolean {
   if (current.name === target.name) return true;
   if (target.name === 'USERS' && current.name === 'USER') return true;
   if (target.name === 'ACCOUNTS' && current.name === 'ACCOUNT') return true;
+  if (target.name === 'PRODUCTS' && current.name === 'PRODUCT') return true;
   return false;
 }
 

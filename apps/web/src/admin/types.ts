@@ -172,6 +172,77 @@ export interface AdminProfile {
   latestVersion: { id: string; version: number; config: unknown } | null;
 }
 
+/** The rule half of a product config, as the engine consumes it. */
+export interface ProductRules {
+  accountSizeMicros: number;
+  profitTargetMicros: number;
+  maxLossMicros: number;
+  drawdownType: 'STATIC' | 'INTRADAY_TRAILING' | 'EOD_TRAILING';
+  trailingLockAtMicros: number | null;
+  dailyLossLimitMicros: number | null;
+  dailyLossPolicy: 'LOCK_DAY' | 'FAIL';
+  consistencyFormula: 'BEST_DAY_OVER_TOTAL' | 'BEST_DAY_OVER_TARGET';
+  consistencyThreshold: number | null;
+  minTradingDays: number;
+  minWinningDays: number;
+  maxTradingDays: number | null;
+  minDailyPnlToCountMicros: number;
+  minWinningDayPnlMicros: number;
+  maxContracts: number;
+  microsCountAsFraction: boolean;
+  flattenOnBreach: boolean;
+}
+
+export interface ProductConfig {
+  rules: ProductRules;
+  execution: Record<string, unknown> | null;
+  instruments: {
+    allowed: string[] | null;
+    maxContracts: number | null;
+    perInstrument: Record<string, number>;
+  };
+  display: { startingBalanceMicros?: number };
+  payoutRules: unknown;
+}
+
+export interface AdminProductVersion {
+  id: string;
+  version: number;
+  config: ProductConfig;
+  notes: string | null;
+  createdByUserId: string | null;
+  publishedAt: number;
+}
+
+export interface AdminProductDraft {
+  id: string;
+  profileId: string | null;
+  key: string;
+  name: string;
+  accountType: string;
+  description: string | null;
+  config: ProductConfig;
+  notes: string | null;
+  baseVersion: number | null;
+  updatedByUserId: string | null;
+  updatedAt: number;
+}
+
+export interface AdminProductDetail {
+  profile: {
+    id: string;
+    key: string;
+    name: string;
+    accountType: string;
+    status: string;
+    description: string | null;
+    createdAt: number;
+    updatedAt: number;
+  } | null;
+  versions: AdminProductVersion[];
+  draft: AdminProductDraft | null;
+}
+
 export interface AdminTradingPosition {
   accountId: string;
   accountPublicId: string | null;

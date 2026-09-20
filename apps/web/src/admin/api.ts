@@ -11,12 +11,15 @@ import type {
   AdminAccountDetail,
   AdminLiveView,
   AdminOverview,
+  AdminProductDetail,
+  AdminProductDraft,
   AdminProfile,
   AdminRisk,
   AdminSystem,
   AdminTrading,
   AdminUser,
   AuditEntry,
+  ProductConfig,
 } from './types';
 
 const BASE = '/api/v1/admin';
@@ -24,10 +27,15 @@ const BASE = '/api/v1/admin';
 export const adminApi = {
   overview: () => api.get<AdminOverview>(`${BASE}/overview`),
 
-  users: (query: string) =>
-    api.get<{ users: AdminUser[] }>(
-      `${BASE}/users${query ? `?q=${encodeURIComponent(query)}` : ''}`,
-    ),
+  users: (query: string, cursor?: string | null) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (cursor) params.set('cursor', cursor);
+    params.set('limit', '50');
+    return api.get<{ users: AdminUser[]; nextCursor: string | null }>(
+      `${BASE}/users?${params.toString()}`,
+    );
+  },
 
   user: (id: string) =>
     api.get<{
@@ -45,12 +53,15 @@ export const adminApi = {
       }>;
     }>(`${BASE}/users/${id}`),
 
-  accounts: (query: string, status: string) => {
+  accounts: (query: string, status: string, cursor?: string | null) => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (status) params.set('status', status);
+    if (cursor) params.set('cursor', cursor);
     params.set('limit', '100');
-    return api.get<{ accounts: AdminAccount[] }>(`${BASE}/accounts?${params.toString()}`);
+    return api.get<{ accounts: AdminAccount[]; nextCursor: string | null }>(
+      `${BASE}/accounts?${params.toString()}`,
+    );
   },
 
   account: (id: string) => api.get<AdminAccountDetail>(`${BASE}/accounts/${id}`),
@@ -58,6 +69,34 @@ export const adminApi = {
   live: (id: string) => api.get<AdminLiveView>(`${BASE}/accounts/${id}/live`),
 
   profiles: () => api.get<{ profiles: AdminProfile[] }>(`${BASE}/profiles`),
+
+  product: (key: string) => api.get<AdminProductDetail>(`${BASE}/profiles/${encodeURIComponent(key)}`),
+
+  saveDraft: (
+    key: string,
+    body: {
+      name: string;
+      accountType: string;
+      description?: string | null;
+      notes?: string | null;
+      config: ProductConfig;
+    },
+  ) => api.put<{ draft: AdminProductDraft }>(`${BASE}/profiles/${encodeURIComponent(key)}/draft`, body),
+
+  discardDraft: (key: string) =>
+    api.delete<{ discarded: boolean }>(`${BASE}/profiles/${encodeURIComponent(key)}/draft`),
+
+  publishDraft: (key: string) =>
+    api.post<{ profileId: string; key: string; version: number }>(
+      `${BASE}/profiles/${encodeURIComponent(key)}/publish`,
+      {},
+    ),
+
+  setProductStatus: (key: string, status: 'ACTIVE' | 'RETIRED', reason: string) =>
+    api.patch<{ profileId: string; key: string; status: string }>(
+      `${BASE}/profiles/${encodeURIComponent(key)}/status`,
+      { status, reason },
+    ),
 
   audit: (params: { accountId?: string; userId?: string; action?: string }) => {
     const search = new URLSearchParams();

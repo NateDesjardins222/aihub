@@ -11,7 +11,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { RuleConfig } from '@atlas/core';
 import type { Database } from '../db/client.js';
-import { accountProfileVersions, accountProfiles } from '../db/schema.js';
+import { accountProfileDrafts, accountProfileVersions, accountProfiles } from '../db/schema.js';
 import { normalizeRuleConfig } from '../trading/account-rules.js';
 
 /**
@@ -259,4 +259,166 @@ export async function listProfiles(db: Database, organizationId: string) {
     out.push({ profile, latest: version ?? null });
   }
   return out;
+}
+
+/** Every published version of one product, newest first. The version history. */
+export async function listProfileVersions(db: Database, profileId: string) {
+  return db
+    .select()
+    .from(accountProfileVersions)
+    .where(eq(accountProfileVersions.profileId, profileId))
+    .orderBy(desc(accountProfileVersions.version));
+}
+
+/**
+ * Stop, or resume, selling a product.
+ *
+ * Retiring sets status RETIRED: `resolveProfileByKey` then refuses to provision
+ * new accounts from it. It does not, and cannot, touch an account already
+ * pinned to one of its versions - that is the whole point of pinning to a
+ * version. Reactivating sets it back to ACTIVE.
+ */
+export async function setProfileStatus(
+  db: Database,
+  organizationId: string,
+  profileId: string,
+  status: 'ACTIVE' | 'RETIRED',
+): Promise<{ id: string; key: string; name: string; status: string } | null> {
+  const [updated] = await db
+    .update(accountProfiles)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(accountProfiles.id, profileId), eq(accountProfiles.organizationId, organizationId)))
+    .returning();
+  if (!updated) return null;
+  return { id: updated.id, key: updated.key, name: updated.name, status: updated.status };
+}
+
+export interface DraftInput {
+  readonly organizationId: string;
+  readonly key: string;
+  readonly name: string;
+  readonly accountType: string;
+  readonly description?: string | null;
+  readonly config: unknown;
+  readonly notes?: string | null;
+  readonly updatedByUserId?: string | null;
+}
+
+/**
+ * Create or replace the working draft for a product key.
+ *
+ * The config is validated the same way a publish is, so a draft can never hold
+ * terms the engine could not accept - the change preview shows real numbers,
+ * not a shape that will be rejected at publish time. `baseVersion` records the
+ * version the draft was started from, so the UI can warn when a newer version
+ * was published underneath the draft.
+ */
+export async function saveDraft(db: Database, input: DraftInput) {
+  const config = parseConfig(input.config);
+
+  const [profile] = await db
+    .select()
+    .from(accountProfiles)
+    .where(and(eq(accountProfiles.organizationId, input.organizationId), eq(accountProfiles.key, input.key)));
+
+  let baseVersion: number | null = null;
+  if (profile) {
+    const [latest] = await db
+      .select({ version: accountProfileVersions.version })
+      .from(accountProfileVersions)
+      .where(eq(accountProfileVersions.profileId, profile.id))
+      .orderBy(desc(accountProfileVersions.version))
+      .limit(1);
+    baseVersion = latest?.version ?? null;
+  }
+
+  const [saved] = await db
+    .insert(accountProfileDrafts)
+    .values({
+      organizationId: input.organizationId,
+      profileId: profile?.id ?? null,
+      key: input.key,
+      name: input.name,
+      accountType: input.accountType,
+      description: input.description ?? null,
+      config: config as never,
+      notes: input.notes ?? null,
+      baseVersion,
+      updatedByUserId: input.updatedByUserId ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [accountProfileDrafts.organizationId, accountProfileDrafts.key],
+      set: {
+        profileId: profile?.id ?? null,
+        name: input.name,
+        accountType: input.accountType,
+        description: input.description ?? null,
+        config: config as never,
+        notes: input.notes ?? null,
+        baseVersion,
+        updatedByUserId: input.updatedByUserId ?? null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  return saved!;
+}
+
+export async function getDraft(db: Database, organizationId: string, key: string) {
+  const [draft] = await db
+    .select()
+    .from(accountProfileDrafts)
+    .where(and(eq(accountProfileDrafts.organizationId, organizationId), eq(accountProfileDrafts.key, key)));
+  return draft ?? null;
+}
+
+export async function discardDraft(
+  db: Database,
+  organizationId: string,
+  key: string,
+): Promise<boolean> {
+  const deleted = await db
+    .delete(accountProfileDrafts)
+    .where(and(eq(accountProfileDrafts.organizationId, organizationId), eq(accountProfileDrafts.key, key)))
+    .returning({ id: accountProfileDrafts.id });
+  return deleted.length > 0;
+}
+
+/**
+ * Publish the working draft as the next version, atomically.
+ *
+ * The draft is read, version N+1 is written, and the draft is deleted, all in
+ * one transaction: there is never a moment where a published version and a
+ * draft both claim to be "the edit". If nothing is drafted, this throws rather
+ * than publishing an empty version.
+ */
+export async function publishDraft(
+  db: Database,
+  organizationId: string,
+  key: string,
+  actorUserId: string | null,
+): Promise<ResolvedProfile> {
+  return db.transaction(async (tx) => {
+    const [draft] = await tx
+      .select()
+      .from(accountProfileDrafts)
+      .where(
+        and(eq(accountProfileDrafts.organizationId, organizationId), eq(accountProfileDrafts.key, key)),
+      );
+    if (!draft) throw new ProfileError('NO_VERSION', `No draft to publish for ${key}.`);
+
+    const published = await publishProfileVersion(tx as unknown as Database, {
+      organizationId,
+      key: draft.key,
+      name: draft.name,
+      accountType: draft.accountType,
+      description: draft.description,
+      config: draft.config,
+      notes: draft.notes,
+      createdByUserId: actorUserId,
+    });
+
+    await tx.delete(accountProfileDrafts).where(eq(accountProfileDrafts.id, draft.id));
+    return published;
+  });
 }

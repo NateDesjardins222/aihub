@@ -1,18 +1,17 @@
 /**
  * The products accounts are provisioned from.
  *
- * Read-only here on purpose: publishing a version is a SUPER_ADMIN action with
- * consequences for every account provisioned afterwards, and it is done
- * through the API with a reviewed configuration rather than typed into a form
- * at speed. What this page is for is answering "what terms did we sell, and
- * which version is current".
+ * The catalogue: name, current version and headline terms. Opening a product
+ * leads to the editor, where a SUPER_ADMIN drafts, previews and publishes a new
+ * version - never editing an existing one, because accounts are pinned to the
+ * version they were sold.
  */
 import type { JSX } from 'react';
 import { adminApi } from '../api';
-import { Panel, useLoad } from '../shared';
+import { Panel, StatusPill, useLoad, type AdminRouteGo } from '../shared';
 import type { AdminProfile } from '../types';
 
-export function AdminProductsPage(): JSX.Element {
+export function AdminProductsPage({ go }: { go: AdminRouteGo }): JSX.Element {
   const { data, error, loading } = useLoad<{ profiles: AdminProfile[] }>(
     () => adminApi.profiles(),
     [],
@@ -31,8 +30,14 @@ export function AdminProductsPage(): JSX.Element {
             key={profile.id}
             title={`${profile.name}  ·  ${profile.key}`}
             action={
-              <span className="adm-dim">
-                {profile.latestVersion ? `version ${profile.latestVersion.version}` : 'no version'}
+              <span className="adm-row-actions">
+                <StatusPill status={profile.status} />
+                <span className="adm-dim">
+                  {profile.latestVersion ? `version ${profile.latestVersion.version}` : 'no version'}
+                </span>
+                <button className="adm-btn" onClick={() => go({ name: 'PRODUCT', key: profile.key })}>
+                  Open
+                </button>
               </span>
             }
           >

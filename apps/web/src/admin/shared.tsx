@@ -48,6 +48,70 @@ export function useLoad<T>(
   return { data, error, loading, reload };
 }
 
+/**
+ * A keyset-paginated list: the first page, then "Load more" pages appended.
+ *
+ * The server hands back a `nextCursor`; the client hands it straight back to
+ * get the next page, and never counts or offsets. Changing the deps (a new
+ * search term) starts the list over from the top.
+ */
+export function usePagedList<T>(
+  fetchPage: (cursor: string | null) => Promise<{ items: T[]; nextCursor: string | null }>,
+  deps: unknown[],
+): {
+  items: T[];
+  error: string | null;
+  loading: boolean;
+  loadingMore: boolean;
+  nextCursor: string | null;
+  loadMore: () => void;
+} {
+  const [items, setItems] = useState<T[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setItems([]);
+    setNextCursor(null);
+    fetchPage(null)
+      .then((result) => {
+        if (cancelled) return;
+        setItems(result.items);
+        setNextCursor(result.nextCursor);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  const loadMore = useCallback(() => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    fetchPage(nextCursor)
+      .then((result) => {
+        setItems((prev) => [...prev, ...result.items]);
+        setNextCursor(result.nextCursor);
+        setError(null);
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoadingMore(false));
+  }, [nextCursor, loadingMore, fetchPage]);
+
+  return { items, error, loading, loadingMore, nextCursor, loadMore };
+}
+
 export function Panel({
   title,
   action,
