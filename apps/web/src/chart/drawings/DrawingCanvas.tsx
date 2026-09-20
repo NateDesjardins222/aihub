@@ -165,6 +165,28 @@ export function DrawingCanvas({
           state.market,
         );
       }
+
+      // The magnet's mark: a small ring on the open/high/low/close the anchor
+      // snapped to, so a trader can SEE the snap rather than guess at it. Drawn
+      // only while `snap` is set - placement or an anchor reshape with the
+      // magnet on - and cleared the instant the anchor is free again.
+      if (live.snap) {
+        const accent =
+          getComputedStyle(canvas).getPropertyValue('--accent').trim() || '#4d8dff';
+        const { x, y } = live.snap;
+        ctx.save();
+        ctx.strokeStyle = accent;
+        ctx.fillStyle = accent;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     };
 
     frame = requestAnimationFrame(render);

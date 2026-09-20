@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ANCHOR_COUNT,
   DEFAULT_STYLE,
+  DRAG_THRESHOLD,
   STORED_ANCHORS,
   FIB_LEVELS,
+  exceedsDragThreshold,
   distanceToLine,
   drawingBounds,
   normalizeStyle,
@@ -743,5 +745,26 @@ describe('positionReadout', () => {
       { pricePrecision: 2, tickValue: 5 },
     );
     expect(readout.reward).not.toMatch(/R\b/);
+  });
+});
+
+describe('the drag threshold', () => {
+  it('treats a press with no travel as not a drag', () => {
+    expect(exceedsDragThreshold(100, 100, 100, 100)).toBe(false);
+  });
+
+  it('ignores a jitter smaller than the threshold', () => {
+    expect(exceedsDragThreshold(100, 100, 101, 101)).toBe(false);
+    expect(exceedsDragThreshold(100, 100, 102, 100, DRAG_THRESHOLD)).toBe(false);
+  });
+
+  it('becomes a drag once the pointer clears the threshold', () => {
+    expect(exceedsDragThreshold(100, 100, 104, 100)).toBe(true);
+    expect(exceedsDragThreshold(100, 100, 100, 100 + DRAG_THRESHOLD)).toBe(true);
+  });
+
+  it('measures true distance, not per-axis', () => {
+    // 3-4-5: three across and four down is five away, comfortably past 3px.
+    expect(exceedsDragThreshold(0, 0, 3, 4)).toBe(true);
   });
 });

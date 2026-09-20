@@ -115,6 +115,7 @@ export function ChartHeader({
   const overflow = usePopover();
 
   const [symbolQuery, setSymbolQuery] = useState('');
+  const [symbolHi, setSymbolHi] = useState(0);
   const [indicatorQuery, setIndicatorQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -138,6 +139,7 @@ export function ChartHeader({
         className="chdr-symbol"
         onClick={(event) => {
           symbolQuery && setSymbolQuery('');
+          setSymbolHi(0);
           symbolMenu.toggle(event);
           window.setTimeout(() => searchRef.current?.focus(), 0);
         }}
@@ -158,13 +160,42 @@ export function ChartHeader({
           className="pop-search"
           placeholder="Search instruments"
           value={symbolQuery}
-          onChange={(event) => setSymbolQuery(event.target.value)}
+          onChange={(event) => {
+            setSymbolQuery(event.target.value);
+            // A fresh filter highlights its first row, so Enter takes the best
+            // match without an arrow press.
+            setSymbolHi(0);
+          }}
+          onKeyDown={(event) => {
+            // Full keyboard operation: the filtered list is driven without ever
+            // reaching for the mouse.
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setSymbolHi((h) => Math.min(h + 1, matches.length - 1));
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setSymbolHi((h) => Math.max(h - 1, 0));
+            } else if (event.key === 'Enter') {
+              const chosen = matches[symbolHi];
+              if (chosen) {
+                event.preventDefault();
+                setSymbolFor(chosen.root);
+                symbolMenu.close();
+              }
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              symbolMenu.close();
+            }
+          }}
         />
         {matches.length === 0 ? <div className="pop-empty">No instrument matches.</div> : null}
-        {matches.map((i) => (
+        {matches.map((i, index) => (
           <button
             key={i.root}
-            className={`pop-item ${i.root === activeSymbol ? 'pop-item-on' : ''}`}
+            className={`pop-item ${i.root === activeSymbol ? 'pop-item-on' : ''} ${
+              index === symbolHi ? 'pop-item-hi' : ''
+            }`}
+            onMouseEnter={() => setSymbolHi(index)}
             onClick={() => {
               setSymbolFor(i.root);
               symbolMenu.close();

@@ -113,6 +113,7 @@ export async function signIn(page) {
   await returnToDefaultChart(page);
   await returnToDefaultTheme(page);
   await returnToDefaultExecution(page);
+  await returnToDefaultMagnet(page);
 }
 
 /**
@@ -233,6 +234,30 @@ export async function returnToDefaultExecution(page) {
   }
   await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
+  return changed;
+}
+
+/**
+ * Put the magnet back to OFF if a previous run left it snapping.
+ *
+ * The magnet is a stored preference, and it is the SIXTH kind of inherited
+ * state to bite the suites (see D-004 for the first five): a run left on STRONG
+ * snaps every placement to an open/high/low/close, so a suite that clicks a
+ * fixed chart fraction and checks the pixels it lands on fails for a reason
+ * nothing in it can see. Off is the deterministic starting point - a click
+ * lands exactly where it was aimed - and a suite that wants the magnet turns it
+ * on itself. Nothing is clicked when it is already off.
+ */
+export async function returnToDefaultMagnet(page) {
+  const magnet = page.locator('.rail .rail-btn[aria-label="Magnet"]');
+  if ((await magnet.count()) === 0) return false;
+  let changed = false;
+  for (let i = 0; i < 3; i += 1) {
+    if ((await magnet.getAttribute('data-magnet')) === 'OFF') break;
+    await magnet.click();
+    changed = true;
+    await page.waitForTimeout(150);
+  }
   return changed;
 }
 

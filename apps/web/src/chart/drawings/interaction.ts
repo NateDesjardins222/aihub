@@ -53,6 +53,14 @@ export interface LiveState {
   preview: Drawing | null;
   /** Anchors already placed in a multi-click placement. */
   pending: Anchor[];
+  /**
+   * Where the magnet just snapped, in canvas pixels, or null.
+   *
+   * Set while placing or reshaping an anchor with the magnet on, so the canvas
+   * can mark the open/high/low/close it caught. Cleared the instant the anchor
+   * is free again, so it never lingers.
+   */
+  snap: Point | null;
   hoverId: string | null;
   /** Bumped whenever something the canvas paints has changed. */
   version: number;
@@ -65,6 +73,7 @@ const live: LiveState = {
   draft: null,
   preview: null,
   pending: [],
+  snap: null,
   hoverId: null,
   version: 0,
 };
@@ -104,6 +113,7 @@ export function endGesture(): Gesture | null {
   const gesture = live.gesture;
   live.gesture = null;
   live.draft = null;
+  live.snap = null;
   invalidate();
   return gesture;
 }
@@ -118,12 +128,20 @@ export function setPending(anchors: Anchor[]): void {
   invalidate();
 }
 
+export function setSnap(point: Point | null): void {
+  if (live.snap === point) return;
+  if (live.snap && point && live.snap.x === point.x && live.snap.y === point.y) return;
+  live.snap = point;
+  invalidate();
+}
+
 /** Abandon everything in flight. Used when the tool changes or Escape is hit. */
 export function resetInteraction(): void {
   live.gesture = null;
   live.draft = null;
   live.preview = null;
   live.pending = [];
+  live.snap = null;
   invalidate();
 }
 

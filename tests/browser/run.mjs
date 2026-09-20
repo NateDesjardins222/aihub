@@ -54,6 +54,7 @@ const SUITES = [
   'polish',
   'first-run',
   'tools',
+  'charting-v3',
   'replay-brackets',
   'layout',
   'admin',

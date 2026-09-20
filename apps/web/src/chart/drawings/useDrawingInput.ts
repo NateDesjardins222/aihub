@@ -25,6 +25,7 @@ import type { ChartAdapter } from '../ChartAdapter';
 import { useChartStore } from '../../state/chart-store';
 import {
   ANCHOR_COUNT,
+  exceedsDragThreshold,
   isPositionTool,
   positionAnchors,
   applyHandle,
@@ -48,6 +49,7 @@ import {
   setPending,
   setPointer,
   setPreview,
+  setSnap,
   updateDraft,
   type Gesture,
 } from './interaction';
@@ -107,6 +109,14 @@ export function useDrawingInput(options: DrawingInputOptions): void {
 
     let frame = 0;
     let cursor = '';
+    /*
+     * Where a body/anchor gesture went down, and whether it has become a real
+     * drag. Until the pointer leaves a small radius around the press, the
+     * gesture is "armed" but paints nothing - so selecting an object to look at
+     * it never moves it. See DRAG_THRESHOLD.
+     */
+    let gestureDown: Point | null = null;
+    let dragActive = false;
 
     /*
      * The container's position, cached.
@@ -155,6 +165,26 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       // strong one takes the nearest of the four whatever the distance.
       const reach = store.magnet === 'STRONG' ? Number.POSITIVE_INFINITY : env.current.tickSize * 6;
       return magnetAnchor(raw, adapter.barNear(time), reach);
+    };
+
+    /**
+     * Where a magnetic anchor landed, and whether the magnet caught it.
+     *
+     * When it did, the snapped price differs from the raw one under the cursor,
+     * and the pixel of that snap is handed to the canvas so it can mark the
+     * open/high/low/close. When the magnet is off or too far, `snap` is null and
+     * no marker shows.
+     */
+    const snapMarker = (point: Point, anchor: Anchor | null): Point | null => {
+      const view = projection();
+      if (!view || !anchor) return null;
+      const rawPrice = view.yToPrice(point.y);
+      if (rawPrice === null) return null;
+      // Snapped only if the magnet moved the price off the cursor's own row.
+      if (Math.abs(anchor.price - rawPrice) < 1e-9) return null;
+      const x = view.timeToX(anchor.time);
+      const y = view.priceToY(anchor.price);
+      return x === null || y === null ? null : { x, y };
     };
 
     const mine = (): Drawing[] =>
@@ -223,6 +253,10 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         const price = view.yToPrice(point.y);
         const anchors = [...live.pending];
         if (time !== null && price !== null) anchors.push({ time, price });
+        // The magnet's mark shows WHERE the anchor will land - the ring sits on
+        // the open/high/low/close the click will snap to, which reads more
+        // clearly than nudging the preview line itself.
+        setSnap(snapMarker(point, anchorAt(point, true)));
         const defaults = store.newDrawingDefaults(kind);
         setPreview({
           id: 'preview',
@@ -245,6 +279,15 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       if (gesture) {
         const view = projection();
         if (!view) return;
+        // A press is not a drag until the pointer has left a small radius. Below
+        // it the object stays exactly where it was, so a selecting click never
+        // moves it and a trackpad's tremor is ignored.
+        if (!dragActive) {
+          if (gestureDown && !exceedsDragThreshold(gestureDown.x, gestureDown.y, point.x, point.y)) {
+            return;
+          }
+          dragActive = true;
+        }
         if (gesture.kind === 'MOVE' || !gesture.role) {
           // Bars across, and price down: the two axes a chart actually has.
           const fromIndex = view.xToIndex(gesture.fromX);
@@ -263,6 +306,7 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         }
         const anchor = anchorAt(point, true);
         if (!anchor) return;
+        setSnap(snapMarker(point, anchor));
         updateDraft(applyHandle(gesture.original, gesture.role, anchor));
         return;
       }
@@ -356,6 +400,8 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         original: found.drawing,
       };
       beginGesture(gesture, found.drawing);
+      gestureDown = point;
+      dragActive = false;
       stateRef.current = 'DRAGGING';
       // Keep the handle's own cursor through the drag: a corner stays a corner
       // cursor while it is being pulled.
@@ -414,6 +460,8 @@ export function useDrawingInput(options: DrawingInputOptions): void {
       if (!live.gesture) return;
       const draft = live.draft;
       const gesture = endGesture();
+      gestureDown = null;
+      dragActive = false;
       stateRef.current = 'IDLE';
       setCursor('');
       if (!gesture || !draft) return;
@@ -448,6 +496,8 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         else if (live.gesture) {
           // Abandon a drag in flight: the object snaps back to where it was.
           endGesture();
+          gestureDown = null;
+          dragActive = false;
           stateRef.current = 'IDLE';
         } else if (store.tool !== 'CURSOR') store.setTool('CURSOR');
         else if (store.selectedDrawingId) store.select(null);

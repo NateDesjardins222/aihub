@@ -490,6 +490,29 @@ export const HANDLE_RADIUS = 4;
 export const HIT_TOLERANCE = 6;
 
 /**
+ * How far the pointer must travel, in pixels, before a press on a drawing
+ * becomes a drag rather than a selection.
+ *
+ * Without it, the first pointermove after grabbing an object - a single pixel
+ * of hand tremor, which a trackpad produces constantly - translated the object
+ * by a sub-tick amount and the release committed it. Selecting a level to look
+ * at it moved the level. Three pixels is below what a deliberate drag ever
+ * falls under and above what a click ever reaches.
+ */
+export const DRAG_THRESHOLD = 3;
+
+/** Has the pointer moved far enough from where it went down to be a drag? */
+export function exceedsDragThreshold(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  threshold: number = DRAG_THRESHOLD,
+): boolean {
+  return Math.hypot(toX - fromX, toY - fromY) >= threshold;
+}
+
+/**
  * What dragging a handle is allowed to change.
  *
  * A rectangle's corner moves a time and a price; its top edge moves only a

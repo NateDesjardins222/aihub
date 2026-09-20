@@ -340,7 +340,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
         borderColor: a.scales.scaleLineColor,
         timeVisible: true,
         secondsVisible: this.timeframe.endsWith('s'),
-        rightOffset: 6,
+        // Breathing room for the live candle: eight bar-spaces keeps the newest
+        // print off the price axis so the last move is readable, still inside
+        // the 6-10 range that feels right rather than wasteful.
+        rightOffset: 8,
         barSpacing: 7,
         fixLeftEdge: false,
         lockVisibleTimeRangeOnResize: true,
