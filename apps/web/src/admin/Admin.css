@@ -510,3 +510,102 @@
 .adm-denied a {
   color: var(--accent);
 }
+
+/* --- Owner V1: tabs, two-up grid, and the System health board ------------- */
+
+.adm-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .adm-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.adm-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.adm-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.adm-tab:hover {
+  color: var(--text-primary);
+}
+.adm-tab-on {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+.adm-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.adm-health {
+  display: flex;
+  flex-direction: column;
+}
+.adm-health-row {
+  display: grid;
+  grid-template-columns: 120px 12px 96px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.adm-health-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.adm-health-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.adm-health-state {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.adm-health-detail {
+  font-size: var(--fs-sm);
+}
+.adm-health-ok {
+  background: var(--long, #2ec4a6);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--long, #2ec4a6) 22%, transparent);
+}
+.adm-health-delayed {
+  background: var(--warn, #f5a524);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn, #f5a524) 22%, transparent);
+}
+.adm-health-degraded {
+  background: var(--warn, #f5a524);
+}
+.adm-health-offline {
+  background: var(--short, #f2544b);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--short, #f2544b) 22%, transparent);
+}
+.adm-health-foot {
+  padding: 12px 4px 2px;
+  font-size: var(--fs-xs);
+}

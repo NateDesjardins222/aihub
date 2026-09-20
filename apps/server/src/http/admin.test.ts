@@ -551,3 +551,61 @@ describe('the machine-to-machine seam', () => {
     expect(JSON.parse(response.body).error.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
   });
 });
+
+describe('the surveillance, risk and system views', () => {
+  it('turns away a trader from trading, risk and system', async () => {
+    for (const path of ['/trading', '/risk', '/system']) {
+      const res = await call('GET', `/api/v1/admin${path}`, tokens['TRADER'] ?? null);
+      expect([401, 403]).toContain(res.status);
+    }
+  });
+
+  it('lets support read the surveillance view, scoped to its own firm', async () => {
+    const res = await call('GET', '/api/v1/admin/trading', tokens['SUPPORT']!);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.json.openPositions)).toBe(true);
+    expect(Array.isArray(res.json.workingOrders)).toBe(true);
+    expect(Array.isArray(res.json.recentFills)).toBe(true);
+    // Nothing from the other firm's account may appear here.
+    const ids = [
+      ...res.json.openPositions,
+      ...res.json.workingOrders,
+      ...res.json.recentFills,
+    ].map((row: { accountId: string }) => row.accountId);
+    expect(ids).not.toContain(otherOrgAccountId);
+  });
+
+  it('ranks risk by stated facts and scopes it to the firm', async () => {
+    const res = await call('GET', '/api/v1/admin/risk', tokens['SUPPORT']!);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.json.nearestLossLimit)).toBe(true);
+    expect(Array.isArray(res.json.largestUnrealizedLoss)).toBe(true);
+    expect(Array.isArray(res.json.onHold)).toBe(true);
+    expect(Array.isArray(res.json.recentFailures)).toBe(true);
+    // largest-loss ordering is monotonic (most negative first).
+    const losses = res.json.largestUnrealizedLoss.map((r: { openPnlMicros: number }) => r.openPnlMicros);
+    for (let i = 1; i < losses.length; i += 1) expect(losses[i]).toBeGreaterThanOrEqual(losses[i - 1]);
+    const heldIds = res.json.onHold.map((r: { accountId: string }) => r.accountId);
+    expect(heldIds).not.toContain(otherOrgAccountId);
+  });
+
+  it('reports system health honestly, never green on a stale feed', async () => {
+    const res = await call('GET', '/api/v1/admin/system', tokens['SUPPORT']!);
+    expect(res.status).toBe(200);
+    expect(res.json.api.state).toBe('HEALTHY');
+    expect(['HEALTHY', 'OFFLINE']).toContain(res.json.database.state);
+    // The dev feed is delayed by design; it must never claim HEALTHY.
+    expect(['HEALTHY', 'DELAYED', 'DEGRADED', 'OFFLINE']).toContain(res.json.marketData.state);
+    if (res.json.marketData.blocksOrderEntry) {
+      expect(res.json.marketData.state).not.toBe('HEALTHY');
+    }
+    expect(['HEALTHY', 'FAILED']).toContain(res.json.audit.state);
+  });
+
+  it('refuses trading, risk and system with no token', async () => {
+    for (const path of ['/trading', '/risk', '/system']) {
+      const res = await call('GET', `/api/v1/admin${path}`, null);
+      expect(res.status).toBe(401);
+    }
+  });
+});

@@ -18,6 +18,9 @@ import { AdminUserPage } from './pages/UserPage';
 import { AdminAccountsPage } from './pages/AccountsPage';
 import { AdminAccountPage } from './pages/AccountPage';
 import { AdminProductsPage } from './pages/ProductsPage';
+import { AdminTradingPage } from './pages/TradingPage';
+import { AdminRiskPage } from './pages/RiskPage';
+import { AdminSystemPage } from './pages/SystemPage';
 import './Admin.css';
 
 export type AdminRoute =
@@ -26,30 +29,46 @@ export type AdminRoute =
   | { name: 'USER'; id: string }
   | { name: 'ACCOUNTS' }
   | { name: 'ACCOUNT'; id: string }
-  | { name: 'PRODUCTS' };
+  | { name: 'TRADING' }
+  | { name: 'RISK' }
+  | { name: 'PRODUCTS' }
+  | { name: 'SYSTEM' };
 
 export function parseAdminRoute(pathname: string): AdminRoute {
   const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
-  if (parts[0] === 'users') return parts[1] ? { name: 'USER', id: parts[1] } : { name: 'USERS' };
+  // "traders" and "users" are the same directory - the owner vocabulary and the
+  // schema vocabulary for the same people.
+  if (parts[0] === 'users' || parts[0] === 'traders') {
+    return parts[1] ? { name: 'USER', id: parts[1] } : { name: 'USERS' };
+  }
   if (parts[0] === 'accounts') {
     return parts[1] ? { name: 'ACCOUNT', id: parts[1] } : { name: 'ACCOUNTS' };
   }
+  if (parts[0] === 'trading') return { name: 'TRADING' };
+  if (parts[0] === 'risk') return { name: 'RISK' };
   if (parts[0] === 'products') return { name: 'PRODUCTS' };
+  if (parts[0] === 'system') return { name: 'SYSTEM' };
   return { name: 'OVERVIEW' };
 }
 
 export function adminPath(route: AdminRoute): string {
   switch (route.name) {
     case 'USERS':
-      return '/admin/users';
+      return '/admin/traders';
     case 'USER':
-      return `/admin/users/${route.id}`;
+      return `/admin/traders/${route.id}`;
     case 'ACCOUNTS':
       return '/admin/accounts';
     case 'ACCOUNT':
       return `/admin/accounts/${route.id}`;
+    case 'TRADING':
+      return '/admin/trading';
+    case 'RISK':
+      return '/admin/risk';
     case 'PRODUCTS':
       return '/admin/products';
+    case 'SYSTEM':
+      return '/admin/system';
     default:
       return '/admin';
   }
@@ -57,9 +76,12 @@ export function adminPath(route: AdminRoute): string {
 
 const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'OVERVIEW' }, label: 'Overview' },
-  { route: { name: 'USERS' }, label: 'Users' },
+  { route: { name: 'USERS' }, label: 'Traders' },
   { route: { name: 'ACCOUNTS' }, label: 'Accounts' },
+  { route: { name: 'TRADING' }, label: 'Trading' },
+  { route: { name: 'RISK' }, label: 'Risk' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
+  { route: { name: 'SYSTEM' }, label: 'System' },
 ];
 
 export function AdminApp(): JSX.Element {
@@ -134,7 +156,10 @@ export function AdminApp(): JSX.Element {
         {route.name === 'ACCOUNT' ? (
           <AdminAccountPage id={route.id} go={go} mayMutate={mayMutate} />
         ) : null}
+        {route.name === 'TRADING' ? <AdminTradingPage go={go} /> : null}
+        {route.name === 'RISK' ? <AdminRiskPage go={go} /> : null}
         {route.name === 'PRODUCTS' ? <AdminProductsPage /> : null}
+        {route.name === 'SYSTEM' ? <AdminSystemPage /> : null}
       </main>
     </div>
   );

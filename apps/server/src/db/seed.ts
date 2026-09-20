@@ -287,6 +287,23 @@ async function main(): Promise<void> {
       console.log('demo user created: demo@atlasfutures.local / atlas-demo-2026');
     }
 
+    // An initial operator, so the Owner Control Center has someone to sign in
+    // as. A firm needs one super-admin to exist before it can grant anyone
+    // else a role; this is that seat.
+    const ownerEmail = 'owner@atlasfutures.local';
+    const [existingOwner] = await db.select().from(users).where(eq(users.email, ownerEmail));
+    if (!existingOwner) {
+      await db.insert(users).values({
+        email: ownerEmail,
+        passwordHash: await hashPassword('atlas-owner-2026'),
+        displayName: 'Atlas Operator',
+        organizationId,
+        role: 'SUPER_ADMIN',
+        isAdmin: true,
+      });
+      console.log('owner user created: owner@atlasfutures.local / atlas-owner-2026');
+    }
+
     // A starting vocabulary for the journal. Every one of these is an ordinary
     // row the trader can rename or delete: the platform has no opinion about
     // what a mistake is called, and hardcoding these would make it have one.

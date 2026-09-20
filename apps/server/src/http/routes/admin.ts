@@ -38,6 +38,7 @@ import {
 import { ApiError } from '../errors.js';
 import { requireRole, requireUser } from '../auth-plugin.js';
 import type { TradingEngine } from '../../trading/engine.js';
+import type { MarketDataService } from '../../marketdata/service.js';
 import { loadAccountAndTemplate, ruleConfigFor } from '../../trading/account-rules.js';
 import {
   ProvisioningError,
@@ -63,6 +64,8 @@ import type { Actor } from '../../platform/actor.js';
 
 interface AdminDeps {
   readonly engine: TradingEngine;
+  /** The market feed, for the System page's honest health reporting. */
+  readonly market: MarketDataService;
 }
 
 const OPEN_ORDER_STATUSES = ['PENDING', 'ACCEPTED', 'WORKING', 'PARTIALLY_FILLED'];
@@ -879,6 +882,260 @@ export function adminRoutes(deps: AdminDeps) {
           occurredAt: row.occurredAt.getTime(),
           deliveredAt: row.deliveredAt?.getTime() ?? null,
         })),
+      });
+    });
+
+    /*
+     * Firm-wide trading surveillance.
+     *
+     * Open positions are VALUED BY THE ENGINE, not re-derived here: the
+     * positions table stores cost basis, not a mark, and inventing the mark in
+     * this route is exactly the class of money bug the diagnostics milestone
+     * spent itself catching. Only accounts that actually hold a position are
+     * valued, so the cost is bounded by open exposure, not by the account count.
+     */
+    app.get('/trading', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+
+      const openAccounts = await db
+        .selectDistinct({ id: positions.accountId })
+        .from(positions)
+        .innerJoin(accounts, eq(positions.accountId, accounts.id))
+        .where(and(eq(accounts.organizationId, organizationId), sql`${positions.qty} <> 0`))
+        .limit(300);
+
+      const identities = new Map<string, { publicId: string; name: string; email: string }>();
+      if (openAccounts.length > 0) {
+        const rows = await db
+          .select({ id: accounts.id, publicId: accounts.publicId, name: accounts.name, email: users.email })
+          .from(accounts)
+          .innerJoin(users, eq(accounts.userId, users.id))
+          .where(inArray(accounts.id, openAccounts.map((a) => a.id)));
+        for (const row of rows) {
+          identities.set(row.id, { publicId: row.publicId, name: row.name, email: row.email });
+        }
+      }
+
+      const valued = await Promise.all(
+        openAccounts.map(async ({ id }) => ({ id, valuation: await deps.engine.valuation(id) })),
+      );
+      const openPositions = valued.flatMap(({ id, valuation }) => {
+        const who = identities.get(id);
+        return (valuation?.positions ?? [])
+          .filter((p) => Math.abs(p.qty) > 0)
+          .map((p) => ({
+            accountId: id,
+            accountPublicId: who?.publicId ?? null,
+            trader: who?.email ?? null,
+            symbol: p.symbol,
+            side: p.side,
+            qty: Math.abs(p.qty),
+            avgEntryPrice: p.avgEntryPrice,
+            markPrice: p.markPrice,
+            unrealizedPnlMicros: p.unrealizedPnlMicros,
+            openedAt: p.openedAt ?? null,
+          }));
+      });
+
+      const workingRows = await db
+        .select({ order: orders, publicId: accounts.publicId, accountId: accounts.id, email: users.email })
+        .from(orders)
+        .innerJoin(accounts, eq(orders.accountId, accounts.id))
+        .innerJoin(users, eq(accounts.userId, users.id))
+        .where(and(eq(accounts.organizationId, organizationId), inArray(orders.status, OPEN_ORDER_STATUSES)))
+        .orderBy(desc(orders.createdAt))
+        .limit(100);
+
+      const fillRows = await db
+        .select({ fill: executions, publicId: accounts.publicId, accountId: accounts.id, email: users.email })
+        .from(executions)
+        .innerJoin(accounts, eq(executions.accountId, accounts.id))
+        .innerJoin(users, eq(accounts.userId, users.id))
+        .where(eq(accounts.organizationId, organizationId))
+        .orderBy(desc(executions.execTime))
+        .limit(100);
+
+      return reply.send({
+        openPositions,
+        openContracts: openPositions.reduce((sum, p) => sum + p.qty, 0),
+        workingOrders: workingRows.map((row) => ({
+          ...presentAdminOrder(row.order),
+          accountId: row.accountId,
+          accountPublicId: row.publicId,
+          trader: row.email,
+        })),
+        recentFills: fillRows.map((row) => ({
+          id: row.fill.id,
+          accountId: row.accountId,
+          accountPublicId: row.publicId,
+          trader: row.email,
+          symbol: row.fill.symbol,
+          side: row.fill.side,
+          qty: row.fill.qty,
+          price: priceOf(row.fill.symbol, row.fill.priceTicks),
+          realizedPnlMicros: row.fill.realizedPnlMicros,
+          feesMicros: row.fill.feesMicros ?? null,
+          execTime: row.fill.execTime.getTime(),
+        })),
+      });
+    });
+
+    /*
+     * Risk: where should the operator look first?
+     *
+     * Every ordering here is a plain, stated fact - no opaque score. Accounts
+     * with open exposure are valued by the engine (the only truthful source of
+     * unrealized P&L and remaining drawdown); held and recently-failed accounts
+     * come straight from their lifecycle status. An account that is flat is not
+     * "near its limit" - it has no open risk to be near it with - so the
+     * ranked lists are over accounts that can actually move right now.
+     */
+    app.get('/risk', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+
+      const openAccounts = await db
+        .selectDistinct({ id: positions.accountId })
+        .from(positions)
+        .innerJoin(accounts, eq(positions.accountId, accounts.id))
+        .where(and(eq(accounts.organizationId, organizationId), sql`${positions.qty} <> 0`))
+        .limit(300);
+
+      const identities = new Map<string, { publicId: string; name: string; email: string }>();
+      if (openAccounts.length > 0) {
+        const rows = await db
+          .select({ id: accounts.id, publicId: accounts.publicId, name: accounts.name, email: users.email })
+          .from(accounts)
+          .innerJoin(users, eq(accounts.userId, users.id))
+          .where(inArray(accounts.id, openAccounts.map((a) => a.id)));
+        for (const row of rows) {
+          identities.set(row.id, { publicId: row.publicId, name: row.name, email: row.email });
+        }
+      }
+
+      const valued = (
+        await Promise.all(
+          openAccounts.map(async ({ id }) => {
+            const valuation = await deps.engine.valuation(id);
+            const who = identities.get(id);
+            return valuation
+              ? {
+                  accountId: id,
+                  accountPublicId: who?.publicId ?? null,
+                  trader: who?.email ?? null,
+                  openPnlMicros: valuation.openPnlMicros,
+                  remainingDrawdownMicros: valuation.remainingDrawdownMicros,
+                  openContracts: valuation.openContracts,
+                  equityMicros: valuation.equityMicros,
+                }
+              : null;
+          }),
+        )
+      ).filter((x): x is NonNullable<typeof x> => x !== null);
+
+      const nearestLossLimit = [...valued]
+        .filter((v) => v.remainingDrawdownMicros !== null)
+        .sort((a, b) => (a.remainingDrawdownMicros ?? 0) - (b.remainingDrawdownMicros ?? 0))
+        .slice(0, 15);
+      const largestUnrealizedLoss = [...valued]
+        .filter((v) => (v.openPnlMicros ?? 0) < 0)
+        .sort((a, b) => (a.openPnlMicros ?? 0) - (b.openPnlMicros ?? 0))
+        .slice(0, 15);
+
+      const held = await db
+        .select({ account: accounts, email: users.email })
+        .from(accounts)
+        .innerJoin(users, eq(accounts.userId, users.id))
+        .where(and(eq(accounts.organizationId, organizationId), eq(accounts.status, 'LOCKED')))
+        .orderBy(desc(accounts.updatedAt))
+        .limit(50);
+
+      const failed = await db
+        .select({ account: accounts, email: users.email })
+        .from(accounts)
+        .innerJoin(users, eq(accounts.userId, users.id))
+        .where(and(eq(accounts.organizationId, organizationId), eq(accounts.status, 'FAILED')))
+        .orderBy(desc(accounts.updatedAt))
+        .limit(15);
+
+      const brief = (row: { account: AccountRow; email: string }) => ({
+        accountId: row.account.id,
+        accountPublicId: row.account.publicId,
+        name: row.account.name,
+        trader: row.email,
+        balanceMicros: row.account.balanceMicros,
+        failedReason: row.account.failedReason,
+        updatedAt: row.account.updatedAt?.getTime() ?? null,
+      });
+
+      return reply.send({
+        nearestLossLimit,
+        largestUnrealizedLoss,
+        onHold: held.map(brief),
+        recentFailures: failed.map(brief),
+      });
+    });
+
+    /*
+     * System health, told honestly.
+     *
+     * Green means green. A 200 from this endpoint proves the API is up and the
+     * database answered - it says nothing about the market feed, which is
+     * reported from the provider's own connection state and the age of its last
+     * print. A delayed provider is DELAYED, a stale one DEGRADED, a
+     * disconnected one OFFLINE - never a green tick because an HTTP call
+     * happened to return.
+     */
+    app.get('/system', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+
+      let dbState: 'HEALTHY' | 'OFFLINE' = 'HEALTHY';
+      try {
+        await db.execute(sql`select 1`);
+      } catch {
+        dbState = 'OFFLINE';
+      }
+
+      const connection = deps.market.getConnectionStatus();
+      const quote = deps.market.getQuote('NQ');
+      const freshness = deps.market.freshness('NQ');
+      let marketState: 'HEALTHY' | 'DELAYED' | 'DEGRADED' | 'OFFLINE';
+      if (connection.state !== 'CONNECTED') {
+        marketState = connection.state === 'RECONNECTING' ? 'DEGRADED' : 'OFFLINE';
+      } else if (freshness.blocksOrderEntry) {
+        marketState = 'DEGRADED';
+      } else if (connection.mode === 'DELAYED') {
+        marketState = 'DELAYED';
+      } else {
+        marketState = 'HEALTHY';
+      }
+
+      let auditState: 'HEALTHY' | 'FAILED' = 'HEALTHY';
+      try {
+        const verification = await verifyAuditChain(db, organizationId, { limit: 5_000 });
+        if (!verification.ok) auditState = 'FAILED';
+      } catch {
+        auditState = 'FAILED';
+      }
+
+      return reply.send({
+        api: { state: 'HEALTHY' },
+        database: { state: dbState },
+        marketData: {
+          state: marketState,
+          provider: connection.providerId ?? null,
+          mode: connection.mode,
+          delaySeconds: connection.delaySeconds ?? null,
+          connection: connection.state,
+          lastQuoteExchangeTs: quote?.exchangeTs ?? null,
+          ageMs: freshness.ageMs ?? null,
+          blocksOrderEntry: freshness.blocksOrderEntry === true,
+        },
+        audit: { state: auditState },
+        build: {
+          nodeEnv: process.env.NODE_ENV ?? 'development',
+          version: process.env.ATLAS_BUILD ?? null,
+          at: Date.now(),
+        },
       });
     });
   };

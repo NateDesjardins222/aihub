@@ -184,7 +184,7 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(journalRoutes({ engine, replay: stack.replay }), { prefix: '/api/v1/journal' });
   // The operator console and the machine-to-machine seam. Both are authorised
   // server-side; neither is reachable from the trading terminal's session.
-  await app.register(adminRoutes({ engine }), { prefix: '/api/v1/admin' });
+  await app.register(adminRoutes({ engine, market: stack.market }), { prefix: '/api/v1/admin' });
   await app.register(provisioningRoutes, { prefix: '/api/v1/provisioning' });
 
   return { app, stack, gateway, engine };

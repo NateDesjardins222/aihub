@@ -12,6 +12,9 @@ import type {
   AdminLiveView,
   AdminOverview,
   AdminProfile,
+  AdminRisk,
+  AdminSystem,
+  AdminTrading,
   AdminUser,
   AuditEntry,
 } from './types';
@@ -83,4 +86,10 @@ export const adminApi = {
 
   userAction: (userId: string, action: 'disable' | 'enable', reason: string) =>
     api.post<{ user: AdminUser }>(`${BASE}/users/${userId}/${action}`, { confirm: true, reason }),
+
+  trading: () => api.get<AdminTrading>(`${BASE}/trading`),
+
+  risk: () => api.get<AdminRisk>(`${BASE}/risk`),
+
+  system: () => api.get<AdminSystem>(`${BASE}/system`),
 };

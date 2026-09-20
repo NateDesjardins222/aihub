@@ -171,3 +171,69 @@ export interface AdminProfile {
   description: string | null;
   latestVersion: { id: string; version: number; config: unknown } | null;
 }
+
+export interface AdminTradingPosition {
+  accountId: string;
+  accountPublicId: string | null;
+  trader: string | null;
+  symbol: string;
+  side: string;
+  qty: number;
+  avgEntryPrice: number | null;
+  markPrice: number | null;
+  unrealizedPnlMicros: number | null;
+  openedAt: number | null;
+}
+
+export interface AdminTrading {
+  openPositions: AdminTradingPosition[];
+  openContracts: number;
+  workingOrders: Array<AdminOrder & { accountId: string; accountPublicId: string; trader: string }>;
+  recentFills: Array<
+    AdminFill & { accountId: string; accountPublicId: string; trader: string; feesMicros: number | null }
+  >;
+}
+
+export interface AdminRiskAccount {
+  accountId: string;
+  accountPublicId: string | null;
+  trader: string | null;
+  openPnlMicros: number | null;
+  remainingDrawdownMicros: number | null;
+  openContracts: number;
+  equityMicros: number | null;
+}
+
+export interface AdminRiskBrief {
+  accountId: string;
+  accountPublicId: string;
+  name: string;
+  trader: string;
+  balanceMicros: number;
+  failedReason: string | null;
+  updatedAt: number | null;
+}
+
+export interface AdminRisk {
+  nearestLossLimit: AdminRiskAccount[];
+  largestUnrealizedLoss: AdminRiskAccount[];
+  onHold: AdminRiskBrief[];
+  recentFailures: AdminRiskBrief[];
+}
+
+export interface AdminSystem {
+  api: { state: string };
+  database: { state: string };
+  marketData: {
+    state: 'HEALTHY' | 'DELAYED' | 'DEGRADED' | 'OFFLINE';
+    provider: string | null;
+    mode: string;
+    delaySeconds: number | null;
+    connection: string;
+    lastQuoteExchangeTs: number | null;
+    ageMs: number | null;
+    blocksOrderEntry: boolean;
+  };
+  audit: { state: string };
+  build: { nodeEnv: string; version: string | null; at: number };
+}
