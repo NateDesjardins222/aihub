@@ -99,11 +99,11 @@ Two races an operator can actually cause, now in the admin suite:
   the V1-stays-on-V1 immutability proof, SUPER_ADMIN-only authorization, draft
   validation, and the two concurrency tests.
 * Typecheck: web and server clean.
-* Execution torture (combined owner+execution, 1,200 ops = 100 sequences × 12,
-  cycling the instruments the harness trades): run through the browser against
-  the live engine. Result recorded in the weaknesses section below once the run
-  completes; V1's 120-op reconciliation was clean (0 invariant failures), and
-  this run extends that by an order of magnitude.
+* Execution torture: a complete run on this build — 40 operations (5 sequences ×
+  8), replay market, seed 1234 — reconciled with **0 invariant failures**, no
+  DOM growth beyond noise (311 → 341 nodes, canvases 8 → 8) and no heap growth
+  (10.7 → 9.6 MB). Refusals were correct (3 × NO_POSITION). See the weaknesses
+  section for the larger run that did **not** complete in this environment.
 
 ## Honestly not done / remaining weaknesses (do not mistake this for "done")
 
@@ -126,9 +126,15 @@ Two races an operator can actually cause, now in the admin suite:
   at 2k/10k ops, and failure-injection** were not performed this turn. The
   critical invariants are covered by the automated suites; the breadth work is
   deferred and named here rather than implied.
-* **The 5,000-op execution torture** across all eight instruments was not run to
-  completion in this environment (a 1,000+-op run was; result below). The larger
-  run is deferred, not claimed.
+* **The 1,000+ and 5,000-op execution torture runs did not complete in this
+  environment.** A 1,200-op run was started and killed after 40 minutes with no
+  result: through a real headless browser stepping a replay market, throughput
+  is roughly one operation every 3–4 seconds, so 1,200 ops is ~an hour and
+  5,000 is several. The 40-op run above is the honest, complete evidence for
+  this build; the order-of-magnitude runs are deferred to a headless/API-level
+  torture path rather than claimed. This is a harness-throughput limit, not a
+  reconciliation finding — every run that has completed, here and in V1, was
+  clean.
 * **Product editor scope.** The editor exposes the rule/instrument/display
   terms the engine consumes; the opaque `execution` and `payoutRules` blocks are
   carried through a draft unchanged but not yet editable field-by-field.
