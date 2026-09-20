@@ -12,6 +12,13 @@ import type { JSX } from 'react';
  */
 const AdminApp = lazy(() => import('./admin/AdminApp').then((m) => ({ default: m.AdminApp })));
 
+/*
+ * A development-only icon gallery, reached at /icons and lazily loaded so it
+ * never ships in the trader's first paint. It renders the drawing-tool icons at
+ * every rail size and state for side-by-side comparison against the references.
+ */
+const IconGallery = lazy(() => import('./dev/IconGallery').then((m) => ({ default: m.IconGallery })));
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -26,10 +33,20 @@ export function App(): JSX.Element {
   const phase = useSession((s) => s.phase);
   const boot = useSession((s) => s.boot);
   const admin = useIsAdminPath();
+  const icons = typeof window !== 'undefined' && window.location.pathname.startsWith('/icons');
 
   useEffect(() => {
     void boot();
   }, [boot]);
+
+  // The icon gallery is a static development page: no session, no data.
+  if (icons) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading icons…</div>}>
+        <IconGallery />
+      </Suspense>
+    );
+  }
 
   if (phase === 'BOOTING') {
     return <div className="boot-splash">Restoring session…</div>;

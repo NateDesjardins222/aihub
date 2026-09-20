@@ -22,7 +22,7 @@ import './DrawingRail.css';
 const TOOL_ICON: Record<DrawingKind, IconName> = {
   TREND_LINE: 'trend',
   RAY: 'ray',
-  EXTENDED_LINE: 'trend',
+  EXTENDED_LINE: 'extended',
   HORIZONTAL_LINE: 'horizontal',
   VERTICAL_LINE: 'vertical',
   RECTANGLE: 'rect',

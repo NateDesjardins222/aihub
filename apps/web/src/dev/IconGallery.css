@@ -1,0 +1,119 @@
+.ig {
+  min-height: 100vh;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  padding: 28px 36px 60px;
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+.ig-head h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.ig-head p {
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ig-section {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 28px 0 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.ig-note {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ig-legend,
+.ig-row {
+  display: grid;
+  grid-template-columns: 190px 1fr 200px;
+  align-items: center;
+  gap: 16px;
+}
+.ig-legend {
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.ig-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ig-row:hover {
+  background: var(--bg-hover);
+}
+
+.ig-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ig-sizes {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+}
+.ig-collabel {
+  width: 46px;
+  text-align: center;
+}
+.ig-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 46px;
+  color: var(--text-primary);
+}
+.ig-px {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.ig-states {
+  display: flex;
+  gap: 8px;
+}
+.ig-states-head {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.ig-state {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+}
+.ig-rest {
+  color: var(--text-secondary);
+}
+.ig-hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.ig-active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-dim, var(--accent));
+}
+.ig-disabled {
+  color: var(--text-disabled);
+  opacity: 0.5;
+}
