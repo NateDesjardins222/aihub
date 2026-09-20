@@ -95,6 +95,8 @@ const MUTATIONS = [
     from: 'if (previous.orders.size === 0 && previous.positions.size === 0) return [];',
     to: '',
     tests: 'apps/web/src/audio',
+    expectSurvive: true,
+    note: 'redundant by construction - the unknown-order and zero-before rules already return [] on an empty previous snapshot (D-009)',
   },
   {
     id: 'stale-account-guard',

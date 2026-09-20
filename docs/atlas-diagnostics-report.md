@@ -9,7 +9,7 @@ broke, why it broke, how it was fixed, which test now stands guard, what could
 not be tested, and what still worries me.
 
 The full per-defect detail — reproduction, root cause, fix, regression test,
-commit — is in `docs/diagnostics-failure-ledger.md`, D-001 through D-016. This
+commit — is in `docs/diagnostics-failure-ledger.md`, D-001 through D-017. This
 report is the narrative and the numbers.
 
 ---
@@ -26,8 +26,8 @@ turned each failure into "the account is flat", which satisfies every money
 invariant it checks. A test that cannot fail is worse than no test: it is a
 green light wired to nothing.
 
-Of the sixteen numbered defects found this milestone, **six were in the code
-that does the testing** (D-004, D-007, D-009, D-010, D-012, D-015) and one was
+Of the seventeen numbered defects found this milestone, **seven were in the
+code that does the testing** (D-004, D-007, D-009, D-010, D-012, D-015, D-017) and one was
 a wrong invariant (D-011). That is the headline. Before this milestone, the
 suites were partly measuring their own coincidences. They measure the product
 now.
@@ -60,7 +60,7 @@ booting the built server and watching it refuse.
 | A second server on a held port; SIGTERM mid-flight | `diagnose-lifecycle` | Held. Fails with EADDRINUSE rather than half-binding; SIGTERM exits clean and frees the port. 9/9. |
 | Production booting on the development signing secret | production-build check | **Broke (D-016, P0)**, fixed: fail-fast in `env()`, confirmed end to end. |
 | The account bar at every laptop width | `responsive` | **Broke (D-014)** — the balance was clipped at six widths. Fixed. 50/50. |
-| The whole browser suite, in a shuffled order | `run.mjs --shuffle` | Order-independence (see §5). |
+| The whole browser suite, in a shuffled order | `run.mjs --shuffle` | **Broke (D-017)** — 27 checks across 15 suites, two inherited-state causes. Fixed; all 35 suites now pass shuffled. |
 | Ten deliberate code defects, to see whether the tests notice | `diagnose-mutations` | 10 of 12 caught; the two survivors are explained (one redundant guard, one covered by the browser suite and proved so). |
 
 ---
@@ -94,8 +94,8 @@ booting the built server and watching it refuse.
 
 ## 4. The numbers
 
-* **Unit tests:** 40 files, 732 checks, all passing (728 + the 4 new production-guard cases; the 3 refresh-race cases are in the web suite).
-* **Browser suites:** 35 suites. On a clean run, 34 pass outright; the one failure ever seen this milestone was a self-inflicted API restart (I rebuilt the server while the suite ran), which passes on a clean re-run — `chart-navigation` 32/32.
+* **Unit tests:** 42 files, 735 checks, all passing (the previous 728, plus 4 production-guard cases and 3 refresh-race cases).
+* **Browser suites:** 35 suites, all passing — **in a shuffled order as well as the written one**. A first shuffle run (D-017) failed 27 checks across 15 suites; with the two inherited-state causes fixed, `run.mjs --shuffle --seed 4242` now reports all 35 suites passing. The only other failure seen this milestone was a self-inflicted API restart (I rebuilt the server mid-suite), which passes on a clean re-run.
 * **Mutation testing:** 12 deliberate defects, 10 caught, 2 survivors both explained and one proved by the browser suite.
 * **Torture:** 240 operations, all nine operation types, 183 with a position open, 0 refusals, 0 invariant failures, no page errors, DOM 352→382, heap stable.
 * **Fuzz:** 373 hostile requests, 0 findings, nothing internal leaked, the account unchanged and the simulation environment restored.
