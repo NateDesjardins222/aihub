@@ -34,6 +34,7 @@ import {
   userPreferences,
 } from '../../db/schema.js';
 import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
+import type { ExecutionProvider } from '../../execution/provider.js';
 import { toEnginePosition, unscaleTicks } from '../../trading/mapping.js';
 import {
   dailyStats,
@@ -48,6 +49,14 @@ const REJECTION_STATUS = 422;
 interface Deps {
   readonly engine: TradingEngine;
   readonly market: MarketDataService;
+  /**
+   * The execution venue. Order flow (submit/cancel/modify/flatten/reverse) routes
+   * through this seam, not the concrete engine, so a future live provider slots
+   * in without rewriting these routes. Engine-specific concerns that are not a
+   * venue's job - marking, valuation, rule enforcement, bracket protection -
+   * still use `engine` directly.
+   */
+  readonly execution: ExecutionProvider;
 }
 
 /** Bracket offsets arrive in ticks, points or dollars; the engine wants ticks. */
@@ -112,7 +121,7 @@ export function tradingRoutes(deps: Deps) {
         if (!spec) throw ApiError.notFound('UNKNOWN_INSTRUMENT', `No instrument ${body.symbol}.`);
 
         try {
-          const change = await deps.engine.submitOrder({
+          const change = await deps.execution.submitOrder({
             accountId: body.accountId,
             userId: request.user!.id,
             clientOrderId: body.clientOrderId,
@@ -152,7 +161,7 @@ export function tradingRoutes(deps: Deps) {
       const spec = requireInstrument(row.symbol);
 
       try {
-        const change = await deps.engine.modifyOrder(
+        const change = await deps.execution.modifyOrder(
           query.accountId,
           request.params.id,
           {
@@ -173,7 +182,7 @@ export function tradingRoutes(deps: Deps) {
       const query = z.object({ accountId: z.string().uuid() }).parse(request.query);
       await assertOwnership(request.user!.id, query.accountId);
       try {
-        return reply.send(await deps.engine.cancelOrder(query.accountId, request.params.id));
+        return reply.send(await deps.execution.cancelOrder(query.accountId, request.params.id));
       } catch (err) {
         mapRejection(err);
       }
@@ -184,7 +193,7 @@ export function tradingRoutes(deps: Deps) {
         .object({ accountId: z.string().uuid(), symbol: z.string().max(12).optional() })
         .parse(request.body);
       await assertOwnership(request.user!.id, body.accountId);
-      return reply.send(await deps.engine.cancelAll(body.accountId, body.symbol));
+      return reply.send(await deps.execution.cancelAll(body.accountId, body.symbol));
     });
 
     app.get('/orders', async (request, reply) => {
@@ -286,7 +295,7 @@ export function tradingRoutes(deps: Deps) {
       await assertOwnership(request.user!.id, body.accountId);
       try {
         return reply.send(
-          await deps.engine.flatten(body.accountId, request.user!.id, request.params.symbol.toUpperCase()),
+          await deps.execution.flatten(body.accountId, request.user!.id, request.params.symbol.toUpperCase()),
         );
       } catch (err) {
         mapRejection(err);
@@ -332,7 +341,7 @@ export function tradingRoutes(deps: Deps) {
       await assertOwnership(request.user!.id, body.accountId);
       try {
         return reply.send(
-          await deps.engine.reverse(body.accountId, request.user!.id, request.params.symbol.toUpperCase()),
+          await deps.execution.reverse(body.accountId, request.user!.id, request.params.symbol.toUpperCase()),
         );
       } catch (err) {
         mapRejection(err);

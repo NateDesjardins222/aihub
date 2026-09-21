@@ -15,6 +15,7 @@ import { journalRoutes } from './routes/journal.js';
 import { adminRoutes } from './routes/admin.js';
 import { provisioningRoutes } from './routes/provisioning.js';
 import { TradingEngine } from '../trading/engine.js';
+import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb, getLockSql } from '../db/client.js';
 import { OutboxWorker, notifyAccountChanged } from '../platform/outbox.js';
@@ -164,6 +165,9 @@ export async function buildApp(): Promise<BuiltApp> {
   // second Atlas instance sharing this database can no longer double-fill an
   // account. It is a separate pool so a held lock never starves queries.
   const engine = new TradingEngine(db, stack.market, getLockSql());
+  // Order flow routes through the execution provider seam; today that is the
+  // simulator wrapping this engine. A live provider would slot in here.
+  const execution = new AtlasSimulationExecutionProvider(engine);
   const gateway = new MarketDataGateway(stack.market, engine);
   gateway.register(app);
 
@@ -206,7 +210,7 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(accountRoutes, { prefix: '/api/v1/accounts' });
   await app.register(ruleTemplateRoutes, { prefix: '/api/v1/rule-templates' });
   await app.register(marketDataRoutes({ ...stack, engine }), { prefix: '/api/v1/marketdata' });
-  await app.register(tradingRoutes({ engine, market: stack.market }), { prefix: '/api/v1' });
+  await app.register(tradingRoutes({ engine, market: stack.market, execution }), { prefix: '/api/v1' });
   await app.register(journalRoutes({ engine, replay: stack.replay }), { prefix: '/api/v1/journal' });
   // The operator console and the machine-to-machine seam. Both are authorised
   // server-side; neither is reachable from the trading terminal's session.
