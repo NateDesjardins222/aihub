@@ -251,6 +251,24 @@ describe('acquisition', () => {
     expect(account!.accountType).toBe('EVALUATION');
   });
 
+  it('two concurrent acquisitions of one order make exactly one account', async () => {
+    const userId = await makeUser('concurrent-acquire');
+    const versionId = await evalVersionId();
+    const key = `order-${crypto.randomUUID()}`;
+    const call = () =>
+      acquireEvaluation(db, {
+        organizationId,
+        userId,
+        productVersionId: versionId,
+        source: 'PURCHASE',
+        idempotencyKey: key,
+      });
+    const [a, b] = await Promise.all([call(), call()]);
+    expect(a.accountId).toBe(b.accountId);
+    const rows = await db.select().from(accounts).where(eq(accounts.userId, userId));
+    expect(rows).toHaveLength(1);
+  });
+
   it('consuming an entitlement twice returns the same account', async () => {
     const userId = await makeUser('ent-idem');
     const versionId = await evalVersionId();
@@ -433,6 +451,20 @@ describe('funding transition', () => {
     expect(b.fundedAccountId).toBe(a.fundedAccountId);
     expect(b.reused).toBe(true);
 
+    const funded = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.accountType, 'FUNDED_SIM')));
+    expect(funded).toHaveLength(1);
+  });
+
+  it('two concurrent approvals make exactly one funded account', async () => {
+    const { qualificationId, userId } = await passedQualification('fund-concurrent');
+    const [a, b] = await Promise.all([
+      approveFunding(db, qualificationId),
+      approveFunding(db, qualificationId),
+    ]);
+    expect(a.fundedAccountId).toBe(b.fundedAccountId);
     const funded = await db
       .select()
       .from(accounts)

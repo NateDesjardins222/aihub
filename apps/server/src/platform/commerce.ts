@@ -248,32 +248,47 @@ export async function provisionFromEntitlement(
   opts: { actor?: Actor; activate?: boolean } = {},
 ): Promise<{ accountId: string; reused: boolean }> {
   const actor = opts.actor ?? SYSTEM_ACTOR;
-  const [ent] = await db.select().from(entitlements).where(eq(entitlements.id, entitlementId));
-  if (!ent) throw new CommerceError('ENTITLEMENT_NOT_FOUND', 'No such entitlement.');
-  if (ent.consumedByAccountId) {
-    return { accountId: ent.consumedByAccountId, reused: true };
-  }
-  if (ent.status === 'REVOKED') {
-    throw new CommerceError('ENTITLEMENT_CONSUMED', 'That entitlement has been revoked.');
-  }
 
-  const product = await resolveProfileVersion(db, ent.productVersionId);
-  if (!product) throw new CommerceError('PRODUCT_NOT_FOUND', 'The product version no longer exists.');
+  // One entitlement, one account - even under concurrent callers. The whole
+  // critical section runs in a transaction that holds a row lock on the
+  // entitlement, so a second caller (a double-click, a retried webhook, two
+  // instances) blocks until the first has committed both the account and the
+  // consumption, then reads it consumed and returns the same account. The
+  // idempotency key on provisionAccount is the second guard, for restart.
+  return db.transaction(async (tx) => {
+    const scoped = tx as unknown as Database;
+    const [ent] = await tx
+      .select()
+      .from(entitlements)
+      .where(eq(entitlements.id, entitlementId))
+      .for('update');
+    if (!ent) throw new CommerceError('ENTITLEMENT_NOT_FOUND', 'No such entitlement.');
+    if (ent.consumedByAccountId) {
+      return { accountId: ent.consumedByAccountId, reused: true };
+    }
+    if (ent.status === 'REVOKED') {
+      throw new CommerceError('ENTITLEMENT_CONSUMED', 'That entitlement has been revoked.');
+    }
 
-  const result = await provisionAccount(db, {
-    organizationId: ent.organizationId,
-    userId: ent.userId,
-    profileVersionId: ent.productVersionId,
-    activate: opts.activate ?? true,
-    idempotencyKey: `ent:${ent.id}`,
-    actor,
-    metadata: { entitlementId: ent.id, commercialOrderId: ent.commercialOrderId },
-  });
+    const product = await resolveProfileVersion(scoped, ent.productVersionId);
+    if (!product) throw new CommerceError('PRODUCT_NOT_FOUND', 'The product version no longer exists.');
 
-  // Pin the funded destination version at acquisition (Phase 50), and mark the
-  // entitlement consumed, in one commit.
-  const fundedVersionId = await resolveFundedDestinationVersionId(db, ent.organizationId, product.config);
-  await db.transaction(async (tx) => {
+    const result = await provisionAccount(scoped, {
+      organizationId: ent.organizationId,
+      userId: ent.userId,
+      profileVersionId: ent.productVersionId,
+      activate: opts.activate ?? true,
+      idempotencyKey: `ent:${ent.id}`,
+      actor,
+      metadata: { entitlementId: ent.id, commercialOrderId: ent.commercialOrderId },
+    });
+
+    // Pin the funded destination version at acquisition (Phase 50).
+    const fundedVersionId = await resolveFundedDestinationVersionId(
+      scoped,
+      ent.organizationId,
+      product.config,
+    );
     if (fundedVersionId) {
       await tx
         .update(accounts)
@@ -284,16 +299,16 @@ export async function provisionFromEntitlement(
       .update(entitlements)
       .set({ status: 'CONSUMED', consumedByAccountId: result.accountId, consumedAt: new Date() })
       .where(and(eq(entitlements.id, ent.id), eq(entitlements.status, 'GRANTED')));
-    await events.publish(tx as unknown as Database, {
+    await events.publish(scoped, {
       type: 'entitlement.consumed',
       organizationId: ent.organizationId,
       userId: ent.userId,
       accountId: result.accountId,
       payload: { entitlementId: ent.id },
     });
-  });
 
-  return { accountId: result.accountId, reused: result.reused };
+    return { accountId: result.accountId, reused: result.reused };
+  });
 }
 
 /** Resolve an evaluation product's funded destination to its current version id. */
@@ -529,41 +544,47 @@ export async function approveFunding(
   opts: { actor?: Actor; activate?: boolean } = {},
 ): Promise<{ fundedAccountId: string; reused: boolean }> {
   const actor = opts.actor ?? SYSTEM_ACTOR;
-  const [qual] = await db
-    .select()
-    .from(accountQualifications)
-    .where(eq(accountQualifications.id, qualificationId));
-  if (!qual) throw new CommerceError('QUALIFICATION_NOT_FOUND', 'No such qualification.');
-  if (qual.fundedAccountId) return { fundedAccountId: qual.fundedAccountId, reused: true };
-  if (qual.fundingState === 'DECLINED') {
-    throw new CommerceError('INVALID_FUNDING_STATE', 'This qualification was declined.');
-  }
 
-  const [evalAccount] = await db.select().from(accounts).where(eq(accounts.id, qual.accountId));
-  if (!evalAccount) throw new CommerceError('ACCOUNT_NOT_FOUND', 'Evaluation account gone.');
-  if (!evalAccount.fundedProfileVersionId) {
-    throw new CommerceError('NO_FUNDED_DESTINATION', 'This product has no funded destination.');
-  }
-
-  // Provision the funded account (idempotent by qualification id).
-  const funded = await provisionAccount(db, {
-    organizationId: qual.organizationId,
-    userId: evalAccount.userId,
-    profileVersionId: evalAccount.fundedProfileVersionId,
-    activate: opts.activate ?? true,
-    idempotencyKey: `fund:${qual.id}`,
-    actor,
-    metadata: { fundedFromQualificationId: qual.id, fundedFromAccountId: qual.accountId },
-  });
-
-  await db.transaction(async (tx) => {
+  // One qualification, one funded account - even under concurrent approvers.
+  // The whole critical section holds a row lock on the qualification, so a
+  // second approval (two owners, a double-click, a retry) blocks until the
+  // first has committed the funded account and the FUNDED flip, then reads it
+  // funded and returns the same account. provisionAccount's key is the second
+  // guard, for restart.
+  return db.transaction(async (tx) => {
     const scoped = tx as unknown as Database;
+    const [qual] = await tx
+      .select()
+      .from(accountQualifications)
+      .where(eq(accountQualifications.id, qualificationId))
+      .for('update');
+    if (!qual) throw new CommerceError('QUALIFICATION_NOT_FOUND', 'No such qualification.');
+    if (qual.fundedAccountId) return { fundedAccountId: qual.fundedAccountId, reused: true };
+    if (qual.fundingState === 'DECLINED') {
+      throw new CommerceError('INVALID_FUNDING_STATE', 'This qualification was declined.');
+    }
+
+    const [evalAccount] = await tx.select().from(accounts).where(eq(accounts.id, qual.accountId));
+    if (!evalAccount) throw new CommerceError('ACCOUNT_NOT_FOUND', 'Evaluation account gone.');
+    if (!evalAccount.fundedProfileVersionId) {
+      throw new CommerceError('NO_FUNDED_DESTINATION', 'This product has no funded destination.');
+    }
+
+    const funded = await provisionAccount(scoped, {
+      organizationId: qual.organizationId,
+      userId: evalAccount.userId,
+      profileVersionId: evalAccount.fundedProfileVersionId,
+      activate: opts.activate ?? true,
+      idempotencyKey: `fund:${qual.id}`,
+      actor,
+      metadata: { fundedFromQualificationId: qual.id, fundedFromAccountId: qual.accountId },
+    });
+
     // Link the funded account back to the evaluation, and record approval.
     await tx
       .update(accounts)
       .set({ sourceQualificationId: qual.id, sourceAccountId: qual.accountId })
       .where(eq(accounts.id, funded.accountId));
-    // Guard the funding-state flip so two approvals cannot both write FUNDED.
     await tx
       .update(accountQualifications)
       .set({
@@ -572,9 +593,7 @@ export async function approveFunding(
         approvedByUserId: actor.type === 'USER' ? actor.userId : null,
         approvedAt: new Date(),
       })
-      .where(
-        and(eq(accountQualifications.id, qual.id), eq(accountQualifications.fundingState, qual.fundingState)),
-      );
+      .where(eq(accountQualifications.id, qual.id));
     await recordAudit(scoped, {
       organizationId: qual.organizationId,
       actor,
@@ -600,9 +619,9 @@ export async function approveFunding(
       userId: evalAccount.userId,
       payload: { fundedFromAccountId: qual.accountId, qualificationId: qual.id },
     });
-  });
 
-  return { fundedAccountId: funded.accountId, reused: funded.reused };
+    return { fundedAccountId: funded.accountId, reused: funded.reused };
+  });
 }
 
 /** Decline funding for a qualification, with a required reason. Idempotent-ish. */
