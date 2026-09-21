@@ -100,6 +100,7 @@ export interface MarketView {
 }
 import type postgres from 'postgres';
 import { AccountLock } from './account-lock.js';
+import { enqueueOutbox } from '../platform/outbox.js';
 import {
   applyRules,
   historyFor,
@@ -1097,8 +1098,24 @@ export class TradingEngine {
 
   // -- public operations ---------------------------------------------------
 
+  /**
+   * Best-effort projection nudge for an operation whose change may not go
+   * through the fill transaction (a resting limit, a cancel). Fire-and-forget on
+   * the pool: the consumer recomputes from authority, so a missed nudge is
+   * self-healed by the next event or by reconciliation - it never corrupts.
+   */
+  private enqueueChange(accountId: string): void {
+    void enqueueOutbox(this.db, {
+      aggregateId: accountId,
+      type: 'account.changed',
+      payload: { reason: 'order' },
+    }).catch(() => undefined);
+  }
+
   async submitOrder(input: SubmitOrderInput): Promise<EngineChange> {
-    return this.mutex.run(input.accountId, () => this.submitLocked(input));
+    const change = await this.mutex.run(input.accountId, () => this.submitLocked(input));
+    this.enqueueChange(input.accountId);
+    return change;
   }
 
   async modifyOrder(
@@ -1111,11 +1128,15 @@ export class TradingEngine {
   }
 
   async cancelOrder(accountId: string, orderId: string): Promise<EngineChange> {
-    return this.mutex.run(accountId, () => this.cancelLocked(accountId, orderId));
+    const change = await this.mutex.run(accountId, () => this.cancelLocked(accountId, orderId));
+    this.enqueueChange(accountId);
+    return change;
   }
 
   async cancelAll(accountId: string, symbol?: string): Promise<EngineChange> {
-    return this.mutex.run(accountId, () => this.cancelAllLocked(accountId, symbol));
+    const change = await this.mutex.run(accountId, () => this.cancelAllLocked(accountId, symbol));
+    this.enqueueChange(accountId);
+    return change;
   }
 
   /** Close a position at market. */
@@ -1671,6 +1692,16 @@ export class TradingEngine {
             })
             .where(eq(accounts.id, accountId));
         }
+
+        // Transactional outbox: a fill enqueues an account-changed event in the
+        // SAME transaction, so the projection/fan-out event exists whenever the
+        // fill committed. The consumer recomputes from authority, so the exact
+        // version here is informational, not load-bearing.
+        await enqueueOutbox(tx as unknown as Database, {
+          aggregateId: accountId,
+          type: 'account.changed',
+          payload: { reason: 'fill' },
+        });
       });
     }
 

@@ -17,6 +17,7 @@ import { events, type DomainEventType } from './events.js';
 import type { Actor } from './actor.js';
 import { resolveProfileVersion } from './profiles.js';
 import { accountAdvisoryLockSql } from '../trading/account-lock.js';
+import { enqueueOutbox } from './outbox.js';
 
 export type AccountStatus =
   | 'PENDING'
@@ -135,6 +136,14 @@ async function transition(
       accountId,
       userId: before.userId,
       payload: { publicId: before.publicId, from: before.status, to: after!.status },
+    });
+
+    // Transactional outbox: the read model / fan-out learns of the status change
+    // in the same commit that made it.
+    await enqueueOutbox(scoped, {
+      aggregateId: accountId,
+      type: 'account.changed',
+      payload: { reason: options.event },
     });
 
     return after!;
@@ -434,6 +443,13 @@ export async function resetAccount(
       })
       .where(eq(accounts.id, accountId))
       .returning();
+
+    // The read model / fan-out learns of the reset in the same commit.
+    await enqueueOutbox(tx as unknown as Database, {
+      aggregateId: accountId,
+      type: 'account.changed',
+      payload: { reason: 'account.reset' },
+    });
 
     return { account: account!, lifecycle: lifecycle!, previous: current!.currentLifecycleId };
   });

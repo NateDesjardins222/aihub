@@ -990,3 +990,77 @@ export const historicalBars = pgTable(
     index('historical_bars_scan_idx').on(t.symbol, t.timeframe, t.barTime),
   ],
 );
+
+/**
+ * The operational account-state read model.
+ *
+ * A DERIVED, rebuildable snapshot of each account's authoritative financial
+ * state - never a source of truth. It exists so owner and trader reads do not
+ * recompute every account from scratch. Equity and unrealized P&L are NOT
+ * stored: they depend on live marks and are applied at read time, so this table
+ * never holds a stale valuation. `state_version` mirrors the account seq at the
+ * moment it was projected; `consistent` goes false if a projection anomaly is
+ * detected, which reconciliation resolves.
+ */
+export const accountProjections = pgTable(
+  'account_projections',
+  {
+    accountId: uuid('account_id')
+      .primaryKey()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    /** Nullable, mirroring accounts.organization_id (legacy accounts may lack one). */
+    organizationId: uuid('organization_id'),
+    stateVersion: bigint('state_version', { mode: 'number' }).notNull(),
+    status: varchar('status', { length: 20 }).notNull(),
+    adminHold: varchar('admin_hold', { length: 20 }),
+    ruleStatus: varchar('rule_status', { length: 20 }).notNull(),
+    startingBalanceMicros: micros('starting_balance_micros').notNull(),
+    balanceMicros: micros('balance_micros').notNull(),
+    realizedPnlMicros: micros('realized_pnl_micros').notNull(),
+    feesMicros: micros('fees_micros').notNull(),
+    highWaterMarkMicros: micros('high_water_mark_micros').notNull(),
+    drawdownFloorMicros: micros('drawdown_floor_micros').notNull(),
+    openContracts: integer('open_contracts').notNull().default(0),
+    workingOrderCount: integer('working_order_count').notNull().default(0),
+    /** Open positions, enough to mark: {symbol, contractCode, side, qty, avgEntryTicks, costBasisMicros, marketEra}. */
+    positions: jsonb('positions').notNull().default([]),
+    lastFinancialMutationAt: timestamp('last_financial_mutation_at', { withTimezone: true }),
+    projectionUpdatedAt: timestamp('projection_updated_at', { withTimezone: true }).notNull().defaultNow(),
+    consistent: boolean('consistent').notNull().default(true),
+  },
+  (t) => [
+    index('account_projections_org_idx').on(t.organizationId),
+    index('account_projections_user_idx').on(t.userId),
+    index('account_projections_open_idx').on(t.organizationId, t.openContracts),
+  ],
+);
+
+/**
+ * The transactional outbox the delivery worker drains.
+ *
+ * A financial mutation enqueues one row IN ITS OWN TRANSACTION, so a row exists
+ * whenever the state change committed. The worker claims rows with FOR UPDATE
+ * SKIP LOCKED, so multiple workers never own the same row. Delivery is
+ * at-least-once; consumers are idempotent, so a redelivery has no duplicate
+ * financial effect. `available_at` implements retry backoff; `dead_letter`
+ * parks a row that exhausted its attempts.
+ */
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    aggregateType: varchar('aggregate_type', { length: 20 }).notNull().default('ACCOUNT'),
+    aggregateId: uuid('aggregate_id').notNull(),
+    type: varchar('type', { length: 40 }).notNull(),
+    stateVersion: bigint('state_version', { mode: 'number' }),
+    payload: jsonb('payload'),
+    createdAt: now(),
+    availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer('attempts').notNull().default(0),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    deadLetter: boolean('dead_letter').notNull().default(false),
+  },
+  (t) => [index('outbox_aggregate_idx').on(t.aggregateId)],
+);
