@@ -59,6 +59,14 @@ export const profileConfigSchema = z.object({
     .default({}),
   /** Opaque to the engine; carried so a firm's payout terms travel with the product. */
   payoutRules: z.unknown().nullable().default(null),
+  /**
+   * For an EVALUATION product: the machine key of the funded product a pass
+   * qualifies for. Resolved to its then-current version and pinned onto the
+   * evaluation account at provision time, so a later change to the funded
+   * product never alters an already-sold evaluation's destination. Null when a
+   * pass produces no funded account (or for a funded product itself).
+   */
+  fundedDestinationKey: z.string().min(1).max(64).nullable().default(null),
 });
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>;

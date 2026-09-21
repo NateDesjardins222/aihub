@@ -23,6 +23,7 @@ import { accountOutboxHandler } from '../platform/projection.js';
 import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
 import { recordEngineActivity } from '../platform/engine-audit.js';
+import { certifyPassedEvaluations, registerAutoCertification } from '../platform/commerce-certify.js';
 
 export interface BuiltApp {
   readonly app: FastifyInstance;
@@ -180,6 +181,15 @@ export async function buildApp(): Promise<BuiltApp> {
   const stopRecording = recordEngineActivity(db, engine);
 
   /*
+   * The commercial layer plugs in the same way: it certifies an evaluation the
+   * instant the engine says PASSED, turning the reversible verdict into a
+   * one-way qualification. The startup sweep recovers any pass a crash left
+   * un-certified, so a qualification is never lost. The engine is untouched.
+   */
+  const stopCertifying = registerAutoCertification(db);
+  void certifyPassedEvaluations(db).catch(() => undefined);
+
+  /*
    * The outbox delivery worker keeps the operational read model current and
    * wakes other instances. It drains account.changed events into the projection
    * and, after each committed batch, NOTIFYs so an instance holding a trader's
@@ -199,6 +209,7 @@ export async function buildApp(): Promise<BuiltApp> {
 
   app.addHook('onClose', async () => {
     stopRecording();
+    stopCertifying();
     outboxWorker.stop();
     await accountListener?.close().catch(() => undefined);
     engine.stop();

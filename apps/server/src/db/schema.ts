@@ -331,6 +331,22 @@ export const accounts = pgTable(
     /** The lifecycle a reset opens. History before it is preserved, not erased. */
     currentLifecycleId: uuid('current_lifecycle_id'),
     failedReason: text('failed_reason'),
+    /**
+     * Commercial lifecycle linkage (Commercial Account Lifecycle V1). All
+     * nullable and additive: a practice or pre-lifecycle account carries none.
+     *
+     * `sourceQualificationId` / `sourceAccountId`: on a FUNDED_SIM account, the
+     * qualification and evaluation account it was provisioned from. A funded
+     * account never mutates its evaluation; it points back to it.
+     * `fundedProfileVersionId`: on an EVALUATION account, the funded product
+     * version pinned at acquisition, so a later owner change to the funded
+     * product does not alter an already-sold evaluation's destination.
+     */
+    sourceQualificationId: uuid('source_qualification_id'),
+    sourceAccountId: uuid('source_account_id'),
+    fundedProfileVersionId: uuid('funded_profile_version_id').references(
+      () => accountProfileVersions.id,
+    ),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -374,6 +390,137 @@ export const accountLifecycles = pgTable(
   (t) => [
     uniqueIndex('account_lifecycles_seq_key').on(t.accountId, t.seq),
     index('account_lifecycles_account_idx').on(t.accountId, t.startedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Commercial account lifecycle (Commercial Account Lifecycle V1)
+//
+// A provider-independent lifecycle: a commercial order (a purchase or an admin
+// grant) creates an entitlement, which provisions exactly one account. When an
+// evaluation passes, an immutable qualification is recorded and can produce
+// exactly one funded-sim account. No real money moves here — a future payment
+// provider is merely an authenticated trigger that completes a commercial order.
+// ---------------------------------------------------------------------------
+
+/**
+ * A customer acquiring a product. NOT a payment: `amountMicros` is informational
+ * and no money is moved. A future Stripe/Whop webhook, or an owner's admin
+ * grant, creates and completes one of these; nothing downstream cares which.
+ */
+export const commercialOrders = pgTable(
+  'commercial_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The product version being acquired (pins the terms at acquisition). */
+    productVersionId: uuid('product_version_id')
+      .notNull()
+      .references(() => accountProfileVersions.id),
+    /** How the order arose: ADMIN_GRANT | PURCHASE | PROMO | … */
+    source: varchar('source', { length: 24 }).notNull(),
+    /** The external system, when any (e.g. 'stripe'); null for an admin grant. */
+    externalProvider: varchar('external_provider', { length: 40 }),
+    /** The external system's reference (e.g. a Stripe session id). Opaque. */
+    externalReference: varchar('external_reference', { length: 200 }),
+    /** PENDING | COMPLETED | FAILED | CANCELLED | REFUNDED */
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    /** Informational only; Atlas processes no money this milestone. */
+    amountMicros: micros('amount_micros'),
+    currency: varchar('currency', { length: 8 }),
+    /** Dedupe key: a webhook that fires twice completes one order, not two. */
+    idempotencyKey: varchar('idempotency_key', { length: 200 }),
+    createdAt: now(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('commercial_orders_org_idx').on(t.organizationId),
+    index('commercial_orders_user_idx').on(t.userId),
+    uniqueIndex('commercial_orders_idem_key').on(t.organizationId, t.idempotencyKey),
+  ],
+);
+
+/**
+ * The right, created by a completed order (or an admin grant), to receive ONE
+ * account. Consuming it provisions exactly one account — the second guard,
+ * alongside provisioning's own idempotency key, against duplicate accounts.
+ */
+export const entitlements = pgTable(
+  'entitlements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Null for a pure admin grant with no order behind it. */
+    commercialOrderId: uuid('commercial_order_id').references(() => commercialOrders.id),
+    productVersionId: uuid('product_version_id')
+      .notNull()
+      .references(() => accountProfileVersions.id),
+    /** EVALUATION | RESET — what the entitlement lets the holder provision. */
+    kind: varchar('kind', { length: 16 }).notNull(),
+    source: varchar('source', { length: 24 }).notNull(),
+    /** GRANTED | CONSUMED | REVOKED */
+    status: varchar('status', { length: 16 }).notNull().default('GRANTED'),
+    /** The account this entitlement provisioned. Set once, on consumption. */
+    consumedByAccountId: uuid('consumed_by_account_id').references(() => accounts.id),
+    createdAt: now(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('entitlements_org_idx').on(t.organizationId),
+    index('entitlements_user_idx').on(t.userId),
+    // One completed order yields one entitlement of a kind.
+    uniqueIndex('entitlements_order_kind_key').on(t.commercialOrderId, t.kind),
+  ],
+);
+
+/**
+ * The immutable evidence that an evaluation qualified, plus the (separately
+ * mutable) funding lifecycle that follows. One row per passed evaluation life
+ * (`accountId, lifecycleId`), so certification happens exactly once.
+ *
+ * The evidence columns are written once at certification and never updated; only
+ * the funding columns move (ELIGIBLE → FUNDING_PENDING → APPROVED/DECLINED →
+ * FUNDED). A compensating transition, never a history rewrite, corrects a
+ * mistake.
+ */
+export const accountQualifications = pgTable(
+  'account_qualifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    lifecycleId: uuid('lifecycle_id').references(() => accountLifecycles.id),
+    productVersionId: uuid('product_version_id').references(() => accountProfileVersions.id),
+    /** Immutable: each requirement {key,label,required,actual,met} + summary. */
+    evidence: jsonb('evidence').notNull(),
+    balanceMicros: micros('balance_micros').notNull(),
+    qualifiedAt: timestamp('qualified_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Mutable funding lifecycle: ELIGIBLE|FUNDING_PENDING|APPROVED|DECLINED|FUNDED */
+    fundingState: varchar('funding_state', { length: 20 }).notNull().default('ELIGIBLE'),
+    /** The funded-sim account this qualification produced. Set once. */
+    fundedAccountId: uuid('funded_account_id').references(() => accounts.id),
+    approvedByUserId: uuid('approved_by_user_id').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    declineReason: text('decline_reason'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('account_qualifications_life_key').on(t.accountId, t.lifecycleId),
+    index('account_qualifications_org_state_idx').on(t.organizationId, t.fundingState),
   ],
 );
 

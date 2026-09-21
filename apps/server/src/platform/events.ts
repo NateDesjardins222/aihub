@@ -36,7 +36,16 @@ export type DomainEventType =
   | 'user.created'
   | 'user.disabled'
   | 'user.enabled'
-  | 'profile.version_published';
+  | 'profile.version_published'
+  // Commercial account lifecycle (Commercial Account Lifecycle V1).
+  | 'commercial_order.completed'
+  | 'entitlement.granted'
+  | 'entitlement.consumed'
+  | 'evaluation.qualified'
+  | 'funding.requested'
+  | 'funding.approved'
+  | 'funding.declined'
+  | 'account.funded';
 
 export interface DomainEvent {
   readonly type: DomainEventType;
