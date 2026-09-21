@@ -19,7 +19,8 @@
 import type { FastifyInstance } from 'fastify';
 import { and, desc, eq, gte, ilike, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { requireInstrument } from '@atlas/instruments';
+import { requireInstrument, contractResolver } from '@atlas/instruments';
+import { env } from '../../config/env.js';
 import { getDb } from '../../db/client.js';
 import {
   accountLifecycles,
@@ -1306,10 +1307,23 @@ export function adminRoutes(deps: AdminDeps) {
           provider: connection.providerId ?? null,
           mode: connection.mode,
           delaySeconds: connection.delaySeconds ?? null,
+          declaredDelaySeconds: connection.declaredDelaySeconds ?? null,
           connection: connection.state,
+          reconnectAttempts: connection.reconnectAttempts ?? 0,
           lastQuoteExchangeTs: quote?.exchangeTs ?? null,
           ageMs: freshness.ageMs ?? null,
           blocksOrderEntry: freshness.blocksOrderEntry === true,
+          // The declared redistribution posture — a compliance statement, not a
+          // capability. Surfaced so an operator can see what the running server
+          // believes it is entitled to. See docs/market-data-licensing-gate.md.
+          redistribution: env().MARKET_DATA_REDISTRIBUTION,
+          // The tradeable front-month contract Atlas currently resolves per root
+          // — so the operator can see which contract the feed represents. Never
+          // a secret; derived from the exchange listing cycle.
+          currentContracts: ['NQ', 'ES', 'GC', 'CL'].map((root) => ({
+            root,
+            contract: contractResolver.contractCode(root, Date.now()),
+          })),
         },
         audit: { state: auditState },
         build: {
