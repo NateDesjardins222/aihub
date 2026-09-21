@@ -391,6 +391,8 @@ export const orders = pgTable(
     /** Idempotency key. The unique index below is what actually prevents double submits. */
     clientOrderId: varchar('client_order_id', { length: 128 }).notNull(),
     symbol: varchar('symbol', { length: 12 }).notNull(),
+    /** The tradable contract this order intended, e.g. "NQZ26". Null = root only. */
+    contractCode: varchar('contract_code', { length: 24 }),
     side: varchar('side', { length: 4 }).notNull(),
     qty: integer('qty').notNull(),
     filledQty: integer('filled_qty').notNull().default(0),
@@ -460,6 +462,8 @@ export const executions = pgTable(
       .notNull()
       .references(() => accounts.id, { onDelete: 'cascade' }),
     symbol: varchar('symbol', { length: 12 }).notNull(),
+    /** The tradable contract this fill happened in, e.g. "NQZ26". Null = root only. */
+    contractCode: varchar('contract_code', { length: 24 }),
     side: varchar('side', { length: 4 }).notNull(),
     qty: integer('qty').notNull(),
     priceTicks: integer('price_ticks').notNull(),
@@ -531,6 +535,8 @@ export const trades = pgTable(
       .notNull()
       .references(() => accounts.id, { onDelete: 'cascade' }),
     symbol: varchar('symbol', { length: 12 }).notNull(),
+    /** The tradable contract this round-trip traded, e.g. "NQZ26". Null = root only. */
+    contractCode: varchar('contract_code', { length: 24 }),
     side: varchar('side', { length: 6 }).notNull(),
     qty: integer('qty').notNull(),
     /** Fractional by nature (a weighted average of tick prices), scaled x1e6. */

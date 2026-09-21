@@ -36,6 +36,7 @@ import {
   listInstruments,
   tradingDate,
   contractWeight,
+  contractResolver,
 } from '@atlas/instruments';
 import type { Database } from '../db/client.js';
 import {
@@ -1340,9 +1341,13 @@ export class TradingEngine {
       env,
     );
 
-    await this.db
-      .insert(ordersTable)
-      .values({ ...toOrderValues(entry), bracketConfig: (input.bracket ?? null) as never });
+    await this.db.insert(ordersTable).values({
+      ...toOrderValues(entry),
+      bracketConfig: (input.bracket ?? null) as never,
+      // The contract this order intends, resolved at its market time. Null for a
+      // root that cannot be resolved - never a wrong contract.
+      contractCode: contractResolver.contractCode(spec.root, snapshot?.exchangeTs ?? now),
+    });
     this.track(input.accountId, spec.root);
     // Optimistic: the order exists from this moment, so the next observation
     // must not be coalesced away before the matcher has seen it.
@@ -1603,6 +1608,8 @@ export class TradingEngine {
             orderId: fill.orderId,
             accountId,
             symbol: spec.root,
+            // The specific contract this fill happened in, resolved at fill time.
+            contractCode: contractResolver.contractCode(spec.root, fill.exchangeTs),
             side: order.side,
             qty: fill.qty,
             priceTicks: fill.priceTicks,
@@ -1755,6 +1762,9 @@ export class TradingEngine {
     return {
       accountId,
       symbol: spec.root,
+      // The contract this round-trip traded, resolved at the entry instant so a
+      // trade is always attributed to the contract it opened in.
+      contractCode: contractResolver.contractCode(spec.root, lot.openedAt ?? lot.closedAt),
       side: lot.side,
       qty: lot.qty,
       entryTicksScaled: scaleTicks(lot.entryTicks),
