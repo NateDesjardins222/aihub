@@ -13,8 +13,15 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().default(15 * 60),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().default(30 * 24 * 3600),
 
-  /** Market data provider selection. */
-  MARKET_DATA_PROVIDER: z.enum(['yahoo-delayed', 'replay']).default('yahoo-delayed'),
+  /**
+   * Market data provider selection — DELIBERATE, never inferred.
+   *
+   * A present DATABENTO_API_KEY does NOT switch the provider on its own: this
+   * value chooses it. That keeps "the key exists" (a transport fact) separate
+   * from "use the professional feed" (an operator decision). See
+   * docs/market-data-licensing-gate.md.
+   */
+  MARKET_DATA_PROVIDER: z.enum(['yahoo-delayed', 'replay', 'databento']).default('yahoo-delayed'),
   MARKET_DATA_POLL_MS: z.coerce.number().int().default(5_000),
   /**
    * Quotes older than this are stale: order entry is disabled and the UI is told.
@@ -23,6 +30,25 @@ const envSchema = z.object({
   MARKET_DATA_STALE_MS: z.coerce.number().int().default(120_000),
   /** Declared delay of the Phase 1 feed, surfaced in the UI. Never reported as realtime. */
   MARKET_DATA_DELAY_SECONDS: z.coerce.number().int().default(600),
+
+  /**
+   * Databento credentials and dataset. SERVER-SIDE ONLY.
+   *
+   * The key is never logged, never returned from an API, never sent to the
+   * browser. It is optional so the whole provider-neutral core and the adapter
+   * build and test without it; only the first authenticated live/historical
+   * call requires it. GLBX.MDP3 is CME Globex MDP 3.0 (all eight Atlas roots).
+   */
+  DATABENTO_API_KEY: z.string().optional(),
+  DATABENTO_DATASET: z.string().default('GLBX.MDP3'),
+  /**
+   * Declared redistribution posture — a compliance statement, not a capability.
+   * Atlas ships `none`; anything above must be backed by a real entitlement.
+   * Surfaced in Owner System Health. See docs/market-data-licensing-gate.md.
+   */
+  MARKET_DATA_REDISTRIBUTION: z
+    .enum(['none', 'internal', 'delayed-external', 'realtime-external'])
+    .default('none'),
 
   /** Simulation fill model. */
   FILL_MODEL: z.enum(['SIMPLE', 'ADVANCED']).default('ADVANCED'),
