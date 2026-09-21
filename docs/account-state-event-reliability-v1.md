@@ -45,6 +45,16 @@ trading / owner action
 
 ## Not done (named, not implied)
 
+> **Closed in the V1 closure pass.** See
+> `account-state-event-reliability-v1-closure-report.md`. Owner Trading and
+> Risk now read the durable projection (`listOpenProjections` +
+> `valuePositions`/`valueProjection`), a scripted deterministic end-to-end
+> scenario (`scripts/e2e-reliability.ts`) and a seeded randomized torture
+> harness (`scripts/torture-reliability.ts`) were built and run, a fresh
+> tenant-isolation pass covers the projection paths, and the browser
+> regression was run. The paragraph below records the state as of the original
+> milestone.
+
 Owner Trading/Risk route handlers still call synchronous `engine.valuation`
 rather than the projection (the projection + latency proof are in place; the
 repoint is deferred for a browser regression pass). A single scripted 50-step

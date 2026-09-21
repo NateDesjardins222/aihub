@@ -71,6 +71,7 @@ import {
   ProfileError,
 } from '../../platform/profiles.js';
 import type { Actor } from '../../platform/actor.js';
+import { listOpenProjections, valuePositions, valueProjection } from '../../platform/projection.js';
 
 interface AdminDeps {
   readonly engine: TradingEngine;
@@ -1108,54 +1109,36 @@ export function adminRoutes(deps: AdminDeps) {
     /*
      * Firm-wide trading surveillance.
      *
-     * Open positions are VALUED BY THE ENGINE, not re-derived here: the
-     * positions table stores cost basis, not a mark, and inventing the mark in
-     * this route is exactly the class of money bug the diagnostics milestone
-     * spent itself catching. Only accounts that actually hold a position are
-     * valued, so the cost is bounded by open exposure, not by the account count.
+     * Open positions are read from the durable account projection and marked at
+     * read time - never per-account reconstruction. The projection stores signed
+     * quantity and cost basis; the mark is applied here from the same market the
+     * trader's terminal uses, so owner and trader see one truth. A position that
+     * cannot be marked reads unknown, never a fabricated zero - the class of
+     * money bug the diagnostics milestone spent itself catching. Only accounts
+     * that actually hold a position are scanned, so the cost is bounded by open
+     * exposure, not by the account count.
      */
     app.get('/trading', async (request, reply) => {
       const organizationId = await organizationOf(request.user!.id);
 
-      const openAccounts = await db
-        .selectDistinct({ id: positions.accountId })
-        .from(positions)
-        .innerJoin(accounts, eq(positions.accountId, accounts.id))
-        .where(and(eq(accounts.organizationId, organizationId), sql`${positions.qty} <> 0`))
-        .limit(300);
-
-      const identities = new Map<string, { publicId: string; name: string; email: string }>();
-      if (openAccounts.length > 0) {
-        const rows = await db
-          .select({ id: accounts.id, publicId: accounts.publicId, name: accounts.name, email: users.email })
-          .from(accounts)
-          .innerJoin(users, eq(accounts.userId, users.id))
-          .where(inArray(accounts.id, openAccounts.map((a) => a.id)));
-        for (const row of rows) {
-          identities.set(row.id, { publicId: row.publicId, name: row.name, email: row.email });
-        }
-      }
-
-      const valued = await Promise.all(
-        openAccounts.map(async ({ id }) => ({ id, valuation: await deps.engine.valuation(id) })),
+      // Read the operational projection, not a per-account reconstruction. Marks
+      // are applied to the stored positions at read time, so unrealized P&L is
+      // current while the read stays a projection scan. Unknown stays unknown.
+      const open = await listOpenProjections(db, organizationId, 300);
+      const openPositions = open.flatMap(({ projection, publicId, email }) =>
+        valuePositions(projection, deps.market).map((p) => ({
+          accountId: projection.accountId,
+          accountPublicId: publicId,
+          trader: email,
+          symbol: p.symbol,
+          side: p.side,
+          qty: p.qty,
+          avgEntryPrice: p.avgEntryPrice,
+          markPrice: p.markPrice,
+          unrealizedPnlMicros: p.unrealizedPnlMicros,
+          openedAt: p.openedAt,
+        })),
       );
-      const openPositions = valued.flatMap(({ id, valuation }) => {
-        const who = identities.get(id);
-        return (valuation?.positions ?? [])
-          .filter((p) => Math.abs(p.qty) > 0)
-          .map((p) => ({
-            accountId: id,
-            accountPublicId: who?.publicId ?? null,
-            trader: who?.email ?? null,
-            symbol: p.symbol,
-            side: p.side,
-            qty: Math.abs(p.qty),
-            avgEntryPrice: p.avgEntryPrice,
-            markPrice: p.markPrice,
-            unrealizedPnlMicros: p.unrealizedPnlMicros,
-            openedAt: p.openedAt ?? null,
-          }));
-      });
 
       const workingRows = await db
         .select({ order: orders, publicId: accounts.publicId, accountId: accounts.id, email: users.email })
@@ -1204,53 +1187,31 @@ export function adminRoutes(deps: AdminDeps) {
      * Risk: where should the operator look first?
      *
      * Every ordering here is a plain, stated fact - no opaque score. Accounts
-     * with open exposure are valued by the engine (the only truthful source of
-     * unrealized P&L and remaining drawdown); held and recently-failed accounts
-     * come straight from their lifecycle status. An account that is flat is not
+     * with open exposure are read from the durable projection and valued with
+     * current marks (the only truthful source of unrealized P&L and remaining
+     * drawdown, applied at read time); held and recently-failed accounts come
+     * straight from their lifecycle status. An account that is flat is not
      * "near its limit" - it has no open risk to be near it with - so the
      * ranked lists are over accounts that can actually move right now.
      */
     app.get('/risk', async (request, reply) => {
       const organizationId = await organizationOf(request.user!.id);
 
-      const openAccounts = await db
-        .selectDistinct({ id: positions.accountId })
-        .from(positions)
-        .innerJoin(accounts, eq(positions.accountId, accounts.id))
-        .where(and(eq(accounts.organizationId, organizationId), sql`${positions.qty} <> 0`))
-        .limit(300);
-
-      const identities = new Map<string, { publicId: string; name: string; email: string }>();
-      if (openAccounts.length > 0) {
-        const rows = await db
-          .select({ id: accounts.id, publicId: accounts.publicId, name: accounts.name, email: users.email })
-          .from(accounts)
-          .innerJoin(users, eq(accounts.userId, users.id))
-          .where(inArray(accounts.id, openAccounts.map((a) => a.id)));
-        for (const row of rows) {
-          identities.set(row.id, { publicId: row.publicId, name: row.name, email: row.email });
-        }
-      }
-
-      const valued = (
-        await Promise.all(
-          openAccounts.map(async ({ id }) => {
-            const valuation = await deps.engine.valuation(id);
-            const who = identities.get(id);
-            return valuation
-              ? {
-                  accountId: id,
-                  accountPublicId: who?.publicId ?? null,
-                  trader: who?.email ?? null,
-                  openPnlMicros: valuation.openPnlMicros,
-                  remainingDrawdownMicros: valuation.remainingDrawdownMicros,
-                  openContracts: valuation.openContracts,
-                  equityMicros: valuation.equityMicros,
-                }
-              : null;
-          }),
-        )
-      ).filter((x): x is NonNullable<typeof x> => x !== null);
+      // Ranked from the operational projection, valued with current marks - the
+      // same truth the trader sees, without reconstructing every account.
+      const open = await listOpenProjections(db, organizationId, 300);
+      const valued = open.map(({ projection, publicId, email }) => {
+        const v = valueProjection(projection, deps.market);
+        return {
+          accountId: projection.accountId,
+          accountPublicId: publicId,
+          trader: email,
+          openPnlMicros: v.unrealizedPnlMicros,
+          remainingDrawdownMicros: v.remainingLossMicros,
+          openContracts: v.openContracts,
+          equityMicros: v.equityMicros,
+        };
+      });
 
       const nearestLossLimit = [...valued]
         .filter((v) => v.remainingDrawdownMicros !== null)

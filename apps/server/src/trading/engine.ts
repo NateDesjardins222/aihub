@@ -664,7 +664,15 @@ export class TradingEngine {
       const closed = rollTradingDay(config, state, mark).closed;
       if (closed) await recordClosedDay(this.db, accountId, closed);
     }
-    if (applied.changed) await persistRuleState(this.db, accountId, applied.state);
+    if (applied.changed) {
+      await persistRuleState(this.db, accountId, applied.state);
+      // Mark-driven rule state (high-water mark, trailing drawdown floor, day
+      // roll, breach status/lock) is persisted here without an order event, so
+      // the durable projection would otherwise drift until the next fill or a
+      // reconcile. Nudge it whenever that state actually changed - guarded by
+      // `changed`, so a revaluation that moves nothing enqueues nothing.
+      this.enqueueChange(accountId);
+    }
 
     if (applied.newBreach) {
       await this.audit(
@@ -1124,7 +1132,9 @@ export class TradingEngine {
     patch: { qty?: number; limitTicks?: number | null; stopTicks?: number | null; trailTicks?: number | null },
     expectedVersion?: number,
   ): Promise<EngineChange> {
-    return this.mutex.run(accountId, () => this.modifyLocked(accountId, orderId, patch, expectedVersion));
+    const change = await this.mutex.run(accountId, () => this.modifyLocked(accountId, orderId, patch, expectedVersion));
+    this.enqueueChange(accountId);
+    return change;
   }
 
   async cancelOrder(accountId: string, orderId: string): Promise<EngineChange> {
@@ -1141,7 +1151,7 @@ export class TradingEngine {
 
   /** Close a position at market. */
   async flatten(accountId: string, userId: string, symbol: string): Promise<EngineChange> {
-    return this.mutex.run(accountId, async () => {
+    const change = await this.mutex.run(accountId, async () => {
       const spec = requireInstrument(symbol);
       const position = await this.loadPosition(accountId, spec.root);
       if (position.qty === 0) return this.emptyChange(accountId);
@@ -1156,11 +1166,13 @@ export class TradingEngine {
         type: 'MARKET',
       });
     });
+    this.enqueueChange(accountId);
+    return change;
   }
 
   /** Flip a position to the same size on the other side. */
   async reverse(accountId: string, userId: string, symbol: string): Promise<EngineChange> {
-    return this.mutex.run(accountId, async () => {
+    const change = await this.mutex.run(accountId, async () => {
       const spec = requireInstrument(symbol);
       const position = await this.loadPosition(accountId, spec.root);
       if (position.qty === 0) return this.emptyChange(accountId);
@@ -1175,6 +1187,8 @@ export class TradingEngine {
         type: 'MARKET',
       });
     });
+    this.enqueueChange(accountId);
+    return change;
   }
 
   /**
@@ -1196,7 +1210,9 @@ export class TradingEngine {
     symbol: string,
     levels: ProtectionLevels,
   ): Promise<EngineChange> {
-    return this.mutex.run(accountId, () => this.setProtectionLocked(accountId, userId, symbol, levels));
+    const change = await this.mutex.run(accountId, () => this.setProtectionLocked(accountId, userId, symbol, levels));
+    this.enqueueChange(accountId);
+    return change;
   }
 
   /**

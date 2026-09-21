@@ -16,10 +16,10 @@
  * never a fabricated zero.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { requireInstrument, priceToTicks } from '@atlas/instruments';
-import { unrealizedPnlMicros, type PositionState } from '@atlas/core';
+import { requireInstrument, priceToTicks, ticksToPrice } from '@atlas/instruments';
+import { unrealizedPnlMicros, avgEntryTicks, type PositionState } from '@atlas/core';
 import type { Database } from '../db/client.js';
-import { accountProjections, accounts, orders, positions } from '../db/schema.js';
+import { accountProjections, accounts, orders, positions, users } from '../db/schema.js';
 
 const OPEN_ORDER_STATUSES = ['PENDING', 'ACCEPTED', 'WORKING', 'PARTIALLY_FILLED'];
 
@@ -31,6 +31,7 @@ export interface ProjectionPosition {
   readonly qty: number;
   readonly costBasisMicros: number;
   readonly marketEra: string | null;
+  readonly openedAt: number | null;
 }
 
 /** The market slice a projection read needs. MarketDataService satisfies it. */
@@ -77,6 +78,7 @@ export async function projectAccount(
       qty: p.side === 'SHORT' ? -Math.abs(p.qty) : Math.abs(p.qty),
       costBasisMicros: p.costBasisMicros,
       marketEra: p.marketEra ?? null,
+      openedAt: p.openedAt?.getTime() ?? null,
     }));
     const openContracts = stored.reduce((sum, p) => sum + Math.abs(p.qty), 0);
 
@@ -227,6 +229,97 @@ export function valueProjection(row: AccountProjectionRow, market: ProjectionMar
     projectionUpdatedAt: row.projectionUpdatedAt.getTime(),
     consistent: row.consistent,
   };
+}
+
+/** A presented open position, valued from the projection at read time. */
+export interface ValuedPosition {
+  readonly symbol: string;
+  readonly side: string;
+  readonly qty: number;
+  readonly avgEntryPrice: number | null;
+  readonly markPrice: number | null;
+  readonly unrealizedPnlMicros: number | null;
+  readonly openedAt: number | null;
+}
+
+/**
+ * Present each open position in a projection, valued from current marks. Pure
+ * computation on the stored row - no engine, no database, no template load - so
+ * a firm-wide surveillance read costs a projection scan, not N reconstructions.
+ */
+export function valuePositions(row: AccountProjectionRow, market: ProjectionMarket): ValuedPosition[] {
+  const stored = (row.positions as ProjectionPosition[]) ?? [];
+  return stored
+    .filter((p) => Math.abs(p.qty) > 0)
+    .map((p) => {
+      let spec;
+      try {
+        spec = requireInstrument(p.symbol);
+      } catch {
+        return {
+          symbol: p.symbol,
+          side: p.side,
+          qty: Math.abs(p.qty),
+          avgEntryPrice: null,
+          markPrice: null,
+          unrealizedPnlMicros: null,
+          openedAt: p.openedAt,
+        };
+      }
+      const state: PositionState = {
+        symbol: p.symbol,
+        qty: p.qty,
+        costBasisMicros: p.costBasisMicros,
+        realizedPnlMicros: 0,
+        feesMicros: 0,
+        openedAt: null,
+        updatedAt: null,
+      };
+      const avgTicks = avgEntryTicks(spec, state);
+      const markTicks = markTicksFor(p.symbol, p.marketEra, market);
+      return {
+        symbol: p.symbol,
+        side: p.side,
+        qty: Math.abs(p.qty),
+        avgEntryPrice: ticksToPrice(spec, avgTicks),
+        markPrice: markTicks === null ? null : ticksToPrice(spec, markTicks),
+        unrealizedPnlMicros: markTicks === null ? null : unrealizedPnlMicros(spec, state, markTicks),
+        openedAt: p.openedAt,
+      };
+    });
+}
+
+export interface ProjectionWithIdentity {
+  readonly projection: AccountProjectionRow;
+  readonly publicId: string;
+  readonly name: string;
+  readonly email: string;
+}
+
+/**
+ * Projections for one organisation's accounts that currently hold open exposure,
+ * with the trader identity, for owner surveillance/risk. Scoped by the account's
+ * organization (matching the existing routes), and bounded by `limit`. This is a
+ * projection scan plus a join - no per-account reconstruction.
+ */
+export async function listOpenProjections(
+  db: Database,
+  organizationId: string,
+  limit = 300,
+): Promise<ProjectionWithIdentity[]> {
+  const rows = await db
+    .select({
+      projection: accountProjections,
+      publicId: accounts.publicId,
+      name: accounts.name,
+      email: users.email,
+    })
+    .from(accountProjections)
+    .innerJoin(accounts, eq(accountProjections.accountId, accounts.id))
+    .innerJoin(users, eq(accounts.userId, users.id))
+    .where(and(eq(accounts.organizationId, organizationId), sql`${accountProjections.openContracts} > 0`))
+    .limit(limit);
+  return rows.map((r) => ({ projection: r.projection, publicId: r.publicId, name: r.name, email: r.email }));
 }
 
 /** Read one account's valued projection, or null if not projected yet. */

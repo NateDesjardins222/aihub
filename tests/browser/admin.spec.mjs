@@ -121,8 +121,8 @@ try {
     'and can be unlocked again',
   );
 
-  // --- users ---------------------------------------------------------------
-  await page.click('.adm-nav-item:has-text("Users")');
+  // --- traders (the Users route, labelled "Traders" in the nav) ------------
+  await page.click('.adm-nav-item:has-text("Traders")');
   await page.waitForTimeout(2_000);
   const userRows = await page.locator('[data-testid=admin-users] tbody tr').count();
   say(userRows > 0, 'users are listed', `${userRows} users`);

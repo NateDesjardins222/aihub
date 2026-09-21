@@ -96,6 +96,34 @@ describe('the account projection', () => {
     expect(row!.balanceMicros).toBe(12345);
   });
 
+  it('values the projection identically to the engine (owner == trader truth)', async () => {
+    await engine.submitOrder({
+      accountId: fixture.accountId,
+      userId: fixture.userId,
+      clientOrderId: `same-${Date.now()}`,
+      symbol: 'NQ',
+      side: 'BUY',
+      qty: 3,
+      type: 'MARKET',
+    });
+    await settle(300);
+    // Move the mark so unrealized is non-trivial.
+    await market.quote('NQ', 20_050);
+    await projectAccount(fixture.db, fixture.accountId);
+
+    const fromEngine = await engine.valuation(fixture.accountId);
+    const fromProjection = await readAccountProjection(fixture.db, market, fixture.accountId);
+    expect(fromEngine).not.toBeNull();
+    expect(fromProjection).not.toBeNull();
+    // The read model, valued with the same marks, agrees with the authoritative
+    // engine valuation to the micro-dollar.
+    expect(fromProjection!.equityMicros).toBe(fromEngine!.equityMicros);
+    expect(fromProjection!.unrealizedPnlMicros).toBe(fromEngine!.openPnlMicros);
+    expect(fromProjection!.remainingLossMicros).toBe(fromEngine!.remainingDrawdownMicros);
+    expect(fromProjection!.openContracts).toBe(fromEngine!.openContracts);
+    expect(fromProjection!.balanceMicros).toBe(fromEngine!.balanceMicros);
+  });
+
   it('keeps unrealized P&L unknown, never zero, when a position cannot be marked', async () => {
     await engine.submitOrder({
       accountId: fixture.accountId,

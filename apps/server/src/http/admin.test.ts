@@ -17,8 +17,10 @@ import {
   accounts,
   auditLog,
   organizations,
+  positions,
   users,
 } from '../db/schema.js';
+import { projectAccount } from '../platform/projection.js';
 import { hashPassword } from '../auth/password.js';
 import { publishProfileVersion, resolveProfileVersion } from '../platform/profiles.js';
 import { defaultOrganizationId, provisionAccount } from '../platform/provisioning.js';
@@ -377,6 +379,19 @@ describe('organisation isolation', () => {
     expect(response.status).toBe(404);
   });
 
+  it('rejects a forged account id without leaking existence', async () => {
+    // A well-formed but non-existent id (and a foreign one) both resolve to the
+    // same 404 through the projection-backed detail and live reads - no oracle
+    // that would distinguish "not yours" from "does not exist".
+    const forged = crypto.randomUUID();
+    for (const id of [forged, otherOrgAccountId]) {
+      const detail = await call('GET', `/api/v1/admin/accounts/${id}`, tokens['SUPPORT']!);
+      const live = await call('GET', `/api/v1/admin/accounts/${id}/live`, tokens['SUPPORT']!);
+      expect(detail.status).toBe(404);
+      expect(live.status).toBe(404);
+    }
+  });
+
   it('leaves it out of the account list', async () => {
     const response = await call('GET', '/api/v1/admin/accounts?limit=200', tokens['ADMIN']!);
     const ids = response.json.accounts.map((row: { id: string }) => row.id);
@@ -624,6 +639,112 @@ describe('the surveillance, risk and system views', () => {
     for (const path of ['/trading', '/risk', '/system']) {
       const res = await call('GET', `/api/v1/admin${path}`, null);
       expect(res.status).toBe(401);
+    }
+  });
+});
+
+/*
+ * The surveillance and risk views read the durable account projection, not a
+ * per-account engine reconstruction. These tests give two firms a real open
+ * position, drive the projection from authority, and prove the operator sees
+ * their own firm's exposure through the projection - and never the other
+ * firm's, however the projection is scanned.
+ */
+describe('surveillance and risk read the projection, firm-isolated', () => {
+  // Give an account a real open position (signed qty, cost basis) and drive its
+  // projection from authority. A null market era leaves the position markable by
+  // the live feed; presence and isolation do not depend on a mark existing.
+  async function openAndProject(accountId: string, qty: number): Promise<void> {
+    // 2 NQ long at 20,000: NQ is $20/point, $5/tick (0.25), cost basis is the
+    // signed notional in micro-dollars. avg entry is derived from it.
+    const costBasisMicros = qty * 20_000 * 20 * M;
+    await db
+      .insert(positions)
+      .values({
+        accountId,
+        symbol: 'NQ',
+        side: qty >= 0 ? 'LONG' : 'SHORT',
+        qty,
+        costBasisMicros,
+        marketEra: null,
+        openedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [positions.accountId, positions.symbol],
+        set: { qty, side: qty >= 0 ? 'LONG' : 'SHORT', costBasisMicros, marketEra: null },
+      });
+    await projectAccount(db, accountId);
+  }
+
+  it('shows the firm its own open position from the projection, not another firm', async () => {
+    await openAndProject(traderAccountId, 2);
+    await openAndProject(otherOrgAccountId, 3);
+
+    const res = await call('GET', '/api/v1/admin/trading', tokens['SUPPORT']!);
+    expect(res.status).toBe(200);
+    const mine = res.json.openPositions.filter(
+      (p: { accountId: string }) => p.accountId === traderAccountId,
+    );
+    expect(mine.length).toBe(1);
+    expect(mine[0].symbol).toBe('NQ');
+    expect(mine[0].side).toBe('LONG');
+    expect(mine[0].qty).toBe(2);
+    // The other firm's open position must never appear on this firm's view.
+    const leaked = res.json.openPositions.filter(
+      (p: { accountId: string }) => p.accountId === otherOrgAccountId,
+    );
+    expect(leaked.length).toBe(0);
+    // openContracts is the sum of this firm's open exposure, not the other's.
+    expect(res.json.openContracts).toBeGreaterThanOrEqual(2);
+  });
+
+  it('never fabricates a zero: an unmarkable position reads unknown, not $0', async () => {
+    // A position opened in a market era the live feed is not in cannot be
+    // marked, so its unrealized P&L must read null - never a fabricated zero.
+    await db
+      .insert(positions)
+      .values({
+        accountId: traderAccountId,
+        symbol: 'NQ',
+        side: 'LONG',
+        qty: 2,
+        costBasisMicros: 2 * 20_000 * 20 * M,
+        marketEra: 'a-replay-era-the-live-feed-is-not-in',
+        openedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [positions.accountId, positions.symbol],
+        set: { marketEra: 'a-replay-era-the-live-feed-is-not-in' },
+      });
+    await projectAccount(db, traderAccountId);
+
+    const res = await call('GET', '/api/v1/admin/trading', tokens['SUPPORT']!);
+    const mine = res.json.openPositions.find(
+      (p: { accountId: string }) => p.accountId === traderAccountId,
+    );
+    expect(mine).toBeDefined();
+    expect(mine.markPrice).toBeNull();
+    expect(mine.unrealizedPnlMicros).toBeNull();
+  });
+
+  it('ranks risk from the projection and never leaks another firm', async () => {
+    await openAndProject(traderAccountId, 2);
+    await openAndProject(otherOrgAccountId, 3);
+
+    const res = await call('GET', '/api/v1/admin/risk', tokens['SUPPORT']!);
+    expect(res.status).toBe(200);
+    const everyAccountId = [
+      ...res.json.nearestLossLimit,
+      ...res.json.largestUnrealizedLoss,
+      ...res.json.onHold,
+      ...res.json.recentFailures,
+    ].map((r: { accountId: string }) => r.accountId);
+    expect(everyAccountId).not.toContain(otherOrgAccountId);
+    // Where a mark exists, equity is a real number, never a fabricated zero for
+    // an unknown; where it does not, the account is simply absent from the
+    // ranked lists (it has no known risk to rank), not shown at zero.
+    for (const row of res.json.nearestLossLimit as Array<{ equityMicros: number | null }>) {
+      expect(row.equityMicros === null || typeof row.equityMicros === 'number').toBe(true);
     }
   });
 });
