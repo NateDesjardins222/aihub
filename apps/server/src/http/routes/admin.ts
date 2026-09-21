@@ -73,6 +73,14 @@ import {
 } from '../../platform/profiles.js';
 import type { Actor } from '../../platform/actor.js';
 import { listOpenProjections, valuePositions, valueProjection } from '../../platform/projection.js';
+import { accountQualifications } from '../../db/schema.js';
+import {
+  CommerceError,
+  acquireEvaluation,
+  approveFunding,
+  declineFunding,
+} from '../../platform/commerce.js';
+import { resolveProfileByKey } from '../../platform/profiles.js';
 
 interface AdminDeps {
   readonly engine: TradingEngine;
@@ -164,7 +172,33 @@ function mapActionError(err: unknown): never {
     throw new ApiError(status, err.code, err.message);
   }
   if (err instanceof ProfileError) throw new ApiError(400, err.code, err.message);
+  if (err instanceof CommerceError) {
+    const status =
+      err.code === 'ACCOUNT_NOT_FOUND' ||
+      err.code === 'ENTITLEMENT_NOT_FOUND' ||
+      err.code === 'QUALIFICATION_NOT_FOUND' ||
+      err.code === 'PRODUCT_NOT_FOUND'
+        ? 404
+        : 409;
+    throw new ApiError(status, err.code, err.message);
+  }
   throw err;
+}
+
+/** Load a qualification and confirm it belongs to the caller's organisation. */
+async function requireQualification(
+  db: ReturnType<typeof getDb>['db'],
+  id: string,
+  organizationId: string,
+): Promise<typeof accountQualifications.$inferSelect> {
+  const [row] = await db
+    .select()
+    .from(accountQualifications)
+    .where(
+      and(eq(accountQualifications.id, id), eq(accountQualifications.organizationId, organizationId)),
+    );
+  if (!row) throw ApiError.notFound('QUALIFICATION_NOT_FOUND', 'No such qualification.');
+  return row;
 }
 
 export function adminRoutes(deps: AdminDeps) {
@@ -1050,6 +1084,184 @@ export function adminRoutes(deps: AdminDeps) {
       },
     );
 
+    // ---------------------------------------------------- commercial lifecycle
+    /*
+     * The passed queue and the funding decision. A trader who passes an
+     * evaluation is certified server-side into a qualification; the owner turns
+     * that qualification into a funded-sim account, or declines it. No money
+     * moves: this is the account transition a payout provider will later sit in
+     * front of, not the payout.
+     */
+    app.get('/funding-queue', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const query = z
+        .object({ state: z.enum(['ELIGIBLE', 'FUNDED', 'DECLINED', 'ALL']).default('ELIGIBLE') })
+        .parse(request.query ?? {});
+      const where =
+        query.state === 'ALL'
+          ? eq(accountQualifications.organizationId, organizationId)
+          : and(
+              eq(accountQualifications.organizationId, organizationId),
+              eq(accountQualifications.fundingState, query.state),
+            );
+
+      const rows = await db
+        .select({
+          qualification: accountQualifications,
+          account: accounts,
+          user: users,
+          profile: accountProfiles,
+        })
+        .from(accountQualifications)
+        .innerJoin(accounts, eq(accountQualifications.accountId, accounts.id))
+        .innerJoin(users, eq(accounts.userId, users.id))
+        .leftJoin(accountProfileVersions, eq(accounts.profileVersionId, accountProfileVersions.id))
+        .leftJoin(accountProfiles, eq(accountProfileVersions.profileId, accountProfiles.id))
+        .where(where)
+        .orderBy(desc(accountQualifications.qualifiedAt))
+        .limit(200);
+
+      return reply.send({
+        state: query.state,
+        qualifications: rows.map((row) => presentQualification(row)),
+      });
+    });
+
+    app.get<{ Params: { id: string } }>('/qualifications/:id', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const [row] = await db
+        .select({
+          qualification: accountQualifications,
+          account: accounts,
+          user: users,
+          profile: accountProfiles,
+        })
+        .from(accountQualifications)
+        .innerJoin(accounts, eq(accountQualifications.accountId, accounts.id))
+        .innerJoin(users, eq(accounts.userId, users.id))
+        .leftJoin(accountProfileVersions, eq(accounts.profileVersionId, accountProfileVersions.id))
+        .leftJoin(accountProfiles, eq(accountProfileVersions.profileId, accountProfiles.id))
+        .where(
+          and(
+            eq(accountQualifications.id, request.params.id),
+            eq(accountQualifications.organizationId, organizationId),
+          ),
+        );
+      if (!row) throw ApiError.notFound('QUALIFICATION_NOT_FOUND', 'No such qualification.');
+
+      let funded: typeof accounts.$inferSelect | null = null;
+      if (row.qualification.fundedAccountId) {
+        const [f] = await db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.id, row.qualification.fundedAccountId));
+        funded = f ?? null;
+      }
+
+      return reply.send({
+        qualification: presentQualification(row),
+        evidence: row.qualification.evidence,
+        fundedAccount: funded
+          ? { id: funded.id, publicId: funded.publicId, status: funded.status, accountType: funded.accountType }
+          : null,
+      });
+    });
+
+    app.post<{ Params: { id: string } }>(
+      '/qualifications/:id/approve-funding',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        await requireQualification(db, request.params.id, organizationId);
+        try {
+          const result = await approveFunding(db, request.params.id, {
+            actor: actorFor(request),
+          });
+          return reply.code(result.reused ? 200 : 201).send({
+            fundedAccountId: result.fundedAccountId,
+            reused: result.reused,
+          });
+        } catch (err) {
+          throw mapActionError(err);
+        }
+      },
+    );
+
+    app.post<{ Params: { id: string } }>(
+      '/qualifications/:id/decline-funding',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        await requireQualification(db, request.params.id, organizationId);
+        const body = z.object({ reason: z.string().min(3).max(500) }).parse(request.body);
+        try {
+          const qual = await declineFunding(db, request.params.id, body.reason, actorFor(request));
+          return reply.send({ id: qual.id, fundingState: qual.fundingState });
+        } catch (err) {
+          throw mapActionError(err);
+        }
+      },
+    );
+
+    /*
+     * A manual owner grant. It travels the identical path a purchase will -
+     * an order, an entitlement, a provisioned evaluation - differing only in
+     * that its source is ADMIN_GRANT and no money was involved. This is not a
+     * fake checkout; it is the same machinery with the payment step absent.
+     */
+    app.post(
+      '/grants',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        const body = z
+          .object({
+            userId: z.string().uuid().optional(),
+            email: z.string().email().max(254).optional(),
+            profileKey: z.string().min(1).max(60),
+            activate: z.boolean().optional(),
+          })
+          .parse(request.body);
+        if (!body.userId && !body.email) {
+          throw ApiError.badRequest('USER_REQUIRED', 'Name the user by id or by e-mail.');
+        }
+
+        const [user] = body.userId
+          ? await db.select().from(users).where(eq(users.id, body.userId))
+          : await db.select().from(users).where(eq(users.email, body.email!.trim().toLowerCase()));
+        if (!user) throw ApiError.notFound('USER_NOT_FOUND', 'No such user.');
+        if (user.organizationId && user.organizationId !== organizationId) {
+          throw ApiError.badRequest('ORGANIZATION_MISMATCH', 'That user is in another organisation.');
+        }
+
+        let versionId: string;
+        try {
+          versionId = (await resolveProfileByKey(db, organizationId, body.profileKey)).versionId;
+        } catch (err) {
+          throw mapActionError(err);
+        }
+
+        try {
+          const result = await acquireEvaluation(db, {
+            organizationId,
+            userId: user.id,
+            productVersionId: versionId,
+            source: 'ADMIN_GRANT',
+            idempotencyKey: `grant:${crypto.randomUUID()}`,
+            activate: body.activate,
+            actor: actorFor(request),
+          });
+          return reply.code(201).send({
+            accountId: result.accountId,
+            orderId: result.orderId,
+            entitlementId: result.entitlementId,
+          });
+        } catch (err) {
+          throw mapActionError(err);
+        }
+      },
+    );
+
     // -------------------------------------------------------------------- audit
     app.get('/audit', async (request, reply) => {
       const query = z
@@ -1356,6 +1568,36 @@ function presentUser(user: UserRow) {
     status: user.status,
     createdAt: user.createdAt.getTime(),
     lastLoginAt: user.lastLoginAt?.getTime() ?? null,
+  };
+}
+
+function presentQualification(row: {
+  qualification: typeof accountQualifications.$inferSelect;
+  account: AccountRow;
+  user: UserRow;
+  profile: ProfileRow | null;
+}) {
+  const q = row.qualification;
+  return {
+    id: q.id,
+    fundingState: q.fundingState,
+    balanceMicros: q.balanceMicros,
+    qualifiedAt: q.qualifiedAt.getTime(),
+    fundedAccountId: q.fundedAccountId,
+    declineReason: q.declineReason,
+    approvedAt: q.approvedAt?.getTime() ?? null,
+    account: {
+      id: row.account.id,
+      publicId: row.account.publicId,
+      status: row.account.status,
+      accountType: row.account.accountType,
+      startingBalanceMicros: row.account.startingBalanceMicros,
+      // Whether a funded destination is pinned decides if funding can be
+      // approved at all; the queue shows it so the owner is not surprised.
+      hasFundedDestination: row.account.fundedProfileVersionId !== null,
+    },
+    product: row.profile ? { key: row.profile.key, name: row.profile.name } : null,
+    trader: { id: row.user.id, email: row.user.email, displayName: row.user.displayName },
   };
 }
 

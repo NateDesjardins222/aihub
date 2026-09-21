@@ -486,6 +486,151 @@ describe('funding transition', () => {
   });
 });
 
+describe('the owner funding console', () => {
+  let token: string;
+
+  beforeAll(async () => {
+    const email = `owner-${crypto.randomUUID().slice(0, 8)}@atlas.test`;
+    const [admin] = await db
+      .insert(users)
+      .values({
+        email,
+        passwordHash: await hashPassword('owner-console-password'),
+        displayName: 'Owner',
+        role: 'ADMIN',
+        organizationId,
+      })
+      .returning();
+    users_.push(admin!.id);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email, password: 'owner-console-password' },
+    });
+    token = JSON.parse(login.body).accessToken;
+  });
+
+  const auth = () => ({ authorization: `Bearer ${token}` });
+
+  async function eligibleQualification(label: string): Promise<string> {
+    const userId = await makeUser(label);
+    const versionId = await evalVersionId();
+    const { accountId } = await acquireEvaluation(db, {
+      organizationId,
+      userId,
+      productVersionId: versionId,
+      source: 'PURCHASE',
+    });
+    await fundToPass(accountId);
+    const qual = await certifyEvaluation(db, accountId);
+    return qual!.id;
+  }
+
+  it('lists the passed queue and approves funding through the API', async () => {
+    const qualificationId = await eligibleQualification('console-approve');
+
+    const queue = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/funding-queue?state=ELIGIBLE',
+      headers: auth(),
+    });
+    expect(queue.statusCode).toBe(200);
+    const listed = JSON.parse(queue.body).qualifications as Array<{ id: string; account: { hasFundedDestination: boolean } }>;
+    const mine = listed.find((q) => q.id === qualificationId);
+    expect(mine).toBeTruthy();
+    expect(mine!.account.hasFundedDestination).toBe(true);
+
+    const approve = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/qualifications/${qualificationId}/approve-funding`,
+      headers: auth(),
+      payload: {},
+    });
+    expect(approve.statusCode).toBe(201);
+    const fundedAccountId = JSON.parse(approve.body).fundedAccountId;
+    expect(fundedAccountId).toBeTruthy();
+
+    // A second approval is idempotent: 200 and the same account.
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/qualifications/${qualificationId}/approve-funding`,
+      headers: auth(),
+      payload: {},
+    });
+    expect(again.statusCode).toBe(200);
+    expect(JSON.parse(again.body).fundedAccountId).toBe(fundedAccountId);
+  });
+
+  it('declines funding with a reason and then refuses approval', async () => {
+    const qualificationId = await eligibleQualification('console-decline');
+    const decline = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/qualifications/${qualificationId}/decline-funding`,
+      headers: auth(),
+      payload: { reason: 'Suspicious trading pattern' },
+    });
+    expect(decline.statusCode).toBe(200);
+    expect(JSON.parse(decline.body).fundingState).toBe('DECLINED');
+
+    const approve = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/qualifications/${qualificationId}/approve-funding`,
+      headers: auth(),
+      payload: {},
+    });
+    expect(approve.statusCode).toBe(409);
+    expect(JSON.parse(approve.body).error.code).toBe('INVALID_FUNDING_STATE');
+  });
+
+  it('grants an evaluation manually, through the same machinery as a purchase', async () => {
+    const userId = await makeUser('console-grant');
+    const grant = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/grants',
+      headers: auth(),
+      payload: { userId, profileKey: EVAL_KEY },
+    });
+    expect(grant.statusCode).toBe(201);
+    const accountId = JSON.parse(grant.body).accountId;
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, accountId));
+    expect(account!.accountType).toBe('EVALUATION');
+
+    // And the order that backs it is an ADMIN_GRANT, not a purchase.
+    const orderId = JSON.parse(grant.body).orderId;
+    const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, orderId));
+    expect(order!.source).toBe('ADMIN_GRANT');
+  });
+
+  it('shows a qualification with its immutable evidence', async () => {
+    const qualificationId = await eligibleQualification('console-detail');
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/admin/qualifications/${qualificationId}`,
+      headers: auth(),
+    });
+    expect(detail.statusCode).toBe(200);
+    const body = JSON.parse(detail.body);
+    expect(body.evidence.requirements.some((r: { key: string }) => r.key === 'PROFIT_TARGET')).toBe(true);
+  });
+
+  it('refuses the funding console to a trader', async () => {
+    const email = `trader-${crypto.randomUUID().slice(0, 8)}@atlas.test`;
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: { email, password: 'a-long-enough-password', displayName: 'Trader' },
+    });
+    const traderToken = JSON.parse(registered.body).accessToken;
+    users_.push(JSON.parse(registered.body).user.id);
+    const queue = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/funding-queue',
+      headers: { authorization: `Bearer ${traderToken}` },
+    });
+    expect(queue.statusCode).toBe(403);
+  });
+});
+
 describe('errors', () => {
   it('reports a missing entitlement and a missing qualification', async () => {
     await expect(provisionFromEntitlement(db, crypto.randomUUID())).rejects.toBeInstanceOf(CommerceError);
