@@ -136,10 +136,12 @@ exercised by the market-data torture harness. Base can be `1s`.
 Existing `BarService` (cache + provider fallback + repair) and `service.getChartBars`
 (merges cached history with the forming bar using the exchange clock) provide the
 handoff; session/status/holiday logic lives in `@atlas/instruments` and the
-quote store's freshness. These were **not rebuilt**; the delayed poll's dedup by
-bar time prevents duplicate candles. Full history/live handoff against a real
-streaming feed, and gap backfill on a real reconnect, are PENDING KEY (they need
-a live stream to exercise honestly).
+quote store's freshness. **Offline handoff tests added** (`handoff.test.ts`, 5,
+RUN): history→live with no duplicate/reset/gap, overlapping re-sent bar is a
+revision (no volume double-count), the startup race (a live bar arriving during
+the historical load survives the seed), gap resume without inventing the missing
+interval, and higher-timeframe derivation across the handoff. Full handoff and
+gap backfill against a **real streaming feed** remain PENDING KEY.
 
 ## 26. Freshness thresholds
 
@@ -270,10 +272,25 @@ redistribution. The exact Databento JSON/DBN field names until a real payload
 confirms them. Everything offline-tested here I trust to the extent an offline
 test can carry — the authenticated run is the next gate.
 
+## Second offline pass — additions (Phases 38–40, 80, 82–83)
+
+Deepening offline coverage before the key, per Phase 91:
+- **History/live handoff tests** (`marketdata/handoff.test.ts`, 5): no duplicate/
+  reset/gap across the join, overlapping bar = revision (no double-count), the
+  startup race, gap resume without invention, higher-timeframe derivation.
+- **Error taxonomy + observability** (`marketdata/errors.ts` + 7 tests): the
+  AUTH/NETWORK/PROVIDER/MAPPING/CONTRACT/STALE/GAP/INVALID_DATA/INTERNAL
+  classifier and a coarse structured lifecycle observer, wired into the Databento
+  adapter (never per-tick, never a credential). `observability()` for health.
+- **Storage/retention doc** (`market-data-storage-retention.md`): what is
+  persisted (closed bars, contract identity, latest op state, recorded sessions)
+  vs in-memory only (ticks/quotes/forming bars), growth bounds, and the storage
+  licensing constraint.
+
 ## Test totals
 
-- Full suite: **809 tests, 49 files, all pass** (isolate runner; 788 → 809, +21:
-  18 Databento adapter, 3 contract-lock).
+- Full suite: **821 tests, 51 files, all pass** (isolate runner; 788 baseline →
+  821, +33: 18 Databento adapter, 3 contract-lock, 5 handoff, 7 error taxonomy).
 - Typecheck: `pnpm -r typecheck` clean.
 - Reliability E2E 12/12; reliability torture 0 violations; market-data torture 0
   violations across 3 seeds.

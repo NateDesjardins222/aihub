@@ -41,6 +41,7 @@ import type {
 } from '../provider.js';
 import { DatabentoHttp, type FetchLike } from './databento-http.js';
 import { ohlcvToBar, type DbnOhlcv } from './databento-normalize.js';
+import { MarketDataObserver, type MarketDataLogSink } from '../errors.js';
 
 /** Timeframes Databento serves natively as an OHLCV schema. */
 const NATIVE_OHLCV: Partial<Record<Timeframe, string>> = {
@@ -66,6 +67,8 @@ export interface DatabentoProviderOptions {
   readonly fetchImpl?: FetchLike;
   /** A clock, injectable for deterministic tests. */
   readonly now?: () => number;
+  /** Structured lifecycle-event sink; defaults to one JSON line per event. */
+  readonly logSink?: MarketDataLogSink;
 }
 
 export class DatabentoProvider implements DescribableProvider {
@@ -78,6 +81,7 @@ export class DatabentoProvider implements DescribableProvider {
   private readonly declaredDelaySeconds: number;
   private readonly pollIntervalMs: number;
   private readonly now: () => number;
+  private readonly obs: MarketDataObserver;
 
   private readonly subs = new Set<string>();
   private readonly listeners = new Set<ProviderListener>();
@@ -102,12 +106,19 @@ export class DatabentoProvider implements DescribableProvider {
     this.declaredDelaySeconds = opts.declaredDelaySeconds ?? 0;
     this.pollIntervalMs = opts.pollIntervalMs ?? 5_000;
     this.now = opts.now ?? (() => Date.now());
+    this.obs = new MarketDataObserver(this.id, opts.logSink);
+  }
+
+  /** Structured lifecycle-event counts, for a health snapshot. */
+  observability(): Record<string, number> {
+    return this.obs.snapshot();
   }
 
   // -- lifecycle -----------------------------------------------------------
 
   async connect(): Promise<void> {
     this.state = 'CONNECTING';
+    this.obs.emit('connect');
     this.emitStatus();
     try {
       // A cheap authenticated probe: the dataset's available range. Confirms the
@@ -117,11 +128,14 @@ export class DatabentoProvider implements DescribableProvider {
       this.state = 'CONNECTED';
       this.reconnectAttempts = 0;
       this.lastError = undefined;
+      this.obs.emit('connected');
       this.emitStatus();
       this.startPolling();
     } catch (err) {
       this.state = 'ERROR';
-      this.lastError = errorLabel(err);
+      // Classify (AUTH/NETWORK/PROVIDER/…) and record; the message is already
+      // credential-free by construction.
+      this.lastError = this.obs.error(err).message;
       this.emitStatus();
       throw err;
     }
@@ -130,17 +144,19 @@ export class DatabentoProvider implements DescribableProvider {
   async disconnect(): Promise<void> {
     this.stopPolling();
     this.state = 'DISCONNECTED';
+    this.obs.emit('disconnect');
     this.emitStatus();
   }
 
   subscribe(symbol: string): void {
     const spec = requireInstrument(symbol);
+    if (!this.subs.has(spec.root)) this.obs.emit('subscribe', { symbol: spec.root });
     this.subs.add(spec.root);
   }
 
   unsubscribe(symbol: string): void {
     const spec = requireInstrument(symbol);
-    this.subs.delete(spec.root);
+    if (this.subs.delete(spec.root)) this.obs.emit('unsubscribe', { symbol: spec.root });
   }
 
   subscriptions(): readonly string[] {
@@ -244,12 +260,13 @@ export class DatabentoProvider implements DescribableProvider {
     if (this.poller) return;
     this.poller = setInterval(() => {
       void this.pollOnce().catch((err) => {
-        this.lastError = errorLabel(err);
+        this.lastError = this.obs.error(err).message;
         // A transient poll failure degrades but does not crash; connect()'s
         // probe already proved the key, so this is treated as DEGRADED-ish.
         if (this.state === 'CONNECTED') {
           this.state = 'RECONNECTING';
           this.reconnectAttempts += 1;
+          this.obs.emit('degraded');
           this.emitStatus();
         }
       });
@@ -286,6 +303,7 @@ export class DatabentoProvider implements DescribableProvider {
       this.lastMessageAt = this.now();
       if (this.state === 'RECONNECTING') {
         this.state = 'CONNECTED';
+        this.obs.emit('reconnect');
         this.emitStatus();
       }
       for (const rec of records) {
@@ -349,13 +367,4 @@ export function foldBars(bars: readonly NormalizedBar[], n: number, _tf: Timefra
 
 function isoOf(ms: number | undefined): string {
   return new Date(ms ?? Date.now()).toISOString();
-}
-
-/** A credential-safe label for an error — never includes a body that could echo a key. */
-function errorLabel(err: unknown): string {
-  if (err instanceof Error) {
-    // DatabentoHttpError's message already excludes the credential by construction.
-    return err.name === 'DatabentoHttpError' ? err.message : err.name;
-  }
-  return 'error';
 }
