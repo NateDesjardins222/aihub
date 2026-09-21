@@ -29,10 +29,30 @@ export function getDb(): DbHandle {
   return singleton;
 }
 
+/**
+ * A dedicated connection pool for account advisory locks, separate from the
+ * query pool. A session-level advisory lock holds its connection for the whole
+ * critical section; if those came from the query pool, enough
+ * concurrently-trading accounts would starve queries of connections and
+ * deadlock. Keeping locks on their own pool makes the two independent.
+ */
+let lockPool: postgres.Sql | null = null;
+
+export function getLockSql(url = env().DATABASE_URL): postgres.Sql {
+  if (!lockPool) {
+    lockPool = postgres(url, { max: 20, idle_timeout: 20, transform: { undefined: null }, onnotice: () => {} });
+  }
+  return lockPool;
+}
+
 export async function closeDb(): Promise<void> {
   if (singleton) {
     await singleton.sql.end({ timeout: 5 });
     singleton = null;
+  }
+  if (lockPool) {
+    await lockPool.end({ timeout: 5 });
+    lockPool = null;
   }
 }
 

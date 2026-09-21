@@ -16,6 +16,7 @@ import { recordAudit } from './audit.js';
 import { events, type DomainEventType } from './events.js';
 import type { Actor } from './actor.js';
 import { resolveProfileVersion } from './profiles.js';
+import { accountAdvisoryLockSql } from '../trading/account-lock.js';
 
 export type AccountStatus =
   | 'PENDING'
@@ -76,48 +77,68 @@ async function transition(
   accountId: string,
   options: TransitionOptions,
 ): Promise<AccountRow> {
-  const before = await load(db, accountId);
-  if (options.allowedFrom && !options.allowedFrom.includes(before.status as AccountStatus)) {
-    throw new AccountActionError(
-      'INVALID_TRANSITION',
-      `An account that is ${before.status.toLowerCase()} cannot be ${options.action
-        .split('.')
-        .pop()}.`,
-    );
-  }
+  /*
+   * One transaction, one lock. The account advisory lock serializes this
+   * transition against the trading engine (which holds the same lock while it
+   * matches) and against any other transition, across processes - so an owner
+   * hold cannot interleave with a trader fill, and two transitions cannot both
+   * read ACTIVE and both act on it. The status is re-read FOR UPDATE inside the
+   * lock, so the allowedFrom guard sees the committed truth, not a stale read.
+   * The state change, its audit row and its outbox event now commit together or
+   * not at all.
+   */
+  return db.transaction(async (tx) => {
+    await tx.execute(accountAdvisoryLockSql(accountId));
 
-  const [after] = await db
-    .update(accounts)
-    .set({
-      ...options.patch,
-      ...(options.restoreRuleStatus ? { status: before.ruleStatus ?? 'ACTIVE' } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(accounts.id, accountId))
-    .returning();
+    const [before] = await tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .for('update');
+    if (!before) throw new AccountActionError('ACCOUNT_NOT_FOUND', 'No such account.');
+    if (options.allowedFrom && !options.allowedFrom.includes(before.status as AccountStatus)) {
+      throw new AccountActionError(
+        'INVALID_TRANSITION',
+        `An account that is ${before.status.toLowerCase()} cannot be ${options.action
+          .split('.')
+          .pop()}.`,
+      );
+    }
 
-  await recordAudit(db, {
-    organizationId: before.organizationId,
-    actor: options.actor,
-    subjectType: 'ACCOUNT',
-    subjectId: accountId,
-    accountId,
-    userId: before.userId,
-    action: options.action,
-    prevState: { status: before.status },
-    newState: { status: after!.status },
-    reason: options.reason ?? null,
+    const [after] = await tx
+      .update(accounts)
+      .set({
+        ...options.patch,
+        ...(options.restoreRuleStatus ? { status: before.ruleStatus ?? 'ACTIVE' } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(accounts.id, accountId))
+      .returning();
+
+    const scoped = tx as unknown as Database;
+    await recordAudit(scoped, {
+      organizationId: before.organizationId,
+      actor: options.actor,
+      subjectType: 'ACCOUNT',
+      subjectId: accountId,
+      accountId,
+      userId: before.userId,
+      action: options.action,
+      prevState: { status: before.status },
+      newState: { status: after!.status },
+      reason: options.reason ?? null,
+    });
+
+    await events.publish(scoped, {
+      type: options.event,
+      organizationId: before.organizationId,
+      accountId,
+      userId: before.userId,
+      payload: { publicId: before.publicId, from: before.status, to: after!.status },
+    });
+
+    return after!;
   });
-
-  await events.publish(db, {
-    type: options.event,
-    organizationId: before.organizationId,
-    accountId,
-    userId: before.userId,
-    payload: { publicId: before.publicId, from: before.status, to: after!.status },
-  });
-
-  return after!;
 }
 
 /** PENDING to ACTIVE: the account becomes tradeable for the first time. */
@@ -348,7 +369,10 @@ export async function resetAccount(
     before.startingBalanceMicros;
 
   const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(accounts).where(eq(accounts.id, accountId));
+    // Serialize the reset's account rewrite against the engine and any other
+    // operator action on this account, across processes.
+    await tx.execute(accountAdvisoryLockSql(accountId));
+    const [current] = await tx.select().from(accounts).where(eq(accounts.id, accountId)).for('update');
 
     if (current!.currentLifecycleId) {
       await tx

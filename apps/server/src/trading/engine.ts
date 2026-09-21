@@ -97,7 +97,8 @@ export interface MarketView {
    */
   attachIdleProbe?(probe: () => Promise<void>): void;
 }
-import { KeyedMutex } from './mutex.js';
+import type postgres from 'postgres';
+import { AccountLock } from './account-lock.js';
 import {
   applyRules,
   historyFor,
@@ -306,7 +307,12 @@ type ChangeListener = (change: EngineChange) => void;
 type ValuationListener = (valuation: AccountValuation) => void;
 
 export class TradingEngine {
-  private readonly mutex = new KeyedMutex();
+  /**
+   * Serializes every mutation of one account. In-process by default; when a
+   * postgres connection is supplied it is also cross-process (a PostgreSQL
+   * advisory lock), so two server instances cannot corrupt one account.
+   */
+  private readonly mutex: AccountLock;
   private readonly listeners = new Set<ChangeListener>();
   private readonly valuationListeners = new Set<ValuationListener>();
   /** Account+symbol pairs with a market-event match already queued. */
@@ -349,7 +355,15 @@ export class TradingEngine {
   constructor(
     private readonly db: Database,
     private readonly market: MarketView,
-  ) {}
+    /**
+     * The raw postgres connection, for the cross-process account advisory lock.
+     * Omitted in unit tests, which are single-process: the engine then falls
+     * back to the pure in-process mutex, with identical single-process behaviour.
+     */
+    pg?: postgres.Sql,
+  ) {
+    this.mutex = new AccountLock(pg);
+  }
 
   onChange(listener: ChangeListener): () => void {
     this.listeners.add(listener);

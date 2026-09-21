@@ -16,7 +16,7 @@ import { adminRoutes } from './routes/admin.js';
 import { provisioningRoutes } from './routes/provisioning.js';
 import { TradingEngine } from '../trading/engine.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
-import { getDb } from '../db/client.js';
+import { getDb, getLockSql } from '../db/client.js';
 import { MarketDataGateway } from '../ws/gateway.js';
 import { recordEngineActivity } from '../platform/engine-audit.js';
 
@@ -157,7 +157,10 @@ export async function buildApp(): Promise<BuiltApp> {
 
   const { db } = getDb();
   const stack = buildMarketDataStack(db);
-  const engine = new TradingEngine(db, stack.market);
+  // A dedicated lock pool gives the engine its cross-process account lock; a
+  // second Atlas instance sharing this database can no longer double-fill an
+  // account. It is a separate pool so a held lock never starves queries.
+  const engine = new TradingEngine(db, stack.market, getLockSql());
   const gateway = new MarketDataGateway(stack.market, engine);
   gateway.register(app);
 
