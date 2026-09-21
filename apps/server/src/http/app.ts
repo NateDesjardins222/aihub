@@ -17,6 +17,9 @@ import { provisioningRoutes } from './routes/provisioning.js';
 import { TradingEngine } from '../trading/engine.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb, getLockSql } from '../db/client.js';
+import { OutboxWorker, notifyAccountChanged } from '../platform/outbox.js';
+import { accountOutboxHandler } from '../platform/projection.js';
+import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
 import { recordEngineActivity } from '../platform/engine-audit.js';
 
@@ -172,8 +175,28 @@ export async function buildApp(): Promise<BuiltApp> {
    */
   const stopRecording = recordEngineActivity(db, engine);
 
+  /*
+   * The outbox delivery worker keeps the operational read model current and
+   * wakes other instances. It drains account.changed events into the projection
+   * and, after each committed batch, NOTIFYs so an instance holding a trader's
+   * or owner's socket re-publishes even for a change processed elsewhere. Its
+   * connection is the dedicated lock pool, kept off the query pool.
+   */
+  const workerPg = getLockSql();
+  const outboxWorker = new OutboxWorker(db, {
+    handler: accountOutboxHandler,
+    onDelivered: (accountIds) => void notifyAccountChanged(workerPg, accountIds),
+  });
+  outboxWorker.start();
+
+  const accountListener = await listenAccountChanged(workerPg, (accountId) => {
+    void gateway.publishAccountState(accountId);
+  }).catch((): null => null);
+
   app.addHook('onClose', async () => {
     stopRecording();
+    outboxWorker.stop();
+    await accountListener?.close().catch(() => undefined);
     engine.stop();
     await stack.market.stop();
   });

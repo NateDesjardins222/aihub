@@ -75,6 +75,12 @@ let soundAccount: string | null = null;
 let refreshTimer: number | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let refreshQueued = false;
+/**
+ * The exchange/compute timestamp of the last valuation frame applied. A delayed
+ * frame (an older `at`) is dropped so the displayed P&L never rolls backward.
+ * Reset to 0 on every account switch.
+ */
+let lastPnlAt = 0;
 
 export const useTrading = create<TradingState>((set, get) => ({
   accountId: null,
@@ -99,6 +105,7 @@ export const useTrading = create<TradingState>((set, get) => ({
     // difference between two unrelated accounts.
     lastSounded = EMPTY_SNAPSHOT;
     soundAccount = null;
+    lastPnlAt = 0;
     set({
       accountId,
       orders: [],
@@ -132,6 +139,7 @@ export const useTrading = create<TradingState>((set, get) => ({
       marketStream.subscribeRaw(`acct.${accountId}.pnl`, (data) => {
         const valuation = data as {
           accountId?: string;
+          at?: number;
           balanceMicros?: number;
           equityMicros?: number;
           openPnlMicros?: number;
@@ -141,7 +149,17 @@ export const useTrading = create<TradingState>((set, get) => ({
           rules?: ApiRuleStatus;
           positions?: Array<{ symbol: string; unrealizedPnlMicros: number; markPrice: number | null }>;
         } | null;
-        if (!valuation || valuation.accountId !== accountId) return;
+        // Drop a frame for any account other than the one on screen NOW - not
+        // merely the account this subscription was opened for. After an account
+        // switch a frame for the previous account can still be in flight; it
+        // must never overwrite the account the trader is now looking at.
+        if (!valuation || valuation.accountId !== get().accountId) return;
+        // Monotonic: never apply a frame older than the last one applied, so a
+        // delayed valuation cannot roll the displayed P&L backward.
+        if (typeof valuation.at === 'number') {
+          if (valuation.at < lastPnlAt) return;
+          lastPnlAt = valuation.at;
+        }
 
         // A status change is the one thing that needs the authoritative read:
         // a failed account's orders and positions have just been closed by the

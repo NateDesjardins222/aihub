@@ -82,6 +82,32 @@ export class MarketDataGateway {
     app.addHook('onClose', async () => this.close());
   }
 
+  /**
+   * Re-publish an account's current valuation to its subscribers on THIS
+   * instance. Called when a change processed on ANOTHER instance arrives as a
+   * cross-process notification: the local engine had no onChange for it, so this
+   * is how a trader connected here learns of a fill that happened elsewhere.
+   * Reads authoritative state from the shared database, so it is correct on any
+   * instance. A no-op when the engine is absent or nobody is subscribed.
+   */
+  async publishAccountState(accountId: string): Promise<void> {
+    if (!this.engine) return;
+    if (!this.hasSubscribers(accountId)) return;
+    const valuation = await this.engine.valuation(accountId).catch(() => null);
+    if (valuation) this.publish(`acct.${accountId}.pnl`, valuation);
+  }
+
+  /** True when any connected client follows this account. */
+  private hasSubscribers(accountId: string): boolean {
+    const prefix = `acct.${accountId}.`;
+    for (const client of this.clients.values()) {
+      for (const stream of client.streams) {
+        if (stream.startsWith(prefix)) return true;
+      }
+    }
+    return false;
+  }
+
   async close(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat);
     for (const client of this.clients.values()) client.socket.close(1001, 'server shutting down');
