@@ -16,7 +16,7 @@
  * never a fabricated zero.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { requireInstrument, priceToTicks, ticksToPrice } from '@atlas/instruments';
+import { requireInstrument, priceToTicks, ticksToPrice, contractResolver } from '@atlas/instruments';
 import { unrealizedPnlMicros, avgEntryTicks, type PositionState } from '@atlas/core';
 import type { Database } from '../db/client.js';
 import { accountProjections, accounts, orders, positions, users } from '../db/schema.js';
@@ -38,6 +38,15 @@ export interface ProjectionPosition {
 export interface ProjectionMarket {
   markPrice(symbol: string): number | null;
   era(): string;
+  /**
+   * Exchange time of the current mark for a symbol, epoch ms, or null.
+   *
+   * Used only to resolve the current front-month contract when applying the
+   * open-position contract lock, so the owner read and the engine read agree on
+   * which contract the live feed currently represents. Optional so existing
+   * ProjectionMarket implementers keep working; absent means "no roll check".
+   */
+  markTime?(symbol: string): number | null;
 }
 
 export type AccountProjectionRow = typeof accountProjections.$inferSelect;
@@ -73,7 +82,7 @@ export async function projectAccount(
 
     const stored: ProjectionPosition[] = openPositions.map((p) => ({
       symbol: p.symbol,
-      contractCode: null,
+      contractCode: p.contractCode ?? null,
       side: p.side,
       qty: p.side === 'SHORT' ? -Math.abs(p.qty) : Math.abs(p.qty),
       costBasisMicros: p.costBasisMicros,
@@ -161,9 +170,24 @@ export interface ValuedProjection {
   readonly consistent: boolean;
 }
 
-function markTicksFor(symbol: string, positionEra: string | null, market: ProjectionMarket): number | null {
+function markTicksFor(
+  symbol: string,
+  positionEra: string | null,
+  contractCode: string | null,
+  market: ProjectionMarket,
+): number | null {
   // A position is only priced by the market it was opened in.
   if (positionEra !== null && positionEra !== market.era()) return null;
+  // The open-position contract lock, applied identically to the engine's own
+  // marking so owner and trader always agree: a position opened in a specific
+  // contract is not marked once the root's front month has rolled past it.
+  if (contractCode != null) {
+    const markTime = market.markTime?.(symbol) ?? null;
+    if (markTime !== null) {
+      const current = contractResolver.contractCode(symbol, markTime);
+      if (current !== null && current !== contractCode) return null;
+    }
+  }
   const price = market.markPrice(symbol);
   if (price === null) return null;
   try {
@@ -186,7 +210,7 @@ export function valueProjection(row: AccountProjectionRow, market: ProjectionMar
       unrealized = null;
       break;
     }
-    const markTicks = markTicksFor(p.symbol, p.marketEra, market);
+    const markTicks = markTicksFor(p.symbol, p.marketEra, p.contractCode, market);
     if (markTicks === null) {
       unrealized = null;
       break;
@@ -276,7 +300,7 @@ export function valuePositions(row: AccountProjectionRow, market: ProjectionMark
         updatedAt: null,
       };
       const avgTicks = avgEntryTicks(spec, state);
-      const markTicks = markTicksFor(p.symbol, p.marketEra, market);
+      const markTicks = markTicksFor(p.symbol, p.marketEra, p.contractCode, market);
       return {
         symbol: p.symbol,
         side: p.side,

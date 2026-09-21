@@ -1608,6 +1608,14 @@ export class TradingEngine {
             // The market these fills were priced against. Cleared when the
             // position goes flat: there is nothing left to mark.
             marketEra: result.position.qty === 0 ? null : this.market.era(),
+            // The actual tradeable contract this position opened in, resolved at
+            // the fill instant. Cleared when flat; on a subsequent add it is
+            // preserved (below), never re-resolved to a later front month - the
+            // open-position contract lock.
+            contractCode:
+              result.position.qty === 0
+                ? null
+                : contractResolver.contractCode(spec.root, snapshot.exchangeTs),
             // A position that has just gone flat, or flipped, starts its
             // excursions again: they describe ONE holding, not an account.
             maeMicros: result.position.qty === 0 ? 0 : Math.round(excursion.maePerContract),
@@ -1626,6 +1634,11 @@ export class TradingEngine {
               realizedPnlMicros: sql`excluded.realized_pnl_micros`,
               feesMicros: sql`excluded.fees_micros`,
               marketEra: sql`excluded.market_era`,
+              // The lock: clear on flat, otherwise KEEP the contract this
+              // position was opened in (adopt the freshly-resolved one only when
+              // there was none, e.g. a legacy row). A subsequent fill on the
+              // root never migrates an open position to a new front month.
+              contractCode: sql`case when excluded.qty = 0 then null else coalesce(${positionsTable.contractCode}, excluded.contract_code) end`,
               maeMicros: sql`excluded.mae_micros`,
               mfeMicros: sql`excluded.mfe_micros`,
               initialRiskMicros: sql`excluded.initial_risk_micros`,
@@ -2582,8 +2595,23 @@ export class TradingEngine {
    * marked as before: inventing a reason not to price it would be its own
    * defect.
    */
-  markTicksFor(spec: InstrumentSpec, position: { marketEra: string | null }): number | null {
+  markTicksFor(
+    spec: InstrumentSpec,
+    position: { marketEra: string | null; contractCode?: string | null },
+  ): number | null {
     if (position.marketEra !== null && position.marketEra !== this.market.era()) return null;
+    // The open-position contract lock. A position opened in a specific contract
+    // is never marked by a different contract's prices. Atlas's live/chart feed
+    // is keyed on the ROOT and carries the current front month; once that has
+    // rolled past this position's contract, the root feed is a DIFFERENT
+    // contract, so the position reads UNKNOWN (never a wrong mark, never a
+    // silent roll) until it can be marked by its own contract. A legacy
+    // position with no contract (null) marks as before.
+    if (position.contractCode != null) {
+      const markTime = this.market.getQuote(spec.root)?.exchangeTs ?? Date.now();
+      const current = contractResolver.contractCode(spec.root, markTime);
+      if (current !== null && current !== position.contractCode) return null;
+    }
     return this.markTicks(spec);
   }
 

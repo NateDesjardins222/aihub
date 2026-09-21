@@ -343,6 +343,11 @@ export class MarketDataService {
     return this.quotes.markPrice(symbol.toUpperCase());
   }
 
+  /** Exchange time of the current mark, for the contract-lock roll check. */
+  markTime(symbol: string): number | null {
+    return this.quotes.getQuote(symbol.toUpperCase())?.exchangeTs ?? null;
+  }
+
   /**
    * The clock staleness is judged against.
    *

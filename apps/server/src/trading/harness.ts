@@ -111,6 +111,11 @@ export class ScriptedMarket implements MarketView {
     return this.quotes.get(symbol)?.last ?? null;
   }
 
+  /** Exchange time of the current mark, for the contract-lock roll check. */
+  markTime(symbol: string): number | null {
+    return this.quotes.get(symbol)?.exchangeTs ?? null;
+  }
+
   lastClosedBar(symbol: string): NormalizedBar | null {
     return this.bars.get(symbol) ?? null;
   }

@@ -517,6 +517,18 @@ export const positions = pgTable(
      * unknown instead.
      */
     marketEra: varchar('market_era', { length: 80 }),
+    /**
+     * The actual tradeable contract this position was opened in — e.g. NQZ26.
+     *
+     * A futures position belongs to a specific listed contract, not just a root.
+     * This is stamped when the position opens and NEVER silently rewritten to a
+     * later front month: when the continuous/front contract rolls, this position
+     * stays on the contract it was opened in, and it is only marked by that
+     * contract's prices (the open-position contract lock). Null means the row
+     * predates contract identity, or the root could not be resolved — "root
+     * only", never a wrong contract.
+     */
+    contractCode: varchar('contract_code', { length: 24 }),
     /** Distance to the protective stop when the position opened. Null if none. */
     initialRiskMicros: micros('initial_risk_micros'),
     openedAt: timestamp('opened_at', { withTimezone: true }),
