@@ -669,10 +669,47 @@ export function adminRoutes(deps: AdminDeps) {
         accountAudit(db, row.account.id, 100),
       ]);
 
+      // The commercial lifecycle view of this account: the qualification it
+      // earned (if an evaluation that passed), and, if this is a funded-sim
+      // account, the evaluation it came from. Both link the two halves so an
+      // owner can walk from a purchase to a funded trader.
+      const [qualification] = await db
+        .select()
+        .from(accountQualifications)
+        .where(eq(accountQualifications.accountId, row.account.id))
+        .orderBy(desc(accountQualifications.qualifiedAt))
+        .limit(1);
+      let fundedFrom: { accountId: string; publicId: string; qualificationId: string } | null = null;
+      if (row.account.sourceAccountId) {
+        const [src] = await db
+          .select({ id: accounts.id, publicId: accounts.publicId })
+          .from(accounts)
+          .where(eq(accounts.id, row.account.sourceAccountId));
+        if (src) {
+          fundedFrom = {
+            accountId: src.id,
+            publicId: src.publicId,
+            qualificationId: row.account.sourceQualificationId ?? '',
+          };
+        }
+      }
+
       return reply.send({
         account: presentAccountRow(row.account, row.profile, row.version),
         owner: { id: row.user.id, email: row.user.email, displayName: row.user.displayName },
         rules: config,
+        commercial: {
+          qualification: qualification
+            ? {
+                id: qualification.id,
+                fundingState: qualification.fundingState,
+                qualifiedAt: qualification.qualifiedAt.getTime(),
+                fundedAccountId: qualification.fundedAccountId,
+                declineReason: qualification.declineReason,
+              }
+            : null,
+          fundedFrom,
+        },
         lifecycles: lives.map((life) => ({
           id: life.id,
           seq: life.seq,

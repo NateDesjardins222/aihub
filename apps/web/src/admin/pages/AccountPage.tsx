@@ -151,6 +151,40 @@ export function AdminAccountPage({
       {failure ? <p className="adm-error">{failure}</p> : null}
       {done ? <p className="adm-note">{done}</p> : null}
 
+      {data.commercial?.qualification ? (
+        <p className="adm-note" data-testid="admin-qualification">
+          Qualified for funding on {when(data.commercial.qualification.qualifiedAt)} —{' '}
+          {data.commercial.qualification.fundingState.toLowerCase()}
+          {data.commercial.qualification.fundedAccountId ? (
+            <>
+              {' · '}
+              <button
+                className="adm-link"
+                onClick={() =>
+                  go({ name: 'ACCOUNT', id: data.commercial!.qualification!.fundedAccountId! })
+                }
+              >
+                funded account
+              </button>
+            </>
+          ) : null}
+          {data.commercial.qualification.declineReason
+            ? ` · ${data.commercial.qualification.declineReason}`
+            : null}
+        </p>
+      ) : null}
+      {data.commercial?.fundedFrom ? (
+        <p className="adm-note" data-testid="admin-funded-from">
+          Funded from evaluation{' '}
+          <button
+            className="adm-link"
+            onClick={() => go({ name: 'ACCOUNT', id: data.commercial!.fundedFrom!.accountId })}
+          >
+            {data.commercial.fundedFrom.publicId}
+          </button>
+        </p>
+      ) : null}
+
       {mayMutate ? (
         <div className="adm-actions" data-testid="admin-actions">
           {available.map((action) => (

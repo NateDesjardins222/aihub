@@ -102,6 +102,16 @@ export interface AdminAccountDetail {
     tradeDate: string;
   }>;
   audit: AuditEntry[];
+  commercial?: {
+    qualification: {
+      id: string;
+      fundingState: 'ELIGIBLE' | 'FUNDED' | 'DECLINED';
+      qualifiedAt: number;
+      fundedAccountId: string | null;
+      declineReason: string | null;
+    } | null;
+    fundedFrom: { accountId: string; publicId: string; qualificationId: string } | null;
+  };
 }
 
 export interface AdminOrder {
@@ -307,4 +317,41 @@ export interface AdminSystem {
   };
   audit: { state: string };
   build: { nodeEnv: string; version: string | null; at: number };
+}
+
+export interface FundingQualification {
+  id: string;
+  fundingState: 'ELIGIBLE' | 'FUNDED' | 'DECLINED';
+  balanceMicros: number;
+  qualifiedAt: number;
+  fundedAccountId: string | null;
+  declineReason: string | null;
+  approvedAt: number | null;
+  account: {
+    id: string;
+    publicId: string;
+    status: string;
+    accountType: string;
+    startingBalanceMicros: number;
+    hasFundedDestination: boolean;
+  };
+  product: { key: string; name: string } | null;
+  trader: { id: string; email: string; displayName: string };
+}
+
+export interface FundingQualificationDetail {
+  qualification: FundingQualification;
+  evidence: {
+    requirements: Array<{
+      key: string;
+      label: string;
+      required: number;
+      actual: number;
+      unit: string;
+      met: boolean;
+    }>;
+    balanceMicros: number;
+    startingBalanceMicros: number;
+  };
+  fundedAccount: { id: string; publicId: string; status: string; accountType: string } | null;
 }

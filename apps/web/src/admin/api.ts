@@ -19,6 +19,8 @@ import type {
   AdminTrading,
   AdminUser,
   AuditEntry,
+  FundingQualification,
+  FundingQualificationDetail,
   ProductConfig,
 } from './types';
 
@@ -131,4 +133,28 @@ export const adminApi = {
   risk: () => api.get<AdminRisk>(`${BASE}/risk`),
 
   system: () => api.get<AdminSystem>(`${BASE}/system`),
+
+  // Commercial account lifecycle: the passed queue and the funding decision.
+  fundingQueue: (state: string) =>
+    api.get<{ state: string; qualifications: FundingQualification[] }>(
+      `${BASE}/funding-queue?state=${encodeURIComponent(state)}`,
+    ),
+
+  qualification: (id: string) =>
+    api.get<FundingQualificationDetail>(`${BASE}/qualifications/${id}`),
+
+  approveFunding: (id: string) =>
+    api.post<{ fundedAccountId: string; reused: boolean }>(
+      `${BASE}/qualifications/${id}/approve-funding`,
+      {},
+    ),
+
+  declineFunding: (id: string, reason: string) =>
+    api.post<{ id: string; fundingState: string }>(
+      `${BASE}/qualifications/${id}/decline-funding`,
+      { reason },
+    ),
+
+  grantEvaluation: (body: { userId?: string; email?: string; profileKey: string }) =>
+    api.post<{ accountId: string; orderId: string; entitlementId: string }>(`${BASE}/grants`, body),
 };

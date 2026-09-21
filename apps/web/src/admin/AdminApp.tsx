@@ -21,6 +21,7 @@ import { AdminProductsPage } from './pages/ProductsPage';
 import { AdminProductPage } from './pages/ProductPage';
 import { AdminTradingPage } from './pages/TradingPage';
 import { AdminRiskPage } from './pages/RiskPage';
+import { AdminFundingPage } from './pages/FundingPage';
 import { AdminSystemPage } from './pages/SystemPage';
 import './Admin.css';
 
@@ -32,6 +33,7 @@ export type AdminRoute =
   | { name: 'ACCOUNT'; id: string }
   | { name: 'TRADING' }
   | { name: 'RISK' }
+  | { name: 'FUNDING' }
   | { name: 'PRODUCTS' }
   | { name: 'PRODUCT'; key: string }
   | { name: 'SYSTEM' };
@@ -48,6 +50,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   }
   if (parts[0] === 'trading') return { name: 'TRADING' };
   if (parts[0] === 'risk') return { name: 'RISK' };
+  if (parts[0] === 'funding') return { name: 'FUNDING' };
   if (parts[0] === 'products') {
     return parts[1] ? { name: 'PRODUCT', key: decodeURIComponent(parts[1]) } : { name: 'PRODUCTS' };
   }
@@ -69,6 +72,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/trading';
     case 'RISK':
       return '/admin/risk';
+    case 'FUNDING':
+      return '/admin/funding';
     case 'PRODUCTS':
       return '/admin/products';
     case 'PRODUCT':
@@ -86,6 +91,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'ACCOUNTS' }, label: 'Accounts' },
   { route: { name: 'TRADING' }, label: 'Trading' },
   { route: { name: 'RISK' }, label: 'Risk' },
+  { route: { name: 'FUNDING' }, label: 'Funding' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
   { route: { name: 'SYSTEM' }, label: 'System' },
 ];
@@ -164,6 +170,7 @@ export function AdminApp(): JSX.Element {
         ) : null}
         {route.name === 'TRADING' ? <AdminTradingPage go={go} /> : null}
         {route.name === 'RISK' ? <AdminRiskPage go={go} /> : null}
+        {route.name === 'FUNDING' ? <AdminFundingPage go={go} /> : null}
         {route.name === 'PRODUCTS' ? <AdminProductsPage go={go} /> : null}
         {route.name === 'PRODUCT' ? (
           <AdminProductPage productKey={route.key} go={go} maySuper={role === 'SUPER_ADMIN'} />
