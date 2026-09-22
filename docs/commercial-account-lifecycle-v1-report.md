@@ -135,54 +135,97 @@ Professional and quiet: no confetti. No redesign of the console or terminal.
 
 ---
 
-## The Whop payment integration (added after V1)
+## Native Checkout & Payments V1 (Whop, sandbox only)
 
-The payment seam is now **wired to Whop** — behind configuration, and still
-without Atlas ever taking a payment. The flow is exactly the diagram:
+The payment seam is wired to **Whop in sandbox**, grounded in Whop's current
+official docs, and still without Atlas ever taking a payment. The flow is
+exactly the diagram:
 
-> Atlas product → `createPendingOrder` → Atlas checkout → Whop payment
-> (hosted/embedded) → Whop verifies → **signed webhook** → order `COMPLETED`
-> → `commerce.ts` → entitlement → evaluation provisioned → account appears
+> Atlas product → `createPendingOrder` (PENDING) → Atlas checkout page →
+> **embedded** Whop checkout (sandbox) → Whop verifies payment → **signed
+> Standard-Webhooks event** → order `PENDING → COMPLETED` → the one
+> `fulfillCompletedOrder` path → entitlement → evaluation provisioned → account
+> appears
 
-- **Order model is now PENDING-first.** `createPendingOrder` records the order
-  before payment; `fulfillOrder` transitions `PENDING → COMPLETED` on a verified
-  webhook, then grants the entitlement and provisions the evaluation through the
-  same idempotent machinery. `completeCommercialOrder` (create-already-completed)
-  remains for the direct admin-grant path.
-- **`POST /api/v1/checkout`** (authenticated trader) — creates the pending order
-  and returns a Whop hosted-checkout link carrying the Atlas order id as
-  metadata. Only `EVALUATION` products are purchasable. When the product has no
-  Whop plan or the base URL is unset, it returns `configured: false` rather than
-  pretending. Card data never touches Atlas.
-- **`POST /api/v1/webhooks/whop`** (public, signature-gated) — verifies an
-  HMAC-SHA256 signature over the **raw** request body (timing-safe), reads the
-  Atlas order id from Whop's echoed metadata, and calls `fulfillOrder`. Fully
-  idempotent: Whop's retried deliveries provision exactly one account (a
-  `FOR UPDATE` row lock on the order serialises the flip; grant and provision are
-  idempotent). A forged or missing signature is `401`; a non-payment event is
-  acknowledged and ignored; an unknown order is `404`.
-- **Off by default.** With no `WHOP_WEBHOOK_SECRET`, the webhook returns `503`
-  and never processes an unsigned request; checkout reports not-configured. The
-  secret is server-side only — never logged, returned, or sent to the browser.
+### The architecture split
 
-### What the Whop integration still is NOT
+- **PENDING-first orders.** `createPendingOrder` records the order before any
+  payment. Only a verified provider event flips it: `fulfillOrder` transitions
+  `PENDING → COMPLETED` under a `FOR UPDATE` row lock, then fulfils.
+- **One authoritative fulfilment path.** `fulfillCompletedOrder(order)` is the
+  single place a completed order becomes an entitlement and exactly one
+  evaluation. Both the webhook (`fulfillOrder`) and the admin/test flow
+  (`acquireEvaluation`, via `completeCommercialOrder`) funnel through it —
+  `completeCommercialOrder` semantics are preserved for the provider-independent
+  admin/test path. There is no second definition of "what a paid order becomes".
 
-- **Atlas still takes NO payment and holds NO card data.** Whop's hosted/embedded
-  surface takes the money; Atlas only creates an order and reacts to a signed
-  webhook. No charge, refund, or payout is issued by Atlas.
-- **No live charge was tested.** The webhook path is verified end-to-end with a
-  test-secret-**signed** webhook (real HMAC verification, real fulfilment) — not
-  a real Whop payment. Going live requires a Whop account: set
-  `WHOP_WEBHOOK_SECRET`, `WHOP_CHECKOUT_BASE_URL`, and each product's
-  `whopPlanId`, and point Whop's webhook at `/api/v1/webhooks/whop`.
-- **No secrets are committed.** All Whop configuration is environment-only.
-- **Signature scheme.** Verification is standard HMAC-SHA256 over the raw body
-  (a `sha256=` prefix tolerated). If Whop's production scheme differs (e.g. a
-  timestamped signature), `verifyWhopSignature` in `platform/whop.ts` is the one
-  place to adjust; everything else is unaffected.
-- **The embedded component** is served via a Whop checkout link (hosted redirect
-  by default). A fully in-page embed needs Whop's embed SDK and live keys, which
-  are not present.
+### Embedded checkout (no redirect)
+
+- **`POST /api/v1/checkout`** (authenticated) creates the pending order, asks
+  Whop's **sandbox** API for a checkout **session** (`ch_…`) carrying
+  `metadata.atlasOrderId`, records the session on the order, and returns
+  `{ sessionId, planId, environment: "sandbox" }`. Only `EVALUATION` products
+  are purchasable; a product with no `whopPlanId`, or an unconfigured sandbox,
+  returns `configured: false` rather than pretending.
+- **Web `/checkout`** is a separate, lazily-loaded bundle that mounts Whop's
+  official `WhopCheckoutEmbed` (`@whop/checkout/react`) with that session and
+  `environment="sandbox"`. The card is entered inside **Whop's iframe** — it
+  never touches Atlas. No external redirect. The terminal bundle does not import
+  the payment component (verified: `CheckoutApp` is its own chunk).
+
+### Verified-event authority + exactly-once
+
+- **`POST /api/v1/webhooks/whop`** (public, signature-gated) verifies the
+  **Standard Webhooks** signature Whop actually uses: headers `webhook-id` /
+  `webhook-timestamp` / `webhook-signature`, HMAC-SHA256 over
+  `{id}.{timestamp}.{raw body}`, base64 `v1,<sig>` (multiple accepted for secret
+  rotation), the `ws_` secret base64-decoded to the key, and a 5-minute
+  timestamp tolerance against replay. Verification is over the **raw** body.
+- **Exactly-once business effect.** A retried delivery (Whop retries) flips the
+  order once (`FOR UPDATE`), and the entitlement (unique per order+kind) and
+  provisioning (serialised, keyed) converge to a single account. Forged/missing/
+  stale signature → `401`; non-payment event → acknowledged and ignored;
+  missing order id → `400`; unknown order → `404`.
+- **Off by default, sandbox only.** No `WHOP_WEBHOOK_SECRET` → the webhook
+  returns `503` and never processes an unsigned request. The REST client targets
+  `sandbox-api.whop.com` and nothing else, and requires `WHOP_SANDBOX=true`;
+  **there is no production Whop host in the build**, so real money is
+  unreachable. Secrets are server-side only — never logged, returned, or sent to
+  the browser, and none are committed.
+
+### What this still is NOT
+
+- **Atlas takes NO payment and holds NO card data.** Whop's embedded iframe takes
+  the (sandbox) money; Atlas creates an order and reacts to a signed event.
+- **No live charge, and no real Whop call, were made.** The checkout session is
+  created against a **stubbed** sandbox `fetch` in tests, and the webhook is
+  verified with a test-secret signature computed by the exact Standard Webhooks
+  scheme. Real sandbox verification is the first authenticated test, listed
+  below, and needs sandbox credentials this build does not contain.
+- **No production Whop.** Enabling production is a later, explicit change, not a
+  flag flip.
+
+### To run the first authenticated SANDBOX test (credentials required)
+
+None of the following are committed; they are configured as server environment
+variables (never pasted into chat):
+
+1. At `sandbox.whop.com`: create a sandbox company; copy its `biz_…` id.
+2. Generate a **company API key** (`apik_…`) with `payment:basic:read`,
+   `payment:manage`, `plan:create`, `access_pass:create`.
+3. Create a product + **plan** in the sandbox; set that plan's id as the Atlas
+   product's `whopPlanId` (product config).
+4. Register a webhook in the sandbox dashboard pointing at
+   `https://<atlas-host>/api/v1/webhooks/whop`, subscribed to `payment.succeeded`;
+   copy its `ws_…` signing secret.
+5. Set on the Atlas server: `WHOP_SANDBOX=true`, `WHOP_COMPANY_API_KEY=apik_…`,
+   `WHOP_COMPANY_ID=biz_…`, `WHOP_WEBHOOK_SECRET=ws_…`, and
+   `WHOP_CHECKOUT_RETURN_URL=https://<atlas-host>/checkout`.
+6. **First test:** open `/checkout?product=<key>`, pay with Whop's sandbox card
+   `4242 4242 4242 4242` (any future expiry, any CVC), and confirm the
+   `payment.succeeded` webhook flips the order to `COMPLETED` and one evaluation
+   account appears — then that the decline card `4000 0000 0000 0002` leaves the
+   order `PENDING` and provisions nothing.
 
 ## The payout seam (deliberately NOT implemented)
 
@@ -203,7 +246,8 @@ All figures below are from actual runs against real PostgreSQL, not estimates.
 | Web typecheck | clean |
 | Commercial lifecycle E2E (`scripts/e2e-commercial-lifecycle.ts`) | **12/12 steps PASS** |
 | Commercial lifecycle torture (`scripts/torture-commercial-lifecycle.ts`) | **0 invariant violations**, seeds 1/2/3/7/11, 48–150 concurrent traders |
-| Whop payment path (`commerce-whop.test.ts`) | **12/12 PASS** — signature verify/forge/tamper, checkout, signed-webhook fulfilment, idempotent retried delivery, ignore non-payment, 400/401/404 paths |
+| Whop native checkout (`commerce-whop.test.ts`) | **12/12 PASS** — Standard Webhooks verify/forge/tamper/stale-replay/multi-sig, embedded checkout session (stubbed sandbox fetch), signed-webhook fulfilment, exactly-once retried delivery, ignore non-payment, 400/401/404 paths |
+| Web build with embedded checkout | clean — `CheckoutApp` is its own lazy chunk; terminal bundle unaffected |
 
 ### Commerce test coverage (22 tests, always run)
 

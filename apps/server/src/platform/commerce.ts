@@ -287,6 +287,33 @@ export async function fulfillOrder(
     return { order: committed, alreadyComplete: false };
   });
 
+  // The single authoritative fulfilment path, shared with the admin/test flow.
+  const done = await fulfillCompletedOrder(db, order, { actor, activate: opts.activate });
+  return {
+    orderId: order.id,
+    entitlementId: done.entitlementId,
+    accountId: done.accountId,
+    reused: alreadyComplete || done.reused,
+  };
+}
+
+/**
+ * The one authoritative fulfilment path: a COMPLETED order becomes an
+ * entitlement and exactly one provisioned evaluation.
+ *
+ * Every route to a paid/granted account funnels through here - a verified
+ * payment webhook (`fulfillOrder`), an admin grant and the tests
+ * (`acquireEvaluation`) - so "what a completed order turns into" is defined in
+ * exactly one place. Idempotent by construction: the entitlement is unique per
+ * (order, kind) and provisioning is serialised and keyed, so a duplicate call
+ * (a retried webhook, a double grant) converges to the same single account.
+ */
+async function fulfillCompletedOrder(
+  db: Database,
+  order: CommercialOrderRow,
+  opts: { actor?: Actor; activate?: boolean } = {},
+): Promise<{ entitlementId: string; accountId: string; reused: boolean }> {
+  const actor = opts.actor ?? SYSTEM_ACTOR;
   const ent = await grantEntitlement(db, {
     organizationId: order.organizationId,
     userId: order.userId,
@@ -300,12 +327,7 @@ export async function fulfillOrder(
     actor,
     activate: opts.activate,
   });
-  return {
-    orderId: order.id,
-    entitlementId: ent.id,
-    accountId: provisioned.accountId,
-    reused: alreadyComplete || provisioned.reused,
-  };
+  return { entitlementId: ent.id, accountId: provisioned.accountId, reused: provisioned.reused };
 }
 
 /**
@@ -481,33 +503,26 @@ async function resolveFundedDestinationVersionId(
 }
 
 /**
- * The whole acquisition, in one call: complete an order, grant an entitlement,
- * provision an evaluation. This is the single entry an admin grant and a future
- * payment webhook both use. Fully idempotent through its parts.
+ * The whole acquisition, in one call: complete an order (created already
+ * COMPLETED, no payment step), then fulfil it. This is the admin-grant and test
+ * entry; a real purchase instead creates a PENDING order and lets a verified
+ * webhook complete it. Both share the one fulfilment path, so a grant and a
+ * paid order provision an evaluation identically. Fully idempotent.
  */
 export async function acquireEvaluation(
   db: Database,
   input: CompleteOrderInput & { activate?: boolean },
 ): Promise<{ orderId: string; entitlementId: string; accountId: string; reused: boolean }> {
   const order = await completeCommercialOrder(db, input);
-  const ent = await grantEntitlement(db, {
-    organizationId: input.organizationId,
-    userId: input.userId,
-    commercialOrderId: order.id,
-    productVersionId: input.productVersionId,
-    kind: 'EVALUATION',
-    source: input.source,
-    actor: input.actor,
-  });
-  const provisioned = await provisionFromEntitlement(db, ent.id, {
+  const done = await fulfillCompletedOrder(db, order, {
     actor: input.actor,
     activate: input.activate,
   });
   return {
     orderId: order.id,
-    entitlementId: ent.id,
-    accountId: provisioned.accountId,
-    reused: provisioned.reused,
+    entitlementId: done.entitlementId,
+    accountId: done.accountId,
+    reused: done.reused,
   };
 }
 

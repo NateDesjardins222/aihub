@@ -228,7 +228,7 @@ export async function buildApp(): Promise<BuiltApp> {
   // server-side; neither is reachable from the trading terminal's session.
   await app.register(adminRoutes({ engine, market: stack.market }), { prefix: '/api/v1/admin' });
   await app.register(provisioningRoutes, { prefix: '/api/v1/provisioning' });
-  await app.register(checkoutRoutes, { prefix: '/api/v1/checkout' });
+  await app.register(checkoutRoutes(), { prefix: '/api/v1/checkout' });
   // Public and signature-gated: Whop calls this, so it carries no session auth.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });
 

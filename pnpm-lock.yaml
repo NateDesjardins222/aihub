@@ -103,6 +103,9 @@ importers:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
+      '@whop/checkout':
+        specifier: ^0.7.0
+        version: 0.7.0(react@19.3.0)
       lightweight-charts:
         specifier: ^5.2.1
         version: 5.2.1
@@ -931,6 +934,14 @@ packages:
 
   '@vitest/spy@5.0.1':
     resolution: {integrity: sha512-rbto/mF/SGERxEgYOek7Xm6B9b+y+mVoo+f4b2LymYO8zM1b7uB5nHuhVMTP2hxdzgxvGiZYGxGIaMvL5y180Q==}
+
+  '@whop/checkout@0.7.0':
+    resolution: {integrity: sha512-Q7Sr1SuiTPsbUbeTLtYIOO045td9/0Z+JQWyFUC0+yjlQY51CiOudmKOcN5Fq2AzOdXOajsVITsdQFHoL43Pkg==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -2232,6 +2243,10 @@ snapshots:
       vite: 8.3.0(@types/node@22.20.3)(esbuild@0.28.2)(tsx@4.23.13)
 
   '@vitest/spy@5.0.1': {}
+
+  '@whop/checkout@0.7.0(react@19.3.0)':
+    optionalDependencies:
+      react: 19.3.0
 
   abstract-logging@2.0.1: {}
 

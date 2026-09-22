@@ -72,9 +72,25 @@ const envSchema = z.object({
    * docs/commercial-account-lifecycle-v1-report.md.
    */
   WHOP_WEBHOOK_SECRET: z.string().optional(),
-  /** Base URL for a Whop hosted checkout link, e.g. https://whop.com/checkout/. */
-  WHOP_CHECKOUT_BASE_URL: z.string().optional(),
-  /** Where Whop returns the buyer after a successful checkout. */
+  /**
+   * SANDBOX ONLY in this milestone. The company API key (apik_...) and company
+   * id (biz_...) from a Whop SANDBOX account, used server-side to create the
+   * checkout session the embedded component renders. There is no production Whop
+   * host in this build: the client targets sandbox-api.whop.com and nothing
+   * else, so no real charge is reachable.
+   */
+  WHOP_COMPANY_API_KEY: z.string().optional(),
+  WHOP_COMPANY_ID: z.string().optional(),
+  /**
+   * Must be `true` to enable checkout-session creation. A hard gate against
+   * accidentally driving real money: with it unset or false, the checkout
+   * reports not-configured and no session is created.
+   */
+  WHOP_SANDBOX: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /** Where Whop returns the buyer after the embedded checkout completes. */
   WHOP_CHECKOUT_RETURN_URL: z.string().optional(),
 });
 

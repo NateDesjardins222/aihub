@@ -1,16 +1,18 @@
 /**
- * The Whop payment path: checkout, signed webhook, fulfilment.
+ * The Whop payment path: embedded checkout (sandbox) and Standard Webhooks
+ * fulfilment.
  *
  * Against the real database and the real HTTP layer. No live charge and no real
- * Whop call happens: the webhook is signed with a test secret exactly as Whop
- * would sign it, so the signature-verification and fulfilment guarantees are
- * exercised for real while no money moves. The guarantees under test are the
- * ones a payment provider leans on: an unsigned or forged webhook is rejected,
- * a valid one provisions exactly one account, and a webhook that fires twice
- * (Whop retries) never provisions a second.
+ * Whop call happens: the checkout session is created against a STUBBED sandbox
+ * fetch, and the webhook is signed with a test secret using the exact Standard
+ * Webhooks scheme Whop uses, so signature verification and fulfilment are
+ * exercised for real while no money moves. The guarantees under test: an
+ * unsigned, forged, tampered or stale webhook is rejected; a valid one
+ * provisions exactly one account; and a webhook that fires twice (Whop retries)
+ * has an exactly-once business effect.
  */
 import { createHmac } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { getDb } from '../db/client.js';
@@ -24,17 +26,19 @@ import {
 import { hashPassword } from '../auth/password.js';
 import { defaultOrganizationId } from './provisioning.js';
 import { publishProfileVersion } from './profiles.js';
-import { parseWhopEvent, verifyWhopSignature, whopConfigured } from './whop.js';
+import { parseWhopEvent, verifyStandardWebhook, whopConfigured } from './whop.js';
 
 const M = 1_000_000;
-const SECRET = 'test-whop-secret-value';
+// A Standard Webhooks secret: "ws_" + base64 of the key bytes.
+const KEY_BYTES = Buffer.from('atlas-test-webhook-key');
+const SECRET = `ws_${KEY_BYTES.toString('base64')}`;
 
 let app: FastifyInstance;
 let db: ReturnType<typeof getDb>['db'];
 let organizationId: string;
 let token: string;
-let userId: string;
 const users_: string[] = [];
+const realFetch = globalThis.fetch;
 
 const PLAN_KEY = `whop-eval-${Math.random().toString(36).slice(2, 8)}`;
 const NOPLAN_KEY = `whop-noplan-${Math.random().toString(36).slice(2, 8)}`;
@@ -69,36 +73,40 @@ function config(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Sign a raw body exactly as Whop would, so the server verifies it. */
-function sign(raw: string): string {
-  return createHmac('sha256', SECRET).update(raw, 'utf8').digest('hex');
-}
-
-function paymentBody(orderId: string, receiptId = 'whop_receipt_1'): string {
-  return JSON.stringify({
-    type: 'payment.succeeded',
-    data: { id: receiptId, metadata: { atlasOrderId: orderId } },
-  });
-}
-
-async function postWebhook(raw: string, signature: string | null) {
-  return app.inject({
-    method: 'POST',
-    url: '/api/v1/webhooks/whop',
+/** Build the Standard Webhooks headers + body exactly as Whop would sign them. */
+function signedWebhook(payload: object, opts: { timestampSec?: number } = {}) {
+  const body = JSON.stringify(payload);
+  const id = `msg_${Math.random().toString(36).slice(2, 12)}`;
+  const timestamp = String(opts.timestampSec ?? Math.floor(Date.now() / 1000));
+  const signature = createHmac('sha256', KEY_BYTES)
+    .update(`${id}.${timestamp}.${body}`, 'utf8')
+    .digest('base64');
+  return {
+    body,
     headers: {
       'content-type': 'application/json',
-      ...(signature ? { 'x-whop-signature': signature } : {}),
+      'webhook-id': id,
+      'webhook-timestamp': timestamp,
+      'webhook-signature': `v1,${signature}`,
     },
-    payload: raw,
-  });
+  };
+}
+
+function paymentPayload(orderId: string, receiptId = 'pay_receipt_1') {
+  return { type: 'payment.succeeded', data: { id: receiptId, metadata: { atlasOrderId: orderId } } };
+}
+
+async function postWebhook(body: string, headers: Record<string, string>) {
+  return app.inject({ method: 'POST', url: '/api/v1/webhooks/whop', headers, payload: body });
 }
 
 beforeAll(async () => {
   process.env['DATABASE_URL'] =
     process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
-  // Turn the payment path on for this file, before buildApp reads env().
+  // Turn the sandbox payment path on for this file, before buildApp reads env().
   process.env['WHOP_WEBHOOK_SECRET'] = SECRET;
-  process.env['WHOP_CHECKOUT_BASE_URL'] = 'https://whop.com/checkout';
+  process.env['WHOP_SANDBOX'] = 'true';
+  process.env['WHOP_COMPANY_API_KEY'] = 'apik_sandbox_test';
 
   const { buildApp } = await import('../http/app.js');
   app = (await buildApp()).app;
@@ -126,14 +134,17 @@ beforeAll(async () => {
     .insert(users)
     .values({ email, passwordHash: await hashPassword('whop-buyer-password'), displayName: 'Buyer', organizationId })
     .returning();
-  userId = buyer!.id;
-  users_.push(userId);
+  users_.push(buyer!.id);
   const login = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',
     payload: { email, password: 'whop-buyer-password' },
   });
   token = JSON.parse(login.body).accessToken;
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
 });
 
 afterAll(async () => {
@@ -146,30 +157,49 @@ afterAll(async () => {
   }
   for (const id of users_) await db.delete(users).where(eq(users.id, id));
   await app.close();
+  globalThis.fetch = realFetch;
   delete process.env['WHOP_WEBHOOK_SECRET'];
-  delete process.env['WHOP_CHECKOUT_BASE_URL'];
+  delete process.env['WHOP_SANDBOX'];
+  delete process.env['WHOP_COMPANY_API_KEY'];
 });
 
-describe('signature verification (pure)', () => {
-  it('accepts a correct signature and rejects a forged or malformed one', () => {
-    const raw = paymentBody('order-1');
-    expect(verifyWhopSignature(raw, sign(raw), SECRET)).toBe(true);
-    expect(verifyWhopSignature(raw, sign(raw), 'wrong-secret')).toBe(false);
-    expect(verifyWhopSignature(raw, 'deadbeef', SECRET)).toBe(false);
-    expect(verifyWhopSignature(raw, undefined, SECRET)).toBe(false);
-    // A tampered body no longer matches the signature of the original.
-    expect(verifyWhopSignature(raw + ' ', sign(raw), SECRET)).toBe(false);
-    // A `sha256=` prefix is tolerated.
-    expect(verifyWhopSignature(raw, `sha256=${sign(raw)}`, SECRET)).toBe(true);
+/** Intercept the sandbox checkout-session call; everything else passes through. */
+function stubSandboxSession(sessionId = 'ch_sandbox_test') {
+  globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    const href = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+    if (href.includes('sandbox-api.whop.com') && href.includes('checkout_sessions')) {
+      const sent = JSON.parse(String(init?.body ?? '{}'));
+      return new Response(
+        JSON.stringify({ id: sessionId, plan_id: sent.plan_id, purchase_url: null, metadata: sent.metadata }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return realFetch(url as never, init);
+  }) as typeof fetch;
+}
+
+describe('Standard Webhooks verification (pure)', () => {
+  it('accepts a correct signature and rejects forged, tampered and stale ones', () => {
+    const { body, headers } = signedWebhook(paymentPayload('o1'));
+    expect(verifyStandardWebhook(body, headers, SECRET).ok).toBe(true);
+    // Wrong secret.
+    expect(verifyStandardWebhook(body, headers, `ws_${Buffer.from('other').toString('base64')}`).ok).toBe(false);
+    // Tampered body.
+    expect(verifyStandardWebhook(body + ' ', headers, SECRET).ok).toBe(false);
+    // Missing headers.
+    expect(verifyStandardWebhook(body, { 'content-type': 'application/json' }, SECRET).ok).toBe(false);
+    // Stale timestamp (10 minutes ago, tolerance 5).
+    const old = signedWebhook(paymentPayload('o1'), { timestampSec: Math.floor(Date.now() / 1000) - 600 });
+    expect(verifyStandardWebhook(old.body, old.headers, SECRET).ok).toBe(false);
+    // A multi-signature header (rotated secret) still verifies if one matches.
+    const multi = { ...headers, 'webhook-signature': `v1,AAAA ${headers['webhook-signature']}` };
+    expect(verifyStandardWebhook(body, multi, SECRET).ok).toBe(true);
   });
 
   it('reads the order id and payment-success flag out of a Whop payload', () => {
-    const e = parseWhopEvent({ type: 'payment.succeeded', data: { id: 'r1', metadata: { atlasOrderId: 'o1' } } });
-    expect(e.isPaymentSuccess).toBe(true);
-    expect(e.atlasOrderId).toBe('o1');
-    expect(e.receiptId).toBe('r1');
-    // Snake-case metadata and a non-payment event.
-    expect(parseWhopEvent({ action: 'payment.refunded', data: { metadata: { order_id: 'o2' } } })).toMatchObject({
+    const e = parseWhopEvent(paymentPayload('o9', 'r9'));
+    expect(e).toMatchObject({ isPaymentSuccess: true, atlasOrderId: 'o9', receiptId: 'r9' });
+    expect(parseWhopEvent({ type: 'payment.failed', data: { metadata: { order_id: 'o2' } } })).toMatchObject({
       isPaymentSuccess: false,
       atlasOrderId: 'o2',
     });
@@ -177,8 +207,9 @@ describe('signature verification (pure)', () => {
   });
 });
 
-describe('checkout', () => {
-  it('creates a pending order and returns a Whop checkout link carrying the order id', async () => {
+describe('embedded checkout', () => {
+  it('creates a pending order and a sandbox checkout session for the embed', async () => {
+    stubSandboxSession('ch_for_embed');
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/checkout',
@@ -188,15 +219,17 @@ describe('checkout', () => {
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
     expect(body.configured).toBe(true);
-    expect(body.checkoutUrl).toContain('plan_ABC123');
-    expect(body.checkoutUrl).toContain(encodeURIComponent(body.orderId));
+    expect(body.environment).toBe('sandbox');
+    expect(body.sessionId).toBe('ch_for_embed');
+    expect(body.planId).toBe('plan_ABC123');
 
     const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, body.orderId));
     expect(order!.status).toBe('PENDING');
-    expect(order!.externalProvider).toBe('whop');
+    expect(order!.externalReference).toBe('ch_for_embed');
   });
 
   it('reports not-configured for a product with no Whop plan', async () => {
+    stubSandboxSession();
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/checkout',
@@ -208,93 +241,88 @@ describe('checkout', () => {
   });
 
   it('refuses checkout without a session', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/checkout',
-      payload: { productKey: PLAN_KEY },
-    });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/checkout', payload: { productKey: PLAN_KEY } });
     expect(res.statusCode).toBe(401);
   });
 });
 
 describe('webhook fulfilment', () => {
   async function pendingOrder(): Promise<string> {
+    stubSandboxSession(`ch_${crypto.randomUUID().slice(0, 8)}`);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/checkout',
       headers: { authorization: `Bearer ${token}` },
       payload: { productKey: PLAN_KEY },
     });
+    globalThis.fetch = realFetch;
     return JSON.parse(res.body).orderId;
   }
 
   it('a valid signed payment provisions exactly one evaluation account', async () => {
     const orderId = await pendingOrder();
-    const raw = paymentBody(orderId);
-    const res = await postWebhook(raw, sign(raw));
+    const { body, headers } = signedWebhook(paymentPayload(orderId));
+    const res = await postWebhook(body, headers);
     expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.ok).toBe(true);
-    expect(body.accountId).toBeTruthy();
+    const out = JSON.parse(res.body);
+    expect(out.accountId).toBeTruthy();
 
     const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, orderId));
     expect(order!.status).toBe('COMPLETED');
-    expect(order!.externalReference).toBe('whop_receipt_1');
-    const [account] = await db.select().from(accounts).where(eq(accounts.id, body.accountId));
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, out.accountId));
     expect(account!.accountType).toBe('EVALUATION');
     const ents = await db.select().from(entitlements).where(eq(entitlements.commercialOrderId, orderId));
     expect(ents).toHaveLength(1);
     expect(ents[0]!.status).toBe('CONSUMED');
   });
 
-  it('is idempotent: a webhook that fires twice never makes a second account', async () => {
+  it('is exactly-once: a retried delivery never makes a second account', async () => {
     const orderId = await pendingOrder();
-    const raw = paymentBody(orderId, 'whop_receipt_2');
-    const first = await postWebhook(raw, sign(raw));
-    const second = await postWebhook(raw, sign(raw));
+    const { body, headers } = signedWebhook(paymentPayload(orderId, 'pay_receipt_2'));
+    const first = await postWebhook(body, headers);
+    const second = await postWebhook(body, headers); // Whop retries the same event
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(200);
     expect(JSON.parse(second.body).accountId).toBe(JSON.parse(first.body).accountId);
-
     const ents = await db.select().from(entitlements).where(eq(entitlements.commercialOrderId, orderId));
     expect(ents).toHaveLength(1);
-    const provisioned = ents[0]!.consumedByAccountId;
-    const accts = await db.select().from(accounts).where(eq(accounts.id, provisioned!));
-    expect(accts).toHaveLength(1);
   });
 
   it('rejects a forged signature and does not fulfil', async () => {
     const orderId = await pendingOrder();
-    const raw = paymentBody(orderId);
-    const res = await postWebhook(raw, 'deadbeef'.repeat(8));
+    const { body, headers } = signedWebhook(paymentPayload(orderId));
+    const forged = { ...headers, 'webhook-signature': 'v1,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' };
+    const res = await postWebhook(body, forged);
     expect(res.statusCode).toBe(401);
     const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, orderId));
     expect(order!.status).toBe('PENDING');
   });
 
-  it('rejects a missing signature', async () => {
+  it('rejects a stale timestamp (replay)', async () => {
     const orderId = await pendingOrder();
-    const raw = paymentBody(orderId);
-    const res = await postWebhook(raw, null);
+    const { body, headers } = signedWebhook(paymentPayload(orderId), {
+      timestampSec: Math.floor(Date.now() / 1000) - 600,
+    });
+    const res = await postWebhook(body, headers);
     expect(res.statusCode).toBe(401);
   });
 
   it('acknowledges but ignores a non-payment event', async () => {
-    const raw = JSON.stringify({ type: 'payment.refunded', data: { metadata: {} } });
-    const res = await postWebhook(raw, sign(raw));
+    const { body, headers } = signedWebhook({ type: 'refund.created', data: { metadata: {} } });
+    const res = await postWebhook(body, headers);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).ignored).toBe(true);
   });
 
   it('400s a payment with no order reference', async () => {
-    const raw = JSON.stringify({ type: 'payment.succeeded', data: { id: 'r', metadata: {} } });
-    const res = await postWebhook(raw, sign(raw));
+    const { body, headers } = signedWebhook({ type: 'payment.succeeded', data: { id: 'r', metadata: {} } });
+    const res = await postWebhook(body, headers);
     expect(res.statusCode).toBe(400);
   });
 
   it('404s a payment for an unknown order', async () => {
-    const raw = paymentBody(crypto.randomUUID());
-    const res = await postWebhook(raw, sign(raw));
+    const { body, headers } = signedWebhook(paymentPayload(crypto.randomUUID()));
+    const res = await postWebhook(body, headers);
     expect(res.statusCode).toBe(404);
   });
 });
