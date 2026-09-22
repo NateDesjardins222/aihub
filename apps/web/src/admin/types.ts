@@ -365,3 +365,33 @@ export interface TraderNote {
   createdAt: number;
   redactedAt: number | null;
 }
+
+export interface AdminExposureContributor {
+  accountId: string;
+  accountPublicId: string;
+  accountType: string | null;
+  trader: string;
+  side: string;
+  qty: number;
+  markPrice: number | null;
+  unrealizedPnlMicros: number | null;
+}
+
+export interface AdminExposureSymbol {
+  symbol: string;
+  pointValueMicros: number | null;
+  grossLong: number;
+  grossShort: number;
+  net: number;
+  positions: number;
+  unknownMarks: number;
+  notionalMicros: number | null;
+  unrealizedPnlMicros: number | null;
+  contributors: AdminExposureContributor[];
+}
+
+export interface AdminExposure {
+  symbols: AdminExposureSymbol[];
+  scannedAccounts: number;
+  generatedAt: number;
+}

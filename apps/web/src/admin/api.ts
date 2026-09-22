@@ -21,6 +21,7 @@ import type {
   AuditEntry,
   FundingQualification,
   FundingQualificationDetail,
+  AdminExposure,
   ProductConfig,
   TraderNote,
 } from './types';
@@ -138,6 +139,8 @@ export const adminApi = {
     api.post<{ note: TraderNote }>(`${BASE}/users/${userId}/notes/${noteId}/redact`, {}),
 
   trading: () => api.get<AdminTrading>(`${BASE}/trading`),
+
+  exposure: () => api.get<AdminExposure>(`${BASE}/exposure`),
 
   risk: () => api.get<AdminRisk>(`${BASE}/risk`),
 

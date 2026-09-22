@@ -1505,6 +1505,135 @@ export function adminRoutes(deps: AdminDeps) {
     });
 
     /*
+     * Firm exposure, by instrument.
+     *
+     * Open positions from the durable projection, marked at read time, bucketed
+     * by SYMBOL. A mini and a micro are different instruments (NQ ≠ MNQ, ES ≠
+     * MES, GC ≠ MGC, CL ≠ MCL) with different point values, so they are NEVER
+     * summed into one contract count — each symbol is its own bucket, and its
+     * point value ($/point, from the instrument registry) is reported alongside
+     * so notional is comparable across them without pretending a micro is a mini.
+     *
+     * Quantities are CONTRACTS: gross long, gross short, and net (long − short).
+     * Notional (contracts × mark × point value) is shown only when every
+     * contributing position has a mark; a symbol with any unknown mark reports
+     * notional and total unrealized P&L as null and counts the unknowns, never a
+     * fabricated zero. Each symbol lists its contributing accounts for drilldown.
+     */
+    app.get('/exposure', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const open = await listOpenProjections(db, organizationId, 300);
+
+      // accountId → accountType, one bounded query rather than a lookup per row.
+      const accountIds = open.map((o) => o.projection.accountId);
+      const typeById = new Map<string, string>();
+      if (accountIds.length > 0) {
+        const typeRows = await db
+          .select({ id: accounts.id, accountType: accounts.accountType })
+          .from(accounts)
+          .where(inArray(accounts.id, accountIds));
+        for (const r of typeRows) typeById.set(r.id, r.accountType);
+      }
+
+      interface Bucket {
+        symbol: string;
+        pointValueMicros: number | null;
+        grossLong: number;
+        grossShort: number;
+        positions: number;
+        unknownMarks: number;
+        unrealizedPnlMicros: number;
+        allMarked: boolean;
+        contributors: Array<{
+          accountId: string;
+          accountPublicId: string;
+          accountType: string | null;
+          trader: string;
+          side: string;
+          qty: number;
+          markPrice: number | null;
+          unrealizedPnlMicros: number | null;
+        }>;
+      }
+      const buckets = new Map<string, Bucket>();
+
+      for (const { projection, publicId, email } of open) {
+        for (const p of valuePositions(projection, deps.market)) {
+          let bucket = buckets.get(p.symbol);
+          if (!bucket) {
+            let pointValueMicros: number | null = null;
+            try {
+              pointValueMicros = requireInstrument(p.symbol).pointValueMicros;
+            } catch {
+              pointValueMicros = null;
+            }
+            bucket = {
+              symbol: p.symbol,
+              pointValueMicros,
+              grossLong: 0,
+              grossShort: 0,
+              positions: 0,
+              unknownMarks: 0,
+              unrealizedPnlMicros: 0,
+              allMarked: true,
+              contributors: [],
+            };
+            buckets.set(p.symbol, bucket);
+          }
+          bucket.positions += 1;
+          if (p.side === 'LONG') bucket.grossLong += p.qty;
+          else bucket.grossShort += p.qty;
+          if (p.markPrice === null || p.unrealizedPnlMicros === null) {
+            bucket.unknownMarks += 1;
+            bucket.allMarked = false;
+          } else {
+            bucket.unrealizedPnlMicros += p.unrealizedPnlMicros;
+          }
+          bucket.contributors.push({
+            accountId: projection.accountId,
+            accountPublicId: publicId,
+            accountType: typeById.get(projection.accountId) ?? null,
+            trader: email,
+            side: p.side,
+            qty: p.qty,
+            markPrice: p.markPrice,
+            unrealizedPnlMicros: p.unrealizedPnlMicros,
+          });
+        }
+      }
+
+      const symbols = [...buckets.values()]
+        .map((b) => {
+          const net = b.grossLong - b.grossShort;
+          // Notional needs a mark for every contributing position AND a point
+          // value; otherwise it is unknown, not zero.
+          let notionalMicros: number | null = null;
+          if (b.allMarked && b.pointValueMicros !== null) {
+            notionalMicros = b.contributors.reduce(
+              (sum, c) => sum + Math.round((c.markPrice ?? 0) * b.pointValueMicros! * c.qty),
+              0,
+            );
+          }
+          return {
+            symbol: b.symbol,
+            pointValueMicros: b.pointValueMicros,
+            grossLong: b.grossLong,
+            grossShort: b.grossShort,
+            net,
+            positions: b.positions,
+            unknownMarks: b.unknownMarks,
+            notionalMicros,
+            unrealizedPnlMicros: b.allMarked ? b.unrealizedPnlMicros : null,
+            contributors: b.contributors.sort((a, z) => z.qty - a.qty),
+          };
+        })
+        // Busiest instruments first, by gross contracts.
+        .sort((a, z) => z.grossLong + z.grossShort - (a.grossLong + a.grossShort));
+
+      return reply.send({ symbols, scannedAccounts: open.length, generatedAt: Date.now() });
+    });
+
+    /*
      * Risk: where should the operator look first?
      *
      * Every ordering here is a plain, stated fact - no opaque score. Accounts

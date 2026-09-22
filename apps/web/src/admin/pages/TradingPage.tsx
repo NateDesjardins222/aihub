@@ -6,12 +6,12 @@
  * doing right now. Every figure comes from the server; positions are valued by
  * the engine, never re-derived here. Clicking a row leads to the account.
  */
-import { useState, type JSX } from 'react';
+import { Fragment, useState, type JSX } from 'react';
 import { adminApi } from '../api';
 import { Money, Panel, useLoad, when, type AdminRouteGo } from '../shared';
-import type { AdminTrading } from '../types';
+import type { AdminExposure, AdminTrading } from '../types';
 
-const TABS = ['Positions', 'Working orders', 'Recent fills'] as const;
+const TABS = ['Positions', 'Working orders', 'Recent fills', 'Exposure'] as const;
 type Tab = (typeof TABS)[number];
 
 function price(value: number | null): string {
@@ -21,7 +21,9 @@ function price(value: number | null): string {
 export function AdminTradingPage({ go }: { go: AdminRouteGo }): JSX.Element {
   const [tab, setTab] = useState<Tab>('Positions');
   const [term, setTerm] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
   const { data, error, loading } = useLoad<AdminTrading>(() => adminApi.trading(), []);
+  const exposure = useLoad<AdminExposure>(() => adminApi.exposure(), []);
 
   const needle = term.trim().toLowerCase();
   const match = (...fields: Array<string | null | undefined>): boolean =>
@@ -209,6 +211,104 @@ export function AdminTradingPage({ go }: { go: AdminRouteGo }): JSX.Element {
               ) : null}
             </tbody>
           </table>
+        ) : null}
+
+        {tab === 'Exposure' ? (
+          <>
+            <p className="adm-dim adm-note-hint">
+              Contracts by instrument from open positions. Minis and micros are separate instruments
+              and are never combined. Click a row to see the accounts behind it.
+            </p>
+            {exposure.error ? <p className="adm-error">Unable to load — {exposure.error}</p> : null}
+            {!exposure.data && exposure.loading ? <p className="adm-muted">Loading…</p> : null}
+            {exposure.data ? (
+              <table className="adm-table" data-testid="admin-exposure">
+                <thead>
+                  <tr>
+                    <th>Instrument</th>
+                    <th className="num">$/pt</th>
+                    <th className="num">Gross long</th>
+                    <th className="num">Gross short</th>
+                    <th className="num">Net</th>
+                    <th className="num">Positions</th>
+                    <th className="num">Unrealized</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exposure.data.symbols.map((s) => (
+                    <Fragment key={s.symbol}>
+                      <tr
+                        className="adm-row-click"
+                        onClick={() => setExpanded(expanded === s.symbol ? null : s.symbol)}
+                      >
+                        <td>
+                          {expanded === s.symbol ? '▾ ' : '▸ '}
+                          {s.symbol}
+                        </td>
+                        <td className="num adm-dim">
+                          {s.pointValueMicros === null ? '—' : <Money micros={s.pointValueMicros} />}
+                        </td>
+                        <td className="num adm-pos">{s.grossLong}</td>
+                        <td className="num adm-neg">{s.grossShort}</td>
+                        <td className={`num ${s.net > 0 ? 'adm-pos' : s.net < 0 ? 'adm-neg' : ''}`}>
+                          {s.net > 0 ? `+${s.net}` : s.net}
+                        </td>
+                        <td className="num adm-dim">
+                          {s.positions}
+                          {s.unknownMarks > 0 ? ` (${s.unknownMarks} unmarked)` : ''}
+                        </td>
+                        <td className="num">
+                          {s.unrealizedPnlMicros === null ? (
+                            <span className="adm-dim" title="Some positions cannot be marked">
+                              mark unknown
+                            </span>
+                          ) : (
+                            <Money micros={s.unrealizedPnlMicros} sign />
+                          )}
+                        </td>
+                      </tr>
+                      {expanded === s.symbol
+                        ? s.contributors.map((c, i) => (
+                            <tr
+                              key={`${s.symbol}-${c.accountId}-${i}`}
+                              className="adm-row-click adm-subrow"
+                              onClick={() => go({ name: 'ACCOUNT', id: c.accountId })}
+                            >
+                              <td className="adm-dim">
+                                &nbsp;&nbsp;{c.trader} · {c.accountPublicId}
+                              </td>
+                              <td className="adm-dim">{c.accountType ?? '—'}</td>
+                              <td className={c.side === 'LONG' ? 'adm-pos' : ''}>
+                                {c.side === 'LONG' ? c.qty : ''}
+                              </td>
+                              <td className={c.side === 'SHORT' ? 'adm-neg' : ''}>
+                                {c.side === 'SHORT' ? c.qty : ''}
+                              </td>
+                              <td className="num adm-dim">{price(c.markPrice)}</td>
+                              <td />
+                              <td className="num">
+                                {c.unrealizedPnlMicros === null ? (
+                                  <span className="adm-dim">—</span>
+                                ) : (
+                                  <Money micros={c.unrealizedPnlMicros} sign />
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        : null}
+                    </Fragment>
+                  ))}
+                  {exposure.data.symbols.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="adm-muted">
+                        No open exposure across the firm.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            ) : null}
+          </>
         ) : null}
       </Panel>
     </div>
