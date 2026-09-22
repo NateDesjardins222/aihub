@@ -375,6 +375,9 @@ export function adminRoutes(deps: AdminDeps) {
       const query = z
         .object({
           q: z.string().max(120).optional(),
+          // CRM filters, each an EXISTS over this trader's accounts (indexed on
+          // accounts.user_id). Only filters backed by authoritative state.
+          filter: z.enum(['has_eval', 'has_funded', 'on_hold', 'no_accounts']).optional(),
           limit: z.coerce.number().int().min(1).max(200).default(50),
           cursor: z.string().max(200).optional(),
         })
@@ -389,6 +392,15 @@ export function adminRoutes(deps: AdminDeps) {
           or(ilike(users.email, `%${term}%`), ilike(users.displayName, `%${term}%`))!,
         );
       }
+      if (query.filter === 'has_eval') {
+        conditions.push(sql`exists (select 1 from "accounts" a where a.user_id = "users"."id" and a.account_type = 'EVALUATION')`);
+      } else if (query.filter === 'has_funded') {
+        conditions.push(sql`exists (select 1 from "accounts" a where a.user_id = "users"."id" and a.account_type = 'FUNDED_SIM')`);
+      } else if (query.filter === 'on_hold') {
+        conditions.push(sql`exists (select 1 from "accounts" a where a.user_id = "users"."id" and a.status = 'LOCKED')`);
+      } else if (query.filter === 'no_accounts') {
+        conditions.push(sql`not exists (select 1 from "accounts" a where a.user_id = "users"."id")`);
+      }
       if (after) {
         conditions.push(
           sql`(${users.createdAt}, ${users.id}) < (${after.createdAt}::timestamptz, ${after.id}::uuid)`,
@@ -396,6 +408,9 @@ export function adminRoutes(deps: AdminDeps) {
       }
 
       // One more than asked, to know whether a next page exists without a count.
+      // The per-row aggregates are correlated sub-selects bounded by the page
+      // size (<= 200 rows), each hitting the accounts.user_id index — not an
+      // N+1 of separate round-trips.
       const rows = await db
         .select({
           user: users,
@@ -407,9 +422,11 @@ export function adminRoutes(deps: AdminDeps) {
            * unqualified - "id" rather than "users"."id" - and binds to the
            * SUBQUERY's table, which silently counts nothing.
            */
-          accounts: sql<number>`(
-            select count(*)::int from "accounts" a where a.user_id = "users"."id"
-          )`,
+          accounts: sql<number>`(select count(*)::int from "accounts" a where a.user_id = "users"."id")`,
+          evaluations: sql<number>`(select count(*)::int from "accounts" a where a.user_id = "users"."id" and a.account_type = 'EVALUATION')`,
+          fundedSim: sql<number>`(select count(*)::int from "accounts" a where a.user_id = "users"."id" and a.account_type = 'FUNDED_SIM')`,
+          activeAccounts: sql<number>`(select count(*)::int from "accounts" a where a.user_id = "users"."id" and a.status in ('ACTIVE','GOAL_REACHED'))`,
+          lastTradedAt: sql<string | null>`(select max(t.exit_time)::text from "trades" t join "accounts" a on a.id = t.account_id where a.user_id = "users"."id")`,
         })
         .from(users)
         .where(and(...conditions))
@@ -419,7 +436,14 @@ export function adminRoutes(deps: AdminDeps) {
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];
       return reply.send({
-        users: page.map((row) => ({ ...presentUser(row.user), accountCount: row.accounts })),
+        users: page.map((row) => ({
+          ...presentUser(row.user),
+          accountCount: row.accounts,
+          evaluationAccounts: row.evaluations,
+          fundedSimAccounts: row.fundedSim,
+          activeAccounts: row.activeAccounts,
+          lastTradedAt: row.lastTradedAt ? new Date(row.lastTradedAt).getTime() : null,
+        })),
         nextCursor:
           rows.length > query.limit && last ? encodeCursor(last.sortTs, last.user.id) : null,
       });

@@ -54,6 +54,10 @@ export interface AdminUser {
   createdAt: number;
   lastLoginAt: number | null;
   accountCount?: number;
+  evaluationAccounts?: number;
+  fundedSimAccounts?: number;
+  activeAccounts?: number;
+  lastTradedAt?: number | null;
 }
 
 export interface AdminAccount {

@@ -31,10 +31,11 @@ const BASE = '/api/v1/admin';
 export const adminApi = {
   overview: () => api.get<AdminOverview>(`${BASE}/overview`),
 
-  users: (query: string, cursor?: string | null) => {
+  users: (query: string, cursor?: string | null, filter?: string) => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (cursor) params.set('cursor', cursor);
+    if (filter) params.set('filter', filter);
     params.set('limit', '50');
     return api.get<{ users: AdminUser[]; nextCursor: string | null }>(
       `${BASE}/users?${params.toString()}`,
