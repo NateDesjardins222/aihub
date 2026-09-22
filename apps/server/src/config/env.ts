@@ -58,6 +58,24 @@ const envSchema = z.object({
   RATE_LIMIT_ORDERS_PER_MINUTE: z.coerce.number().int().default(120),
   CORS_ORIGIN: z.string().default('*'),
   REPLAY_DIR: z.string().default('./data/recordings'),
+
+  /**
+   * Whop payment integration. SERVER-SIDE ONLY, and optional by design.
+   *
+   * The whole commercial lifecycle compiles, tests and runs without any of
+   * these: the payment provider is a TRIGGER into the domain, not part of it.
+   * The webhook secret is what turns real fulfilment on - absent, the webhook
+   * route refuses every request rather than processing an unsigned one, and no
+   * money path exists. The secret is never logged, never returned from an API,
+   * never sent to the browser. Atlas performs NO charge itself: card data lives
+   * entirely on Whop's hosted/embedded surface. See
+   * docs/commercial-account-lifecycle-v1-report.md.
+   */
+  WHOP_WEBHOOK_SECRET: z.string().optional(),
+  /** Base URL for a Whop hosted checkout link, e.g. https://whop.com/checkout/. */
+  WHOP_CHECKOUT_BASE_URL: z.string().optional(),
+  /** Where Whop returns the buyer after a successful checkout. */
+  WHOP_CHECKOUT_RETURN_URL: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

@@ -67,6 +67,13 @@ export const profileConfigSchema = z.object({
    * pass produces no funded account (or for a funded product itself).
    */
   fundedDestinationKey: z.string().min(1).max(64).nullable().default(null),
+  /**
+   * The Whop plan/product id this product is sold as. Used only to build a
+   * checkout link; the payment itself happens entirely on Whop. Null when the
+   * product is not sold through Whop (e.g. a practice or funded product, or one
+   * granted only by an admin). Opaque here: Atlas never charges it.
+   */
+  whopPlanId: z.string().min(1).max(120).nullable().default(null),
 });
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>;

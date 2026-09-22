@@ -135,17 +135,60 @@ Professional and quiet: no confetti. No redesign of the console or terminal.
 
 ---
 
-## The payment / payout seams (Phase 68–69, deliberately NOT implemented)
+## The Whop payment integration (added after V1)
 
-- **Payment seam.** `completeCommercialOrder` is the exact boundary a verified
-  payment webhook will call: it takes `source`, `externalProvider`,
-  `externalReference`, `amountMicros`, `currency` and an `idempotencyKey`, and it
-  is idempotent. Wiring a provider means authenticating its webhook and calling
-  this function; nothing downstream changes. It is **not** wired, and no provider
-  SDK is present.
-- **Payout seam.** Funding approval ends at a `FUNDED_SIM` account. A payout
-  system would attach to the `account.funded` domain event and the `payoutRules`
-  product field. Neither is implemented.
+The payment seam is now **wired to Whop** — behind configuration, and still
+without Atlas ever taking a payment. The flow is exactly the diagram:
+
+> Atlas product → `createPendingOrder` → Atlas checkout → Whop payment
+> (hosted/embedded) → Whop verifies → **signed webhook** → order `COMPLETED`
+> → `commerce.ts` → entitlement → evaluation provisioned → account appears
+
+- **Order model is now PENDING-first.** `createPendingOrder` records the order
+  before payment; `fulfillOrder` transitions `PENDING → COMPLETED` on a verified
+  webhook, then grants the entitlement and provisions the evaluation through the
+  same idempotent machinery. `completeCommercialOrder` (create-already-completed)
+  remains for the direct admin-grant path.
+- **`POST /api/v1/checkout`** (authenticated trader) — creates the pending order
+  and returns a Whop hosted-checkout link carrying the Atlas order id as
+  metadata. Only `EVALUATION` products are purchasable. When the product has no
+  Whop plan or the base URL is unset, it returns `configured: false` rather than
+  pretending. Card data never touches Atlas.
+- **`POST /api/v1/webhooks/whop`** (public, signature-gated) — verifies an
+  HMAC-SHA256 signature over the **raw** request body (timing-safe), reads the
+  Atlas order id from Whop's echoed metadata, and calls `fulfillOrder`. Fully
+  idempotent: Whop's retried deliveries provision exactly one account (a
+  `FOR UPDATE` row lock on the order serialises the flip; grant and provision are
+  idempotent). A forged or missing signature is `401`; a non-payment event is
+  acknowledged and ignored; an unknown order is `404`.
+- **Off by default.** With no `WHOP_WEBHOOK_SECRET`, the webhook returns `503`
+  and never processes an unsigned request; checkout reports not-configured. The
+  secret is server-side only — never logged, returned, or sent to the browser.
+
+### What the Whop integration still is NOT
+
+- **Atlas still takes NO payment and holds NO card data.** Whop's hosted/embedded
+  surface takes the money; Atlas only creates an order and reacts to a signed
+  webhook. No charge, refund, or payout is issued by Atlas.
+- **No live charge was tested.** The webhook path is verified end-to-end with a
+  test-secret-**signed** webhook (real HMAC verification, real fulfilment) — not
+  a real Whop payment. Going live requires a Whop account: set
+  `WHOP_WEBHOOK_SECRET`, `WHOP_CHECKOUT_BASE_URL`, and each product's
+  `whopPlanId`, and point Whop's webhook at `/api/v1/webhooks/whop`.
+- **No secrets are committed.** All Whop configuration is environment-only.
+- **Signature scheme.** Verification is standard HMAC-SHA256 over the raw body
+  (a `sha256=` prefix tolerated). If Whop's production scheme differs (e.g. a
+  timestamped signature), `verifyWhopSignature` in `platform/whop.ts` is the one
+  place to adjust; everything else is unaffected.
+- **The embedded component** is served via a Whop checkout link (hosted redirect
+  by default). A fully in-page embed needs Whop's embed SDK and live keys, which
+  are not present.
+
+## The payout seam (deliberately NOT implemented)
+
+Funding approval ends at a `FUNDED_SIM` account. A payout system would attach to
+the `account.funded` domain event and the `payoutRules` product field. Neither
+is implemented — no withdrawals, no KYC/AML, no tax handling.
 
 ---
 
@@ -155,11 +198,12 @@ All figures below are from actual runs against real PostgreSQL, not estimates.
 
 | Check | Result |
 | --- | --- |
-| Full test suite (`pnpm -s test`, isolate mode) | **843/843 passed, 52 files** (baseline 821 + 22 new commerce tests) |
+| Full test suite (`pnpm -s test`, isolate mode) | **855/855 passed, 53 files** (baseline 821 + 22 commerce + 12 Whop) |
 | Server typecheck | clean |
 | Web typecheck | clean |
 | Commercial lifecycle E2E (`scripts/e2e-commercial-lifecycle.ts`) | **12/12 steps PASS** |
 | Commercial lifecycle torture (`scripts/torture-commercial-lifecycle.ts`) | **0 invariant violations**, seeds 1/2/3/7/11, 48–150 concurrent traders |
+| Whop payment path (`commerce-whop.test.ts`) | **12/12 PASS** — signature verify/forge/tamper, checkout, signed-webhook fulfilment, idempotent retried delivery, ignore non-payment, 400/401/404 paths |
 
 ### Commerce test coverage (22 tests, always run)
 

@@ -158,6 +158,157 @@ export async function completeCommercialOrder(
 }
 
 /**
+ * Record a PENDING commercial order, before any payment.
+ *
+ * This is the first step of a purchase: Atlas creates the order, then hands the
+ * buyer to the payment provider (Whop). The order is fulfilled later, by a
+ * verified webhook, through `fulfillOrder`. Idempotent by (org, idempotencyKey)
+ * so a double-clicked checkout makes one order. No money is involved here; the
+ * order simply exists, awaiting a payment Atlas never itself takes.
+ */
+export async function createPendingOrder(
+  db: Database,
+  input: CompleteOrderInput,
+): Promise<CommercialOrderRow> {
+  const actor = input.actor ?? SYSTEM_ACTOR;
+  if (input.idempotencyKey) {
+    const [existing] = await db
+      .select()
+      .from(commercialOrders)
+      .where(
+        and(
+          eq(commercialOrders.organizationId, input.organizationId),
+          eq(commercialOrders.idempotencyKey, input.idempotencyKey),
+        ),
+      );
+    if (existing) return existing;
+  }
+  return db.transaction(async (tx) => {
+    const scoped = tx as unknown as Database;
+    const [order] = await tx
+      .insert(commercialOrders)
+      .values({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        productVersionId: input.productVersionId,
+        source: input.source,
+        externalProvider: input.externalProvider ?? null,
+        externalReference: input.externalReference ?? null,
+        status: 'PENDING',
+        amountMicros: input.amountMicros ?? null,
+        currency: input.currency ?? null,
+        idempotencyKey: input.idempotencyKey ?? null,
+      })
+      .onConflictDoNothing({
+        target: [commercialOrders.organizationId, commercialOrders.idempotencyKey],
+      })
+      .returning();
+    if (!order) {
+      const [winner] = await tx
+        .select()
+        .from(commercialOrders)
+        .where(
+          and(
+            eq(commercialOrders.organizationId, input.organizationId),
+            eq(commercialOrders.idempotencyKey, input.idempotencyKey ?? ''),
+          ),
+        );
+      return winner!;
+    }
+    await recordAudit(scoped, {
+      organizationId: input.organizationId,
+      actor,
+      subjectType: 'USER',
+      subjectId: input.userId,
+      userId: input.userId,
+      action: 'commercial_order.created',
+      newState: { orderId: order.id, source: input.source, productVersionId: input.productVersionId },
+      reason: null,
+    });
+    return order;
+  });
+}
+
+/**
+ * Fulfil a PENDING order after a verified payment, and provision the evaluation.
+ *
+ * This is what a signed Whop webhook triggers. It is the exact seam a payment
+ * provider merely calls; it verifies nothing about the money itself (the caller
+ * - the webhook route - already verified the signature) and takes no payment.
+ * Fully idempotent: a webhook that fires twice, or two deliveries racing, flip
+ * the order to COMPLETED exactly once (a FOR UPDATE row lock serialises them)
+ * and then grant one entitlement and provision one account through the
+ * idempotent machinery. A retry after a crash mid-fulfilment converges to the
+ * same single account.
+ */
+export async function fulfillOrder(
+  db: Database,
+  orderId: string,
+  opts: { externalReference?: string | null; actor?: Actor; activate?: boolean } = {},
+): Promise<{ orderId: string; entitlementId: string; accountId: string; reused: boolean }> {
+  const actor = opts.actor ?? SYSTEM_ACTOR;
+
+  const { order, alreadyComplete } = await db.transaction(async (tx) => {
+    const scoped = tx as unknown as Database;
+    const [row] = await tx
+      .select()
+      .from(commercialOrders)
+      .where(eq(commercialOrders.id, orderId))
+      .for('update');
+    if (!row) throw new CommerceError('PRODUCT_NOT_FOUND', 'No such order.');
+    if (row.status === 'COMPLETED') return { order: row, alreadyComplete: true };
+    const [updated] = await tx
+      .update(commercialOrders)
+      .set({
+        status: 'COMPLETED',
+        completedAt: new Date(),
+        externalReference: opts.externalReference ?? row.externalReference ?? null,
+      })
+      .where(and(eq(commercialOrders.id, orderId), eq(commercialOrders.status, 'PENDING')))
+      .returning();
+    const committed = updated ?? row;
+    await recordAudit(scoped, {
+      organizationId: row.organizationId,
+      actor,
+      subjectType: 'USER',
+      subjectId: row.userId,
+      userId: row.userId,
+      action: 'commercial_order.completed',
+      prevState: { status: row.status },
+      newState: { orderId: row.id, externalReference: opts.externalReference ?? null },
+      reason: null,
+    });
+    await events.publish(scoped, {
+      type: 'commercial_order.completed',
+      organizationId: row.organizationId,
+      userId: row.userId,
+      payload: { orderId: row.id, source: row.source },
+    });
+    return { order: committed, alreadyComplete: false };
+  });
+
+  const ent = await grantEntitlement(db, {
+    organizationId: order.organizationId,
+    userId: order.userId,
+    commercialOrderId: order.id,
+    productVersionId: order.productVersionId,
+    kind: 'EVALUATION',
+    source: order.source,
+    actor,
+  });
+  const provisioned = await provisionFromEntitlement(db, ent.id, {
+    actor,
+    activate: opts.activate,
+  });
+  return {
+    orderId: order.id,
+    entitlementId: ent.id,
+    accountId: provisioned.accountId,
+    reused: alreadyComplete || provisioned.reused,
+  };
+}
+
+/**
  * Grant an entitlement from a completed order (or a direct admin grant with a
  * null order). Idempotent by (commercialOrderId, kind): one order grants one
  * entitlement of a kind.
