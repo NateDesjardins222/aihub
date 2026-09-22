@@ -21,5 +21,8 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:4000', ws: true },
     },
   },
-  build: { target: 'es2022', sourcemap: true },
+  // Source maps ship the full unminified frontend source. Off by default so a
+  // production deploy does not expose it; opt in with WEB_SOURCEMAP=true when
+  // you genuinely need to profile or debug a built bundle (e.g. `vite preview`).
+  build: { target: 'es2022', sourcemap: process.env.WEB_SOURCEMAP === 'true' },
 });
