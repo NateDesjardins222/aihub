@@ -21,6 +21,44 @@ const HEARTBEAT_MS = 5_000;
 const IDLE_TIMEOUT_MS = 45_000;
 const MAX_SUBSCRIPTIONS = 64;
 
+/**
+ * The largest client frame we will even read. A control frame (hello, ping,
+ * subscribe, resume) is a few hundred bytes; 64 KiB is generous. Without this
+ * the ws default is ~100 MiB, so a single client could hand the process a
+ * 100 MiB buffer to parse — a trivial memory-exhaustion lever. An oversize
+ * frame closes the socket (ws emits an error → dropClient).
+ */
+const MAX_FRAME_BYTES = 64 * 1024;
+
+/**
+ * Per-socket message-rate limit (token bucket). A legitimate client speaks
+ * rarely — one hello, a ping every few seconds, the occasional subscribe — so
+ * this budget is far above normal use and only bites a flood. Each inbound
+ * frame can trigger a DB read (account authorisation) or a snapshot build, so
+ * an unthrottled flood is a CPU/DB-exhaustion lever.
+ */
+const MSG_BUCKET_CAPACITY = 40;
+const MSG_BUCKET_REFILL_PER_SEC = 20;
+/** Consecutive over-limit frames tolerated before the socket is closed. */
+const MSG_OVERLIMIT_STRIKES = 10;
+
+/**
+ * If a client cannot drain what we send it, the kernel/ws buffers it on our
+ * side. Past this many bytes outstanding the consumer is hopelessly behind and
+ * we drop it rather than let its backlog grow without bound (memory exhaustion
+ * via a deliberately slow reader subscribed to fast streams).
+ */
+export const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The backpressure decision, factored out so it can be unit-tested directly (a
+ * real slow-consumer socket cannot be made to overflow deterministically over
+ * localhost). `raw()` calls this before every send.
+ */
+export function exceedsBackpressureLimit(bufferedAmount: number): boolean {
+  return bufferedAmount > MAX_BUFFERED_BYTES;
+}
+
 interface Client {
   readonly id: string;
   readonly socket: WebSocket;
@@ -30,6 +68,10 @@ interface Client {
   readonly accounts: Set<string>;
   lastSeenAt: number;
   alive: boolean;
+  /** Token-bucket state for the inbound message-rate limit. */
+  tokens: number;
+  lastRefill: number;
+  overLimitStrikes: number;
 }
 
 export class MarketDataGateway {
@@ -45,7 +87,7 @@ export class MarketDataGateway {
     private readonly market: MarketDataService,
     private readonly engine?: TradingEngine,
   ) {
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
   }
 
   register(app: FastifyInstance): void {
@@ -130,11 +172,17 @@ export class MarketDataGateway {
       accounts: new Set(),
       lastSeenAt: Date.now(),
       alive: true,
+      tokens: MSG_BUCKET_CAPACITY,
+      lastRefill: Date.now(),
+      overLimitStrikes: 0,
     };
     this.clients.set(client.id, client);
 
     socket.on('message', (raw) => {
       client.lastSeenAt = Date.now();
+      // Rate limit BEFORE parsing: a flood must not even cost us a JSON.parse
+      // per frame, let alone the DB read or snapshot a handled frame triggers.
+      if (!this.admitMessage(client)) return;
       let frame: ClientFrame;
       try {
         frame = JSON.parse(String(raw)) as ClientFrame;
@@ -152,6 +200,44 @@ export class MarketDataGateway {
 
     socket.on('close', () => this.dropClient(client));
     socket.on('error', () => this.dropClient(client));
+  }
+
+  /**
+   * Token-bucket admission for an inbound frame. Refills continuously, spends
+   * one token per frame, and — once empty — answers with a RATE_LIMITED error
+   * and counts a strike. A client that keeps flooding past the strike budget is
+   * closed; a client that merely burst briefly recovers as the bucket refills.
+   */
+  private admitMessage(client: Client): boolean {
+    const now = Date.now();
+    const elapsedSec = (now - client.lastRefill) / 1000;
+    client.tokens = Math.min(
+      MSG_BUCKET_CAPACITY,
+      client.tokens + elapsedSec * MSG_BUCKET_REFILL_PER_SEC,
+    );
+    client.lastRefill = now;
+
+    if (client.tokens < 1) {
+      client.overLimitStrikes += 1;
+      if (client.overLimitStrikes > MSG_OVERLIMIT_STRIKES) {
+        client.socket.close(4429, 'message rate exceeded');
+        this.dropClient(client);
+        return false;
+      }
+      this.send(client, {
+        t: 'error',
+        code: 'RATE_LIMITED',
+        message: 'Too many frames; slow down.',
+      });
+      return false;
+    }
+
+    client.tokens -= 1;
+    // A well-behaved burst that stayed within budget clears its strike count.
+    if (client.overLimitStrikes > 0 && client.tokens > MSG_BUCKET_CAPACITY / 2) {
+      client.overLimitStrikes = 0;
+    }
+    return true;
   }
 
   private dropClient(client: Client): void {
@@ -469,6 +555,15 @@ export class MarketDataGateway {
 
   private raw(client: Client, encoded: string): void {
     if (client.socket.readyState !== client.socket.OPEN) return;
+    // Backpressure: if the consumer cannot keep up, its unsent backlog is
+    // buffered on OUR side. Past the cap it is never going to catch up, so we
+    // drop it rather than let one slow reader grow the process's memory without
+    // bound. A healthy client's bufferedAmount hovers near zero.
+    if (exceedsBackpressureLimit(client.socket.bufferedAmount)) {
+      client.socket.terminate();
+      this.dropClient(client);
+      return;
+    }
     try {
       client.socket.send(encoded);
     } catch {
