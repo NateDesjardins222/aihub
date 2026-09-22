@@ -22,6 +22,7 @@ import type {
   FundingQualification,
   FundingQualificationDetail,
   ProductConfig,
+  TraderNote,
 } from './types';
 
 const BASE = '/api/v1/admin';
@@ -127,6 +128,14 @@ export const adminApi = {
 
   userAction: (userId: string, action: 'disable' | 'enable', reason: string) =>
     api.post<{ user: AdminUser }>(`${BASE}/users/${userId}/${action}`, { confirm: true, reason }),
+
+  // Internal staff notes (Owner Control Center V3). A trader never sees these.
+  traderNotes: (userId: string) =>
+    api.get<{ notes: TraderNote[] }>(`${BASE}/users/${userId}/notes`),
+  createTraderNote: (userId: string, category: string, body: string) =>
+    api.post<{ note: TraderNote }>(`${BASE}/users/${userId}/notes`, { category, body }),
+  redactTraderNote: (userId: string, noteId: string) =>
+    api.post<{ note: TraderNote }>(`${BASE}/users/${userId}/notes/${noteId}/redact`, {}),
 
   trading: () => api.get<AdminTrading>(`${BASE}/trading`),
 

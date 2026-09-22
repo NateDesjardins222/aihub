@@ -1,5 +1,5 @@
 /** One trader: their accounts, their activity and what they have traded. */
-import { useState, type JSX } from 'react';
+import { useCallback, useState, type JSX } from 'react';
 import { adminApi } from '../api';
 import {
   AuditTable,
@@ -11,7 +11,94 @@ import {
   when,
   type AdminRouteGo,
 } from '../shared';
-import type { AdminAccount, AdminUser, AuditEntry } from '../types';
+import type { AdminAccount, AdminUser, AuditEntry, TraderNote } from '../types';
+
+const NOTE_CATEGORIES = ['GENERAL', 'SUPPORT', 'RISK', 'ACCOUNT'] as const;
+
+/**
+ * Internal staff notes about a trader. A trader never sees these. The body is
+ * rendered as plain text (React escapes it), so any tags or scripts in a note
+ * are shown, never run.
+ */
+function NotesSection({ userId }: { userId: string }): JSX.Element {
+  const { data, error, loading, reload } = useLoad(() => adminApi.traderNotes(userId), [userId]);
+  const [category, setCategory] = useState<(typeof NOTE_CATEGORIES)[number]>('GENERAL');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const submit = useCallback(() => {
+    const trimmed = body.trim();
+    if (trimmed.length === 0) return;
+    setBusy(true);
+    setFailure(null);
+    adminApi
+      .createTraderNote(userId, category, trimmed)
+      .then(() => {
+        setBody('');
+        reload();
+      })
+      .catch((err: Error) => setFailure(err.message))
+      .finally(() => setBusy(false));
+  }, [body, category, userId, reload]);
+
+  const notes: TraderNote[] = data?.notes ?? [];
+
+  return (
+    <Panel title="Staff notes">
+      <p className="adm-dim adm-note-hint">Internal. The trader never sees these.</p>
+      <div className="adm-note-compose">
+        <select
+          className="adm-input"
+          value={category}
+          onChange={(e) => setCategory(e.target.value as (typeof NOTE_CATEGORIES)[number])}
+          aria-label="Note category"
+        >
+          {NOTE_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c.toLowerCase()}
+            </option>
+          ))}
+        </select>
+        <textarea
+          className="adm-input adm-note-body"
+          value={body}
+          maxLength={4000}
+          placeholder="Add an internal note…"
+          onChange={(e) => setBody(e.target.value)}
+        />
+        <button className="adm-btn adm-btn-primary" disabled={busy || body.trim().length === 0} onClick={submit}>
+          {busy ? 'Saving…' : 'Add note'}
+        </button>
+      </div>
+      {failure ? <p className="adm-error">{failure}</p> : null}
+      {error ? <p className="adm-error">{error}</p> : null}
+      {loading ? <p className="adm-muted">Loading…</p> : null}
+      {!loading && notes.length === 0 ? <p className="adm-muted">No notes yet.</p> : null}
+      {notes.length > 0 ? (
+        <ul className="adm-note-list">
+          {notes.map((note) => (
+            <li key={note.id} className="adm-note-item">
+              <div className="adm-note-meta">
+                <span className={`adm-pill adm-status-${note.category.toLowerCase()}`}>
+                  {note.category.toLowerCase()}
+                </span>
+                <span className="adm-dim">{note.author ?? 'system'}</span>
+                <span className="adm-dim">·</span>
+                <span className="adm-dim">{when(note.createdAt)}</span>
+              </div>
+              {note.redacted ? (
+                <p className="adm-note-redacted">— redacted —</p>
+              ) : (
+                <p className="adm-note-text">{note.body}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Panel>
+  );
+}
 
 interface UserDetail {
   user: AdminUser;
@@ -136,6 +223,8 @@ export function AdminUserPage({ id, go }: { id: string; go: AdminRouteGo }): JSX
           </table>
         )}
       </Panel>
+
+      <NotesSection userId={id} />
 
       <Panel title="Activity">
         <AuditTable entries={data.activity} go={go} />

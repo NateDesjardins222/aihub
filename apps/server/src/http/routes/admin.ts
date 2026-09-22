@@ -81,6 +81,13 @@ import {
   declineFunding,
 } from '../../platform/commerce.js';
 import { resolveProfileByKey } from '../../platform/profiles.js';
+import {
+  NOTE_CATEGORIES,
+  NoteError,
+  createNote,
+  listNotes,
+  redactNote,
+} from '../../platform/notes.js';
 
 interface AdminDeps {
   readonly engine: TradingEngine;
@@ -413,6 +420,70 @@ export function adminRoutes(deps: AdminDeps) {
         })),
       });
     });
+
+    // ------------------------------------------------------------ staff notes
+    /*
+     * Internal notes about a trader. Owner-side only — a trader never sees them.
+     * SUPPORT and above may read and write; redaction (an append-only
+     * correction, never a delete) is ADMIN. Scoped to the caller's organisation,
+     * so notes cannot be read or written across a tenancy boundary.
+     */
+    app.get<{ Params: { id: string } }>('/users/:id/notes', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const [user] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, request.params.id), eq(users.organizationId, organizationId)));
+      if (!user) throw ApiError.notFound('USER_NOT_FOUND', 'No such user.');
+      const notes = await listNotes(db, { organizationId, subjectUserId: request.params.id });
+      return reply.send({ notes });
+    });
+
+    app.post<{ Params: { id: string } }>(
+      '/users/:id/notes',
+      { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        const body = z
+          .object({
+            category: z.enum(NOTE_CATEGORIES).default('GENERAL'),
+            body: z.string().trim().min(1).max(4000),
+          })
+          .parse(request.body);
+        try {
+          const note = await createNote(db, {
+            organizationId,
+            subjectUserId: request.params.id,
+            category: body.category,
+            body: body.body,
+            actor: actorFor(request),
+          });
+          return reply.code(201).send({ note });
+        } catch (err) {
+          if (err instanceof NoteError) throw ApiError.notFound(err.code, err.message);
+          throw err;
+        }
+      },
+    );
+
+    app.post<{ Params: { id: string; noteId: string } }>(
+      '/users/:id/notes/:noteId/redact',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        try {
+          const note = await redactNote(db, {
+            organizationId,
+            noteId: request.params.noteId,
+            actor: actorFor(request),
+          });
+          return reply.send({ note });
+        } catch (err) {
+          if (err instanceof NoteError) throw ApiError.notFound(err.code, err.message);
+          throw err;
+        }
+      },
+    );
 
     /**
      * Create a trader.

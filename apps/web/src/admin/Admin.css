@@ -681,3 +681,21 @@
 .adm-actions-col {
   white-space: nowrap;
 }
+
+/* Owner V3: staff notes on the trader profile. */
+.adm-note-hint { margin-top: -4px; margin-bottom: 10px; font-size: 12px; }
+.adm-note-compose { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 14px; }
+.adm-note-compose .adm-note-body { flex: 1 1 320px; min-height: 44px; resize: vertical; font-family: inherit; }
+.adm-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: inherit;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.adm-note-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.adm-note-item { border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 10px 12px; }
+.adm-note-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.adm-note-text { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.adm-note-redacted { margin: 0; font-style: italic; color: rgba(255,255,255,0.4); }

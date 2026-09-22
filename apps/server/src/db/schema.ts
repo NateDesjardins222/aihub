@@ -524,6 +524,42 @@ export const accountQualifications = pgTable(
   ],
 );
 
+/**
+ * Internal staff notes about a trader (Owner Control Center V3).
+ *
+ * Operational, owner-side data — a trader NEVER sees these. Append-only: a note
+ * is written once and, if it needs correcting, superseded by another note or
+ * marked redacted, never silently overwritten, so the operational record cannot
+ * be quietly rewritten. Every write is also audited.
+ */
+export const traderNotes = pgTable(
+  'trader_notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    /** The trader this note is about. */
+    subjectUserId: uuid('subject_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** GENERAL | SUPPORT | RISK | ACCOUNT. */
+    category: varchar('category', { length: 16 }).notNull().default('GENERAL'),
+    body: text('body').notNull(),
+    /** The staff member who wrote it, frozen at write time. */
+    authorUserId: uuid('author_user_id').references(() => users.id),
+    authorLabel: varchar('author_label', { length: 120 }),
+    /** Append-only: a redacted note keeps its row but hides its body. */
+    redactedAt: timestamp('redacted_at', { withTimezone: true }),
+    redactedByLabel: varchar('redacted_by_label', { length: 120 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('trader_notes_subject_idx').on(t.subjectUserId, t.createdAt),
+    index('trader_notes_org_idx').on(t.organizationId, t.createdAt),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Trading
 // ---------------------------------------------------------------------------

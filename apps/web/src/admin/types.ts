@@ -355,3 +355,13 @@ export interface FundingQualificationDetail {
   };
   fundedAccount: { id: string; publicId: string; status: string; accountType: string } | null;
 }
+
+export interface TraderNote {
+  id: string;
+  category: string;
+  body: string | null;
+  redacted: boolean;
+  author: string | null;
+  createdAt: number;
+  redactedAt: number | null;
+}
