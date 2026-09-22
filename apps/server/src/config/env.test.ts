@@ -30,6 +30,7 @@ const base: AppEnv = {
   RATE_LIMIT_ORDERS_PER_MINUTE: 120,
   CORS_ORIGIN: 'https://atlas.example',
   REPLAY_DIR: './data/recordings',
+  TRUSTED_PROXY: 'false',
   WHOP_SANDBOX: false,
 };
 

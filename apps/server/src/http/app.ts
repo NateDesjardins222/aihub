@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
-import { env, isProduction } from '../config/env.js';
+import { env, isProduction, trustProxyOption } from '../config/env.js';
 import { ApiError } from './errors.js';
 import { registerAuth } from './auth-plugin.js';
 import { authRoutes } from './routes/auth.js';
@@ -39,7 +39,10 @@ export async function buildApp(): Promise<BuiltApp> {
       level: isProduction() ? 'info' : 'warn',
       redact: ['req.headers.authorization', 'req.body.password', 'req.body.refreshToken'],
     },
-    trustProxy: true,
+    // OFF by default: `request.ip` is the real socket peer, so a client cannot
+    // forge it via `X-Forwarded-For` to escape an IP-keyed rate limit. Turned on
+    // only when TRUSTED_PROXY names a real proxy in front. See config/env.ts.
+    trustProxy: trustProxyOption(),
     bodyLimit: 1024 * 512,
   });
 
@@ -144,6 +147,40 @@ export async function buildApp(): Promise<BuiltApp> {
    * report "the server decided in 3ms and the wire cost 40" rather than one
    * number that explains nothing.
    */
+  /*
+   * Security response headers, on every response.
+   *
+   * Atlas serves JSON from the API and a separate static bundle for the web
+   * app, so the policy here is deliberately strict: an API response should
+   * never be sniffed into a script, framed, or leak a referrer. This is
+   * defense-in-depth, dependency-free, and does not touch any handler.
+   *
+   * - nosniff: never let a browser second-guess our declared content type.
+   * - frame denial + CSP frame-ancestors 'none': Atlas is never embedded.
+   * - default-src 'none': an API response has no legitimate sub-resources.
+   * - Referrer-Policy: no path/query leaks to any third party.
+   * - Permissions-Policy: this origin asks for none of these capabilities.
+   * - COOP/CORP: isolate this origin's browsing context and resources.
+   * - HSTS: production only (meaningless, and harmful over plain http, in dev).
+   */
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('x-frame-options', 'DENY');
+    reply.header(
+      'content-security-policy',
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    );
+    reply.header('referrer-policy', 'no-referrer');
+    reply.header('permissions-policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+    reply.header('cross-origin-opener-policy', 'same-origin');
+    reply.header('cross-origin-resource-policy', 'same-origin');
+    reply.header('x-permitted-cross-domain-policies', 'none');
+    if (isProduction()) {
+      reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+    }
+    return payload;
+  });
+
   app.addHook('onRequest', async (request) => {
     (request as { atlasStart?: number }).atlasStart = performance.now();
   });

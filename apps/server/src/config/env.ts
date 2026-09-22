@@ -60,6 +60,19 @@ const envSchema = z.object({
   REPLAY_DIR: z.string().default('./data/recordings'),
 
   /**
+   * Whether to trust the `X-Forwarded-For` chain for the client IP.
+   *
+   * DEFAULT FALSE — do NOT trust the header. Fastify's `trustProxy` makes
+   * `request.ip` come from `X-Forwarded-For`, which any direct client can set
+   * to anything. With it on and no real proxy in front, an attacker rotates a
+   * spoofed IP per request and every IP-keyed rate limit (and any IP we log)
+   * is defeated. Turn this on ONLY when Atlas genuinely sits behind a trusted
+   * reverse proxy/load balancer that overwrites the header. Accepts `true`/
+   * `false`, or a comma-separated list of trusted proxy IPs/CIDRs.
+   */
+  TRUSTED_PROXY: z.string().default('false'),
+
+  /**
    * Whop payment integration. SERVER-SIDE ONLY, and optional by design.
    *
    * The whole commercial lifecycle compiles, tests and runs without any of
@@ -148,4 +161,23 @@ export function productionMisconfiguration(config: AppEnv): string | null {
 
 export function isProduction(): boolean {
   return env().NODE_ENV === 'production';
+}
+
+/**
+ * Fastify's `trustProxy` value, derived from `TRUSTED_PROXY`.
+ *
+ * `false` (the default) → do not trust `X-Forwarded-For`; `request.ip` is the
+ * real socket peer, so a spoofed header cannot forge the rate-limit key.
+ * `true` → trust the whole chain. Anything else is treated as a comma-separated
+ * list of trusted proxy IPs/CIDRs and forwarded to Fastify (`proxy-addr`), so
+ * only a forwarded header arriving from a named proxy is believed.
+ */
+export function trustProxyOption(): boolean | string[] {
+  const raw = env().TRUSTED_PROXY.trim();
+  if (raw === '' || raw.toLowerCase() === 'false') return false;
+  if (raw.toLowerCase() === 'true') return true;
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
