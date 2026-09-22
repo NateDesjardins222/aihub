@@ -28,7 +28,9 @@
     "diagnose:latency": "node tools/exec-latency.mjs",
     "diagnose:chaos": "node tools/diagnose-chaos.mjs",
     "diagnose:interrupt": "node tools/diagnose-interrupt.mjs",
-    "diagnose:lifecycle": "node tools/diagnose-lifecycle.mjs"
+    "diagnose:lifecycle": "node tools/diagnose-lifecycle.mjs",
+    "security:fuzz": "pnpm --filter @atlas/server exec tsx ../../scripts/fuzz-security.ts",
+    "security:torture": "pnpm --filter @atlas/server exec tsx ../../scripts/torture-security.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
