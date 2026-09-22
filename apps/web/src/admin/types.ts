@@ -5,9 +5,18 @@ export interface AdminOverview {
   accounts: {
     total: number;
     byStatus: Record<string, number>;
+    byType: Record<string, number>;
     active: number;
     passed: number;
     failed: number;
+  };
+  lifecycle: {
+    activeEvaluations: number;
+    fundedSim: number;
+    passedEvaluations: number;
+    awaitingFunding: number;
+    passedToday: number;
+    failedToday: number;
   };
   exposure: { openPositions: number; openContracts: number; workingOrders: number };
   volume: { fills24h: number; contracts24h: number };
@@ -102,6 +111,7 @@ export interface AdminAccountDetail {
     tradeDate: string;
   }>;
   audit: AuditEntry[];
+  lockReason?: { canTrade: boolean; reason: string; detail: string | null };
   commercial?: {
     qualification: {
       id: string;

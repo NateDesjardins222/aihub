@@ -288,6 +288,45 @@ export function adminRoutes(deps: AdminDeps) {
         .orderBy(desc(auditLog.createdAt))
         .limit(25);
 
+      // --- Commercial lifecycle metrics (Owner V3), each with a stated
+      // definition (see docs/owner-control-center-v3-report.md):
+      //  activeEvaluations  = EVALUATION accounts currently tradeable (ACTIVE|GOAL_REACHED)
+      //  fundedSim          = FUNDED_SIM accounts (any status)
+      //  awaitingFunding    = qualifications whose fundingState is ELIGIBLE
+      //  passedEvaluations  = qualifications recorded (server-authoritative passes)
+      //  passedToday/failedToday = lifecycles closed PASSED/FAILED since local-day start
+      const typeRows = await db
+        .select({ accountType: accounts.accountType, count: sql<number>`count(*)::int` })
+        .from(accounts)
+        .where(scope)
+        .groupBy(accounts.accountType);
+      const byType: Record<string, number> = {};
+      for (const row of typeRows) byType[row.accountType] = row.count;
+
+      const [activeEvals] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(accounts)
+        .where(and(scope, eq(accounts.accountType, 'EVALUATION'), inArray(accounts.status, ['ACTIVE', 'GOAL_REACHED'])));
+
+      const [qualCounts] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          eligible: sql<number>`count(*) filter (where ${accountQualifications.fundingState} = 'ELIGIBLE')::int`,
+        })
+        .from(accountQualifications)
+        .where(eq(accountQualifications.organizationId, organizationId));
+
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const [lifecycleToday] = await db
+        .select({
+          passed: sql<number>`count(*) filter (where ${accountLifecycles.endReason} = 'PASSED')::int`,
+          failed: sql<number>`count(*) filter (where ${accountLifecycles.endReason} = 'FAILED')::int`,
+        })
+        .from(accountLifecycles)
+        .innerJoin(accounts, eq(accountLifecycles.accountId, accounts.id))
+        .where(and(scope, gte(accountLifecycles.endedAt, dayStart)));
+
       const byStatus: Record<string, number> = {};
       for (const row of statusRows) byStatus[row.status] = row.count;
 
@@ -296,9 +335,18 @@ export function adminRoutes(deps: AdminDeps) {
         accounts: {
           total: money?.accounts ?? 0,
           byStatus,
+          byType,
           active: byStatus['ACTIVE'] ?? 0,
           passed: byStatus['PASSED'] ?? 0,
           failed: byStatus['FAILED'] ?? 0,
+        },
+        lifecycle: {
+          activeEvaluations: activeEvals?.count ?? 0,
+          fundedSim: byType['FUNDED_SIM'] ?? 0,
+          passedEvaluations: qualCounts?.total ?? 0,
+          awaitingFunding: qualCounts?.eligible ?? 0,
+          passedToday: lifecycleToday?.passed ?? 0,
+          failedToday: lifecycleToday?.failed ?? 0,
         },
         exposure: {
           openPositions: openPositions?.positions ?? 0,
@@ -769,6 +817,7 @@ export function adminRoutes(deps: AdminDeps) {
         account: presentAccountRow(row.account, row.profile, row.version),
         owner: { id: row.user.id, email: row.user.email, displayName: row.user.displayName },
         rules: config,
+        lockReason: lockReasonFor(row.account),
         commercial: {
           qualification: qualification
             ? {
@@ -1836,6 +1885,46 @@ function presentQualification(row: {
     product: row.profile ? { key: row.profile.key, name: row.profile.name } : null,
     trader: { id: row.user.id, email: row.user.email, displayName: row.user.displayName },
   };
+}
+
+/**
+ * Why can this account not trade? A single, explicit answer from authoritative
+ * state — the same `status` the order gate (`risk.checkOrder`) reads — never an
+ * opaque derived label. ACTIVE and GOAL_REACHED can trade; everything else has
+ * a stated reason an operator can act on.
+ */
+function lockReasonFor(account: AccountRow): {
+  canTrade: boolean;
+  reason: string;
+  detail: string | null;
+} {
+  const status = account.status;
+  if (status === 'ACTIVE' || status === 'GOAL_REACHED') {
+    return { canTrade: true, reason: 'TRADEABLE', detail: null };
+  }
+  if (status === 'PASSED') {
+    return {
+      canTrade: false,
+      reason: 'PASSED',
+      detail: account.adminHold === 'QUALIFIED' ? 'Passed and qualified for funding' : 'Evaluation passed',
+    };
+  }
+  if (status === 'FAILED') {
+    return { canTrade: false, reason: 'FAILED', detail: account.failedReason ?? null };
+  }
+  if (status === 'LOCKED') {
+    // An operator hold and a rule lock both read LOCKED; the adminHold tells them
+    // apart, so the operator knows whether a person or the rules did this.
+    return account.adminHold
+      ? { canTrade: false, reason: 'ADMIN_HOLD', detail: account.adminHold }
+      : { canTrade: false, reason: 'RISK_LOCK', detail: account.failedReason ?? null };
+  }
+  if (status === 'PENDING') {
+    return { canTrade: false, reason: 'PENDING', detail: 'Not activated' };
+  }
+  if (status === 'ARCHIVED') return { canTrade: false, reason: 'ARCHIVED', detail: null };
+  if (status === 'DISABLED') return { canTrade: false, reason: 'DISABLED', detail: null };
+  return { canTrade: false, reason: status, detail: account.adminHold ?? null };
 }
 
 function presentAccountRow(

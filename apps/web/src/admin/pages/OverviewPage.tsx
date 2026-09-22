@@ -59,6 +59,34 @@ export function AdminOverviewPage({ go }: { go: AdminRouteGo }): JSX.Element {
         />
       </div>
 
+      <div className="adm-stats">
+        <Stat
+          label="Active evaluations"
+          value={String(data.lifecycle.activeEvaluations)}
+          sub="tradeable EVALUATION accounts"
+        />
+        <Stat
+          label="Passed evaluations"
+          value={String(data.lifecycle.passedEvaluations)}
+          sub={`${data.lifecycle.passedToday} today`}
+        />
+        <Stat
+          label="Awaiting funding"
+          value={String(data.lifecycle.awaitingFunding)}
+          sub="qualifications ELIGIBLE"
+        />
+        <Stat
+          label="Funded sim"
+          value={String(data.lifecycle.fundedSim)}
+          sub="FUNDED_SIM accounts"
+        />
+        <Stat
+          label="Failed today"
+          value={String(data.lifecycle.failedToday)}
+          sub="lifecycles closed FAILED"
+        />
+      </div>
+
       <Panel
         title="Account status"
         action={

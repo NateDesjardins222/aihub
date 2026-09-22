@@ -701,3 +701,12 @@
 .adm-note-redacted { margin: 0; font-style: italic; color: rgba(255,255,255,0.4); }
 
 .adm-subrow td { background: rgba(255,255,255,0.02); font-size: 12px; }
+
+.adm-lock {
+  border: 1px solid rgba(255,196,0,0.35);
+  background: rgba(255,196,0,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}

@@ -151,6 +151,13 @@ export function AdminAccountPage({
       {failure ? <p className="adm-error">{failure}</p> : null}
       {done ? <p className="adm-note">{done}</p> : null}
 
+      {data.lockReason && !data.lockReason.canTrade ? (
+        <p className="adm-lock" data-testid="admin-lock-reason">
+          <b>Cannot trade:</b> {data.lockReason.reason.replace('_', ' ').toLowerCase()}
+          {data.lockReason.detail ? ` — ${data.lockReason.detail}` : ''}
+        </p>
+      ) : null}
+
       {data.commercial?.qualification ? (
         <p className="adm-note" data-testid="admin-qualification">
           Qualified for funding on {when(data.commercial.qualification.qualifiedAt)} —{' '}
