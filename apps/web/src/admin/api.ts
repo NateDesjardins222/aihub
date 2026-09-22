@@ -102,6 +102,21 @@ export const adminApi = {
       { status, reason },
     ),
 
+  auditExplorer: (params: {
+    action?: string;
+    actor?: string;
+    subjectType?: string;
+    from?: number;
+    to?: number;
+    cursor?: string | null;
+  }) => {
+    const search = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) search.set(k, String(v));
+    return api.get<{ entries: AuditEntry[]; nextCursor: string | null }>(
+      `${BASE}/audit?${search.toString()}`,
+    );
+  },
+
   audit: (params: { accountId?: string; userId?: string; action?: string }) => {
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);

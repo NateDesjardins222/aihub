@@ -26,11 +26,13 @@ import {
   accountLifecycles,
   accountProfileVersions,
   accountProfiles,
+  accountProjections,
   accounts,
   auditLog,
   domainEvents,
   executions,
   orders,
+  outboxEvents,
   positions,
   riskEvents,
   trades,
@@ -81,6 +83,7 @@ import {
   declineFunding,
 } from '../../platform/commerce.js';
 import { resolveProfileByKey } from '../../platform/profiles.js';
+import { whopConfigured } from '../../platform/whop.js';
 import {
   NOTE_CATEGORIES,
   NoteError,
@@ -1426,7 +1429,13 @@ export function adminRoutes(deps: AdminDeps) {
           accountId: z.string().uuid().optional(),
           userId: z.string().uuid().optional(),
           action: z.string().max(60).optional(),
-          limit: z.coerce.number().int().min(1).max(500).default(100),
+          actor: z.string().max(120).optional(),
+          subjectType: z.string().max(24).optional(),
+          subjectId: z.string().uuid().optional(),
+          from: z.coerce.number().int().optional(),
+          to: z.coerce.number().int().optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(100),
+          cursor: z.string().max(200).optional(),
         })
         .parse(request.query);
       const organizationId = await organizationOf(request.user!.id);
@@ -1435,14 +1444,30 @@ export function adminRoutes(deps: AdminDeps) {
       if (query.accountId) filters.push(eq(auditLog.accountId, query.accountId));
       if (query.userId) filters.push(eq(auditLog.userId, query.userId));
       if (query.action) filters.push(eq(auditLog.action, query.action));
+      if (query.actor) filters.push(ilike(auditLog.actorLabel, `%${query.actor}%`));
+      if (query.subjectType) filters.push(eq(auditLog.subjectType, query.subjectType));
+      if (query.subjectId) filters.push(eq(auditLog.subjectId, query.subjectId));
+      if (query.from) filters.push(gte(auditLog.createdAt, new Date(query.from)));
+      if (query.to) filters.push(sql`${auditLog.createdAt} <= ${new Date(query.to)}`);
+      const after = decodeCursor(query.cursor);
+      if (after) {
+        filters.push(
+          sql`(${auditLog.createdAt}, ${auditLog.id}) < (${after.createdAt}::timestamptz, ${after.id}::uuid)`,
+        );
+      }
 
       const rows = await db
-        .select()
+        .select({ row: auditLog, sortTs: sql<string>`${auditLog.createdAt}::text` })
         .from(auditLog)
         .where(and(...filters))
-        .orderBy(desc(auditLog.createdAt))
-        .limit(query.limit);
-      return reply.send({ entries: rows.map(presentAudit) });
+        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+        .limit(query.limit + 1);
+      const page = rows.slice(0, query.limit);
+      const last = page[page.length - 1];
+      return reply.send({
+        entries: page.map((r) => presentAudit(r.row)),
+        nextCursor: rows.length > query.limit && last ? encodeCursor(last.sortTs, last.row.id) : null,
+      });
     });
 
     /** Has anything been rewritten behind the application's back? */
@@ -1797,9 +1822,63 @@ export function adminRoutes(deps: AdminDeps) {
         auditState = 'FAILED';
       }
 
+      // Projection read-model health, scoped to this organisation. `consistent`
+      // is set false by reconciliation when a projection drifted from authority;
+      // any such row is DEGRADED, not a silent green.
+      const [projStats] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          inconsistent: sql<number>`count(*) filter (where ${accountProjections.consistent} = false)::int`,
+          lastUpdated: sql<string | null>`max(${accountProjections.projectionUpdatedAt})::text`,
+        })
+        .from(accountProjections)
+        .where(eq(accountProjections.organizationId, organizationId));
+      const projInconsistent = projStats?.inconsistent ?? 0;
+      const projectionState = projInconsistent > 0 ? 'DEGRADED' : 'HEALTHY';
+
+      // Outbox delivery health (infrastructure — bounded aggregate, no tenant
+      // content). Anything dead-lettered is DEGRADED; a large or old backlog is
+      // the operator's early warning that delivery has stalled.
+      const [outbox] = await db
+        .select({
+          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveredAt} is null and ${outboxEvents.deadLetter} = false)::int`,
+          deadLetter: sql<number>`count(*) filter (where ${outboxEvents.deadLetter} = true)::int`,
+          oldestPending: sql<string | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveredAt} is null and ${outboxEvents.deadLetter} = false)::text`,
+        })
+        .from(outboxEvents);
+      const oldestPendingAgeMs = outbox?.oldestPending
+        ? Date.now() - new Date(outbox.oldestPending).getTime()
+        : null;
+      const outboxState =
+        (outbox?.deadLetter ?? 0) > 0
+          ? 'DEGRADED'
+          : oldestPendingAgeMs !== null && oldestPendingAgeMs > 60_000
+            ? 'DEGRADED'
+            : 'HEALTHY';
+
       return reply.send({
         api: { state: 'HEALTHY' },
         database: { state: dbState },
+        projections: {
+          state: projectionState,
+          total: projStats?.total ?? 0,
+          inconsistent: projInconsistent,
+          lastUpdatedAt: projStats?.lastUpdated ? new Date(projStats.lastUpdated).getTime() : null,
+        },
+        outbox: {
+          state: outboxState,
+          pending: outbox?.pending ?? 0,
+          deadLetter: outbox?.deadLetter ?? 0,
+          oldestPendingAgeMs,
+        },
+        // Payments are sandbox-only and paused; represent honestly. NOT_CONFIGURED
+        // when no webhook secret / sandbox is set, otherwise AWAITING_VALIDATION —
+        // never a green "connected", because no authenticated Whop test has run.
+        payments: {
+          provider: 'whop',
+          state: whopConfigured() && env().WHOP_SANDBOX ? 'AWAITING_VALIDATION' : 'NOT_CONFIGURED',
+          environment: env().WHOP_SANDBOX ? 'sandbox' : null,
+        },
         marketData: {
           state: marketState,
           provider: connection.providerId ?? null,

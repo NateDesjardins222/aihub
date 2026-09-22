@@ -20,6 +20,11 @@ function tone(state: string): string {
       return 'adm-health-delayed';
     case 'DEGRADED':
       return 'adm-health-degraded';
+    case 'NOT_CONFIGURED':
+    case 'AWAITING_VALIDATION':
+    case 'UNKNOWN':
+      // Deliberately absent, not broken — a neutral dot, never alarm red.
+      return 'adm-health-neutral';
     default:
       return 'adm-health-offline';
   }
@@ -85,6 +90,45 @@ export function AdminSystemPage(): JSX.Element {
               state={data.audit.state}
               detail={data.audit.state === 'HEALTHY' ? 'hash chain verified' : 'verification failed'}
             />
+            {data.projections ? (
+              <Row
+                label="Projections"
+                state={data.projections.state}
+                detail={[
+                  `${data.projections.total} accounts`,
+                  data.projections.inconsistent > 0 ? `${data.projections.inconsistent} inconsistent` : 'all consistent',
+                  data.projections.lastUpdatedAt ? `last ${when(data.projections.lastUpdatedAt)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              />
+            ) : null}
+            {data.outbox ? (
+              <Row
+                label="Outbox"
+                state={data.outbox.state}
+                detail={[
+                  `${data.outbox.pending} pending`,
+                  data.outbox.deadLetter > 0 ? `${data.outbox.deadLetter} dead-letter` : null,
+                  data.outbox.oldestPendingAgeMs !== null
+                    ? `oldest ${Math.round(data.outbox.oldestPendingAgeMs / 1000)}s`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              />
+            ) : null}
+            {data.payments ? (
+              <Row
+                label="Payments (Whop)"
+                state={data.payments.state}
+                detail={
+                  data.payments.state === 'NOT_CONFIGURED'
+                    ? 'sandbox credentials not configured'
+                    : `${data.payments.environment ?? 'sandbox'} · awaiting authenticated validation`
+                }
+              />
+            ) : null}
             <div className="adm-health-foot adm-dim">
               {data.build.nodeEnv}
               {data.build.version ? ` · ${data.build.version}` : ''} · checked {when(data.build.at)}

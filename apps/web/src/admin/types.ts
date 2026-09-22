@@ -326,6 +326,9 @@ export interface AdminSystem {
     blocksOrderEntry: boolean;
   };
   audit: { state: string };
+  projections?: { state: string; total: number; inconsistent: number; lastUpdatedAt: number | null };
+  outbox?: { state: string; pending: number; deadLetter: number; oldestPendingAgeMs: number | null };
+  payments?: { provider: string; state: string; environment: string | null };
   build: { nodeEnv: string; version: string | null; at: number };
 }
 

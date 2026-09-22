@@ -22,6 +22,7 @@ import { AdminProductPage } from './pages/ProductPage';
 import { AdminTradingPage } from './pages/TradingPage';
 import { AdminRiskPage } from './pages/RiskPage';
 import { AdminFundingPage } from './pages/FundingPage';
+import { AdminAuditPage } from './pages/AuditPage';
 import { AdminSystemPage } from './pages/SystemPage';
 import './Admin.css';
 
@@ -34,6 +35,7 @@ export type AdminRoute =
   | { name: 'TRADING' }
   | { name: 'RISK' }
   | { name: 'FUNDING' }
+  | { name: 'AUDIT' }
   | { name: 'PRODUCTS' }
   | { name: 'PRODUCT'; key: string }
   | { name: 'SYSTEM' };
@@ -51,6 +53,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   if (parts[0] === 'trading') return { name: 'TRADING' };
   if (parts[0] === 'risk') return { name: 'RISK' };
   if (parts[0] === 'funding') return { name: 'FUNDING' };
+  if (parts[0] === 'audit') return { name: 'AUDIT' };
   if (parts[0] === 'products') {
     return parts[1] ? { name: 'PRODUCT', key: decodeURIComponent(parts[1]) } : { name: 'PRODUCTS' };
   }
@@ -74,6 +77,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/risk';
     case 'FUNDING':
       return '/admin/funding';
+    case 'AUDIT':
+      return '/admin/audit';
     case 'PRODUCTS':
       return '/admin/products';
     case 'PRODUCT':
@@ -92,6 +97,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'TRADING' }, label: 'Trading' },
   { route: { name: 'RISK' }, label: 'Risk' },
   { route: { name: 'FUNDING' }, label: 'Funding' },
+  { route: { name: 'AUDIT' }, label: 'Audit' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
   { route: { name: 'SYSTEM' }, label: 'System' },
 ];
@@ -171,6 +177,7 @@ export function AdminApp(): JSX.Element {
         {route.name === 'TRADING' ? <AdminTradingPage go={go} /> : null}
         {route.name === 'RISK' ? <AdminRiskPage go={go} /> : null}
         {route.name === 'FUNDING' ? <AdminFundingPage go={go} /> : null}
+        {route.name === 'AUDIT' ? <AdminAuditPage go={go} /> : null}
         {route.name === 'PRODUCTS' ? <AdminProductsPage go={go} /> : null}
         {route.name === 'PRODUCT' ? (
           <AdminProductPage productKey={route.key} go={go} maySuper={role === 'SUPER_ADMIN'} />
