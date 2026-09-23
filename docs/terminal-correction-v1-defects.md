@@ -16,7 +16,7 @@ trace to a provider limitation rather than an Atlas bug.
 | D-03 | Crosshair | Multi-chart time crosshair not synchronized across panes | FIXED (browser pass pending) |
 | D-04 | Multi-chart | No "apply chart config to other charts" action | FIXED (browser pass pending) |
 | D-02 | Symbol search | Type `ES` while on `GC` + Enter → stays on `GC` | VERIFIED (fixed) |
-| D-05 | Measure tool | Too primitive; poor measurement info + interaction | investigating |
+| D-05 | Measure tool | Too primitive; poor measurement info + interaction | FIXED (browser pass pending) |
 | D-06 | Fibonacci | Interaction feels bad; needs rebuild | investigating |
 | D-07 | Text drawing | Hitbox tiny; only a small part selects the text | VERIFIED (unit; browser pass pending) |
 | D-08 | Drawing toolbar | Left toolbar too small (width/icons/targets) | FIXED (browser pass pending) |

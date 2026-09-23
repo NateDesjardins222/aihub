@@ -19,6 +19,7 @@ import { useEffect, useRef, type JSX } from 'react';
 import type { ChartAdapter } from '../ChartAdapter';
 import { useChartStore } from '../../state/chart-store';
 import { drawDrawing, type PaintState } from './paint';
+import { timeframeMs } from './measure';
 import { projectionSignature, type BoundsCache } from './bounds';
 import { liveState, paintedVersion } from './interaction';
 import type { Projection } from './model';
@@ -31,6 +32,8 @@ export interface DrawingCanvasProps {
   /** For the position tools, which price a trade in ticks and in dollars. */
   readonly tickSize: number;
   readonly tickValueMicros: number;
+  /** The chart interval, so the measure tool can count bars correctly. */
+  readonly timeframe: string;
   readonly ready: boolean;
   /** Shared with the input machine, so both agree where things are. */
   readonly boundsRef: React.RefObject<BoundsCache>;
@@ -42,6 +45,7 @@ export function DrawingCanvas({
   pricePrecision,
   tickSize,
   tickValueMicros,
+  timeframe,
   ready,
   boundsRef,
 }: DrawingCanvasProps): JSX.Element | null {
@@ -56,11 +60,19 @@ export function DrawingCanvas({
     tool: useChartStore.getState().tool,
     symbol,
     pricePrecision,
-    market: { tickSize, tickValue: tickValueMicros / 1_000_000 },
+    market: {
+      tickSize,
+      tickValue: tickValueMicros / 1_000_000,
+      barMs: timeframeMs(timeframe) ?? undefined,
+    },
   });
   liveRef.current.symbol = symbol;
   liveRef.current.pricePrecision = pricePrecision;
-  liveRef.current.market = { tickSize, tickValue: tickValueMicros / 1_000_000 };
+  liveRef.current.market = {
+    tickSize,
+    tickValue: tickValueMicros / 1_000_000,
+    barMs: timeframeMs(timeframe) ?? undefined,
+  };
 
   useEffect(() => {
     const apply = (state: ReturnType<typeof useChartStore.getState>): void => {

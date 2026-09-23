@@ -874,6 +874,7 @@ export function ChartPanel({
           pricePrecision={precision}
           tickSize={tickSize}
           tickValueMicros={instrument?.tickValueMicros ?? 0}
+          timeframe={timeframe}
           ready={chartReady}
           boundsRef={boundsRef}
         />

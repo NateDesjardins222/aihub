@@ -22,6 +22,7 @@ import {
   type Point,
   type Projection,
 } from './model';
+import { measureReadoutLines, measureStats } from './measure';
 import { option } from './registry';
 
 export type PaintState = 'NORMAL' | 'HOVER' | 'SELECTED' | 'PENDING';
@@ -63,6 +64,8 @@ function dashCap(dash: Drawing['style']['dash']): CanvasLineCap {
 export interface PaintMarket {
   readonly tickSize: number;
   readonly tickValue: number;
+  /** Milliseconds per bar at the current interval, for the measure's bar count. */
+  readonly barMs?: number;
 }
 
 export function drawDrawing(
@@ -283,24 +286,64 @@ export function drawDrawing(
     }
     case 'MEASURE': {
       if (!a || !b) break;
-      const priceFrom = drawing.anchors[0]!.price;
-      const priceTo = drawing.anchors[1]!.price;
-      const delta = priceTo - priceFrom;
+      const from = drawing.anchors[0]!;
+      const to = drawing.anchors[1]!;
+      const stats = measureStats(from, to, {
+        tickSize: market.tickSize,
+        tickValueMicros: Math.round(market.tickValue * 1_000_000),
+        barMs: market.barMs,
+      });
+      const up = stats.up;
+      const accent = up ? '#2ec4a6' : '#f2544b';
+      const left = Math.min(a.x, b.x);
+      const top = Math.min(a.y, b.y);
+      const width = Math.abs(b.x - a.x);
+      const height = Math.abs(b.y - a.y);
+
+      // The measured zone: a soft fill and a border, plus a direction arrow down
+      // the middle so up/down reads instantly.
       ctx.save();
-      ctx.fillStyle = delta >= 0 ? 'rgba(46,196,166,0.12)' : 'rgba(242,84,75,0.12)';
-      ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.fillStyle = up ? 'rgba(46,196,166,0.12)' : 'rgba(242,84,75,0.12)';
+      ctx.fillRect(left, top, width, height);
       ctx.restore();
-      ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
       ctx.setLineDash([]);
-      ctx.font = `${drawing.style.fontSize}px ui-monospace, monospace`;
-      ctx.textBaseline = 'bottom';
-      ctx.fillStyle = delta >= 0 ? '#2ec4a6' : '#f2544b';
-      const bars = Math.round(Math.abs(drawing.anchors[1]!.time - drawing.anchors[0]!.time) / 60_000);
-      ctx.fillText(
-        `${delta >= 0 ? '+' : ''}${delta.toFixed(pricePrecision)}   ${bars}m`,
-        Math.min(a.x, b.x) + 4,
-        Math.min(a.y, b.y) - 3,
-      );
+      ctx.strokeRect(left, top, width, height);
+      const midX = left + width / 2;
+      ctx.beginPath();
+      ctx.moveTo(midX, up ? top + height : top);
+      ctx.lineTo(midX, up ? top : top + height);
+      ctx.strokeStyle = accent;
+      ctx.stroke();
+
+      // The readout: a compact dark chip with one line per metric, placed just
+      // beyond the far anchor and flipped to stay on-screen-ish.
+      const money = (m: number): string =>
+        `${m < 0 ? '-' : ''}$${Math.abs(m / 1_000_000).toLocaleString('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+      const lines = measureReadoutLines(stats, pricePrecision, money);
+      ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      const lineH = drawing.style.fontSize * 1.5;
+      const padX = 8;
+      const boxW = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2;
+      const boxH = lines.length * lineH + 6;
+      const boxX = midX - boxW / 2;
+      const boxY = up ? top - boxH - 6 : top + height + 6;
+      ctx.save();
+      ctx.fillStyle = 'rgba(18,20,26,0.92)';
+      ctx.strokeStyle = accent;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+      ctx.fill();
+      ctx.stroke();
+      lines.forEach((lineText, index) => {
+        ctx.fillStyle = index === 0 ? accent : '#d7dbe3';
+        ctx.fillText(lineText, boxX + padX, boxY + 6 + lineH / 2 + index * lineH);
+      });
+      ctx.restore();
       break;
     }
     case 'LONG_POSITION':
