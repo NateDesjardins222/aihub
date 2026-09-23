@@ -227,10 +227,19 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.createVolumeSeries();
     this.wireEvents();
 
-    // The synchronized time cursor lives in the chart container. The container
-    // must establish a positioning context for it; lightweight-charts does not
-    // guarantee one, so set it if absent.
-    if (!init.container.style.position) init.container.style.position = 'relative';
+    // The synchronized time cursor lives in the chart container, so the
+    // container must be a positioning context for it. Check the COMPUTED
+    // position, not the inline one: the chart container is positioned by a
+    // stylesheet rule (`.chart-canvas { position: absolute; inset: 0 }`), whose
+    // value never appears on `.style.position`. Reading the inline property
+    // therefore always looked empty and forced `position: relative` inline,
+    // which overrode the stylesheet's `absolute` and collapsed the container to
+    // zero height — the chart stopped filling its pane and painted nothing.
+    // Only a `static` container needs a positioning context added; `absolute`
+    // and `relative` already are one.
+    if (getComputedStyle(init.container).position === 'static') {
+      init.container.style.position = 'relative';
+    }
     const cursor = document.createElement('div');
     cursor.className = 'lw-time-cursor';
     cursor.setAttribute('data-testid', 'time-cursor');

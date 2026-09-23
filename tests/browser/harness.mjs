@@ -296,25 +296,13 @@ export async function returnToDefaultTheme(page) {
  * every later suite a chart with three bars on it.
  */
 export async function returnToLive(page) {
-  // The REPLAY pill, not merely a warn-toned one: outside trading hours the
-  // feed's own MARKET CLOSED pill is warn too, and reading that as "a previous
-  // run left us in a replay" sent every sign-in through the practice drawer.
-  if (await page.locator('[data-testid=replay-pill]').count()) {
-    await page.click('[data-testid=apprail-practice]');
-    await page.waitForTimeout(2_000);
-    if (await page.locator('.practice-active .chip').count()) {
-      await page.locator('.practice-active .chip').first().click();
-      await page.waitForTimeout(6_000);
-    }
-    await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
-    await page.waitForTimeout(2_500);
-  }
-
   /*
-   * And then say so to the server directly.
+   * Say it to the server directly.
    *
-   * Ending a practice session is not the same thing as putting the platform
-   * back on the live feed: a suite that died mid-run, or one that switched the
+   * The user-facing Practice/replay drawer was removed in the Terminal
+   * Correction milestone (D-10); the simulation engine and its replay HTTP
+   * surface are untouched, so the harness now drives the reset entirely
+   * through the API. A suite that died mid-run, or one that switched the
    * provider itself, leaves the recording serving every later suite - which is
    * how `stress` came to be asked to seed drawings onto a chart with three
    * bars on it. Refused if an account still holds something, which is correct
@@ -770,19 +758,29 @@ export async function tradableMarket(page, { symbol = 'NQ' } = {}) {
     };
   }
 
-  await page.click('[data-testid=apprail-practice]');
-  await page.waitForSelector('[data-testid=drawer-practice]', { timeout: 15_000 });
-  await page.waitForTimeout(2_500);
-  if (await page.locator('.practice-active').count()) {
-    await page.click('.practice-active .chip');
-    await page.waitForTimeout(6_000);
+  /*
+   * Load a recording and route the platform through it, entirely via the API.
+   *
+   * The user-facing Practice drawer was removed (D-10); the replay engine and
+   * its HTTP surface were deliberately preserved, so the harness starts a
+   * session the same way the server always could: load a recording for this
+   * symbol, switch the provider to replay, and step it. Nothing here depends
+   * on the removed UI.
+   */
+  const loaded = await apiFetch(page, '/api/v1/marketdata/replay/random', {
+    method: 'POST',
+    body: { symbol, blind: false },
+  });
+  if (!loaded.ok) {
+    // No recording for this symbol: fall back to any recording at all.
+    await apiFetch(page, '/api/v1/marketdata/replay/random', { method: 'POST', body: { blind: false } });
   }
-  await page.locator('.practice-session').first().click();
-  await page.waitForTimeout(9_000);
-  await page.click('.practice-row .chip:has-text("Restart")').catch(() => undefined);
+  await apiFetch(page, '/api/v1/marketdata/provider', { method: 'POST', body: { provider: 'replay' } });
+  await apiFetch(page, '/api/v1/marketdata/replay/play', { method: 'POST', body: {} });
   await page.waitForTimeout(2_500);
-  await page.click('[data-testid=drawer-practice] .drawer-close').catch(() => undefined);
-  await page.waitForTimeout(1_000);
+  // Prime the recording so the first order finds a market to fill against.
+  await stepReplay(page, 20);
+  await page.waitForTimeout(1_500);
 
   return { mode: 'replay', fill: (count) => nudgeRecording(page, count) };
 }
