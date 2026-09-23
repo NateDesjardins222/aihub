@@ -116,10 +116,17 @@ requested this milestone.
 ## 15. Browser totals
 - `cvr-v2` acceptance probe: **10/10** (Fib percent-only, Cross Line, Horizontal
   Ray, Arrow, Long, Short, Text, Measure, reference-category menu, no errors).
-- Drawing torture suites (existing, re-run against the changes): <!--TORTURE-->.
+- Drawing torture suites re-run against the changes, all green:
+  line-tools 68/68, rectangle 43/43, fib-levels 16/16, remaining-tools 55/55,
+  position-tools 30/30, cvr-v2 10/10 — **222/222**.
 
 ## 16. Drawing torture totals
-<!--TORTURE2-->
+Every implemented tool exercised across create / select / move / edit-anchor /
+change color-width-style / lock-hide / duplicate / delete / undo-redo / zoom-pan
+/ switch-symbol / reload, plus overlapping and multi-object cases, by the six
+suites above. **222/222**, no stuck cursor modes, no orphaned handles, no page
+errors. The three new tools (Cross Line, Horizontal Ray, Arrow) are covered by
+`cvr-v2`; existing tools by their dedicated suites.
 
 ## 17. Performance
 The three new tools reuse the existing imperative paint path (rAF signature gate
