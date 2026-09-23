@@ -262,6 +262,71 @@ describe('scale-in / scale-out keeps protection sized to the live position', () 
   });
 });
 
+describe('modify vs fill: a stale drag cannot corrupt a filled order', () => {
+  beforeEach(async () => {
+    await setup();
+    await market.quote('NQ', 20_000);
+  });
+
+  it('a modify carrying the pre-fill version is rejected, and the fill stands', async () => {
+    // A resting buy limit below the market.
+    const limitTicks = Math.round(20_000 * 4) - 40; // 19,990
+    const submitted = await submit({ type: 'LIMIT', side: 'BUY', qty: 1, limitTicks });
+    const orderId = submitted.orders[0]!.id;
+    const staleVersion = submitted.orders[0]!.version;
+    expect(submitted.fills).toHaveLength(0);
+
+    // The market trades through it and it fills — its version bumps.
+    await market.quote('NQ', 19_985);
+    await settle(30);
+    expect((await position())!.qty).toBe(1);
+
+    // A drag that began before the fill now lands with the stale version. It
+    // must be rejected, not silently applied to a filled order (which could
+    // resize a done trade and desync the position from the fills).
+    await expect(
+      engine.modifyOrder(fixture.accountId, orderId, { qty: 5 }, staleVersion),
+    ).rejects.toMatchObject({ reason: 'STALE_ORDER_VERSION' });
+
+    // The fill is untouched: still exactly 1 contract, no phantom resize.
+    expect((await position())!.qty).toBe(1);
+    const [row] = (await orderRows()).filter((r) => r.id === orderId);
+    expect(row!.status).toBe('FILLED');
+    expect(row!.qty).toBe(1);
+    expect(row!.filledQty).toBe(1);
+  });
+});
+
+describe('flatten isolates one instrument from another', () => {
+  beforeEach(async () => {
+    await setup();
+    await market.quote('NQ', 20_000);
+    await market.quote('ES', 5_000);
+  });
+
+  it('flattening NQ leaves an open ES position completely untouched', async () => {
+    await submit({ symbol: 'NQ', qty: 2, side: 'BUY' });
+    await submit({ symbol: 'ES', qty: 3, side: 'BUY' });
+    await settle();
+
+    await engine.flatten(fixture.accountId, fixture.userId, 'NQ');
+    await settle();
+
+    const [nq] = await fixture.db
+      .select()
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, fixture.accountId), eq(positionsTable.symbol, 'NQ')));
+    const [es] = await fixture.db
+      .select()
+      .from(positionsTable)
+      .where(and(eq(positionsTable.accountId, fixture.accountId), eq(positionsTable.symbol, 'ES')));
+
+    expect(nq!.qty, 'NQ flat').toBe(0);
+    expect(es!.qty, 'ES untouched by the NQ flatten').toBe(3);
+    expect(es!.side).toBe('LONG');
+  });
+});
+
 describe('risk liquidation vs manual flatten', () => {
   it('a manual flatten racing a breach liquidation lands flat, never short or doubled', async () => {
     await setup({
