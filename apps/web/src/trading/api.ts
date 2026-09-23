@@ -100,6 +100,13 @@ export interface ApiAccountPnl {
   marked: boolean;
   /** Which positions cannot be priced, and why. */
   unmarkable: ReadonlyArray<{ symbol: string; openedAgainst: string; nowServing: string }>;
+  /**
+   * A breached account's exposure truth, so the UI never reads only "locked"
+   * while a position is still open. NOT_REQUIRED = not breached, or a block-only
+   * lock that leaves the position by design; PENDING = locked AND still exposed
+   * (flattening / could not fill yet); DONE = locked and flat.
+   */
+  liquidation: 'NOT_REQUIRED' | 'PENDING' | 'DONE';
   seq: number;
 }
 

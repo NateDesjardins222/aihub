@@ -97,6 +97,15 @@ export function AccountBar({
       {rules ? <Pill text={rules.status.replace('_', ' ')} tone={statusTone(rules.status)} /> : null}
 
       {/*
+        A locked account that is STILL EXPOSED must say so — never a bare
+        "locked" while a position remains open. The engine reports the truth:
+        PENDING means the breach's flatten has not confirmed flat yet (a closed
+        or stale feed can leave the liquidation waiting), so the trader knows a
+        position is still live and being closed, not that they are safely flat.
+      */}
+      {pnl?.liquidation === 'PENDING' ? <Pill text="FLATTENING" tone="warn" /> : null}
+
+      {/*
         Said out loud, not hidden behind dashes.
 
         When a position cannot be priced - the platform is serving a practice

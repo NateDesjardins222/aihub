@@ -20,6 +20,7 @@ export interface ValuationFrame {
   readonly openContracts?: number;
   readonly rules?: { readonly marked?: boolean } | undefined;
   readonly unmarkable?: ApiAccountPnl['unmarkable'];
+  readonly liquidation?: ApiAccountPnl['liquidation'];
 }
 
 /** Apply `next` if the frame carried it (including null); else keep `prev`. */
@@ -42,5 +43,6 @@ export function mergePnlFrame(prev: ApiAccountPnl, frame: ValuationFrame): ApiAc
     openContracts: frame.openContracts ?? prev.openContracts,
     marked: applied(frame.rules?.marked, prev.marked),
     unmarkable: applied(frame.unmarkable, prev.unmarkable),
+    liquidation: applied(frame.liquidation, prev.liquidation),
   };
 }

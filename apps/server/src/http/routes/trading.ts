@@ -460,6 +460,9 @@ export function tradingRoutes(deps: Deps) {
         /** False while a position cannot be priced: every P&L figure is null. */
         marked: valuation.rules.marked,
         unmarkable: valuation.unmarkable,
+        // Whether a breached account is flat, still flattening, or never
+        // flattens — so the terminal never says only "locked" while exposed.
+        liquidation: valuation.liquidation,
         seq: account.seq,
       });
     });

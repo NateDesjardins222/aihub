@@ -29,6 +29,7 @@ const BASE: ApiAccountPnl = {
   maxContracts: 10,
   marked: true,
   unmarkable: [],
+  liquidation: 'NOT_REQUIRED',
   seq: 1,
 };
 

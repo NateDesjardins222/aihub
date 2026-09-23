@@ -155,6 +155,7 @@ export const useTrading = create<TradingState>((set, get) => ({
           openContracts?: number;
           rules?: ApiRuleStatus;
           unmarkable?: ApiAccountPnl['unmarkable'];
+          liquidation?: ApiAccountPnl['liquidation'];
           positions?: Array<{ symbol: string; unrealizedPnlMicros: number | null; markPrice: number | null }>;
         } | null;
         // Drop a frame for any account other than the one on screen NOW - not

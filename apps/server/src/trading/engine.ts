@@ -248,6 +248,30 @@ export interface SubmitOrderInput {
  * client to notice that for itself would either freeze the figure or mean the
  * browser computing authoritative P&L, and neither is acceptable.
  */
+/**
+ * The truth about a breached account's exposure — so the UI never says only
+ * "locked" while a position is still open.
+ *
+ *  - NOT_REQUIRED: not breached, or a breach that does not auto-flatten
+ *    (a block-new-orders lock: the position remains open by the account's rules).
+ *  - PENDING: breached, this account flattens on breach, and exposure REMAINS —
+ *    the flatten is in progress or could not fill yet (closed/stale feed). The
+ *    account is locked AND still exposed; the terminal must say so.
+ *  - DONE: breached, flattens on breach, and it is flat — safe to read "locked".
+ */
+export type LiquidationState = 'NOT_REQUIRED' | 'PENDING' | 'DONE';
+
+/** The liquidation truth for a breached account, from status + policy + exposure. */
+export function liquidationStateOf(
+  status: string,
+  flattenOnBreach: boolean,
+  openContracts: number,
+): LiquidationState {
+  const breached = status === 'FAILED' || status === 'LOCKED';
+  if (!breached || !flattenOnBreach) return 'NOT_REQUIRED';
+  return openContracts > 0 ? 'PENDING' : 'DONE';
+}
+
 export interface AccountValuation {
   readonly accountId: string;
   readonly balanceMicros: number;
@@ -264,6 +288,8 @@ export interface AccountValuation {
   readonly dayPnlMicros: number | null;
   readonly remainingDrawdownMicros: number | null;
   readonly openContracts: number;
+  /** Whether a breached account is flat, still flattening, or never flattens. */
+  readonly liquidation: LiquidationState;
   readonly positions: ReturnType<typeof presentPosition>[];
   /**
    * Open positions the platform cannot price right now, with the market each
@@ -565,6 +591,7 @@ export class TradingEngine {
 
     // Unpriceable: report the standing status and no equity figures at all.
     if (openPnlMicros === null || equityMicros === null) {
+      const standing = statusFromState(config, state, history);
       return {
         accountId,
         balanceMicros: account.balanceMicros,
@@ -575,8 +602,9 @@ export class TradingEngine {
         dayPnlMicros: null,
         remainingDrawdownMicros: null,
         openContracts,
+        liquidation: liquidationStateOf(standing.status, config.flattenOnBreach, openContracts),
         positions: views,
-        rules: statusFromState(config, state, history),
+        rules: standing,
         unmarkable: await this.unmarkable(accountId),
         at: Date.now(),
       };
@@ -604,6 +632,7 @@ export class TradingEngine {
       dayPnlMicros: applied.status.dayPnlMicros,
       remainingDrawdownMicros: applied.status.remainingDrawdownMicros,
       openContracts,
+      liquidation: liquidationStateOf(applied.status.status, config.flattenOnBreach, openContracts),
       positions: views,
       rules: applied.status,
       unmarkable: [],
