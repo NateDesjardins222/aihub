@@ -24,6 +24,7 @@
  * outcomes are "published as received" and "not published, and counted".
  */
 import type { InstrumentSpec } from '@atlas/contracts';
+import { getMarketState } from '@atlas/instruments';
 
 export type Verdict =
   /** Publish it. */
@@ -155,8 +156,23 @@ export class PriceIntegrity {
       return 'ACCEPT';
     }
 
-    // A gap in trading, not a bad print: re-anchor and keep the gap visible.
-    if (exchangeTs - state.lastAcceptedTs > this.reanchorAfterMs) {
+    /*
+     * A gap in TRADING, not a bad print: re-anchor and keep the gap visible.
+     *
+     * Silence alone is not enough. On the free delayed feed the poll goes quiet
+     * for minutes at a time WHILE THE MARKET IS OPEN, and a lone garbage print
+     * after that silence used to re-anchor straight through — becoming the mark
+     * that priced every open position (the phantom −$45,000). A re-anchor is
+     * only trustworthy when the silence spanned a period the market was actually
+     * closed (a weekend, an overnight, the daily maintenance break): then the
+     * price really did move behind a closed door and there is nothing to
+     * corroborate it against. An intraday feed hiccup is NOT that — the market
+     * kept trading, so a far price still has to be corroborated like any other.
+     */
+    if (
+      exchangeTs - state.lastAcceptedTs > this.reanchorAfterMs &&
+      this.gapSpannedAClosure(spec, state.lastAcceptedTs, exchangeTs)
+    ) {
       counters.reanchored += 1;
       this.accept(state, counters, price, exchangeTs);
       return 'ACCEPT';
@@ -281,6 +297,26 @@ export class PriceIntegrity {
     this.states.clear();
     this.anomalies.length = 0;
     this.counters.clear();
+  }
+
+  /**
+   * Did the silence between two observations cross a period the market was
+   * closed?
+   *
+   * A genuine session gap (weekend, overnight, the daily maintenance break) has
+   * a closed market somewhere inside it; an intraday feed outage does not — the
+   * market was open the whole time. We sample both ends and the midpoint, which
+   * is enough to recognise every real session boundary (the closed window is
+   * always long enough, and contiguous enough, to contain the midpoint of a gap
+   * that crosses it) while never mistaking an open-market feed hiccup for one.
+   */
+  private gapSpannedAClosure(spec: InstrumentSpec, fromTs: number, toTs: number): boolean {
+    const mid = fromTs + (toTs - fromTs) / 2;
+    return (
+      getMarketState(spec, fromTs).state !== 'OPEN' ||
+      getMarketState(spec, toTs).state !== 'OPEN' ||
+      getMarketState(spec, mid).state !== 'OPEN'
+    );
   }
 
   private accept(

@@ -116,8 +116,18 @@ export class MarketEventBus {
       return false;
     }
     const spec = getInstrument(quote.symbol);
-    if (spec && quote.last != null) {
-      const verdict = this.integrity.check(spec, quote.last, quote.exchangeTs);
+    // The price this quote would mark a position at: the last trade, else the
+    // mid of a real, two-sided, uncrossed book. A quote carrying only bid/ask
+    // used to skip integrity entirely and then mark positions off an unchecked
+    // (bid+ask)/2 — the mid-only bypass. Gate whatever would actually be used.
+    const markable =
+      quote.last != null
+        ? quote.last
+        : quote.bid != null && quote.ask != null && quote.bid <= quote.ask
+          ? (quote.bid + quote.ask) / 2
+          : null;
+    if (spec && markable != null) {
+      const verdict = this.integrity.check(spec, markable, quote.exchangeTs);
       if (verdict !== 'ACCEPT') {
         if (verdict === 'QUARANTINE') this.stats.droppedQuarantined += 1;
         else this.stats.droppedRejected += 1;

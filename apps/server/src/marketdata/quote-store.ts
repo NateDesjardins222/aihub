@@ -114,7 +114,13 @@ export class QuoteStore {
     const quote = this.quotes.get(symbol);
     if (!quote) return null;
     if (quote.last != null) return quote.last;
-    if (quote.bid != null && quote.ask != null) return (quote.bid + quote.ask) / 2;
+    // A mid only from a real, two-sided, UNCROSSED book. A crossed book
+    // (bid > ask) is a blown or stale quote, and averaging it manufactures a
+    // price the market never showed — the kind of number that marks a position
+    // at a phantom loss. Refuse it: no mark is better than a wrong one.
+    if (quote.bid != null && quote.ask != null && quote.bid <= quote.ask) {
+      return (quote.bid + quote.ask) / 2;
+    }
     return null;
   }
 
