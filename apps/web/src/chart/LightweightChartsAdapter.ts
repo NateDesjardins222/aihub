@@ -103,6 +103,29 @@ export class LightweightChartsAdapter implements ChartAdapter {
   readonly engineId = 'lightweight-charts';
   readonly engineName = 'Atlas Canvas Engine (lightweight-charts, Apache-2.0)';
 
+  /*
+   * Horizontal zoom limits, in one place instead of scattered magic numbers.
+   *
+   * Zoom is expressed as the visible SPAN — how many bars fit across the plot.
+   * Zooming out grows the span; zooming in shrinks it.
+   *
+   * `MAX_VISIBLE_SPAN` is the single hard stop for zoom-out and is a bar COUNT,
+   * so the furthest zoom-out is the same on every pane width, instrument and
+   * timeframe rather than drifting with the container. For that count to be what
+   * actually binds — not the renderer's own minimum bar spacing — `MIN_BAR_SPACING`
+   * is set low enough that even a narrow quarter-pane can reach the cap
+   * (cap × spacing must stay under the smallest plot width, ~340px:
+   * 12000 × 0.02 = 240px). It is deliberately generous: the old effective limit
+   * was the library default `minBarSpacing` of 0.5 (~2,500 bars on a full-width
+   * chart, fewer on a split), which is what stopped zoom-out too early. It is not
+   * infinite — 12,000 bars is a firm ceiling that keeps candles from collapsing
+   * into an unreadable solid mass. `MIN_VISIBLE_SPAN` is the zoom-IN floor and is
+   * unchanged, so zoom-in behaves exactly as before.
+   */
+  private static readonly MIN_BAR_SPACING = 0.02;
+  private static readonly MAX_VISIBLE_SPAN = 12_000;
+  private static readonly MIN_VISIBLE_SPAN = 6;
+
   private chart: IChartApi | null = null;
   private priceSeries: ISeriesApi<SeriesType> | null = null;
   private container: HTMLElement | null = null;
@@ -379,6 +402,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
         // the 6-10 range that feels right rather than wasteful.
         rightOffset: 8,
         barSpacing: 7,
+        // Let bars get thin enough that the MAX_VISIBLE_SPAN cap (a bar count) is
+        // what limits zoom-out, consistently on every pane width — not the
+        // library's default minimum spacing (0.5), which stopped it too early.
+        minBarSpacing: LightweightChartsAdapter.MIN_BAR_SPACING,
         fixLeftEdge: false,
         lockVisibleTimeRangeOnResize: true,
         // The axis formatter is installed unconditionally, because the default
@@ -652,7 +679,10 @@ export class LightweightChartsAdapter implements ChartAdapter {
      */
     const notches = Math.max(-4, Math.min(4, event.deltaY / 120));
     const zoom = Math.exp(notches * 0.09);
-    const nextSpan = Math.max(6, Math.min(4_000, span * zoom));
+    const nextSpan = Math.max(
+      LightweightChartsAdapter.MIN_VISIBLE_SPAN,
+      Math.min(LightweightChartsAdapter.MAX_VISIBLE_SPAN, span * zoom),
+    );
     if (nextSpan === span) return;
 
     // `to` is held and `from` moves: the right edge stays put and the window
