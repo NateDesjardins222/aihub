@@ -29,7 +29,7 @@ async function arm(category, label) {
     await section.click();
     await page.waitForTimeout(300);
   }
-  await page.click(`.popover .rail-tool-item:text-is("${label}")`);
+  await page.click(`.popover .rail-tool-item:has(.rail-tool-name:text-is("${label}"))`);
   await page.waitForTimeout(400);
 }
 
@@ -149,7 +149,7 @@ try {
     },
     {
       name: 'Measure',
-      category: 'Measure',
+      category: 'Measurer',
       points: [[0.35, 0.55], [0.5, 0.42]],
       body: [0.425, 0.485],
       settings: ['Colour', 'Thickness', 'Text size'],

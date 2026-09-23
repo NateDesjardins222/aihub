@@ -21,7 +21,7 @@ async function pick(name) {
   await page.click('.rail .rail-btn[aria-label="All drawing tools"]');
   await page.waitForTimeout(400);
   if ((await page.locator(`.popover .rail-tool-item:has-text("${name}")`).count()) === 0) {
-    await page.click('.popover .pop-item:has-text("Risk and reward")');
+    await page.click('.popover .pop-item:has-text("Projection")');
     await page.waitForTimeout(300);
   }
   await page.click(`.popover .rail-tool-item:has-text("${name}")`);
