@@ -55,7 +55,8 @@
 .ot-detail {
   margin-left: auto;
   padding-left: 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--text-muted);
   overflow: hidden;

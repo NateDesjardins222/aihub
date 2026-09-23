@@ -73,7 +73,8 @@
   border-radius: 7px;
   background: var(--accent-bg);
   color: var(--accent);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   font-size: 9px;
   line-height: 12px;
   text-align: center;
@@ -161,7 +162,8 @@
 
 .rail-widths .pop-item {
   justify-content: center;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-sm);
 }
 

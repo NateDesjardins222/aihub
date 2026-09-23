@@ -26,7 +26,7 @@ product failure · P2 major UX/visual defect · P3 polish.
 | Q-08 | P2 | Drawing menu | Tool panel too cramped | (open) |
 | Q-09 | P2 | Drawing tools | Most requested TradingView tools still missing | (open) |
 | Q-10 | P2 | Text tool | Hitbox still undersized | (open) |
-| Q-11 | P2 | Typography | Monospace/engineering fonts remain in drawing UI | (open) |
+| Q-11 | P2 | Typography | Monospace/engineering fonts remain in drawing UI | FIXED |
 | Q-12 | P2 | Editing UI | Floating toolbar / settings look low quality | (open) |
 | Q-13 | P3 | Feedback | Terminal feels dead; needs restrained alive feedback | (spec) |
 | Q-14 | P3 | Custom tools | No trader-created tool presets ("MY TOOLS") | (design) |

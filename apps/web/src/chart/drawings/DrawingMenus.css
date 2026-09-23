@@ -57,7 +57,7 @@
 
 .dm-key {
   margin-left: auto;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
@@ -125,7 +125,8 @@
 .dsb-text {
   width: auto;
   padding: 0 6px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
 }
 
