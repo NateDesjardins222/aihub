@@ -89,6 +89,16 @@
    * on every machine and does not depend on a font CDN to be legible.
    */
   --font-ui: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /*
+   * Numbers read in DM Sans too, with TABULAR figures (tnum), not in a
+   * monospace face. A trading terminal that sets money in JetBrains Mono reads
+   * like a code editor - the "old-computer" look this milestone removes.
+   * TradingView and TopstepX both count in a proportional sans with even digit
+   * widths; --font-num IS the UI face, and columns stay aligned because every
+   * .num site turns on tabular-nums. JetBrains Mono stays --font-mono for the
+   * one place it belongs: raw code and audit JSON in the owner console.
+   */
+  --font-num: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Type scale. */
@@ -151,12 +161,16 @@ body {
   overflow: hidden;
 }
 
-/* Numeric data always uses tabular figures so columns do not jitter. */
+/*
+ * Numeric data reads in DM Sans with TABULAR figures - proportional-face,
+ * even-width digits - so money and prices sit in the same family as everything
+ * else the trader reads, and columns still do not jitter. No monospace.
+ */
 .num {
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .pos {
@@ -197,7 +211,8 @@ select:focus-visible,
 
 input,
 select {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-md);
   color: var(--text-primary);
   background: var(--bg-input);

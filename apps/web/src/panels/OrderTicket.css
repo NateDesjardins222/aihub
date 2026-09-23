@@ -144,7 +144,7 @@
   border-radius: var(--radius);
   background: var(--bg-raised);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   font-size: var(--fs-md);
 }
 
@@ -234,7 +234,7 @@
 
 .tk-buy b,
 .tk-sell b {
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   font-weight: 700;
 }
 

@@ -44,7 +44,7 @@
 }
 
 .chdr-contract {
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   padding: 3px 6px;
@@ -96,7 +96,7 @@
 }
 
 .chdr-tf-row .pop-item {
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
 }
 
 .chdr-fav,
@@ -156,13 +156,13 @@
   border-radius: 7px;
   background: var(--accent-bg);
   color: var(--accent);
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   font-size: var(--fs-xs);
   text-align: center;
 }
 
 .chdr-pop-root {
-  font-family: var(--font-mono);
+  font-family: var(--font-num);
   min-width: 34px;
 }
 

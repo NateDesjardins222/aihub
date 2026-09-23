@@ -333,7 +333,13 @@ export class LightweightChartsAdapter implements ChartAdapter {
         background,
         textColor: a.canvas.textColor,
         fontSize: a.canvas.fontSize,
-        fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+        // The axes read in DM Sans, not a monospace face: the price and time
+        // scales are the numbers a trader stares at most, and setting them in
+        // Menlo is the "old-computer" look this milestone removes. Each axis
+        // label is right-aligned to the scale edge and redrawn per frame, so a
+        // proportional sans does not jitter the way a fixed-position readout
+        // would. Matches the DM Sans stack the drawing layer and DOM chrome use.
+        fontFamily: "'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
         attributionLogo: false,
         panes: { separatorColor: a.scales.paneSeparatorColor, separatorHoverColor: a.scales.scaleLineColor },
       },
