@@ -212,8 +212,14 @@ export interface ChartAdapter {
   getVisibleRange(): VisibleRange | null;
   /** Show the same window of time as another pane. */
   setVisibleTimeRange(fromMs: number, toMs: number): void;
-  /** Follow another pane's crosshair. Null clears it. */
+  /** Follow another pane's crosshair (both lines). Null clears it. */
   showCrosshairAt(timeMs: number | null): void;
+  /**
+   * Show a vertical-only synchronized time cursor at a timestamp (null clears).
+   * Secondary panes use this so only the TIME position is shared — never a
+   * price line from another instrument.
+   */
+  showTimeCursor(timeMs: number | null): void;
   /** Fires when the user scrolls back past the loaded history. */
   onNeedMoreHistory(callback: (oldestLoadedTime: number) => void): () => void;
   onCrosshairMove(callback: (info: CrosshairInfo) => void): () => void;

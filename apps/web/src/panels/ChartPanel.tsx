@@ -345,7 +345,9 @@ export function ChartPanel({
     const offCrosshairSync = onCrosshairSync((message) => {
       if (message.from === paneId || !useLayout.getState().sync.crosshair) return;
       followingUntil = performance.now() + 120;
-      adapterRef.current?.showCrosshairAt(message.timeMs);
+      // A vertical-only TIME cursor on the secondary pane — never a horizontal
+      // price line from another instrument (D-03). Synchronized by timestamp.
+      adapterRef.current?.showTimeCursor(message.timeMs);
       recordCrosshairApplied(paneId, message.timeMs);
     });
     const offRangeSync = onRangeSync((message) => {

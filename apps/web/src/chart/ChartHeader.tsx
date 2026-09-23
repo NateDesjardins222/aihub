@@ -96,6 +96,8 @@ export function ChartHeader({
   const removeIndicator = useLayout((s) => s.removeIndicator);
   const toggleIndicator = useLayout((s) => s.toggleIndicator);
   const setPaneSymbol = useLayout((s) => s.setPaneSymbol);
+  const applyConfigToOtherPanes = useLayout((s) => s.applyConfigToOtherPanes);
+  const multiPane = useLayout((s) => s.visiblePanes().length > 1);
   /*
    * A symbol change belongs to THIS pane.
    *
@@ -438,6 +440,24 @@ export function ChartHeader({
         width={210}
         label="More"
       >
+        {multiPane ? (
+          <>
+            <button
+              className="pop-item"
+              onClick={() => {
+                // Chart type + indicators to the other panes; never the symbol,
+                // interval, or any trading state (D-04).
+                applyConfigToOtherPanes(paneId);
+                overflow.close();
+              }}
+              title="Copy this chart's type and indicators to the other charts"
+            >
+              <Icon name="copy" size={12} />
+              Apply to other charts
+            </button>
+            <div className="pop-sep" />
+          </>
+        ) : null}
         <button
           className="pop-item"
           onClick={() => {

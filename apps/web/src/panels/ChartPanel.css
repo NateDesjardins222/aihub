@@ -233,3 +233,24 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/*
+ * The synchronized cross-chart TIME cursor (D-03).
+ *
+ * A secondary pane shows where in time another chart's pointer is, as a faint
+ * dashed vertical line — deliberately lighter than the active chart's own solid
+ * crosshair, and carrying no price. Positioned imperatively by the adapter
+ * (translateX), so it never triggers a React render on pointer move.
+ */
+.lw-time-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  border-left: 1px dashed var(--accent, #4d8dff);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 3;
+  will-change: transform;
+}

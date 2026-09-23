@@ -164,6 +164,9 @@ export class TradingViewAdvancedChartsAdapter implements ChartAdapter {
   showCrosshairAt(): void {
     /* nothing to sync until this adapter is implemented */
   }
+  showTimeCursor(): void {
+    /* nothing to sync until this adapter is implemented */
+  }
   indicatorPanes(): ReadonlyArray<{
     instanceId: string;
     pane: number;

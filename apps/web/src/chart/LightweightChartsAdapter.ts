@@ -108,6 +108,19 @@ export class LightweightChartsAdapter implements ChartAdapter {
   private container: HTMLElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
+  /**
+   * A vertical-only time cursor for cross-chart synchronization.
+   *
+   * When another pane's pointer is at time T, this chart shows WHERE IN TIME
+   * that is — a subtle vertical line at T's x-coordinate — and nothing about
+   * price. The native crosshair (both lines) belongs to the chart the pointer
+   * is actually over; a secondary chart must never draw a horizontal price line
+   * from another instrument (that would be a fake price). Positioned by
+   * timestamp so it stays correct across zoom, pan and different bar sets.
+   */
+  private timeCursorEl: HTMLDivElement | null = null;
+  private timeCursorMs: number | null = null;
+
   private chartType: ChartType = 'CANDLES';
   private timeframe: Timeframe = '1m';
   private pricePrecision = 2;
@@ -213,6 +226,18 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.createPriceSeries();
     this.createVolumeSeries();
     this.wireEvents();
+
+    // The synchronized time cursor lives in the chart container. The container
+    // must establish a positioning context for it; lightweight-charts does not
+    // guarantee one, so set it if absent.
+    if (!init.container.style.position) init.container.style.position = 'relative';
+    const cursor = document.createElement('div');
+    cursor.className = 'lw-time-cursor';
+    cursor.setAttribute('data-testid', 'time-cursor');
+    cursor.style.display = 'none';
+    init.container.appendChild(cursor);
+    this.timeCursorEl = cursor;
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.positionTimeCursor());
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(init.container);
@@ -399,6 +424,9 @@ export class LightweightChartsAdapter implements ChartAdapter {
     this.computed.clear();
     this.legendValues.clear();
     this.panes.clear();
+    this.timeCursorEl?.remove();
+    this.timeCursorEl = null;
+    this.timeCursorMs = null;
     this.chart?.remove();
     this.chart = null;
     this.priceSeries = null;
@@ -417,6 +445,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
     // The overlays measure the plot through the projection, so the new size
     // has to be there before the next frame paints.
     this.refreshGeometry();
+    this.positionTimeCursor();
   }
 
   // -- series construction -------------------------------------------------
@@ -1782,6 +1811,44 @@ export class LightweightChartsAdapter implements ChartAdapter {
     const bar = this.barNear(timeMs);
     if (!bar) return;
     chart.setCrosshairPosition(bar.close, toTime(bar.time), series);
+  }
+
+  /**
+   * Show (or hide, with null) the vertical-only synchronized time cursor at a
+   * timestamp. No price is involved: the horizontal price cursor stays local to
+   * the instrument the pointer is actually over.
+   */
+  showTimeCursor(timeMs: number | null): void {
+    this.timeCursorMs = timeMs;
+    this.positionTimeCursor();
+  }
+
+  private positionTimeCursor(): void {
+    const el = this.timeCursorEl;
+    const chart = this.chart;
+    if (!el || !chart) return;
+    if (this.timeCursorMs === null) {
+      el.style.display = 'none';
+      return;
+    }
+    const ts = chart.timeScale();
+    // Prefer the exact data-point coordinate; for a timestamp BETWEEN bars fall
+    // back to the interpolated logical position (no bar is invented — this is
+    // "where that time sits" at the series' own spacing).
+    let x = ts.timeToCoordinate(toTime(this.timeCursorMs)) as number | null;
+    if (x === null) {
+      const index = this.timeToIndexInternal(this.timeCursorMs);
+      x = index === null ? null : (ts.logicalToCoordinate(index as never) as number | null);
+    }
+    const plotWidth = Math.max(0, (this.container?.clientWidth ?? 0) - this.priceScaleWidth());
+    if (x === null || x < 0 || x > plotWidth) {
+      // The synced time is outside this chart's visible range: nothing to show,
+      // and never clamped to an edge (that would misreport the time).
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = 'block';
+    el.style.transform = `translateX(${Math.round(x)}px)`;
   }
 
   getVisibleRange(): VisibleRange | null {

@@ -48,3 +48,40 @@ describe('multi-chart divider proportions (D-01)', () => {
     expect(useLayout.getState().rowSplit).toBe(0.85); // clamped, not 999
   });
 });
+
+describe('apply chart config to other charts (D-04)', () => {
+  beforeEach(() => {
+    useLayout.getState().restore({}); // reset panes to defaults
+    useLayout.getState().setLayout('TWO_V');
+  });
+
+  it('copies chart type and indicators, but never symbol or interval', () => {
+    // Give the two panes distinct instruments/intervals and configs.
+    useLayout.getState().setPaneSymbol('p1', 'NQ');
+    useLayout.getState().setPaneSymbol('p2', 'ES');
+    useLayout.getState().setPaneTimeframe('p2', '15m');
+    useLayout.getState().setPaneChartType('p1', 'HEIKIN_ASHI');
+    useLayout.getState().addIndicator('p1', 'EMA');
+
+    useLayout.getState().applyConfigToOtherPanes('p1');
+
+    const p1 = useLayout.getState().panes.find((p) => p.id === 'p1')!;
+    const p2 = useLayout.getState().panes.find((p) => p.id === 'p2')!;
+    // Chart config propagated.
+    expect(p2.chartType).toBe('HEIKIN_ASHI');
+    expect(p2.indicators.map((i) => i.kind)).toEqual(['EMA']);
+    // Instances are the pane's own (distinct ids), not shared references.
+    expect(p2.indicators[0]!.id).not.toBe(p1.indicators[0]!.id);
+    // Instrument-specific state is untouched.
+    expect(p2.symbol).toBe('ES');
+    expect(p2.timeframe).toBe('15m');
+  });
+
+  it('does not touch panes the layout is not showing', () => {
+    useLayout.getState().setPaneChartType('p1', 'BARS');
+    useLayout.getState().applyConfigToOtherPanes('p1');
+    // p3/p4 are not visible in TWO_V, so they keep their defaults.
+    const p3 = useLayout.getState().panes.find((p) => p.id === 'p3')!;
+    expect(p3.chartType).toBe('CANDLES');
+  });
+});

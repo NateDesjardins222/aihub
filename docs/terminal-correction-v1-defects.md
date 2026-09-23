@@ -12,10 +12,10 @@ trace to a provider limitation rather than an Atlas bug.
 
 | ID | Area | Symptom (user) | State |
 | --- | --- | --- | --- |
-| D-01 | Multi-chart | Side-by-side chart panes cannot be resized (locked equal width) | investigating |
+| D-01 | Multi-chart | Side-by-side chart panes cannot be resized (locked equal width) | FIXED (browser pass pending) |
+| D-03 | Crosshair | Multi-chart time crosshair not synchronized across panes | FIXED (browser pass pending) |
+| D-04 | Multi-chart | No "apply chart config to other charts" action | FIXED (browser pass pending) |
 | D-02 | Symbol search | Type `ES` while on `GC` + Enter → stays on `GC` | VERIFIED (fixed) |
-| D-03 | Crosshair | Multi-chart time crosshair not synchronized across panes | investigating |
-| D-04 | Multi-chart | No "apply chart config to other charts" action | investigating |
 | D-05 | Measure tool | Too primitive; poor measurement info + interaction | investigating |
 | D-06 | Fibonacci | Interaction feels bad; needs rebuild | investigating |
 | D-07 | Text drawing | Hitbox tiny; only a small part selects the text | investigating |

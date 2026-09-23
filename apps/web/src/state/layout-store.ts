@@ -108,6 +108,14 @@ interface LayoutStore {
   setPaneTimeframe: (id: string, timeframe: string) => void;
   setPaneChartType: (id: string, chartType: ChartType) => void;
   setPaneSplit: (id: string, split: readonly number[] | null) => void;
+  /**
+   * Copy the source pane's CHART configuration (chart type + indicators) to
+   * every other visible pane. Appearance (canvas, grid, candle/scale colours)
+   * is already workspace-wide and shared, so this covers the per-pane settings.
+   * Deliberately does NOT copy the symbol, interval, positions, orders, or any
+   * instrument-specific state — those belong to each chart's own instrument.
+   */
+  applyConfigToOtherPanes: (sourceId: string) => void;
 
   addIndicator: (paneId: string, kind: string) => string;
   removeIndicator: (id: string) => void;
@@ -171,7 +179,10 @@ export const useLayout = create<LayoutStore>((set, get) => ({
   panes: defaultPanes(),
   activePaneId: 'p1',
   maximizedPaneId: null,
-  sync: { crosshair: false, time: false, symbol: false, interval: false },
+  // Crosshair time-sync is on by default: a professional multi-chart terminal
+  // shows where in time another chart's pointer is without hunting for a toggle
+  // (D-03). Range/symbol/interval sync stay opt-in.
+  sync: { crosshair: true, time: false, symbol: false, interval: false },
   colSplit: 0.5,
   rowSplit: 0.5,
 
@@ -242,6 +253,29 @@ export const useLayout = create<LayoutStore>((set, get) => ({
       panes: get().panes.map((pane) =>
         pane.id === id ? { ...pane, paneSplit: split === null ? null : [...split] } : pane,
       ),
+    });
+  },
+
+  applyConfigToOtherPanes(sourceId) {
+    const source = get().panes.find((pane) => pane.id === sourceId);
+    if (!source) return;
+    const visible = new Set(get().visiblePanes().map((pane) => pane.id));
+    set({
+      panes: get().panes.map((pane) => {
+        if (pane.id === sourceId || !visible.has(pane.id)) return pane;
+        return {
+          ...pane,
+          chartType: source.chartType,
+          // Fresh instance ids so each pane owns its own indicator instances
+          // (params are deep-copied, not shared references).
+          indicators: source.indicators.map((instance) => ({
+            id: instanceId(),
+            kind: instance.kind,
+            params: { ...instance.params },
+            visible: instance.visible,
+          })),
+        };
+      }),
     });
   },
 
@@ -414,7 +448,8 @@ function isLayout(value: unknown): value is LayoutKind {
 function sanitizeSync(raw: unknown): SyncOptions {
   const value = (raw ?? {}) as Partial<SyncOptions>;
   return {
-    crosshair: value.crosshair === true,
+    // Default ON when unset (D-03); only an explicit stored `false` disables it.
+    crosshair: value.crosshair !== false,
     time: value.time === true,
     symbol: value.symbol === true,
     interval: value.interval === true,
