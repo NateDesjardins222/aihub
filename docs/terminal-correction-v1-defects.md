@@ -22,7 +22,7 @@ trace to a provider limitation rather than an Atlas bug.
 | D-08 | Drawing toolbar | Left toolbar too small (width/icons/targets) | FIXED (browser pass pending) |
 | D-09 | Settings | Location/design; move to left app rail, declutter | investigating |
 | D-10 | Practice | Remove user-facing Practice section (keep sim engine) | FIXED (browser pass pending) |
-| D-11 | Context menu | No professional chart context menu | investigating |
+| D-11 | Context menu | No professional chart context menu | FUNCTIONAL (real actions; visual match to screenshot pending) |
 | D-12 | Position marker | Marker visual/interaction unacceptable (awaiting screenshot for redesign) | BLOCKED (screenshot) |
 | D-13 | **P0 P&L** | Phantom ~+$8,000 P&L on load/restart, never earned | investigating |
 | D-14 | **P0 scale-in** | Scale into position → TP $ value stale, SL updates | VERIFIED (fixed) |

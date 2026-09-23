@@ -19,6 +19,8 @@ import { MarketMotion } from '../chart/motion';
 import { useMotion } from '../state/motion-store';
 import { useChartStore } from '../state/chart-store';
 import { useLayout } from '../state/layout-store';
+import { useWorkspace } from '../state/workspace';
+import { ChartMenu, type ChartMenuItem } from '../chart/ChartMenu';
 import type { IndicatorInstance } from '../chart/indicators/registry';
 import {
   onCrosshairSync,
@@ -957,6 +959,25 @@ export function ChartPanel({
           />
         ) : null}
 
+        {contextMenu && !contextMenu.drawingId ? (
+          <ChartMenu
+            head={activeSymbol}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            testId="chart-context-menu"
+            onClose={() => setContextMenu(null)}
+            items={buildChartMenuItems({
+              price: contextMenu.price ?? null,
+              precision,
+              symbol: activeSymbol,
+              paneId,
+              multiPane: useLayout.getState().visiblePanes().length > 1,
+              resetView: () => adapterRef.current?.fitContent(),
+              close: () => setContextMenu(null),
+            })}
+          />
+        ) : null}
+
         {propertiesFor ? (
           <DrawingProperties
             drawingId={propertiesFor}
@@ -969,6 +990,86 @@ export function ChartPanel({
       </div>
     </section>
   );
+}
+
+/**
+ * The chart's own right-click menu (D-11).
+ *
+ * Only actions Atlas GENUINELY supports appear — nothing is a dead item
+ * pretending at functionality. Trading actions (buy/sell/add-order at a price)
+ * are intentionally omitted until the order ticket exposes a price prefill, so
+ * the menu never offers an order it cannot actually place. Actions act on the
+ * exact chart, symbol and price where the menu was opened.
+ */
+function buildChartMenuItems(opts: {
+  price: number | null;
+  precision: number;
+  symbol: string;
+  paneId: string;
+  multiPane: boolean;
+  resetView: () => void;
+  close: () => void;
+}): ChartMenuItem[] {
+  const { price, precision, symbol, paneId, multiPane, resetView, close } = opts;
+  const drawings = useChartStore.getState().drawings.filter((d) => d.symbol === symbol);
+  const pane = useLayout.getState().panes.find((p) => p.id === paneId);
+  const indicators = pane?.indicators ?? [];
+  const items: ChartMenuItem[] = [
+    { id: 'reset', label: 'Reset chart view', icon: 'reset', run: () => { resetView(); close(); } },
+  ];
+  if (price !== null && Number.isFinite(price)) {
+    const text = price.toFixed(precision);
+    items.push({
+      id: 'copy-price',
+      label: `Copy price ${text}`,
+      icon: 'copy',
+      run: () => {
+        void navigator.clipboard?.writeText(text).catch(() => undefined);
+        close();
+      },
+    });
+  }
+  if (drawings.length > 0 || indicators.length > 0) {
+    items.push({ id: 'sep1', separator: true });
+  }
+  if (drawings.length > 0) {
+    items.push({
+      id: 'rm-drawings',
+      label: `Remove ${drawings.length} drawing${drawings.length === 1 ? '' : 's'}`,
+      icon: 'trash',
+      danger: true,
+      run: () => { useChartStore.getState().clearDrawings(symbol); close(); },
+    });
+  }
+  if (indicators.length > 0) {
+    items.push({
+      id: 'rm-indicators',
+      label: `Remove ${indicators.length} indicator${indicators.length === 1 ? '' : 's'}`,
+      icon: 'trash',
+      danger: true,
+      run: () => {
+        const store = useLayout.getState();
+        for (const instance of indicators) store.removeIndicator(instance.id);
+        close();
+      },
+    });
+    if (multiPane) {
+      items.push({
+        id: 'apply-indicators',
+        label: 'Apply indicators to entire layout',
+        icon: 'copy',
+        run: () => { useLayout.getState().applyConfigToOtherPanes(paneId); close(); },
+      });
+    }
+  }
+  items.push({ id: 'sep2', separator: true });
+  items.push({
+    id: 'settings',
+    label: 'Settings…',
+    icon: 'gear',
+    run: () => { useWorkspace.getState().openSettings('SYMBOL'); close(); },
+  });
+  return items;
 }
 
 function formatCountdown(seconds: number): string {

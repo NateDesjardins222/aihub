@@ -75,6 +75,9 @@ export interface ContextMenuRequest {
   /** Viewport coordinates, for placing the menu. */
   readonly x: number;
   readonly y: number;
+  /** The price/time under the cursor, for a price-aware chart menu (null off-plot). */
+  readonly price?: number | null;
+  readonly time?: number | null;
 }
 
 function newId(): string {
@@ -430,12 +433,21 @@ export function useDrawingInput(options: DrawingInputOptions): void {
     const onContextMenu = (event: MouseEvent): void => {
       const handler = env.current.onContextMenu;
       if (!handler) return;
-      const found = pick(pointAt(event));
-      if (!found) return;
-      useChartStore.getState().select(found.drawing.id);
+      const point = pointAt(event);
+      const found = pick(point);
       event.preventDefault();
       event.stopPropagation();
-      handler({ drawingId: found.drawing.id, x: event.clientX, y: event.clientY });
+      if (found) {
+        useChartStore.getState().select(found.drawing.id);
+        handler({ drawingId: found.drawing.id, x: event.clientX, y: event.clientY });
+        return;
+      }
+      // Background right-click: the chart's own price-aware menu. The price/time
+      // under the cursor are read (non-magnetic — this is a menu, not a place).
+      const view = projection();
+      const price = view ? view.yToPrice(point.y) : null;
+      const time = view ? view.xToTime(point.x) : null;
+      handler({ drawingId: null, x: event.clientX, y: event.clientY, price, time });
     };
 
     const onDoubleClick = (event: MouseEvent): void => {
