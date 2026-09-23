@@ -24,11 +24,21 @@ export function estimatePnlMicros(
   level: number,
   tickSize: number,
   tickValueMicros: number,
+  /**
+   * The quantity actually protected at this level. Defaults to the whole
+   * position. A protective order that covers only PART of the position (e.g. a
+   * bracket child that did not grow on a scale-in) must pass its own protected
+   * quantity, so the chart shows what the order will really deliver and never
+   * overstates it to the full position (D-14).
+   */
+  protectedQty?: number,
 ): number | null {
   if (position.avgEntryPrice === null || position.qty === 0) return null;
+  const qty = protectedQty === undefined ? position.qty : protectedQty;
+  if (qty <= 0) return null;
   const ticks = (level - position.avgEntryPrice) / tickSize;
   const direction = position.signedQty > 0 ? 1 : -1;
-  return Math.round(ticks * direction * position.qty * tickValueMicros);
+  return Math.round(ticks * direction * qty * tickValueMicros);
 }
 
 /**

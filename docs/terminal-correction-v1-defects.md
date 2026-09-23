@@ -25,8 +25,8 @@ trace to a provider limitation rather than an Atlas bug.
 | D-11 | Context menu | No professional chart context menu | investigating |
 | D-12 | Position marker | Marker visual/interaction unacceptable (awaiting screenshot for redesign) | BLOCKED (screenshot) |
 | D-13 | **P0 P&L** | Phantom ~+$8,000 P&L on load/restart, never earned | investigating |
-| D-14 | **P0 scale-in** | Scale into position → TP $ value stale, SL updates | investigating |
-| D-15 | Scale-in semantics | Protection quantity/value semantics undefined on scale-in | investigating |
+| D-14 | **P0 scale-in** | Scale into position → TP $ value stale, SL updates | VERIFIED (fixed) |
+| D-15 | Scale-in semantics | Protection quantity/value semantics undefined on scale-in | DEFINED + enforced |
 | D-17 | Candles | Candles still visually wrong vs reference | investigating |
 | D-20 | Render/time-scale | Visible bar density may differ (render vs data error) | investigating |
 
@@ -70,5 +70,49 @@ omitted field is retained; zero is applied as zero.
 (candidate A: marking an open position at a stale bootstrap price on restart) is
 tracked next — a deterministic reload/reconcile test on the engine valuation.
 
-### D-14 — P0 scale-in stale TP value
-_(pending investigation write-up)_
+### D-14 — P0 scale-in stale TP value — ROOT_CAUSED, FIXED, VERIFIED (unit/server)
+
+**Reproduction / root cause.** The client dollar math (`chart/protection.ts`
+`estimatePnlMicros`) is symmetric and already uses the live `position.qty` for
+both legs — it is NOT where TP and SL diverge. The divergence is server-side and
+by leg **origin**, not leg type:
+- **Standalone protection** (`setProtection` → `syncProtection`, engine.ts:2197)
+  grows to the whole live position: `target = filledQty + |position.qty|`.
+- **Entry-attached bracket children** (`syncBrackets`, engine.ts:2286) were
+  **capped at the entry's own fill**: `target = min(entry.filledQty, …)`. So when
+  the trader scaled in with a separate (unbracketed) order, a bracket-child leg
+  stayed sized to the original entry while a standalone leg grew — exactly the
+  "SL updated, TP stale" report (whichever leg was the bracket child went stale).
+
+Second, worse hazard: the chart TP/SL dollar label used the **full position
+qty** for both legs, so a capped TP (which only closes the original quantity)
+was **overstated** to the full scaled-in position — the chart and the order book
+silently disagreed on the one leg that did not grow.
+
+**Fix.**
+- Server (engine.ts `syncBrackets`): when there is exactly one bracketed, filled
+  entry for the instrument (the common case, and the user's), its legs grow to
+  cover the whole live position (`cap = +∞`), so a scale-in is protected on both
+  legs. With several bracketed entries each leg stays capped at its own entry's
+  fill, so their protection sums to the position rather than multiplying it (no
+  over-exit). Smallest authoritative change; standalone `syncProtection` and the
+  single-entry partial-fill growth/shrink paths are unchanged.
+- Client (`protection.ts` + `PriceMarkers.tsx`): the protective dollar label now
+  uses the order's **actual protected quantity** (`min(order.remainingQty,
+  |position.qty|)`), never overstating a partial leg to the full position.
+
+**Regression:** `brackets.test.ts` "the sole bracket grows to protect a
+scale-in" (live + replay) — open 1 + bracket, scale in to 2 unbracketed, assert
+BOTH legs reach qty 2. `protection.test.ts` D-14 cases — a partial protected qty
+values only what it protects; zero/negative → null. Server suite green; web 232.
+
+### D-15 — scale-in protection semantics (defined)
+
+Atlas's intended behaviour, now consistent across both protection paths: **a
+protective leg tracks the live position it protects.** It grows on a scale-in and
+shrinks on a partial manual exit, for standalone protection AND for a sole
+entry-bracket. Invariant: protective quantity per side never exceeds the aligned
+position (no over-exit) and, for a single protection, equals it (no orphaned,
+unprotected contracts; no stale TP quantity). Multiple independent bracketed
+entries on one instrument keep per-entry caps that sum to the position. The chart
+never shows a protective value for more contracts than the order will close.

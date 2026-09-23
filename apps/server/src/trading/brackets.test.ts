@@ -346,6 +346,27 @@ describe('protection attached to an open position', () => {
     expect((await positionRow())!.qty).toBe(0);
   });
 
+  it('D-14: the sole bracket grows to protect a scale-in — both legs, no stale TP', async () => {
+    // Open 1 with a bracket; both legs cover 1.
+    await submit({ qty: 1, side: 'BUY', bracket: { stopLossTicks: 40, takeProfitTicks: 80 } });
+    await settle();
+    expect((await positionRow())!.qty).toBe(1);
+    expect((await leg('STOP_LOSS'))!.qty).toBe(1);
+    expect((await leg('TAKE_PROFIT'))!.qty).toBe(1);
+
+    // Scale in with a plain (unbracketed) market order → position 2.
+    await submit({ qty: 1, side: 'BUY' });
+    await settle(60);
+    expect((await positionRow())!.qty).toBe(2);
+
+    // BOTH protective legs must now cover the whole position. Before the fix the
+    // bracket children were capped at the entry's own fill, so the TP (and SL)
+    // stayed at 1 while the position was 2 — a scale-in the target did not
+    // protect. They must be symmetric and cover the live position.
+    expect((await leg('STOP_LOSS'))!.qty).toBe(2);
+    expect((await leg('TAKE_PROFIT'))!.qty).toBe(2);
+  });
+
   it('cancels protection left behind by a position that closed', async () => {
     await submit({ qty: 1, side: 'BUY' });
     await engine.setProtection(fixture.accountId, fixture.userId, 'NQ', { targetTicks: 20_020 * 4 });

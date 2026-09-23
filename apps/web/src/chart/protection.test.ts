@@ -101,6 +101,21 @@ describe('estimatePnlMicros', () => {
   it('gives nothing for a flat position', () => {
     expect(estimatePnlMicros(position(0), 20_010, TICK, TICK_VALUE)).toBeNull();
   });
+
+  it('D-14: a partial protective qty values only what it protects, not the whole position', () => {
+    // Position scaled in to 3, but a capped bracket child still protects only 1.
+    const scaledIn = position(3);
+    const wholePosition = estimatePnlMicros(scaledIn, 20_010, TICK, TICK_VALUE)!; // qty 3
+    const capped = estimatePnlMicros(scaledIn, 20_010, TICK, TICK_VALUE, 1)!; // covers 1
+    // The honest value is 1/3 of the whole-position value — no overstatement.
+    expect(capped).toBe(wholePosition / 3);
+    // A leg that grew to the full position matches the whole-position value.
+    expect(estimatePnlMicros(scaledIn, 20_010, TICK, TICK_VALUE, 3)).toBe(wholePosition);
+  });
+
+  it('D-14: a zero or negative protected qty is nothing, not a fabricated number', () => {
+    expect(estimatePnlMicros(position(2), 20_010, TICK, TICK_VALUE, 0)).toBeNull();
+  });
 });
 
 describe('bracketLevels', () => {

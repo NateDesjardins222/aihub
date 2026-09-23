@@ -2235,6 +2235,16 @@ export class TradingEngine {
         ),
       );
 
+    // Is this the only bracketed, filled entry for the instrument? If so its
+    // legs may grow to cover the WHOLE position — including contracts added by a
+    // later, unbracketed scale-in — because nothing else protects them. With
+    // several bracketed entries each leg stays capped at its own entry's fill,
+    // so their protection sums to the position rather than multiplying it (no
+    // over-exit). This resolves the scale-in asymmetry where a standalone SL
+    // grew but a bracket-child TP stayed sized to the original entry (D-14/D-15).
+    const bracketedEntries = entryRows.filter((r) => readBracket(r) && toEngineOrder(r).filledQty > 0);
+    const soleBracket = bracketedEntries.length === 1;
+
     for (const row of entryRows) {
       const offsets = readBracket(row);
       if (!offsets) continue;
@@ -2280,10 +2290,12 @@ export class TradingEngine {
 
         // A leg's quantity covers what it has already done plus what is still
         // open: a stop that filled 1 of 2 reduced the position by that 1, so it
-        // still needs its remaining 1 to close what is left. Capped by the
-        // entry, because a bracket protects the position its entry opened and
-        // not whatever else the trader has stacked on top of it.
-        const target = Math.min(entry.filledQty, child.filledQty + protectQty);
+        // still needs its remaining 1 to close what is left. The sole bracket
+        // grows to the whole live position (so a scale-in is protected too);
+        // with several brackets each stays capped at its own entry's fill so
+        // they sum to the position instead of over-protecting it.
+        const cap = soleBracket ? Number.POSITIVE_INFINITY : entry.filledQty;
+        const target = Math.min(cap, child.filledQty + protectQty);
 
         if (target <= child.filledQty) {
           await this.db

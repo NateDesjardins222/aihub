@@ -77,6 +77,12 @@ interface Marker {
     | null;
   /** Open P&L for the position; estimated P&L at the level for a protective leg. */
   readonly pnlMicros: number | null;
+  /**
+   * Contracts this protective leg actually covers (null for non-protective
+   * markers → the P&L label uses the whole position). Lets the chart show the
+   * true value of an order that protects only part of the position.
+   */
+  readonly protectedQty: number | null;
   readonly priority: number;
 }
 
@@ -388,6 +394,7 @@ export function PriceMarkers({
         drag: null,
         cancel: null,
         pnlMicros: position.unrealizedPnlMicros,
+        protectedQty: null,
         priority: 3,
       });
     }
@@ -401,10 +408,18 @@ export function PriceMarkers({
           : order.bracketRole === 'TAKE_PROFIT'
             ? 'TARGET'
             : 'ORDER';
+      // The value the order will REALLY deliver: it can only close up to the
+      // position it protects, so cap the quantity at the live position. A
+      // bracket child that did not grow on a scale-in thus shows the value for
+      // the contracts it actually covers, not the full position (D-14).
+      const protectedQty =
+        role === 'ORDER' || !position
+          ? null
+          : Math.min(order.remainingQty, Math.abs(position.qty));
       const estimated =
         role === 'ORDER' || !position
           ? null
-          : estimatePnlMicros(position, level.price, tickSize, tickValueMicros);
+          : estimatePnlMicros(position, level.price, tickSize, tickValueMicros, protectedQty ?? undefined);
       out.push({
         key: order.id,
         role,
@@ -412,6 +427,7 @@ export function PriceMarkers({
         side: order.side,
         label: role === 'STOP' ? 'SL' : role === 'TARGET' ? 'TP' : entryLabel(order),
         qty: order.remainingQty,
+        protectedQty,
         drag: {
           kind: 'ORDER',
           orderId: order.id,
@@ -437,6 +453,7 @@ export function PriceMarkers({
         drag: null,
         cancel: null,
         pnlMicros: null,
+        protectedQty: null,
         priority: 0,
       });
       out.push({
@@ -449,6 +466,7 @@ export function PriceMarkers({
         drag: null,
         cancel: null,
         pnlMicros: null,
+        protectedQty: null,
         priority: 0,
       });
     }
@@ -748,11 +766,17 @@ export function PriceMarkers({
         const pnlLabel = node.querySelector<HTMLElement>('[data-pnl-label]');
         if ((ticksLabel || pnlLabel) && entry !== null && live.position) {
           const ticks = Math.round(Math.abs(info.price - entry) / live.tickSize);
+          // A protective node carries the contracts it actually covers; use it
+          // so the value never overstates a partial (capped) protective order
+          // to the full position (D-14). Non-protective nodes have no attribute
+          // and fall back to the whole position.
+          const pq = Number(node.dataset['protectedQty']);
           const money = estimatePnlMicros(
             live.position,
             info.price,
             live.tickSize,
             live.tickValueMicros,
+            Number.isFinite(pq) && node.dataset['protectedQty'] !== '' ? pq : undefined,
           );
           // Null means the position has no average entry yet, so the level is
           // not worth anything definite. Blank beats a confident zero.
@@ -857,6 +881,7 @@ export function PriceMarkers({
               .join(' ')}
             data-price={marker.price}
             data-priority={marker.priority}
+            data-protected-qty={marker.protectedQty ?? ''}
             data-marker={marker.role.toLowerCase()}
             ref={(node) => register(marker.key, node)}
           >
