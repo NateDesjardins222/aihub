@@ -759,8 +759,33 @@ export function hitTest(
         : null;
     }
 
-    case 'RECTANGLE':
     case 'FIB_RETRACEMENT': {
+      if (points.length < 2) return null;
+      const [a, b] = points as [Point, Point];
+      // Honour the extension options so the Fib is grabbable across the whole
+      // visible width, including levels projected past the anchors (D-06). The
+      // lines a trader can SEE are the lines they can select.
+      const extendLeft = drawing.options?.['extendLeft'] === true;
+      const extendRight = drawing.options?.['extendRight'] === true;
+      const left = extendLeft ? 0 : Math.min(a.x, b.x);
+      const right = extendRight ? projection.width : Math.max(a.x, b.x);
+      if (cursor.x < left - HIT_TOLERANCE || cursor.x > right + HIT_TOLERANCE) return null;
+      // Grabbable anywhere between the outer levels…
+      const top = Math.min(a.y, b.y);
+      const bottom = Math.max(a.y, b.y);
+      if (cursor.y >= top - HIT_TOLERANCE && cursor.y <= bottom + HIT_TOLERANCE) {
+        return { kind: 'BODY' };
+      }
+      // …and on any visible level line, even one drawn outside the anchor band.
+      for (const level of fibLevels(drawing)) {
+        if (!level.visible) continue;
+        const y = projection.priceToY(level.price);
+        if (y !== null && Math.abs(cursor.y - y) <= HIT_TOLERANCE) return { kind: 'BODY' };
+      }
+      return null;
+    }
+
+    case 'RECTANGLE': {
       if (points.length < 2) return null;
       const [a, b] = points as [Point, Point];
       const left = Math.min(a.x, b.x);
@@ -772,7 +797,7 @@ export function hitTest(
       if (!insideX || !insideY) return null;
       // A filled shape is grabbable anywhere inside; an unfilled one only on
       // its edges, so it does not swallow clicks meant for the chart.
-      if (drawing.kind === 'FIB_RETRACEMENT' || drawing.style.filled) return { kind: 'BODY' };
+      if (drawing.style.filled) return { kind: 'BODY' };
       const onEdge =
         Math.abs(cursor.x - left) <= HIT_TOLERANCE ||
         Math.abs(cursor.x - right) <= HIT_TOLERANCE ||

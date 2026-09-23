@@ -170,6 +170,19 @@ describe('hitTest', () => {
     expect(hitTest(filled, projection, { x: 50, y: 50 }, false)).toEqual({ kind: 'BODY' });
   });
 
+  it('D-06: an extended Fib is grabbable across its projected width', () => {
+    const anchors: Array<[number, number]> = [
+      [0, 100],
+      [100_000, 0],
+    ];
+    // Beyond the anchors (x=300 → time 300_000), a non-extended Fib is nothing.
+    const plain = drawing('FIB_RETRACEMENT', anchors);
+    expect(hitTest(plain, projection, { x: 300, y: 50 }, false)).toBeNull();
+    // With extendRight the visible band reaches the plot edge and is grabbable.
+    const extended = drawing('FIB_RETRACEMENT', anchors, { options: { extendRight: true } });
+    expect(hitTest(extended, projection, { x: 300, y: 50 }, false)).toEqual({ kind: 'BODY' });
+  });
+
   it('D-07: selects text anywhere over its visible body, aligned to the render', () => {
     // Anchor projects to (0,0); text is drawn left-aligned to the RIGHT of it.
     const t = drawing('TEXT', [[0, 100]], {
