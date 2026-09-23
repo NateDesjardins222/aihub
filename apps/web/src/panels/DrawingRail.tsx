@@ -116,7 +116,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         title="Cursor"
         aria-label="Cursor"
       >
-        <Icon name="cursor" />
+        <Icon name="cursor" size={16} />
       </button>
 
       <button
@@ -137,7 +137,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         aria-pressed={sticky}
         data-testid="tool-sticky"
       >
-        <Icon name={sticky ? 'lock' : 'unlock'} />
+        <Icon name={sticky ? "lock" : "unlock"} size={16} />
       </button>
 
       <div className="rail-sep" />
@@ -159,7 +159,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
           aria-label={KIND_LABEL[kind]}
           data-rail="tool"
         >
-          <Icon name={TOOL_ICON[kind]} />
+          <Icon name={TOOL_ICON[kind]} size={16} />
         </button>
       ))}
 
@@ -220,7 +220,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         aria-label="Magnet"
         data-magnet={magnet}
       >
-        <Icon name="magnet" />
+        <Icon name="magnet" size={16} />
       </button>
 
       <button
@@ -289,7 +289,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         title="Undo"
         aria-label="Undo"
       >
-        <Icon name="undo" />
+        <Icon name="undo" size={15} />
       </button>
       <button
         className="rail-btn"
@@ -298,7 +298,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
         title="Redo"
         aria-label="Redo"
       >
-        <Icon name="redo" />
+        <Icon name="redo" size={15} />
       </button>
 
       <div className="rail-grow" />

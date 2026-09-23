@@ -17,6 +17,7 @@ import {
   positionMetrics,
   positionReadout,
   project,
+  TEXT_LINE_HEIGHT,
   type Drawing,
   type Point,
   type Projection,
@@ -272,7 +273,12 @@ export function drawDrawing(
       ctx.setLineDash([]);
       ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
-      ctx.fillText(drawing.text || 'Text', a.x, a.y);
+      ctx.textAlign = 'left';
+      // Multiline: one line per newline, stepping down by the same line height
+      // the hit test uses so the clickable region matches the visible text.
+      const lines = (drawing.text || 'Text').split('\n');
+      const lineHeight = drawing.style.fontSize * TEXT_LINE_HEIGHT;
+      lines.forEach((lineText, index) => ctx.fillText(lineText, a.x, a.y + index * lineHeight));
       break;
     }
     case 'MEASURE': {

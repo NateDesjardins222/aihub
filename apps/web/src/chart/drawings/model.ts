@@ -679,6 +679,40 @@ export type HitTarget =
   | { readonly kind: 'HANDLE'; readonly handle: Handle };
 
 /**
+ * The screen rectangle a TEXT drawing actually occupies.
+ *
+ * It must match what is PAINTED (paint.ts), or a click on the visible text
+ * misses (D-07): the text is left-aligned at the anchor (textAlign 'start') and
+ * the block is centred vertically on the anchor's first line (middle baseline).
+ * Multiline text (split on newlines) is as tall as its lines and as wide as its
+ * widest line. Width is estimated from an average glyph advance because the pure
+ * model has no canvas to measure with; it is deliberately a little generous and
+ * padded, so the whole visible body is grabbable and never a two-pixel target.
+ */
+export const TEXT_LINE_HEIGHT = 1.25;
+const TEXT_AVG_GLYPH = 0.55; // advance width as a fraction of the font size
+const TEXT_HIT_PADDING = 4;
+
+export function textScreenBounds(
+  drawing: Drawing,
+  anchor: Point,
+): { left: number; top: number; right: number; bottom: number } {
+  const lines = (drawing.text || 'Text').split('\n');
+  const fontSize = drawing.style.fontSize;
+  const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
+  const width = Math.max(16, longest * fontSize * TEXT_AVG_GLYPH);
+  const lineHeight = fontSize * TEXT_LINE_HEIGHT;
+  const height = lines.length * lineHeight;
+  const top = anchor.y - lineHeight / 2; // first line's middle baseline sits on the anchor
+  return {
+    left: anchor.x - TEXT_HIT_PADDING,
+    right: anchor.x + width + TEXT_HIT_PADDING,
+    top: top - TEXT_HIT_PADDING,
+    bottom: top + height + TEXT_HIT_PADDING,
+  };
+}
+
+/**
  * What, if anything, is under the cursor.
  *
  * Handles win over bodies, so grabbing an endpoint of a line moves that
@@ -717,10 +751,10 @@ export function hitTest(
       return Math.abs(cursor.x - points[0]!.x) <= HIT_TOLERANCE ? { kind: 'BODY' } : null;
 
     case 'TEXT': {
-      const p = points[0]!;
-      const halfWidth = Math.max(16, drawing.text.length * drawing.style.fontSize * 0.32);
-      const halfHeight = drawing.style.fontSize;
-      return Math.abs(cursor.x - p.x) <= halfWidth && Math.abs(cursor.y - p.y) <= halfHeight
+      // The ENTIRE rendered text region is grabbable, aligned to what is
+      // painted (left-aligned, multiline-aware), with a little padding (D-07).
+      const b = textScreenBounds(drawing, points[0]!);
+      return cursor.x >= b.left && cursor.x <= b.right && cursor.y >= b.top && cursor.y <= b.bottom
         ? { kind: 'BODY' }
         : null;
     }

@@ -25,6 +25,7 @@ import {
   positionAnchors,
   positionMetrics,
   translateByBars,
+  textScreenBounds,
   type Drawing,
   type DrawingKind,
   type Projection,
@@ -167,6 +168,42 @@ describe('hitTest', () => {
       { style: { ...DEFAULT_STYLE, filled: true } },
     );
     expect(hitTest(filled, projection, { x: 50, y: 50 }, false)).toEqual({ kind: 'BODY' });
+  });
+
+  it('D-07: selects text anywhere over its visible body, aligned to the render', () => {
+    // Anchor projects to (0,0); text is drawn left-aligned to the RIGHT of it.
+    const t = drawing('TEXT', [[0, 100]], {
+      text: 'Hello world',
+      style: { ...DEFAULT_STYLE, fontSize: 20 },
+    });
+    // A click over the visible text (to the right of the anchor) selects it.
+    expect(hitTest(t, projection, { x: 40, y: 0 }, false)).toEqual({ kind: 'BODY' });
+    expect(hitTest(t, projection, { x: 100, y: 6 }, false)).toEqual({ kind: 'BODY' });
+    // A click far LEFT of the anchor — where the old centered hitbox lived but
+    // no text is painted — must NOT select it.
+    expect(hitTest(t, projection, { x: -60, y: 0 }, false)).toBeNull();
+    // Nor far below the single line.
+    expect(hitTest(t, projection, { x: 40, y: 80 }, false)).toBeNull();
+  });
+
+  it('D-07: a multiline text is as tall as its lines and as wide as its widest', () => {
+    const one = textScreenBounds(
+      drawing('TEXT', [[0, 100]], { text: 'a', style: { ...DEFAULT_STYLE, fontSize: 20 } }),
+      { x: 0, y: 0 },
+    );
+    const three = textScreenBounds(
+      drawing('TEXT', [[0, 100]], { text: 'a\nbb\nccc', style: { ...DEFAULT_STYLE, fontSize: 20 } }),
+      { x: 0, y: 0 },
+    );
+    // Three lines are ~3x taller than one, and the widest line sets the width.
+    expect(three.bottom - three.top).toBeGreaterThan((one.bottom - one.top) * 2.5);
+    expect(three.right).toBeGreaterThan(one.right);
+    // A longer single line is wider than a short one.
+    const long = textScreenBounds(
+      drawing('TEXT', [[0, 100]], { text: 'a very long label', style: { ...DEFAULT_STYLE, fontSize: 20 } }),
+      { x: 0, y: 0 },
+    );
+    expect(long.right).toBeGreaterThan(one.right);
   });
 
   it('gives a rectangle four corners and four edges, each with its own job', () => {
