@@ -152,11 +152,11 @@ const POSITION_OPTIONS: ToolOptions = {
   profitColor: '#2ec4a6',
   lossColor: '#f2544b',
   zoneOpacity: 0.14,
-  showTicks: true,
-  // Money is opt-in: a planning drawing's first questions are "how far" and
-  // "how many times my risk" (points and R). Dollars follow only when the
-  // trader turns them on, so the default overlay stays clean rather than
-  // stacking a $ figure the plan did not ask for.
+  // The default readout is R:R and points, nothing else. A planning drawing's
+  // first questions are "how far" and "how many times my risk" — ticks, money
+  // and price are detail the trader turns on, not debug output shown by
+  // default. Ticks off, money off, R:R on.
+  showTicks: false,
   showMoney: false,
   showRatio: true,
 };

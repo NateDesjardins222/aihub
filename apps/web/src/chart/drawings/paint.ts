@@ -568,30 +568,30 @@ function drawPosition(
   ctx.stroke();
 
   /*
-   * A side badge on the entry — the one label shown AT REST.
+   * The one thing shown AT REST is the R:R — no LONG/SHORT pill.
    *
-   * The two tools were "almost indistinguishable" because at a glance a green
-   * zone above and a red zone below reads the same whichever way the trade goes.
-   * A small LONG/SHORT pill in the direction's colour, sitting on the entry
-   * line, makes the direction unmistakable without adding any of the numbers the
-   * milestone is trying to remove.
+   * The direction is already in the geometry: the green (profit) zone sits above
+   * the entry for a long and below it for a short, so a coloured text badge only
+   * repeated what the shape says. What a glance at a *planned* trade actually
+   * wants is its quality — reward against risk — so at rest the tool carries just
+   * that, small and quiet on the entry line, and nothing else. The full points
+   * readout still comes back on hover/selection below.
    */
-  const long = drawing.kind === 'LONG_POSITION';
-  const badge = long ? 'LONG' : 'SHORT';
-  const badgeColor = long ? profitColor : lossColor;
-  ctx.save();
-  ctx.setLineDash([]);
-  ctx.font = labelFont(10, 700);
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  const badgeW = ctx.measureText(badge).width + 12;
-  ctx.fillStyle = withAlpha(badgeColor, 0.95);
-  ctx.beginPath();
-  ctx.roundRect(left, Math.round(entry.y) - 8, badgeW, 16, 3);
-  ctx.fill();
-  ctx.fillStyle = '#07090d';
-  ctx.fillText(badge, left + 6, Math.round(entry.y) + 1);
-  ctx.restore();
+  if (metrics.ratio !== null) {
+    const ratioText = `${metrics.ratio.toFixed(2)}R`;
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.font = labelFont(10, 700);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const w = ctx.measureText(ratioText).width;
+    // A little of the chart's own background behind it, so it reads over wicks.
+    ctx.fillStyle = 'rgba(7, 9, 13, 0.62)';
+    ctx.fillRect(left + 3, Math.round(entry.y) - 8, w + 6, 16);
+    ctx.fillStyle = withAlpha(drawing.style.color, 0.95);
+    ctx.fillText(ratioText, left + 6, Math.round(entry.y) + 1);
+    ctx.restore();
+  }
 
   /*
    * --- the readout, WHEN IT IS ASKED FOR ---------------------------------
@@ -618,8 +618,11 @@ function drawPosition(
     const readout = positionReadout(metrics, {
       pricePrecision,
       tickValue: market.tickValue,
-      showTicks: option(drawing, 'showTicks', true),
-      showMoney: option(drawing, 'showMoney', true),
+      // Minimal by default: points and R:R. Ticks and money are opt-in — a
+      // planning tool answers "how far, how many times my risk" first; the rest
+      // is detail a trader turns on, not debug output shown by default.
+      showTicks: option(drawing, 'showTicks', false),
+      showMoney: option(drawing, 'showMoney', false),
       showRatio: option(drawing, 'showRatio', true),
     });
 

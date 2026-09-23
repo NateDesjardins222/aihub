@@ -20,8 +20,8 @@ product failure · P2 major UX/visual defect · P3 polish.
 | Q-02 | P0 | Risk | "Trading locked for the day" while the position stayed OPEN | ROOT_CAUSED |
 | Q-03 | P1 | Market motion | Price updates feel dead/slow | (measuring) |
 | Q-04 | P1 | Candles | Candles disagree with the reference platform | (parity audit) |
-| Q-05 | P2 | Position tool | LONG/SHORT badges look bad — remove them | (open) |
-| Q-06 | P2 | Position tool | Planning labels look like debug output | (open) |
+| Q-05 | P2 | Position tool | LONG/SHORT badges look bad — remove them | FIXED |
+| Q-06 | P2 | Position tool | Planning labels look like debug output | FIXED |
 | Q-07 | P2 | Position tool | No price-travel visualization after creation | (open) |
 | Q-08 | P2 | Drawing menu | Tool panel too cramped | (open) |
 | Q-09 | P2 | Drawing tools | Most requested TradingView tools still missing | (open) |
