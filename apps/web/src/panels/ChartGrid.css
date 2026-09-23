@@ -69,3 +69,57 @@
   box-shadow: inset 0 0 0 1px var(--accent);
   z-index: 6;
 }
+
+/*
+ * The draggable division between charts.
+ *
+ * A thin invisible hit area straddling the 1px gap, so the line still reads as
+ * a line but has a comfortable target. It sits above the panes (z-index) so a
+ * grab lands on the divider and never on the chart beneath, and it translates
+ * itself back by half its thickness so its centre is on the boundary.
+ */
+.grid-divider {
+  position: absolute;
+  z-index: 7;
+  background: transparent;
+  touch-action: none;
+}
+
+.grid-divider-col {
+  width: 9px;
+  transform: translateX(-4.5px);
+  cursor: col-resize;
+}
+
+.grid-divider-row {
+  height: 9px;
+  transform: translateY(-4.5px);
+  cursor: row-resize;
+}
+
+/* A subtle accent on hover/drag, centred on the boundary. */
+.grid-divider::after {
+  content: '';
+  position: absolute;
+  background: transparent;
+  transition: background 90ms ease;
+}
+
+.grid-divider-col::after {
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+}
+
+.grid-divider-row::after {
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 1px;
+}
+
+.grid-divider:hover::after,
+.grid-divider:active::after {
+  background: var(--accent);
+}

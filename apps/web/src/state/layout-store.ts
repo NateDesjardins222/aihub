@@ -75,6 +75,8 @@ export interface StoredLayout {
   readonly panes?: unknown;
   readonly activePaneId?: unknown;
   readonly sync?: unknown;
+  readonly colSplit?: unknown;
+  readonly rowSplit?: unknown;
 }
 
 interface LayoutStore {
@@ -85,11 +87,22 @@ interface LayoutStore {
   /** One pane filling the layout, while the others keep their settings. */
   maximizedPaneId: string | null;
   sync: SyncOptions;
+  /**
+   * How the multi-chart grid is divided, as the fraction of width given to the
+   * LEFT column and the fraction of height given to the TOP row. A trader drags
+   * the divider between charts; the proportion is theirs and persists with the
+   * workspace, so 50/50 → 65/35 survives a reload. Clamped away from the edges
+   * so a pane can never be dragged to nothing.
+   */
+  colSplit: number;
+  rowSplit: number;
 
   setLayout: (layout: LayoutKind) => void;
   setActivePane: (id: string) => void;
   maximizePane: (id: string | null) => void;
   setSync: (patch: Partial<SyncOptions>) => void;
+  setColSplit: (fraction: number) => void;
+  setRowSplit: (fraction: number) => void;
 
   setPaneSymbol: (id: string, symbol: string | null) => void;
   setPaneTimeframe: (id: string, timeframe: string) => void;
@@ -159,6 +172,8 @@ export const useLayout = create<LayoutStore>((set, get) => ({
   activePaneId: 'p1',
   maximizedPaneId: null,
   sync: { crosshair: false, time: false, symbol: false, interval: false },
+  colSplit: 0.5,
+  rowSplit: 0.5,
 
   setLayout(layout) {
     const count = PANE_COUNT[layout];
@@ -184,6 +199,14 @@ export const useLayout = create<LayoutStore>((set, get) => ({
 
   setSync(patch) {
     set({ sync: { ...get().sync, ...patch } });
+  },
+
+  setColSplit(fraction) {
+    set({ colSplit: clampSplit(fraction) });
+  },
+
+  setRowSplit(fraction) {
+    set({ rowSplit: clampSplit(fraction) });
   },
 
   setPaneSymbol(id, symbol) {
@@ -334,6 +357,8 @@ export const useLayout = create<LayoutStore>((set, get) => ({
       panes: state.panes,
       activePaneId: state.activePaneId,
       sync: state.sync,
+      colSplit: state.colSplit,
+      rowSplit: state.rowSplit,
     };
   },
 
@@ -366,9 +391,21 @@ export const useLayout = create<LayoutStore>((set, get) => ({
       activePaneId: active,
       maximizedPaneId: null,
       sync: sanitizeSync(stored.sync),
+      colSplit: clampSplit(typeof stored.colSplit === 'number' ? stored.colSplit : 0.5),
+      rowSplit: clampSplit(typeof stored.rowSplit === 'number' ? stored.rowSplit : 0.5),
     });
   },
 }));
+
+/**
+ * Keep a divider away from the edges so a pane can never be dragged to nothing
+ * (which would leave a chart with no width for its canvas). A corrupt stored
+ * value falls back to an even split.
+ */
+export function clampSplit(fraction: number): number {
+  if (!Number.isFinite(fraction)) return 0.5;
+  return Math.min(0.85, Math.max(0.15, fraction));
+}
 
 function isLayout(value: unknown): value is LayoutKind {
   return typeof value === 'string' && value in PANE_COUNT;
