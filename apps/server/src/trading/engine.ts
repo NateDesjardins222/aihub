@@ -917,8 +917,20 @@ export class TradingEngine {
       .where(and(eq(positionsTable.accountId, accountId), sql`${positionsTable.qty} <> 0`));
     const era = this.market.era();
     return rows
-      .filter((row) => row.marketEra !== null && row.marketEra !== era)
-      .map((row) => ({ symbol: row.symbol, openedAgainst: row.marketEra!, nowServing: era }));
+      .filter(
+        (row) =>
+          // Opened against a different era…
+          (row.marketEra !== null && row.marketEra !== era) ||
+          // …or a row with no provenance at all, which markTicksFor now refuses
+          // to price (the −$45,000 shape). Report it so the UI can say WHY the
+          // figure is a dash rather than leaving it unexplained.
+          (row.marketEra === null && (row.contractCode ?? null) === null),
+      )
+      .map((row) => ({
+        symbol: row.symbol,
+        openedAgainst: row.marketEra ?? 'unknown',
+        nowServing: era,
+      }));
   }
 
   stop(): void {
@@ -2603,14 +2615,20 @@ export class TradingEngine {
    * on a position that had moved five dollars - and, when the recording's
    * prices were higher, a high-water mark the account keeps for ever.
    *
-   * A position stored before this rule existed has no era recorded. It is
-   * marked as before: inventing a reason not to price it would be its own
-   * defect.
+   * A position with NO provenance at all — neither the market era it was opened
+   * against NOR the contract it opened in — cannot be trusted to the current
+   * root feed: that is exactly how a legacy row came to be marked at a wrong
+   * era/contract's price and show a fabricated loss (the −$45,000 shape). Such a
+   * row reads UNKNOWN rather than being priced against whatever the feed happens
+   * to serve now. It is not stuck: flattening it (an order, not a mark) clears
+   * it. Every position opened by this engine records its era on open, so this
+   * only ever catches genuinely pre-provenance rows — never a live trade.
    */
   markTicksFor(
     spec: InstrumentSpec,
     position: { marketEra: string | null; contractCode?: string | null },
   ): number | null {
+    if (position.marketEra === null && (position.contractCode ?? null) === null) return null;
     if (position.marketEra !== null && position.marketEra !== this.market.era()) return null;
     // The open-position contract lock. A position opened in a specific contract
     // is never marked by a different contract's prices. Atlas's live/chart feed
