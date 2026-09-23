@@ -7,8 +7,6 @@ import { ChartGrid } from '../panels/ChartGrid';
 import { OrderTicket } from '../panels/OrderTicket';
 import { ActivityPanel } from '../panels/ActivityPanel';
 import { Drawer } from '../panels/Drawer';
-import { PracticePanel } from '../panels/PracticePanel';
-import { ReplayPanel } from '../panels/ReplayPanel';
 import { JournalPanel } from '../panels/JournalPanel';
 import { SettingsDialog } from '../settings/SettingsDialog';
 import { useWorkspace } from '../state/workspace';
@@ -118,15 +116,6 @@ export function TerminalShell(): JSX.Element {
               ‹
             </button>
           )}
-
-          {surface === 'PRACTICE' ? (
-            <Drawer title="Practice" onClose={() => openSurface(null)} width={460} testId="drawer-practice">
-              <PracticePanel />
-              <div className="drawer-section">
-                <ReplayPanel />
-              </div>
-            </Drawer>
-          ) : null}
 
           {surface === 'JOURNAL' ? (
             <Drawer title="Journal" onClose={() => openSurface(null)} width={640} testId="drawer-journal">

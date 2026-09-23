@@ -17,7 +17,7 @@ import type { Timeframe } from '@atlas/contracts';
  * There is no price ladder: this feed carries no order book, and a ladder
  * drawn around a last price would be a picture of depth that does not exist.
  */
-export type Surface = 'PRACTICE' | 'JOURNAL' | null;
+export type Surface = 'JOURNAL' | null;
 
 /** Which section of the settings dialog is showing. */
 export type SettingsTab =
@@ -30,8 +30,7 @@ export type SettingsTab =
   | 'TRADING'
   | 'EXECUTION'
   | 'SIMULATION'
-  | 'RISK'
-  | 'PRACTICE_VISIBILITY';
+  | 'RISK';
 
 export const ALL_TIMEFRAMES: readonly Timeframe[] = [
   '1m',

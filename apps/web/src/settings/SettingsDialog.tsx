@@ -19,7 +19,6 @@ import { DEFAULT_APPEARANCE } from '../chart/appearance';
 import { indicatorDef } from '../chart/indicators/registry';
 import { RiskPanel } from '../panels/RiskPanel';
 import { EnvironmentPanel } from '../panels/EnvironmentPanel';
-import { TrainingSettings } from '../panels/TrainingSettings';
 import { Check, Choice, Colour, Group, Num, Pick, Row, Slider } from './Controls';
 import { PriceMotionSettings } from './PriceMotion';
 import { ThemePicker } from './ThemePicker';
@@ -37,7 +36,6 @@ const TABS: ReadonlyArray<{ id: SettingsTab; label: string; group: string }> = [
   { id: 'EXECUTION', label: 'Execution defaults', group: 'Terminal' },
   { id: 'SIMULATION', label: 'Simulation', group: 'Terminal' },
   { id: 'RISK', label: 'Risk and programme', group: 'Terminal' },
-  { id: 'PRACTICE_VISIBILITY', label: 'Practice visibility', group: 'Terminal' },
 ];
 
 const ZONES: ReadonlyArray<{ id: string; label: string }> = [
@@ -753,7 +751,6 @@ export function SettingsDialog(): JSX.Element | null {
 
             {tab === 'SIMULATION' ? <EnvironmentPanel /> : null}
             {tab === 'RISK' ? <RiskPanel /> : null}
-            {tab === 'PRACTICE_VISIBILITY' ? <TrainingSettings /> : null}
           </div>
         </div>
       </div>

@@ -21,7 +21,7 @@ trace to a provider limitation rather than an Atlas bug.
 | D-07 | Text drawing | Hitbox tiny; only a small part selects the text | VERIFIED (unit; browser pass pending) |
 | D-08 | Drawing toolbar | Left toolbar too small (width/icons/targets) | FIXED (browser pass pending) |
 | D-09 | Settings | Location/design; move to left app rail, declutter | investigating |
-| D-10 | Practice | Remove user-facing Practice section (keep sim engine) | investigating |
+| D-10 | Practice | Remove user-facing Practice section (keep sim engine) | FIXED (browser pass pending) |
 | D-11 | Context menu | No professional chart context menu | investigating |
 | D-12 | Position marker | Marker visual/interaction unacceptable (awaiting screenshot for redesign) | BLOCKED (screenshot) |
 | D-13 | **P0 P&L** | Phantom ~+$8,000 P&L on load/restart, never earned | investigating |
