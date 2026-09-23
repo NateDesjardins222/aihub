@@ -110,7 +110,13 @@ requested this milestone.
 
 ## 14. Unit totals
 - Web unit: **247 passed (18 files)**.
-- Full workspace `pnpm -s test`: <!--UNIT--> (filled in the closing commit).
+- Full workspace `pnpm -s test`: **926–927 / 927** — one nondeterministic server
+  test (`apps/server/src/trading/adversarial.test.ts` › "a drawdown breach during
+  a partial entry closes exactly what filled") failed once then **passed on
+  retry (10/10)**. It is a pre-existing timing-sensitive adversarial test,
+  unrelated to this milestone: `git diff --stat 26d176c..HEAD -- apps/server
+  packages` is empty — the server and core packages were not touched. Every
+  drawing unit test passes (94/94).
 - Workspace typecheck: clean (web, server, core).
 
 ## 15. Browser totals
