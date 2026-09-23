@@ -41,8 +41,34 @@ regression → manual/browser verification.
 ### D-02 — Symbol search Enter selects the wrong (old) symbol
 _(pending investigation write-up)_
 
-### D-13 — P0 phantom +$8,000 P&L
-_(pending investigation write-up)_
+### D-13 — P0 phantom +$8,000 P&L — ROOT_CAUSED, client fixes VERIFIED
+
+**Reproduction / root cause (two client fabrication paths):**
+1. **Stale-retained UP&L (primary).** The valuation WebSocket-frame merge in
+   `trading/store.ts` coalesced nullable P&L with `??`
+   (`valuation.openPnlMicros ?? state.pnl.openPnlMicros`). When the server sends
+   `openPnlMicros: null` (a position can no longer be priced), the client
+   **discarded the authoritative null and kept the last good number** — a phantom
+   P&L the account no longer has — and never refreshed `marked`/`unmarkable`, so
+   the "NOT PRICED" badge stayed suppressed. Any earlier UP&L (e.g. a bootstrap
+   mark) thus persisted on screen as a number the user "never made".
+2. **Fabricated open P&L in the blotter.** `ActivityPanel` used
+   `live?.openPnlMicros ?? 0` and `?? a.equityMicros`, and the accounts-list
+   endpoint returns `openPnlMicros: 0` / `equityMicros = balance` — fabricated
+   zeros/derived equity for accounts with no live mark.
+
+**Fix (client):** `trading/pnl-merge.ts` `mergePnlFrame` applies a frame field
+even when null (unknown stays unknown), keeps a prior value only when the frame
+omits the field, and refreshes `marked`/`unmarkable`. `ActivityPanel` shows "—"
+for equity/open P&L without a live valuation instead of fabricating.
+
+**Regression:** `trading/pnl-merge.test.ts` (4) — an authoritative null clears
+the stale +$8,000 and un-suppresses the badge; a real number replaces; an
+omitted field is retained; zero is applied as zero.
+
+**Verification:** web suite 230/230; typecheck clean. Server-side reconciliation
+(candidate A: marking an open position at a stale bootstrap price on restart) is
+tracked next — a deterministic reload/reconcile test on the engine valuation.
 
 ### D-14 — P0 scale-in stale TP value
 _(pending investigation write-up)_

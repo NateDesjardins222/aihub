@@ -342,9 +342,12 @@ function AccountsTable(): JSX.Element {
         {accounts.map((a) => {
           const live = pnl && pnl.accountId === a.id ? pnl : null;
           const balance = live?.balanceMicros ?? a.balanceMicros;
-          const equity = live?.equityMicros ?? a.equityMicros;
+          // Equity and open P&L need live marks. Without a live valuation for
+          // THIS account they are unknown, not zero and not "equity == balance"
+          // (D-13: never fabricate P&L; unknown stays unknown → "—").
+          const equity = live ? live.equityMicros : null;
+          const openPnl = live ? live.openPnlMicros : null;
           const dayPnl = live?.dayPnlMicros ?? a.dayPnlMicros;
-          const openPnl = live?.openPnlMicros ?? 0;
           return (
             <tr
               key={a.id}

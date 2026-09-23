@@ -13,6 +13,7 @@ import { marketStream } from '../market/stream';
 import { execLatency } from './exec-latency';
 import { tradingAudio } from '../audio/trading-audio';
 import { EMPTY_SNAPSHOT, snapshotOf, soundsFor } from '../audio/execution-events';
+import { mergePnlFrame } from './pnl-merge';
 import {
   tradingApi,
   type ApiAccountPnl,
@@ -141,13 +142,14 @@ export const useTrading = create<TradingState>((set, get) => ({
           accountId?: string;
           at?: number;
           balanceMicros?: number;
-          equityMicros?: number;
-          openPnlMicros?: number;
-          dayPnlMicros?: number;
-          remainingDrawdownMicros?: number;
+          equityMicros?: number | null;
+          openPnlMicros?: number | null;
+          dayPnlMicros?: number | null;
+          remainingDrawdownMicros?: number | null;
           openContracts?: number;
           rules?: ApiRuleStatus;
-          positions?: Array<{ symbol: string; unrealizedPnlMicros: number; markPrice: number | null }>;
+          unmarkable?: ApiAccountPnl['unmarkable'];
+          positions?: Array<{ symbol: string; unrealizedPnlMicros: number | null; markPrice: number | null }>;
         } | null;
         // Drop a frame for any account other than the one on screen NOW - not
         // merely the account this subscription was opened for. After an account
@@ -171,18 +173,9 @@ export const useTrading = create<TradingState>((set, get) => ({
 
         set((state) => ({
           rules: valuation.rules ?? state.rules,
-          pnl: state.pnl
-            ? {
-                ...state.pnl,
-                balanceMicros: valuation.balanceMicros ?? state.pnl.balanceMicros,
-                equityMicros: valuation.equityMicros ?? state.pnl.equityMicros,
-                openPnlMicros: valuation.openPnlMicros ?? state.pnl.openPnlMicros,
-                dayPnlMicros: valuation.dayPnlMicros ?? state.pnl.dayPnlMicros,
-                remainingDrawdownMicros:
-                  valuation.remainingDrawdownMicros ?? state.pnl.remainingDrawdownMicros,
-                openContracts: valuation.openContracts ?? state.pnl.openContracts,
-              }
-            : state.pnl,
+          // Null-honest merge (D-13): an authoritative null propagates so the
+          // terminal never shows a phantom/stale P&L; see trading/pnl-merge.ts.
+          pnl: state.pnl ? mergePnlFrame(state.pnl, valuation) : state.pnl,
           // Mark-driven fields only. Quantity, average entry and protective
           // order links come from the authoritative read, not from here.
           positions: state.positions.map((p) => {
