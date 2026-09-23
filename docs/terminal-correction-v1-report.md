@@ -210,7 +210,18 @@ regression):
 
 ## 4. Test totals
 
-<!--TOTALS-->
+- **Unit / server regression:** `pnpm -s test` → **927 passed (927)**, 67 files,
+  0 failures (Vitest isolate, `fileParallelism: false`, against PostgreSQL
+  `atlas_test`).
+- **Typecheck:** `pnpm -r typecheck` clean across the workspace.
+- **Real-browser acceptance:** **128 passed (128)** — tc-v1 17, multi-chart 25,
+  pane-resize 14, fib-levels 16, remaining-tools 56 — Chromium against the real
+  server + PostgreSQL, market OPEN.
+
+New tests added this milestone: `symbol-search.test.ts` (9), `pnl-merge.test.ts`
+(4), `layout-split.test.ts` (6), `measure.test.ts` (6), `candle-integrity.test.ts`
+(8), plus D-06/D-07 `model.test.ts` cases, the `brackets.test.ts` scale-in case,
+`protection.test.ts` D-14 cases, and the `tc-v1.spec.mjs` browser suite (17).
 
 ---
 
@@ -238,4 +249,24 @@ regression):
 
 ## 6. Final state
 
-<!--FINAL-->
+- Branch `claude/futures-trading-simulator-v8qefu`, from baseline `f099cad`.
+- Working tree clean; local and remote HEAD equal after the closing push (the
+  exact hash is this branch's tip — see `git log -1`).
+- Unit/server regression 927/927; workspace typecheck clean; browser acceptance
+  128/128; web build clean.
+- Reliability spine untouched (execution engine, account authority, projections,
+  commercial lifecycle, audit, outbox); the simulation/replay engine is
+  preserved behind the removed Practice UI; PostgreSQL remains the only source of
+  financial truth and no P&L is fabricated (unknown stays "—"). Databento and
+  Whop remain PAUSED; no credentials were requested.
+
+### Blocked, and why (carried forward)
+1. D-11 context-menu **final visual** match — needs the TradingView context-menu
+   screenshot (not in context). Functional behaviour complete.
+2. D-12 position-marker **visual redesign** — needs the TradingView
+   position-marker screenshot (not in context). Correctness complete.
+3. D-17 candle provider parity — needs the PAUSED Databento (CME-direct) feed.
+4. Real-browser rewire of the legacy execution suites (`drag-protect`,
+   `execution-*`, `replay-brackets`, `live-indicators`) off their inline
+   Practice-drawer helpers — covered meanwhile by deterministic server/unit
+   regressions.
