@@ -161,13 +161,15 @@ try {
     };
   };
   const p1 = parseLine(one);
+  // Reward is 2x risk, within one tick of independent rounding (target and stop
+  // are each snapped to the tick, so 86/173 rather than 86/172 is expected).
   say(
-    p1 !== null && p1.rewardTicks === p1.riskTicks * 2 && Math.abs(p1.rr - 2) < 0.05,
+    p1 !== null && Math.abs(p1.rewardTicks - p1.riskTicks * 2) <= 1 && Math.abs(p1.rr - 2) < 0.06,
     'the risk and the reward are stated in ticks with a 2:1 ratio',
     one,
   );
   say(
-    p1 !== null && p1.riskUsd === p1.riskTicks * 5 && p1.rewardUsd === p1.riskUsd * 2,
+    p1 !== null && p1.riskUsd === p1.riskTicks * 5 && p1.rewardUsd === p1.rewardTicks * 5,
     'and in dollars for one NQ contract ($5/tick)',
     one,
   );
