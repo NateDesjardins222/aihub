@@ -27,8 +27,8 @@ trace to a provider limitation rather than an Atlas bug.
 | D-13 | **P0 P&L** | Phantom ~+$8,000 P&L on load/restart, never earned | investigating |
 | D-14 | **P0 scale-in** | Scale into position → TP $ value stale, SL updates | VERIFIED (fixed) |
 | D-15 | Scale-in semantics | Protection quantity/value semantics undefined on scale-in | DEFINED + enforced |
-| D-17 | Candles | Candles still visually wrong vs reference | investigating |
-| D-20 | Render/time-scale | Visible bar density may differ (render vs data error) | investigating |
+| D-17 | Candles | Candles still visually wrong vs reference | AUDITED — data/agg/render sound; residual is provider origin (see candle-audit) |
+| D-20 | Render/time-scale | Visible bar density may differ (render vs data error) | AUDITED — render config sound (see candle-audit) |
 
 ## Detail
 
