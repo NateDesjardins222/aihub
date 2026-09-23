@@ -20,10 +20,14 @@
    */
   height: min(800px, 100%);
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
+  /* A softer edge than border-strong: the dialog already reads as a surface
+   * against the scrim, and a heavy outline is one of the borders D-09 asked to
+   * lose. The DM Sans UI font is pinned so Settings belongs to Atlas. */
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
   overflow: hidden;
+  font-family: var(--font-ui, 'DM Sans', system-ui, sans-serif);
 }
 
 .st-head {

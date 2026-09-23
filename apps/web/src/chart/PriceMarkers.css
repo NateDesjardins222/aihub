@@ -65,8 +65,11 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
   white-space: nowrap;
+  font-family: var(--font-ui, 'DM Sans', system-ui, sans-serif);
   font-size: var(--fs-sm);
   line-height: 1;
+  /* Rapidly-changing money/price must not jitter the tag width (D-12/D-29). */
+  font-variant-numeric: tabular-nums;
 }
 
 .pm-tag-drag {

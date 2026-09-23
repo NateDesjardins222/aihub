@@ -20,10 +20,10 @@ trace to a provider limitation rather than an Atlas bug.
 | D-06 | Fibonacci | Interaction feels bad; needs rebuild | IMPROVED (already feature-rich; extend-aware hit; browser tuning pending) |
 | D-07 | Text drawing | Hitbox tiny; only a small part selects the text | VERIFIED (unit; browser pass pending) |
 | D-08 | Drawing toolbar | Left toolbar too small (width/icons/targets) | FIXED (browser pass pending) |
-| D-09 | Settings | Location/design; move to left app rail, declutter | investigating |
+| D-09 | Settings | Location/design; move to left app rail, declutter | DONE (rail access present; DM Sans + lighter edge; deeper polish browser-pending) |
 | D-10 | Practice | Remove user-facing Practice section (keep sim engine) | FIXED (browser pass pending) |
 | D-11 | Context menu | No professional chart context menu | FUNCTIONAL (real actions; visual match to screenshot pending) |
-| D-12 | Position marker | Marker visual/interaction unacceptable (awaiting screenshot for redesign) | BLOCKED (screenshot) |
+| D-12 | Position marker | Marker visual/interaction unacceptable (awaiting screenshot for redesign) | CORRECTNESS DONE (tabular nums, DM Sans, honest protected-qty $); VISUAL REDESIGN BLOCKED (screenshot) |
 | D-13 | **P0 P&L** | Phantom ~+$8,000 P&L on load/restart, never earned | investigating |
 | D-14 | **P0 scale-in** | Scale into position → TP $ value stale, SL updates | VERIFIED (fixed) |
 | D-15 | Scale-in semantics | Protection quantity/value semantics undefined on scale-in | DEFINED + enforced |
