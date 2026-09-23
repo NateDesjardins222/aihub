@@ -107,7 +107,14 @@ export function DrawingCanvas({
        * conversions inside projectionSignature catch a pan, a zoom, a price
        * scale change and a resize; the rest catch an edit, a selection, a
        * gesture and a hover.
+       *
+       * The device pixel ratio is in the signature too: a browser zoom or a drag
+       * to a monitor of a different density changes it WITHOUT changing the
+       * logical projection, and the overlay would stay at the old backing-store
+       * resolution — crisp chart, blurry drawings — until the next unrelated
+       * repaint. Including it repaints at the new ratio the moment it changes.
        */
+      const ratio = window.devicePixelRatio || 1;
       if (state.drawings !== lastDrawings) {
         lastDrawings = state.drawings;
         drawingsEpoch += 1;
@@ -120,11 +127,11 @@ export function DrawingCanvas({
         state.symbol,
         live.version,
         live.hoverId ?? '-',
+        ratio,
       ].join('|');
       if (signature === lastSignature) return;
       lastSignature = signature;
 
-      const ratio = window.devicePixelRatio || 1;
       const width = projection.width;
       const height = projection.height;
       if (
