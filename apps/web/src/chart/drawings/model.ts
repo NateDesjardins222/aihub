@@ -14,15 +14,27 @@ export type DrawingKind =
   | 'TREND_LINE'
   | 'RAY'
   | 'EXTENDED_LINE'
+  | 'INFO_LINE'
+  | 'TREND_ANGLE'
   | 'HORIZONTAL_LINE'
   | 'HORIZONTAL_RAY'
   | 'VERTICAL_LINE'
   | 'CROSS_LINE'
   | 'ARROW'
+  | 'ARROW_MARKER'
+  | 'ARROW_MARK_UP'
+  | 'ARROW_MARK_DOWN'
+  | 'ARROW_MARK_LEFT'
+  | 'ARROW_MARK_RIGHT'
   | 'RECTANGLE'
+  | 'CIRCLE'
   | 'FIB_RETRACEMENT'
   | 'TEXT'
+  | 'ANCHORED_TEXT'
+  | 'NOTE'
   | 'MEASURE'
+  | 'PRICE_RANGE'
+  | 'DATE_RANGE'
   | 'LONG_POSITION'
   | 'SHORT_POSITION';
 
@@ -222,15 +234,27 @@ export const STORED_ANCHORS: Record<DrawingKind, number> = {
   TREND_LINE: 2,
   RAY: 2,
   EXTENDED_LINE: 2,
+  INFO_LINE: 2,
+  TREND_ANGLE: 2,
   HORIZONTAL_LINE: 1,
   HORIZONTAL_RAY: 1,
   VERTICAL_LINE: 1,
   CROSS_LINE: 1,
   ARROW: 2,
+  ARROW_MARKER: 2,
+  ARROW_MARK_UP: 1,
+  ARROW_MARK_DOWN: 1,
+  ARROW_MARK_LEFT: 1,
+  ARROW_MARK_RIGHT: 1,
   RECTANGLE: 2,
+  CIRCLE: 2,
   FIB_RETRACEMENT: 2,
   TEXT: 1,
+  ANCHORED_TEXT: 1,
+  NOTE: 1,
   MEASURE: 2,
+  PRICE_RANGE: 2,
+  DATE_RANGE: 2,
   LONG_POSITION: 3,
   SHORT_POSITION: 3,
 };
@@ -240,15 +264,27 @@ export const ANCHOR_COUNT: Record<DrawingKind, number> = {
   TREND_LINE: 2,
   RAY: 2,
   EXTENDED_LINE: 2,
+  INFO_LINE: 2,
+  TREND_ANGLE: 2,
   HORIZONTAL_LINE: 1,
   HORIZONTAL_RAY: 1,
   VERTICAL_LINE: 1,
   CROSS_LINE: 1,
   ARROW: 2,
+  ARROW_MARKER: 2,
+  ARROW_MARK_UP: 1,
+  ARROW_MARK_DOWN: 1,
+  ARROW_MARK_LEFT: 1,
+  ARROW_MARK_RIGHT: 1,
   RECTANGLE: 2,
+  CIRCLE: 2,
   FIB_RETRACEMENT: 2,
   TEXT: 1,
+  ANCHORED_TEXT: 1,
+  NOTE: 1,
   MEASURE: 2,
+  PRICE_RANGE: 2,
+  DATE_RANGE: 2,
   /*
    * One click, three anchors.
    *
@@ -265,15 +301,27 @@ export const KIND_LABEL: Record<DrawingKind, string> = {
   TREND_LINE: 'Trend line',
   RAY: 'Ray',
   EXTENDED_LINE: 'Extended line',
+  INFO_LINE: 'Info line',
+  TREND_ANGLE: 'Trend angle',
   HORIZONTAL_LINE: 'Horizontal line',
   HORIZONTAL_RAY: 'Horizontal ray',
   VERTICAL_LINE: 'Vertical line',
   CROSS_LINE: 'Cross line',
   ARROW: 'Arrow',
+  ARROW_MARKER: 'Arrow marker',
+  ARROW_MARK_UP: 'Arrow mark up',
+  ARROW_MARK_DOWN: 'Arrow mark down',
+  ARROW_MARK_LEFT: 'Arrow mark left',
+  ARROW_MARK_RIGHT: 'Arrow mark right',
   RECTANGLE: 'Rectangle',
+  CIRCLE: 'Circle',
   FIB_RETRACEMENT: 'Fib retracement',
   TEXT: 'Text',
+  ANCHORED_TEXT: 'Anchored text',
+  NOTE: 'Note',
   MEASURE: 'Measure',
+  PRICE_RANGE: 'Price range',
+  DATE_RANGE: 'Date range',
   LONG_POSITION: 'Long position',
   SHORT_POSITION: 'Short position',
 };
@@ -512,6 +560,8 @@ export function distanceToLine(p: Point, a: Point, b: Point): number {
 
 export const HANDLE_RADIUS = 4;
 export const HIT_TOLERANCE = 6;
+/** Half-size of a one-anchor stamp (arrow mark, note), in px, for hit-testing. */
+export const MARK_RADIUS = 11;
 
 /**
  * How far the pointer must travel, in pixels, before a press on a drawing
@@ -789,11 +839,43 @@ export function hitTest(
         ? { kind: 'BODY' }
         : null;
 
-    case 'TEXT': {
+    case 'TEXT':
+    case 'ANCHORED_TEXT': {
       // The ENTIRE rendered text region is grabbable, aligned to what is
       // painted (left-aligned, multiline-aware), with a little padding (D-07).
       const b = textScreenBounds(drawing, points[0]!);
       return cursor.x >= b.left && cursor.x <= b.right && cursor.y >= b.top && cursor.y <= b.bottom
+        ? { kind: 'BODY' }
+        : null;
+    }
+
+    case 'ARROW_MARK_UP':
+    case 'ARROW_MARK_DOWN':
+    case 'ARROW_MARK_LEFT':
+    case 'ARROW_MARK_RIGHT':
+    case 'NOTE': {
+      // A one-anchor stamp: grabbable within a small box centred on the anchor,
+      // matching the glyph the painter draws there.
+      const p = points[0]!;
+      const r = MARK_RADIUS + HIT_TOLERANCE;
+      return Math.abs(cursor.x - p.x) <= r && Math.abs(cursor.y - p.y) <= r
+        ? { kind: 'BODY' }
+        : null;
+    }
+
+    case 'CIRCLE': {
+      if (points.length < 2) return null;
+      const [a, b] = points as [Point, Point];
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      const rx = Math.abs(a.x - b.x) / 2;
+      const ry = Math.abs(a.y - b.y) / 2;
+      if (rx < 1 || ry < 1) return null;
+      // Normalised radius: 1 is exactly on the ellipse. Filled → grabbable
+      // inside; unfilled → only near the curve.
+      const norm = ((cursor.x - cx) / rx) ** 2 + ((cursor.y - cy) / ry) ** 2;
+      if (drawing.style.filled) return norm <= 1.08 ? { kind: 'BODY' } : null;
+      return Math.abs(Math.sqrt(norm) - 1) * Math.min(rx, ry) <= HIT_TOLERANCE + 2
         ? { kind: 'BODY' }
         : null;
     }

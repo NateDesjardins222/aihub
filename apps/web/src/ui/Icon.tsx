@@ -77,6 +77,15 @@ export type IconName =
   | 'arrow-marker'
   | 'anchored-text'
   | 'note'
+  | 'info-line'
+  | 'trend-angle'
+  | 'circle'
+  | 'arrow-up'
+  | 'arrow-down'
+  | 'arrow-left'
+  | 'arrow-right'
+  | 'price-range'
+  | 'date-range'
   | 'maximize'
   | 'minimize'
   | 'layout-1'
@@ -159,6 +168,15 @@ const PATHS: Record<IconName, string> = {
   'arrow-marker': 'M3.5 12.5L12 4M12 4L8.3 4M12 4L12 7.7',
   'anchored-text': 'M4 4H10M7 4V10.5M5.6 12.2H8.4M7 10.5V13.4',
   note: 'M3.5 3H12.5V11H3.5ZM6 5.5H10M8 5.5V9M8 11V13.5',
+  'info-line': 'M2.6 13L9 6.6M12.4 5.1v0.2M12.4 7V11',
+  'trend-angle': 'M2.5 13H10.5M2.5 13L10 6M2.5 13A5 5 0 016 9.2',
+  circle: 'M8 3a5 5 0 100 10 5 5 0 000-10z',
+  'arrow-up': 'M8 13V4M8 4L4.8 7.2M8 4L11.2 7.2',
+  'arrow-down': 'M8 3V12M8 12L4.8 8.8M8 12L11.2 8.8',
+  'arrow-left': 'M13 8H4M4 8L7.2 4.8M4 8L7.2 11.2',
+  'arrow-right': 'M3 8H12M12 8L8.8 4.8M12 8L8.8 11.2',
+  'price-range': 'M8 3V13M8 3L5.7 5.3M8 3L10.3 5.3M8 13L5.7 10.7M8 13L10.3 10.7',
+  'date-range': 'M3 8H13M3 8L5.3 5.7M3 8L5.3 10.3M13 8L10.7 5.7M13 8L10.7 10.3',
   maximize: 'M3 6.5V3h3.5M13 9.5V13H9.5M3 3l4 4M13 13l-4-4',
   minimize: 'M6.5 3v3.5H3M9.5 13V9.5H13M3 6.5l4-4M13 9.5l-4 4',
   // The layout chooser: the same 11x11 frame divided the way each one divides it.

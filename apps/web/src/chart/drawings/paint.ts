@@ -163,6 +163,155 @@ export function drawDrawing(
       arrowHead(ctx, a, b);
       break;
     }
+    case 'ARROW_MARKER': {
+      if (!a || !b) break;
+      // A heavier arrow: the same geometry as ARROW, drawn a touch thicker and
+      // with a filled head so it reads as a marker, not a construction line.
+      ctx.save();
+      ctx.lineWidth = Math.max(2, drawing.style.width + 1);
+      line(ctx, a, b);
+      filledArrowHead(ctx, a, b, 12);
+      ctx.restore();
+      break;
+    }
+    case 'ARROW_MARK_UP':
+    case 'ARROW_MARK_DOWN':
+    case 'ARROW_MARK_LEFT':
+    case 'ARROW_MARK_RIGHT': {
+      if (!a) break;
+      const dir =
+        drawing.kind === 'ARROW_MARK_UP'
+          ? { x: 0, y: -1 }
+          : drawing.kind === 'ARROW_MARK_DOWN'
+            ? { x: 0, y: 1 }
+            : drawing.kind === 'ARROW_MARK_LEFT'
+              ? { x: -1, y: 0 }
+              : { x: 1, y: 0 };
+      arrowMark(ctx, a, dir, border);
+      break;
+    }
+    case 'INFO_LINE': {
+      if (!a || !b) break;
+      line(ctx, a, b);
+      const dp = drawing.anchors[1]!.price - drawing.anchors[0]!.price;
+      const pct = drawing.anchors[0]!.price !== 0 ? (dp / drawing.anchors[0]!.price) * 100 : 0;
+      const bars = market.barMs
+        ? Math.round(Math.abs(drawing.anchors[1]!.time - drawing.anchors[0]!.time) / market.barMs)
+        : null;
+      const sign = dp >= 0 ? '+' : '−';
+      const parts = [`${sign}${Math.abs(dp).toFixed(pricePrecision)}`, `${pct.toFixed(2)}%`];
+      if (bars !== null) parts.push(`${bars} bars`);
+      labelChip(ctx, parts.join('   '), (a.x + b.x) / 2 + 8, (a.y + b.y) / 2, border, drawing.style.fontSize);
+      break;
+    }
+    case 'TREND_ANGLE': {
+      if (!a || !b) break;
+      line(ctx, a, b);
+      // A short horizontal reference from the origin and the angle between them,
+      // measured in screen space (y grows downward, so negate it).
+      const ref = 32;
+      ctx.save();
+      ctx.globalAlpha *= 0.5;
+      ctx.setLineDash([3, 3]);
+      line(ctx, a, { x: a.x + ref, y: a.y });
+      ctx.restore();
+      const deg = (Math.atan2(a.y - b.y, b.x - a.x) * 180) / Math.PI;
+      labelChip(ctx, `${deg.toFixed(1)}°`, a.x + ref + 6, a.y - 8, border, drawing.style.fontSize);
+      break;
+    }
+    case 'CIRCLE': {
+      if (!a || !b) break;
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      const rx = Math.abs(a.x - b.x) / 2;
+      const ry = Math.abs(a.y - b.y) / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      if (drawing.style.filled && drawing.style.fillOpacity > 0) {
+        ctx.save();
+        ctx.fillStyle = withAlpha(drawing.style.fillColor, drawing.style.fillOpacity);
+        ctx.fill();
+        ctx.restore();
+      }
+      if (drawing.style.width > 0 && drawing.style.opacity > 0) ctx.stroke();
+      break;
+    }
+    case 'PRICE_RANGE': {
+      if (!a || !b) break;
+      // A vertical span between the two prices, drawn at the right anchor's x.
+      const x = b.x;
+      const top = Math.min(a.y, b.y);
+      const bottom = Math.max(a.y, b.y);
+      doubleArrowV(ctx, x, top, bottom);
+      const dp = Math.abs(drawing.anchors[1]!.price - drawing.anchors[0]!.price);
+      const ticks = market.tickSize > 0 ? Math.round(dp / market.tickSize) : 0;
+      const base = Math.min(drawing.anchors[0]!.price, drawing.anchors[1]!.price);
+      const pct = base !== 0 ? (dp / base) * 100 : 0;
+      const money = market.tickValue > 0 ? `   $${Math.round(ticks * market.tickValue).toLocaleString('en-US')}` : '';
+      labelChip(
+        ctx,
+        `${dp.toFixed(pricePrecision)}   ${ticks} ticks   ${pct.toFixed(2)}%${money}`,
+        x + 8,
+        (top + bottom) / 2,
+        border,
+        drawing.style.fontSize,
+      );
+      break;
+    }
+    case 'DATE_RANGE': {
+      if (!a || !b) break;
+      // A horizontal span between the two times, drawn at the lower anchor's y.
+      const y = b.y;
+      const left = Math.min(a.x, b.x);
+      const right = Math.max(a.x, b.x);
+      doubleArrowH(ctx, left, right, y);
+      const bars = market.barMs
+        ? Math.round(Math.abs(drawing.anchors[1]!.time - drawing.anchors[0]!.time) / market.barMs)
+        : null;
+      const ms = Math.abs(drawing.anchors[1]!.time - drawing.anchors[0]!.time);
+      const label = bars !== null ? `${bars} bars   ${formatSpan(ms)}` : formatSpan(ms);
+      labelChip(ctx, label, (left + right) / 2, y - 10, border, drawing.style.fontSize, 'center');
+      break;
+    }
+    case 'ANCHORED_TEXT': {
+      if (!a) break;
+      // A small anchor dot, then the text offset up-right of it with a leader.
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.fillStyle = border;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha *= 0.6;
+      line(ctx, a, { x: a.x + 14, y: a.y - 16 });
+      ctx.restore();
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.font = labelFont(drawing.style.fontSize);
+      ctx.textBaseline = 'bottom';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = border;
+      const lines = (drawing.text || 'Text').split('\n');
+      const lh = drawing.style.fontSize * TEXT_LINE_HEIGHT;
+      lines.forEach((t, i) => ctx.fillText(t, a.x + 16, a.y - 16 + i * lh));
+      ctx.restore();
+      break;
+    }
+    case 'NOTE': {
+      if (!a) break;
+      noteGlyph(ctx, a, border);
+      if (drawing.text) {
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.font = labelFont(drawing.style.fontSize);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = border;
+        ctx.fillText(drawing.text.split('\n')[0] ?? '', a.x + 16, a.y);
+        ctx.restore();
+      }
+      break;
+    }
     case 'TREND_LINE': {
       if (!a || !b) break;
       /*
@@ -465,6 +614,135 @@ function arrowHead(ctx: CanvasRenderingContext2D, from: Point, to: Point): void 
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+/** A filled arrowhead at `to` with an explicit size, for the heavier marker. */
+function filledArrowHead(ctx: CanvasRenderingContext2D, from: Point, to: Point, size: number): void {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const spread = size * 0.5;
+  const baseX = to.x - ux * size;
+  const baseY = to.y - uy * size;
+  const px = -uy;
+  const py = ux;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(baseX + px * spread, baseY + py * spread);
+  ctx.lineTo(baseX - px * spread, baseY - py * spread);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A solid triangular stamp at a point, pointing in a unit direction. */
+function arrowMark(
+  ctx: CanvasRenderingContext2D,
+  at: Point,
+  dir: { x: number; y: number },
+  color: string,
+): void {
+  const size = 13;
+  const tip = { x: at.x + dir.x * size, y: at.y + dir.y * size };
+  const back = { x: at.x - dir.x * (size * 0.2), y: at.y - dir.y * (size * 0.2) };
+  const px = -dir.y;
+  const py = dir.x;
+  const spread = size * 0.55;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(back.x + px * spread, back.y + py * spread);
+  ctx.lineTo(back.x - px * spread, back.y - py * spread);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A note pin: a rounded speech marker with a dot, at the anchor. */
+function noteGlyph(ctx: CanvasRenderingContext2D, at: Point, color: string): void {
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  const w = 16;
+  const h = 12;
+  const x = at.x - w / 2;
+  const y = at.y - h - 3;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 3);
+  ctx.stroke();
+  // The little tail down to the anchor point.
+  ctx.beginPath();
+  ctx.moveTo(at.x - 3, y + h);
+  ctx.lineTo(at.x, y + h + 4);
+  ctx.lineTo(at.x + 3, y + h);
+  ctx.closePath();
+  ctx.fill();
+  // Two dotted lines suggesting text.
+  ctx.globalAlpha *= 0.8;
+  ctx.beginPath();
+  ctx.moveTo(x + 3, y + 4);
+  ctx.lineTo(x + w - 3, y + 4);
+  ctx.moveTo(x + 3, y + 8);
+  ctx.lineTo(x + w - 5, y + 8);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** A small text chip in DM Sans, backed by a little of the chart background. */
+function labelChip(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+  fontSize: number,
+  align: CanvasTextAlign = 'left',
+): void {
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.font = labelFont(fontSize, 600);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = align;
+  const w = ctx.measureText(text).width;
+  const left = align === 'center' ? x - w / 2 : x;
+  ctx.fillStyle = 'rgba(7, 9, 13, 0.62)';
+  ctx.fillRect(left - 3, y - fontSize * 0.72, w + 6, fontSize * 1.45);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+/** A vertical double-headed arrow between two y's at a fixed x. */
+function doubleArrowV(ctx: CanvasRenderingContext2D, x: number, top: number, bottom: number): void {
+  line(ctx, { x, y: top }, { x, y: bottom });
+  filledArrowHead(ctx, { x, y: top + 10 }, { x, y: top }, 9);
+  filledArrowHead(ctx, { x, y: bottom - 10 }, { x, y: bottom }, 9);
+}
+
+/** A horizontal double-headed arrow between two x's at a fixed y. */
+function doubleArrowH(ctx: CanvasRenderingContext2D, left: number, right: number, y: number): void {
+  line(ctx, { x: left, y }, { x: right, y });
+  filledArrowHead(ctx, { x: left + 10, y }, { x: left, y }, 9);
+  filledArrowHead(ctx, { x: right - 10, y }, { x: right, y }, 9);
+}
+
+/** A compact human span from milliseconds: 3d, 5h, 42m. */
+function formatSpan(ms: number): string {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
 }
 
 /** Push `b` out past the edge of the canvas along the a-b direction. */
