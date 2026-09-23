@@ -138,6 +138,31 @@ export function drawDrawing(
       line(ctx, { x: a.x, y: 0 }, { x: a.x, y: projection.height });
       break;
     }
+    case 'CROSS_LINE': {
+      if (!a) break;
+      // A full-width horizontal and a full-height vertical through the point.
+      line(ctx, { x: 0, y: a.y }, { x: projection.width, y: a.y });
+      line(ctx, { x: a.x, y: 0 }, { x: a.x, y: projection.height });
+      if (drawing.style.showPrice) {
+        priceTag(ctx, projection, a.y, drawing.anchors[0]!.price, drawing.style.color, pricePrecision);
+      }
+      break;
+    }
+    case 'HORIZONTAL_RAY': {
+      if (!a) break;
+      // Horizontal, from the anchor to the right edge only.
+      line(ctx, { x: a.x, y: a.y }, { x: projection.width, y: a.y });
+      if (drawing.style.showPrice) {
+        priceTag(ctx, projection, a.y, drawing.anchors[0]!.price, drawing.style.color, pricePrecision);
+      }
+      break;
+    }
+    case 'ARROW': {
+      if (!a || !b) break;
+      line(ctx, a, b);
+      arrowHead(ctx, a, b);
+      break;
+    }
     case 'TREND_LINE': {
       if (!a || !b) break;
       /*
@@ -409,6 +434,37 @@ function line(ctx: CanvasRenderingContext2D, from: Point, to: Point): void {
   ctx.moveTo(from.x, from.y);
   ctx.lineTo(to.x, to.y);
   ctx.stroke();
+}
+
+/**
+ * A filled arrowhead at `to`, pointing along the from→to direction.
+ *
+ * Sized off the line width so a thick arrow gets a bigger head; solid, never
+ * dashed, so it reads as a head rather than as more of the shaft.
+ */
+function arrowHead(ctx: CanvasRenderingContext2D, from: Point, to: Point): void {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const size = Math.max(9, ctx.lineWidth * 4);
+  const spread = size * 0.5;
+  const baseX = to.x - ux * size;
+  const baseY = to.y - uy * size;
+  // Perpendicular, for the two barbs.
+  const px = -uy;
+  const py = ux;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(baseX + px * spread, baseY + py * spread);
+  ctx.lineTo(baseX - px * spread, baseY - py * spread);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 /** Push `b` out past the edge of the canvas along the a-b direction. */

@@ -53,6 +53,7 @@ export interface PropDef {
 export type ToolFamily =
   | 'LINES'
   | 'CHANNELS'
+  | 'ARROWS'
   | 'FIBONACCI'
   | 'SHAPES'
   | 'ANNOTATION'
@@ -263,6 +264,33 @@ export const TOOLS: readonly ToolDef[] = [
     props: [COLOR, WIDTH, DASH],
   },
   {
+    kind: 'HORIZONTAL_RAY',
+    name: KIND_LABEL.HORIZONTAL_RAY,
+    family: 'LINES',
+    anchors: ANCHOR_COUNT.HORIZONTAL_RAY,
+    style: { showPrice: true },
+    options: {},
+    props: [COLOR, WIDTH, DASH, SHOW_PRICE],
+  },
+  {
+    kind: 'CROSS_LINE',
+    name: KIND_LABEL.CROSS_LINE,
+    family: 'LINES',
+    anchors: ANCHOR_COUNT.CROSS_LINE,
+    style: { dash: 'DASHED', showPrice: true },
+    options: {},
+    props: [COLOR, WIDTH, DASH, SHOW_PRICE],
+  },
+  {
+    kind: 'ARROW',
+    name: KIND_LABEL.ARROW,
+    family: 'ARROWS',
+    anchors: ANCHOR_COUNT.ARROW,
+    style: { width: 2 },
+    options: {},
+    props: [COLOR, WIDTH, DASH],
+  },
+  {
     kind: 'RECTANGLE',
     name: KIND_LABEL.RECTANGLE,
     family: 'SHAPES',
@@ -450,19 +478,24 @@ export function option<T>(drawing: Drawing, key: string, fallback: T): T {
 }
 
 /** Tools grouped for the rail and the menus, in display order. */
+// Category headers, named to match the TradingView reference the rebuild
+// targets: Lines / Arrows / Shapes / Fibonacci / Projection / Annotation /
+// Measurer.
 export const FAMILY_LABEL: Record<ToolFamily, string> = {
   LINES: 'Lines',
   CHANNELS: 'Channels',
+  ARROWS: 'Arrows',
   FIBONACCI: 'Fibonacci',
   SHAPES: 'Shapes',
   ANNOTATION: 'Annotation',
-  MEASURE: 'Measure',
-  POSITION: 'Risk and reward',
+  MEASURE: 'Measurer',
+  POSITION: 'Projection',
 };
 
 export function toolsByFamily(): Array<{ family: ToolFamily; tools: readonly ToolDef[] }> {
   const order: ToolFamily[] = [
     'LINES',
+    'ARROWS',
     'SHAPES',
     'FIBONACCI',
     'POSITION',

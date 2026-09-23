@@ -20,7 +20,7 @@ async function armFromFlyout(category, label) {
     await page.click(`.popover .pop-item:has-text("${category}")`);
     await page.waitForTimeout(300);
   }
-  await page.click(`.popover .rail-tool-item:text-is("${label}")`);
+  await page.click(`.popover .rail-tool-item:has(.rail-tool-name:text-is("${label}"))`);
   await page.waitForTimeout(350);
 }
 
@@ -44,8 +44,27 @@ try {
   await page.waitForTimeout(300);
   await clearDrawings(page);
 
+  // --- NEW LINE TOOLS: Cross Line, Horizontal Ray, Arrow ------------------
+  for (const [cat, label, pts] of [
+    ['Lines', 'Cross line', [[0.5, 0.45]]],
+    ['Lines', 'Horizontal ray', [[0.45, 0.55]]],
+    ['Arrows', 'Arrow', [[0.4, 0.6], [0.6, 0.4]]],
+  ]) {
+    await clearDrawings(page);
+    await armFromFlyout(cat, label);
+    for (const [fx, fy] of pts) {
+      await page.mouse.click(at(fx, fy).x, at(fx, fy).y);
+      await page.waitForTimeout(250);
+    }
+    await page.waitForTimeout(500);
+    say((await litPixels(page, '.draw-canvas')) > 40, `${label}: painted`);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+  }
+  await clearDrawings(page);
+
   // --- LONG POSITION ------------------------------------------------------
-  await armFromFlyout('Risk and reward', 'Long position');
+  await armFromFlyout('Projection', 'Long position');
   await page.mouse.click(at(0.42, 0.5).x, at(0.42, 0.5).y);
   await page.waitForTimeout(700);
   const longLit = await litPixels(page, '.draw-canvas');
@@ -59,7 +78,7 @@ try {
   await page.waitForTimeout(300);
 
   // --- SHORT POSITION -----------------------------------------------------
-  await armFromFlyout('Risk and reward', 'Short position');
+  await armFromFlyout('Projection', 'Short position');
   await page.mouse.click(at(0.42, 0.5).x, at(0.42, 0.5).y);
   await page.waitForTimeout(700);
   const shortLit = await litPixels(page, '.draw-canvas');
@@ -86,7 +105,7 @@ try {
   await page.waitForTimeout(300);
 
   // --- MEASURE ------------------------------------------------------------
-  await armFromFlyout('Measure', 'Measure');
+  await armFromFlyout('Measurer', 'Measure');
   await page.mouse.click(at(0.4, 0.6).x, at(0.4, 0.6).y);
   await page.mouse.move(at(0.58, 0.35).x, at(0.58, 0.35).y, { steps: 6 });
   await page.mouse.click(at(0.58, 0.35).x, at(0.58, 0.35).y);
@@ -98,6 +117,16 @@ try {
   // --- the tool menu itself -----------------------------------------------
   await page.click('.rail .rail-btn[aria-label="All drawing tools"]');
   await page.waitForTimeout(400);
+  // Expand Lines so the fullest category is visible for the reference compare.
+  await page.click('.popover .pop-item:has-text("Lines")').catch(() => undefined);
+  await page.waitForTimeout(300);
+  const cats = await page.locator('.popover .pop-item[aria-expanded]').allTextContents();
+  say(
+    cats.some((c) => /Lines/.test(c)) && cats.some((c) => /Arrows/.test(c)) &&
+      cats.some((c) => /Projection/.test(c)) && cats.some((c) => /Measurer/.test(c)),
+    'MENU: reference categories present',
+    cats.map((c) => c.replace(/\d+$/, '').trim()).join(' / '),
+  );
   await shot(page, 'cvr-tool-menu');
   await page.keyboard.press('Escape');
 

@@ -24,7 +24,10 @@ const TOOL_ICON: Record<DrawingKind, IconName> = {
   RAY: 'ray',
   EXTENDED_LINE: 'extended',
   HORIZONTAL_LINE: 'horizontal',
+  HORIZONTAL_RAY: 'horizontal-ray',
   VERTICAL_LINE: 'vertical',
+  CROSS_LINE: 'cross-line',
+  ARROW: 'arrow-marker',
   RECTANGLE: 'rect',
   FIB_RETRACEMENT: 'fib',
   TEXT: 'text',
@@ -33,13 +36,39 @@ const TOOL_ICON: Record<DrawingKind, IconName> = {
   SHORT_POSITION: 'position-short',
 };
 
+/** Keyboard shortcuts, shown in the flyout and bound in useDrawingInput. */
+const SHORTCUT: Partial<Record<DrawingKind, string>> = {
+  TREND_LINE: 'Alt T',
+  HORIZONTAL_LINE: 'Alt H',
+  HORIZONTAL_RAY: 'Alt J',
+  VERTICAL_LINE: 'Alt V',
+  CROSS_LINE: 'Alt C',
+  RECTANGLE: 'Alt Shift R',
+};
+
+// Category order and grouping follow the supplied TradingView reference. Tools
+// not yet built (channels, pitchforks, brushes, volume-based, and the rest of
+// projection/shapes) are documented as deferred in the milestone report rather
+// than shown here as dead rows.
 const CATEGORIES: ReadonlyArray<{ name: string; tools: readonly DrawingKind[] }> = [
-  { name: 'Lines', tools: ['TREND_LINE', 'RAY', 'EXTENDED_LINE', 'HORIZONTAL_LINE', 'VERTICAL_LINE'] },
+  {
+    name: 'Lines',
+    tools: [
+      'TREND_LINE',
+      'RAY',
+      'EXTENDED_LINE',
+      'HORIZONTAL_LINE',
+      'HORIZONTAL_RAY',
+      'VERTICAL_LINE',
+      'CROSS_LINE',
+    ],
+  },
+  { name: 'Arrows', tools: ['ARROW'] },
   { name: 'Shapes', tools: ['RECTANGLE'] },
   { name: 'Fibonacci', tools: ['FIB_RETRACEMENT'] },
-  { name: 'Risk and reward', tools: ['LONG_POSITION', 'SHORT_POSITION'] },
+  { name: 'Projection', tools: ['LONG_POSITION', 'SHORT_POSITION'] },
   { name: 'Annotation', tools: ['TEXT'] },
-  { name: 'Measure', tools: ['MEASURE'] },
+  { name: 'Measurer', tools: ['MEASURE'] },
 ];
 
 const DASHES: ReadonlyArray<{ id: 'SOLID' | 'DASHED' | 'DOTTED'; label: string }> = [
@@ -190,8 +219,11 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
                           more.close();
                         }}
                       >
-                        <Icon name={TOOL_ICON[kind]} size={12} />
-                        {KIND_LABEL[kind]}
+                        <Icon name={TOOL_ICON[kind]} size={14} />
+                        <span className="rail-tool-name">{KIND_LABEL[kind]}</span>
+                        {SHORTCUT[kind] ? (
+                          <span className="rail-tool-key">{SHORTCUT[kind]}</span>
+                        ) : null}
                       </button>
                       <button
                         className={`rail-fav ${favourites.includes(kind) ? 'rail-fav-on' : ''}`}

@@ -34,6 +34,7 @@ export type IconName =
   | 'trend'
   | 'ray'
   | 'horizontal'
+  | 'horizontal-ray'
   | 'vertical'
   | 'rect'
   | 'fib'
@@ -115,6 +116,8 @@ const PATHS: Record<IconName, string> = {
   ray: 'M4.4 11.6L6.9 9.1M9.1 6.9L13.5 2.5',
   extended: 'M1.8 12.5L4.3 10.7M6.7 8.9L9.3 7.1M11.7 5.3L14.2 3.5',
   horizontal: 'M2 8H6.5M9.5 8H14',
+  // A hollow anchor on the left, a line running off to the right.
+  'horizontal-ray': 'M5.5 8H14',
   vertical: 'M8 2V6.5M8 9.5V14',
   'cross-line': 'M8 2V6.5M8 9.5V14M2 8H6.5M9.5 8H14',
   rect: 'M5.5 4H10.5M12 5.5V10.5M10.5 12H5.5M4 10.5V5.5',
@@ -180,6 +183,7 @@ const ANCHORS: Partial<Record<IconName, ReadonlyArray<readonly [number, number, 
   ray: [[3.3, 12.7, 1.5], [8, 8, 1.5]],
   extended: [[5.5, 9.8, 1.5], [10.5, 6.2, 1.5]],
   horizontal: [[8, 8, 1.5]],
+  'horizontal-ray': [[4, 8, 1.5]],
   vertical: [[8, 8, 1.5]],
   'cross-line': [[8, 8, 1.5]],
   rect: [[4, 4, 1.5], [12, 4, 1.5], [12, 12, 1.5], [4, 12, 1.5]],

@@ -521,6 +521,29 @@ export function useDrawingInput(options: DrawingInputOptions): void {
         event.preventDefault();
         return;
       }
+      // Tool shortcuts (Alt+key), matching what the flyout advertises. Alt is
+      // used rather than a bare letter so typing into a chart never arms a tool.
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (event.shiftKey && key === 'r') {
+          store.setTool('RECTANGLE');
+          event.preventDefault();
+          return;
+        }
+        const shortcuts: Record<string, DrawingKind> = {
+          t: 'TREND_LINE',
+          h: 'HORIZONTAL_LINE',
+          j: 'HORIZONTAL_RAY',
+          v: 'VERTICAL_LINE',
+          c: 'CROSS_LINE',
+        };
+        const kind = shortcuts[key];
+        if (kind && !event.shiftKey) {
+          store.setTool(kind);
+          event.preventDefault();
+          return;
+        }
+      }
       const meta = event.ctrlKey || event.metaKey;
       if (meta && event.key.toLowerCase() === 'c' && store.selectedDrawingId) {
         store.copyDrawing(store.selectedDrawingId);

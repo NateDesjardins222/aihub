@@ -15,7 +15,10 @@ export type DrawingKind =
   | 'RAY'
   | 'EXTENDED_LINE'
   | 'HORIZONTAL_LINE'
+  | 'HORIZONTAL_RAY'
   | 'VERTICAL_LINE'
+  | 'CROSS_LINE'
+  | 'ARROW'
   | 'RECTANGLE'
   | 'FIB_RETRACEMENT'
   | 'TEXT'
@@ -220,7 +223,10 @@ export const STORED_ANCHORS: Record<DrawingKind, number> = {
   RAY: 2,
   EXTENDED_LINE: 2,
   HORIZONTAL_LINE: 1,
+  HORIZONTAL_RAY: 1,
   VERTICAL_LINE: 1,
+  CROSS_LINE: 1,
+  ARROW: 2,
   RECTANGLE: 2,
   FIB_RETRACEMENT: 2,
   TEXT: 1,
@@ -235,7 +241,10 @@ export const ANCHOR_COUNT: Record<DrawingKind, number> = {
   RAY: 2,
   EXTENDED_LINE: 2,
   HORIZONTAL_LINE: 1,
+  HORIZONTAL_RAY: 1,
   VERTICAL_LINE: 1,
+  CROSS_LINE: 1,
+  ARROW: 2,
   RECTANGLE: 2,
   FIB_RETRACEMENT: 2,
   TEXT: 1,
@@ -257,7 +266,10 @@ export const KIND_LABEL: Record<DrawingKind, string> = {
   RAY: 'Ray',
   EXTENDED_LINE: 'Extended line',
   HORIZONTAL_LINE: 'Horizontal line',
+  HORIZONTAL_RAY: 'Horizontal ray',
   VERTICAL_LINE: 'Vertical line',
+  CROSS_LINE: 'Cross line',
+  ARROW: 'Arrow',
   RECTANGLE: 'Rectangle',
   FIB_RETRACEMENT: 'Fib retracement',
   TEXT: 'Text',
@@ -761,6 +773,21 @@ export function hitTest(
 
     case 'VERTICAL_LINE':
       return Math.abs(cursor.x - points[0]!.x) <= HIT_TOLERANCE ? { kind: 'BODY' } : null;
+
+    case 'CROSS_LINE':
+      // A cross is a horizontal and a vertical through one point: grabbable on
+      // either arm.
+      return Math.abs(cursor.y - points[0]!.y) <= HIT_TOLERANCE ||
+        Math.abs(cursor.x - points[0]!.x) <= HIT_TOLERANCE
+        ? { kind: 'BODY' }
+        : null;
+
+    case 'HORIZONTAL_RAY':
+      // Horizontal, but only from the anchor rightwards.
+      return cursor.x >= points[0]!.x - HIT_TOLERANCE &&
+        Math.abs(cursor.y - points[0]!.y) <= HIT_TOLERANCE
+        ? { kind: 'BODY' }
+        : null;
 
     case 'TEXT': {
       // The ENTIRE rendered text region is grabbable, aligned to what is
