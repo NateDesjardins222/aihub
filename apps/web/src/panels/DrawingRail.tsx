@@ -195,7 +195,7 @@ export function DrawingRail({ symbol }: { symbol: string }): JSX.Element {
       <button className="rail-btn" onClick={more.toggle} title="All drawing tools" aria-label="All drawing tools">
         <Icon name="chevron-right" size={12} />
       </button>
-      <Popover open={more.open} onClose={more.close} anchor={more.anchor} width={230} label="Drawing tools">
+      <Popover open={more.open} onClose={more.close} anchor={more.anchor} width={272} label="Drawing tools">
         {CATEGORIES.map((category) => {
           const open = expanded === category.name || CATEGORIES.length === 1;
           return (

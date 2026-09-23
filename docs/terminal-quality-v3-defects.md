@@ -23,7 +23,7 @@ product failure · P2 major UX/visual defect · P3 polish.
 | Q-05 | P2 | Position tool | LONG/SHORT badges look bad — remove them | FIXED |
 | Q-06 | P2 | Position tool | Planning labels look like debug output | FIXED |
 | Q-07 | P2 | Position tool | No price-travel visualization after creation | (open) |
-| Q-08 | P2 | Drawing menu | Tool panel too cramped | (open) |
+| Q-08 | P2 | Drawing menu | Tool panel too cramped | FIXED |
 | Q-09 | P2 | Drawing tools | Most requested TradingView tools still missing | (open) |
 | Q-10 | P2 | Text tool | Hitbox still undersized | (open) |
 | Q-11 | P2 | Typography | Monospace/engineering fonts remain in drawing UI | FIXED |
