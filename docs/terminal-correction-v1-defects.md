@@ -12,17 +12,18 @@ trace to a provider limitation rather than an Atlas bug.
 
 | ID | Area | Symptom (user) | State |
 | --- | --- | --- | --- |
-| D-01 | Multi-chart | Side-by-side chart panes cannot be resized (locked equal width) | FIXED (browser pass pending) |
-| D-03 | Crosshair | Multi-chart time crosshair not synchronized across panes | FIXED (browser pass pending) |
-| D-04 | Multi-chart | No "apply chart config to other charts" action | FIXED (browser pass pending) |
+| D-01 | Multi-chart | Side-by-side chart panes cannot be resized (locked equal width) | VERIFIED (browser: divider drag continuous, clamped, persists, dbl-click resets) |
+| D-03 | Crosshair | Multi-chart time crosshair not synchronized across panes | VERIFIED (browser: peer follows timestamp + paints vertical time cursor) |
+| D-04 | Multi-chart | No "apply chart config to other charts" action | VERIFIED (browser: indicator copied to peer pane) |
+| D-16 | Chart render | **Regression:** chart container collapsed to 0 height → blank panes (candles never painted) | FIXED + VERIFIED (browser) |
 | D-02 | Symbol search | Type `ES` while on `GC` + Enter → stays on `GC` | VERIFIED (fixed) |
 | D-05 | Measure tool | Too primitive; poor measurement info + interaction | FIXED (browser pass pending) |
 | D-06 | Fibonacci | Interaction feels bad; needs rebuild | IMPROVED (already feature-rich; extend-aware hit; browser tuning pending) |
 | D-07 | Text drawing | Hitbox tiny; only a small part selects the text | VERIFIED (unit; browser pass pending) |
 | D-08 | Drawing toolbar | Left toolbar too small (width/icons/targets) | FIXED (browser pass pending) |
-| D-09 | Settings | Location/design; move to left app rail, declutter | DONE (rail access present; DM Sans + lighter edge; deeper polish browser-pending) |
-| D-10 | Practice | Remove user-facing Practice section (keep sim engine) | FIXED (browser pass pending) |
-| D-11 | Context menu | No professional chart context menu | FUNCTIONAL (real actions; visual match to screenshot pending) |
+| D-09 | Settings | Location/design; move to left app rail, declutter | VERIFIED (browser: Settings opens from the left app rail) |
+| D-10 | Practice | Remove user-facing Practice section (keep sim engine) | VERIFIED (browser: rail = Trade/Journal/Settings; engine + replay API intact) |
+| D-11 | Context menu | No professional chart context menu | VERIFIED (browser: background right-click → real actions); visual match to screenshot pending |
 | D-12 | Position marker | Marker visual/interaction unacceptable (awaiting screenshot for redesign) | CORRECTNESS DONE (tabular nums, DM Sans, honest protected-qty $); VISUAL REDESIGN BLOCKED (screenshot) |
 | D-13 | **P0 P&L** | Phantom ~+$8,000 P&L on load/restart, never earned | investigating |
 | D-14 | **P0 scale-in** | Scale into position → TP $ value stale, SL updates | VERIFIED (fixed) |
@@ -37,6 +38,37 @@ reported symptom → reproduction → root cause → severity → fix → automa
 regression → manual/browser verification.
 
 ---
+
+### D-16 — chart container collapsed to zero height (blank panes) — FIXED, VERIFIED
+
+**Reproduction.** Real-browser acceptance run: open a multi-chart layout (or
+reload while on one). Every pane shows its header and live O/H/L/C, but the plot
+is blank — no candles paint. Measured `.chart-canvas` = `706px` wide, `0px`
+tall.
+
+**Root cause.** A self-inflicted regression from the D-03 time-cursor work. Its
+mount established a positioning context for the cursor by reading the container's
+INLINE `style.position`
+(`if (!init.container.style.position) init.container.style.position = 'relative'`).
+The chart container is positioned by a stylesheet rule
+(`.chart-canvas { position: absolute; inset: 0 }`), whose value never surfaces on
+the inline `.style.position`, so the guard always read empty and forced
+`position: relative` inline. That inline value overrode the stylesheet's
+`absolute`; with the element no longer absolute, `inset: 0` stopped applying and
+the container collapsed to content height (0). `LightweightChartsAdapter.resize()`
+guards on `clientHeight > 0`, so the chart then never resized and painted
+nothing. It was invisible to unit tests (jsdom has no layout) and to the header,
+which reads data, not geometry — exactly the class of defect that only a real
+browser catches, and the reason this milestone required one.
+
+**Fix.** Check the COMPUTED position and add `relative` only when it is
+`static`; an `absolute`/`relative` container is already a valid containing block
+for the absolutely-positioned time cursor. No inline override, so the
+stylesheet's absolute fill stands.
+
+**Verification (real browser).** ONE and TWO_V both paint candles;
+`.chart-canvas` is `706px` tall and `position: absolute` in every pane
+(screenshots `two_v_fixed.png`). tc-v1 acceptance 17/17.
 
 ### D-02 — Symbol search Enter selects the wrong (old) symbol
 _(pending investigation write-up)_

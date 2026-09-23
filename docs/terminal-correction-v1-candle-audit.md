@@ -76,6 +76,18 @@ reference. Enabling the Databento professional feed (a separate, paused
 milestone) is what closes that gap; no Atlas-side aggregation or render change
 would, because the difference is in the source data, not its handling.
 
+## Addendum — the render *layer* had a separate bug (D-16)
+
+This audit examined render *configuration* (barSpacing, rightOffset, DPR,
+container sizing intent) and found it sound. Real-browser acceptance then found a
+render *layout* defect the config inspection could not: the chart container was
+collapsing to zero height (D-16, a self-inflicted regression from the D-03
+time-cursor work) so no candles painted in any layout. That is a DOM-layout bug,
+not an aggregation, time-scale, or config bug, and it is fixed and verified
+in-browser (see `terminal-correction-v1-report.md` §1). The classification above
+— data/aggregation/config sound, residual is provider origin — stands; D-16 was
+orthogonal to it and is why "verify in a real browser" is not optional.
+
 ## Evidence to capture when the market is open (not runnable in this sandbox)
 For a same-instant A/B, record from Atlas and the reference, for one instrument
 and timeframe: display symbol, provider symbol, contract/expiry, session
