@@ -30,7 +30,11 @@ function applied<T>(next: T | undefined, prev: T): T {
 export function mergePnlFrame(prev: ApiAccountPnl, frame: ValuationFrame): ApiAccountPnl {
   return {
     ...prev,
-    balanceMicros: frame.balanceMicros ?? prev.balanceMicros,
+    // A frame that carries a balance applies it (a balance is never null); a
+    // frame that omits it keeps the prior — same "carried vs omitted" rule as
+    // every other field, rather than the looser `??` that could not tell 0 from
+    // absent.
+    balanceMicros: applied(frame.balanceMicros, prev.balanceMicros),
     equityMicros: applied(frame.equityMicros, prev.equityMicros),
     openPnlMicros: applied(frame.openPnlMicros, prev.openPnlMicros),
     dayPnlMicros: applied(frame.dayPnlMicros, prev.dayPnlMicros),

@@ -81,7 +81,12 @@ let refreshQueued = false;
  * frame (an older `at`) is dropped so the displayed P&L never rolls backward.
  * Reset to 0 on every account switch.
  */
-let lastPnlAt = 0;
+// The monotonic authority for account money. Every P&L write — from a WS frame
+// OR a REST read — is gated on the account's `seq`, so an older valuation can
+// never overwrite a newer one (a delayed REST /pnl response resurrecting a
+// stale figure was a source of phantom money). `seq` is the server's own
+// per-account version; `at` timestamps could collide or move backward.
+let lastPnlSeq = -1;
 
 export const useTrading = create<TradingState>((set, get) => ({
   accountId: null,
@@ -106,7 +111,7 @@ export const useTrading = create<TradingState>((set, get) => ({
     // difference between two unrelated accounts.
     lastSounded = EMPTY_SNAPSHOT;
     soundAccount = null;
-    lastPnlAt = 0;
+    lastPnlSeq = -1;
     set({
       accountId,
       orders: [],
@@ -141,6 +146,7 @@ export const useTrading = create<TradingState>((set, get) => ({
         const valuation = data as {
           accountId?: string;
           at?: number;
+          seq?: number;
           balanceMicros?: number;
           equityMicros?: number | null;
           openPnlMicros?: number | null;
@@ -156,11 +162,13 @@ export const useTrading = create<TradingState>((set, get) => ({
         // switch a frame for the previous account can still be in flight; it
         // must never overwrite the account the trader is now looking at.
         if (!valuation || valuation.accountId !== get().accountId) return;
-        // Monotonic: never apply a frame older than the last one applied, so a
-        // delayed valuation cannot roll the displayed P&L backward.
-        if (typeof valuation.at === 'number') {
-          if (valuation.at < lastPnlAt) return;
-          lastPnlAt = valuation.at;
+        // Monotonic on the account's `seq`: never apply a frame older than the
+        // last money already shown, so a delayed valuation — WS or REST — cannot
+        // roll the displayed P&L backward or resurrect a stale figure. Same
+        // cursor `readAll`/`refreshPnl` gate their REST writes on.
+        if (typeof valuation.seq === 'number') {
+          if (valuation.seq < lastPnlSeq) return;
+          lastPnlSeq = valuation.seq;
         }
 
         // A status change is the one thing that needs the authoritative read:
@@ -273,16 +281,24 @@ export const useTrading = create<TradingState>((set, get) => ({
       lastSounded = snapshotOf(orders.orders, positions.positions);
       soundAccount = accountId;
 
-      set({
+      // The REST /pnl snapshot is authoritative for its instant, but a live WS
+      // frame may already have applied a NEWER valuation while these six reads
+      // were travelling. Gate the money on the same monotonic `seq` the WS
+      // handler uses: apply it only when it is at least as new, so a slow REST
+      // response can never resurrect a stale P&L over a fresher live figure.
+      const applyPnl = pnl.seq >= lastPnlSeq;
+      if (applyPnl) lastPnlSeq = pnl.seq;
+
+      set((state) => ({
         orders: orders.orders,
         positions: positions.positions,
         trades: trades.trades,
         executions: executions.executions,
-        pnl,
-        ruleBook: ruleBook ?? get().ruleBook,
-        rules: ruleBook?.status ?? get().rules,
+        pnl: applyPnl ? pnl : state.pnl,
+        ruleBook: ruleBook ?? state.ruleBook,
+        rules: ruleBook?.status ?? state.rules,
         error: null,
-      });
+      }));
     } catch (err) {
       // An error belongs to the account that asked for it, too.
       if (get().accountId === accountId) {
@@ -301,6 +317,9 @@ export const useTrading = create<TradingState>((set, get) => ({
       // Same guard as readAll: a valuation that lands after the trader has
       // moved on belongs to an account they are no longer looking at.
       if (get().accountId !== accountId) return;
+      // …and never let it roll the money backward past a newer live frame.
+      if (pnl.seq < lastPnlSeq) return;
+      lastPnlSeq = pnl.seq;
       set({ pnl });
     } catch {
       /* the next refresh will pick it up */
@@ -312,6 +331,11 @@ export const useTrading = create<TradingState>((set, get) => ({
     if (!accountId) return;
     try {
       const ruleBook = await tradingApi.rules(accountId);
+      // The rule book carries the account's equity floor, drawdown and status —
+      // all account money. A response that lands after the trader switched
+      // accounts must NOT paint the old account's risk figures onto the new one
+      // (the "+$8,000 on another account" bleed). Drop it.
+      if (get().accountId !== accountId) return;
       set({ ruleBook, rules: ruleBook.status ?? get().rules });
     } catch {
       /* the risk panel shows its own error */
@@ -323,6 +347,8 @@ export const useTrading = create<TradingState>((set, get) => ({
     if (!accountId) return;
     try {
       const result = await tradingApi.environment(accountId);
+      // A late environment response belongs to the account that asked for it.
+      if (get().accountId !== accountId) return;
       set({ environment: result.environment, depthAwareAvailable: result.depthAwareAvailable });
     } catch {
       /* settings panel shows its own error */
