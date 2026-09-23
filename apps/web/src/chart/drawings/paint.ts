@@ -24,6 +24,7 @@ import {
 } from './model';
 import { measureReadoutLines, measureStats } from './measure';
 import { option } from './registry';
+import { chartFont } from '../fonts';
 
 export type PaintState = 'NORMAL' | 'HOVER' | 'SELECTED' | 'PENDING';
 
@@ -61,8 +62,8 @@ function dashCap(dash: Drawing['style']['dash']): CanvasLineCap {
  * one clean, modern UI font. Weight defaults to medium; number-heavy chips pass
  * 600 for a touch more presence at small sizes.
  */
-function labelFont(sizePx: number, weight: number | string = 500): string {
-  return `${weight} ${sizePx}px 'DM Sans Variable', 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif`;
+export function labelFont(sizePx: number, weight: number | string = 500): string {
+  return chartFont(sizePx, weight);
 }
 
 /**

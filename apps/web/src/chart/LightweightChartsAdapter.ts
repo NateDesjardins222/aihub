@@ -42,6 +42,7 @@ import type {
   VisibleRange,
 } from './ChartAdapter';
 import { isStatefulTransform, transformFor } from './transforms';
+import { CHART_FONT_STACK } from './fonts';
 import {
   DEFAULT_APPEARANCE,
   resolveZone,
@@ -339,7 +340,7 @@ export class LightweightChartsAdapter implements ChartAdapter {
         // label is right-aligned to the scale edge and redrawn per frame, so a
         // proportional sans does not jitter the way a fixed-position readout
         // would. Matches the DM Sans stack the drawing layer and DOM chrome use.
-        fontFamily: "'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+        fontFamily: CHART_FONT_STACK,
         attributionLogo: false,
         panes: { separatorColor: a.scales.paneSeparatorColor, separatorHoverColor: a.scales.scaleLineColor },
       },
