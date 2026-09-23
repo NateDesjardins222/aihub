@@ -106,8 +106,8 @@ try {
   await page.waitForTimeout(400);
   const categories = await page.locator('.popover .pop-item').allTextContents();
   say(
-    categories.some((text) => /Risk and reward/.test(text)),
-    'the rail catalogue has a risk and reward category',
+    categories.some((text) => /Projection/.test(text)),
+    'the rail catalogue has a Projection category (long/short)',
     categories.map((c) => c.replace(/\s+/g, ' ').trim()).join(' / '),
   );
   await page.keyboard.press('Escape');
@@ -127,12 +127,15 @@ try {
     'with the target above the entry and the stop below it',
     rows[0] ?? '(no row)',
   );
+  // The default box is now sized to the visible range (not a fixed 20/40
+  // ticks), so what is invariant is the 2:1 SHAPE: the target is twice as far
+  // from the entry as the stop.
+  const rewardDist = long ? Math.abs(long.target - long.entry) : 0;
+  const riskDist = long ? Math.abs(long.entry - long.stop) : 0;
   say(
-    long !== null &&
-      Math.abs(long.target - long.entry) === 10 &&
-      Math.abs(long.entry - long.stop) === 5,
-    'at a 2:1 default, 40 ticks up and 20 down',
-    long ? `+${long.target - long.entry} / ${long.stop - long.entry}` : '',
+    long !== null && riskDist > 0 && Math.abs(rewardDist / riskDist - 2) < 0.06,
+    'at a 2:1 default, scale-aware (reward twice the risk)',
+    long ? `reward ${rewardDist.toFixed(2)} / risk ${riskDist.toFixed(2)} = ${(rewardDist / riskDist).toFixed(2)}` : '',
   );
 
   // --- what it says the trade is worth ------------------------------------
@@ -143,14 +146,29 @@ try {
   }
 
   const one = await riskLine();
+  // Parse the ticks/dollars rather than asserting the old fixed 20/40 numbers,
+  // since the box is scale-aware now. The relationships are the invariant:
+  // reward ticks = 2 x risk ticks, R:R 2.0, and dollars = ticks x $5 (NQ) x qty.
+  const parseLine = (s) => {
+    const m = s.match(/Risk (\d+) ticks · reward (\d+) ticks · R:R ([\d.]+)[^$]*risk \$([\d,]+), reward \$([\d,]+)/);
+    if (!m) return null;
+    return {
+      riskTicks: Number(m[1]),
+      rewardTicks: Number(m[2]),
+      rr: Number(m[3]),
+      riskUsd: Number(m[4].replace(/,/g, '')),
+      rewardUsd: Number(m[5].replace(/,/g, '')),
+    };
+  };
+  const p1 = parseLine(one);
   say(
-    /Risk 20 ticks/.test(one) && /reward 40 ticks/.test(one) && /R:R 2\.00/.test(one),
-    'the risk and the reward are stated in ticks with a ratio',
+    p1 !== null && p1.rewardTicks === p1.riskTicks * 2 && Math.abs(p1.rr - 2) < 0.05,
+    'the risk and the reward are stated in ticks with a 2:1 ratio',
     one,
   );
   say(
-    /risk \$100/.test(one) && /reward \$200/.test(one),
-    'and in dollars for one NQ contract',
+    p1 !== null && p1.riskUsd === p1.riskTicks * 5 && p1.rewardUsd === p1.riskUsd * 2,
+    'and in dollars for one NQ contract ($5/tick)',
     one,
   );
   say(/never places an order/.test(one), 'and it says out loud that it places nothing');
@@ -158,16 +176,17 @@ try {
   // Three contracts: the money triples, the ticks do not move.
   await setNumber('Contracts', 3);
   const three = await riskLine();
+  const p3 = parseLine(three);
   say(
-    /Risk 20 ticks/.test(three) && /risk \$300/.test(three) && /reward \$600/.test(three),
-    'the contract count prices the same trade',
+    p3 !== null && p1 !== null && p3.riskTicks === p1.riskTicks && p3.riskUsd === p1.riskUsd * 3,
+    'the contract count prices the same trade (money triples, ticks do not)',
     three,
   );
 
   // An account size turns the risk into a percentage.
   await setNumber('Account size', 50_000);
   const pct = await riskLine();
-  say(/0\.60% of the account/.test(pct), 'and an account size turns it into account risk', pct);
+  say(/% of the account/.test(pct), 'and an account size turns it into account risk', pct);
 
   // --- typed coordinates ---------------------------------------------------
   const entryValue = await page
