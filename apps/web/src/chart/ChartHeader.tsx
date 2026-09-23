@@ -13,6 +13,7 @@ import { useLayout } from '../state/layout-store';
 import { useWorkspace, ALL_TIMEFRAMES } from '../state/workspace';
 import { PHASE_1_CHART_TYPES, type ChartType } from './ChartAdapter';
 import { INDICATORS, indicatorDef, indicatorTitle, searchIndicators } from './indicators/registry';
+import { rankInstruments, resolveEnterSelection } from './symbol-search';
 import { Icon, type IconName } from '../ui/Icon';
 import { Popover, usePopover } from '../ui/Popover';
 import './ChartHeader.css';
@@ -119,13 +120,13 @@ export function ChartHeader({
   const [indicatorQuery, setIndicatorQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const matches = useMemo(() => {
-    const needle = symbolQuery.trim().toLowerCase();
-    if (needle.length === 0) return instruments;
-    return instruments.filter((i) =>
-      `${i.root} ${i.description} ${i.exchange}`.toLowerCase().includes(needle),
-    );
-  }, [instruments, symbolQuery]);
+  // Ranked so an exact/prefix root match beats an incidental description hit
+  // (every description contains "Futures", whose "es" used to match everything
+  // and make Enter pick NQ instead of ES). See chart/symbol-search.ts.
+  const matches = useMemo(
+    () => rankInstruments(instruments, symbolQuery),
+    [instruments, symbolQuery],
+  );
 
   const indicatorMatches = useMemo(() => searchIndicators(indicatorQuery), [indicatorQuery]);
   const categories = useMemo(
@@ -176,7 +177,9 @@ export function ChartHeader({
               event.preventDefault();
               setSymbolHi((h) => Math.max(h - 1, 0));
             } else if (event.key === 'Enter') {
-              const chosen = matches[symbolHi];
+              // An exact recognised symbol always wins; otherwise the
+              // highlighted row; never the wrong symbol from a stale highlight.
+              const chosen = resolveEnterSelection(instruments, symbolQuery, symbolHi);
               if (chosen) {
                 event.preventDefault();
                 setSymbolFor(chosen.root);
