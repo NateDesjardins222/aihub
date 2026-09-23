@@ -7,7 +7,7 @@
  * render/time-scale question.
  */
 import { describe, expect, it } from 'vitest';
-import { auditCandles, type AuditBar } from './candle-integrity';
+import { auditCandles, type AuditBar, type CandleViolation } from './candle-integrity.js';
 
 const MIN = 60_000;
 
@@ -46,13 +46,13 @@ describe('candle integrity audit (D-17)', () => {
     bars[1] = { ...bars[1]!, high: bars[1]!.open - 5 };
     const res = auditCandles(bars, { barMs: MIN });
     expect(res.ok).toBe(false);
-    expect(res.hardViolations.map((v) => v.kind)).toContain('HIGH_BELOW_BODY');
+    expect(res.hardViolations.map((v: CandleViolation) => v.kind)).toContain('HIGH_BELOW_BODY');
   });
 
   it('catches a low above the body and high below low', () => {
     const bars = goodSeries(3);
     bars[1] = { ...bars[1]!, low: bars[1]!.high + 5 };
-    const kinds = auditCandles(bars, { barMs: MIN }).hardViolations.map((v) => v.kind);
+    const kinds = auditCandles(bars, { barMs: MIN }).hardViolations.map((v: CandleViolation) => v.kind);
     expect(kinds).toContain('LOW_ABOVE_BODY');
     expect(kinds).toContain('HIGH_BELOW_LOW');
   });
@@ -60,11 +60,11 @@ describe('candle integrity audit (D-17)', () => {
   it('catches a duplicate and an out-of-order timestamp', () => {
     const dup = goodSeries(3);
     dup[2] = { ...dup[2]!, time: dup[1]!.time };
-    expect(auditCandles(dup, { barMs: MIN }).hardViolations.map((v) => v.kind)).toContain('DUPLICATE_TIME');
+    expect(auditCandles(dup, { barMs: MIN }).hardViolations.map((v: CandleViolation) => v.kind)).toContain('DUPLICATE_TIME');
 
     const back = goodSeries(3);
     back[2] = { ...back[2]!, time: back[0]!.time - MIN };
-    expect(auditCandles(back, { barMs: MIN }).hardViolations.map((v) => v.kind)).toContain(
+    expect(auditCandles(back, { barMs: MIN }).hardViolations.map((v: CandleViolation) => v.kind)).toContain(
       'TIME_NOT_INCREASING',
     );
   });
@@ -73,22 +73,22 @@ describe('candle integrity audit (D-17)', () => {
     const bars = goodSeries(3);
     bars[1] = { ...bars[1]!, time: bars[1]!.time + 7_000 }; // 7s off the 1m grid
     const res = auditCandles(bars, { barMs: MIN });
-    expect(res.hardViolations.map((v) => v.kind)).toContain('MISALIGNED_BUCKET');
+    expect(res.hardViolations.map((v: CandleViolation) => v.kind)).toContain('MISALIGNED_BUCKET');
   });
 
   it('catches a non-finite price', () => {
     const bars = goodSeries(3);
     bars[1] = { ...bars[1]!, close: Number.NaN };
-    expect(auditCandles(bars, { barMs: MIN }).hardViolations.map((v) => v.kind)).toContain('NON_FINITE');
+    expect(auditCandles(bars, { barMs: MIN }).hardViolations.map((v: CandleViolation) => v.kind)).toContain('NON_FINITE');
   });
 
   it('reports session gaps only when asked, and never as a hard violation', () => {
     const bars = goodSeries(3);
     bars[2] = { ...bars[2]!, time: bars[1]!.time + 5 * MIN }; // a 4-bucket gap
     const silent = auditCandles(bars, { barMs: MIN });
-    expect(silent.violations.some((v) => v.kind === 'GAP')).toBe(false);
+    expect(silent.violations.some((v: CandleViolation) => v.kind === 'GAP')).toBe(false);
     const loud = auditCandles(bars, { barMs: MIN, reportGaps: true });
-    expect(loud.violations.some((v) => v.kind === 'GAP')).toBe(true);
+    expect(loud.violations.some((v: CandleViolation) => v.kind === 'GAP')).toBe(true);
     expect(loud.ok).toBe(true); // a gap is informational, not a data error
   });
 });
