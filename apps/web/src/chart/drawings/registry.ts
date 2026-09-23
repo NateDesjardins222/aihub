@@ -152,7 +152,11 @@ const POSITION_OPTIONS: ToolOptions = {
   lossColor: '#f2544b',
   zoneOpacity: 0.14,
   showTicks: true,
-  showMoney: true,
+  // Money is opt-in: a planning drawing's first questions are "how far" and
+  // "how many times my risk" (points and R). Dollars follow only when the
+  // trader turns them on, so the default overlay stays clean rather than
+  // stacking a $ figure the plan did not ask for.
+  showMoney: false,
   showRatio: true,
 };
 
@@ -289,7 +293,10 @@ export const TOOLS: readonly ToolDef[] = [
       reverse: false,
       extendLeft: false,
       extendRight: false,
-      showPrices: true,
+      // Price beside each level is OFF by default: the clean, TradingView-like
+      // default is the level percentage alone (0.0% / 23.6% / 38.2% / …). A
+      // trader who wants the price at each level turns "Show prices" on.
+      showPrices: false,
       showPercents: true,
       labelSide: 'LEFT',
       background: false,

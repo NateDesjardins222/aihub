@@ -289,6 +289,14 @@ export function positionAnchors(
   entry: Anchor,
   tickSize: number,
   rightTime: number,
+  /**
+   * The risk distance in PRICE, so a fresh box is sized to the chart the trader
+   * is looking at. Omitted (or non-positive) falls back to a 20-tick default.
+   * The caller reads it from the visible range — a box that is always a fixed
+   * 20 ticks tall looks crushed on an instrument or zoom where 20 ticks is a
+   * few pixels, which was the reported "spawns crushed together" defect.
+   */
+  riskPrice?: number,
 ): Anchor[] {
   const tick = tickSize > 0 ? tickSize : 0.25;
   const long = kind === 'LONG_POSITION';
@@ -301,8 +309,12 @@ export function positionAnchors(
    * number of ticks rather than 19.87 of them.
    */
   const price = Math.round(entry.price / tick) * tick;
-  const target = price + (long ? 40 : -40) * tick;
-  const stop = price + (long ? -20 : 20) * tick;
+  // A 2:1 box: the risk is the scale-aware distance (never below the 20-tick
+  // floor so it stays a real box on a coarse tick), the reward is twice it.
+  const risk = riskPrice && riskPrice > 0 ? Math.max(20 * tick, riskPrice) : 20 * tick;
+  const reward = risk * 2;
+  const target = price + (long ? reward : -reward);
+  const stop = price + (long ? -risk : risk);
   const onTick = (value: number): number => Math.round(value / tick) * tick;
   return [
     { time: entry.time, price: onTick(price) },

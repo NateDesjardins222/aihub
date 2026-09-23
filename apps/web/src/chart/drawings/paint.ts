@@ -49,6 +49,23 @@ function dashCap(dash: Drawing['style']['dash']): CanvasLineCap {
 }
 
 /**
+ * The one font every drawing label paints in.
+ *
+ * A canvas 2D context CANNOT resolve a CSS `var()` inside `ctx.font`: the whole
+ * declaration is rejected and the context silently falls back to its 10px
+ * sans-serif default. Several labels here were set with
+ * `${size}px var(--font-ui), …`, so they never rendered in DM Sans at all — and
+ * the rest used `ui-monospace`, the dated "engineering" look this milestone
+ * removes. This returns a valid, literal DM Sans stack (the variable family the
+ * app already loads via @fontsource-variable/dm-sans) so every drawing reads in
+ * one clean, modern UI font. Weight defaults to medium; number-heavy chips pass
+ * 600 for a touch more presence at small sizes.
+ */
+function labelFont(sizePx: number, weight: number | string = 500): string {
+  return `${weight} ${sizePx}px 'DM Sans Variable', 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif`;
+}
+
+/**
  * Paint one drawing.
  *
  * Separated from the component so it is a plain function of (drawing,
@@ -138,7 +155,7 @@ export function drawDrawing(
       if (drawing.text) {
         ctx.save();
         ctx.setLineDash([]);
-        ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+        ctx.font = labelFont(drawing.style.fontSize);
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = border;
         ctx.fillText(drawing.text, Math.min(a.x, b.x) + 4, Math.min(a.y, b.y) - 4);
@@ -186,7 +203,7 @@ export function drawDrawing(
       if (drawing.text) {
         ctx.save();
         ctx.setLineDash([]);
-        ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+        ctx.font = labelFont(drawing.style.fontSize);
         ctx.textBaseline = 'top';
         ctx.fillStyle = border;
         ctx.fillText(drawing.text, x + 5, y + 4);
@@ -252,7 +269,7 @@ export function drawDrawing(
         line(ctx, { x: left, y }, { x: right, y });
         ctx.globalAlpha = 1;
         if (!showPercents && !showPrices) continue;
-        ctx.font = `${drawing.style.fontSize}px ui-monospace, monospace`;
+        ctx.font = labelFont(drawing.style.fontSize, 600);
         ctx.textBaseline = 'bottom';
         const parts: string[] = [];
         // A level named by the trader is shown by that name: "OTE" says more
@@ -274,7 +291,7 @@ export function drawDrawing(
     case 'TEXT': {
       if (!a) break;
       ctx.setLineDash([]);
-      ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+      ctx.font = labelFont(drawing.style.fontSize);
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
       // Multiline: one line per newline, stepping down by the same line height
@@ -323,7 +340,7 @@ export function drawDrawing(
           maximumFractionDigits: 2,
         })}`;
       const lines = measureReadoutLines(stats, pricePrecision, money);
-      ctx.font = `${drawing.style.fontSize}px var(--font-ui), system-ui, sans-serif`;
+      ctx.font = labelFont(drawing.style.fontSize);
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
       const lineH = drawing.style.fontSize * 1.5;
@@ -422,7 +439,7 @@ function priceTag(
   ctx.save();
   ctx.setLineDash([]);
   ctx.globalAlpha = 1;
-  ctx.font = '10px ui-monospace, SFMono-Regular, monospace';
+  ctx.font = labelFont(10, 600);
   const width = ctx.measureText(text).width + 7;
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -495,6 +512,32 @@ function drawPosition(
   ctx.stroke();
 
   /*
+   * A side badge on the entry — the one label shown AT REST.
+   *
+   * The two tools were "almost indistinguishable" because at a glance a green
+   * zone above and a red zone below reads the same whichever way the trade goes.
+   * A small LONG/SHORT pill in the direction's colour, sitting on the entry
+   * line, makes the direction unmistakable without adding any of the numbers the
+   * milestone is trying to remove.
+   */
+  const long = drawing.kind === 'LONG_POSITION';
+  const badge = long ? 'LONG' : 'SHORT';
+  const badgeColor = long ? profitColor : lossColor;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.font = labelFont(10, 700);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const badgeW = ctx.measureText(badge).width + 12;
+  ctx.fillStyle = withAlpha(badgeColor, 0.95);
+  ctx.beginPath();
+  ctx.roundRect(left, Math.round(entry.y) - 8, badgeW, 16, 3);
+  ctx.fill();
+  ctx.fillStyle = '#07090d';
+  ctx.fillText(badge, left + 6, Math.round(entry.y) + 1);
+  ctx.restore();
+
+  /*
    * --- the readout, WHEN IT IS ASKED FOR ---------------------------------
    *
    * THE GEOMETRY SHOWS THE TRADE. THE NUMBERS APPEAR WHEN YOU INSPECT IT.
@@ -513,7 +556,7 @@ function drawPosition(
   const inspected = state === 'HOVER' || state === 'SELECTED' || state === 'PENDING';
   if (inspected) {
     const fontSize = drawing.style.fontSize;
-    ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, monospace`;
+    ctx.font = labelFont(fontSize, 600);
     ctx.textBaseline = 'middle';
 
     const readout = positionReadout(metrics, {

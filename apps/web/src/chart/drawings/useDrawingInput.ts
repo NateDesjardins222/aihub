@@ -610,5 +610,13 @@ function placedPosition(
 ): Anchor[] {
   const index = view.timeToIndex(entry.time);
   const rightTime = index === null ? entry.time : (view.indexToTime(index + 30) ?? entry.time);
-  return positionAnchors(kind, entry, tickSize, rightTime);
+  // Size the box to the chart in view: the stop sits ~8% of the visible price
+  // height from the entry (target twice that), so a placed position is always a
+  // legible shape rather than a fixed 20-tick sliver that looks crushed when a
+  // tick is only a pixel or two on screen.
+  const top = view.yToPrice(0);
+  const bottom = view.yToPrice(view.height);
+  const visibleSpan = top !== null && bottom !== null ? Math.abs(top - bottom) : 0;
+  const riskPrice = visibleSpan > 0 ? visibleSpan * 0.08 : 0;
+  return positionAnchors(kind, entry, tickSize, rightTime, riskPrice);
 }
