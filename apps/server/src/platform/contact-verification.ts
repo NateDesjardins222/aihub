@@ -20,6 +20,7 @@ import { events } from './events.js';
 import { SYSTEM_ACTOR, type Actor } from './actor.js';
 import { identityAdvisoryLockSql } from './identity-lock.js';
 import { advanceIdentityStatus, type IdentityStatus } from './customer-identity.js';
+import { enqueueNotification } from './notifications.js';
 import { env } from '../config/env.js';
 
 export type ContactChannel = 'EMAIL' | 'SMS';
@@ -183,6 +184,19 @@ export async function startContactVerification(
     });
     return challenge!.id;
   });
+
+  // Enqueue the VERIFY notification directly (with the code + the target as the
+  // recipient) rather than via the event consumer, because the code is never
+  // persisted in the domain event. Fire-and-forget: it never blocks or fails the
+  // challenge, and the worker delivers it asynchronously.
+  void enqueueNotification(db, {
+    organizationId: identity.organizationId,
+    customerIdentityId: input.identityId,
+    type: input.channel === 'EMAIL' ? 'VERIFY_EMAIL' : 'VERIFY_PHONE',
+    subjectKey: challengeId,
+    recipientByChannel: { [input.channel]: value },
+    data: { code },
+  }).catch(() => undefined);
 
   if (env().NODE_ENV !== 'production') devCodes.set(challengeId, code);
   return {

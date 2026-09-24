@@ -34,6 +34,7 @@ import {
 import { seedDefaultAgreements } from '../platform/agreements.js';
 import { defaultOrganizationId } from '../platform/provisioning.js';
 import { registerProvisioningRecovery, retryPendingProvisioning } from '../platform/commerce-fulfillment.js';
+import { registerNotificationConsumer, startNotificationWorker } from '../platform/notifications.js';
 
 export interface BuiltApp {
   readonly app: FastifyInstance;
@@ -247,6 +248,17 @@ export async function buildApp(): Promise<BuiltApp> {
   void fundEligibleQualifications(db).catch(() => undefined);
 
   /*
+   * Customer notifications attach here, strictly downstream: a committed domain
+   * event records a notification intent (off the publishing call stack), and a
+   * separate worker delivers it through the provider. Trading/payment/provisioning
+   * never wait for email or SMS. With no Resend/Twilio credentials the mock
+   * providers record what would have been sent; a real-but-unconfigured provider
+   * SUPPRESSES rather than faking delivery.
+   */
+  const stopNotificationConsumer = registerNotificationConsumer(db);
+  const stopNotificationWorker = startNotificationWorker(db);
+
+  /*
    * A paid purchase whose identity/agreements gate was not yet satisfied parks
    * recoverably. This subscriber re-drives a customer's blocked orders the moment
    * they clear the gate, and the startup sweep recovers any left by a crash — so a
@@ -287,6 +299,8 @@ export async function buildApp(): Promise<BuiltApp> {
     stopCertifying();
     stopAutoFunding();
     stopProvisioningRecovery();
+    stopNotificationConsumer();
+    stopNotificationWorker();
     outboxWorker.stop();
     await accountListener?.close().catch(() => undefined);
     engine.stop();
