@@ -17,7 +17,7 @@ import type { Timeframe } from '@atlas/contracts';
  * There is no price ladder: this feed carries no order book, and a ladder
  * drawn around a last price would be a picture of depth that does not exist.
  */
-export type Surface = 'JOURNAL' | null;
+export type Surface = 'JOURNAL' | 'PAYOUT' | null;
 
 /** Which section of the settings dialog is showing. */
 export type SettingsTab =

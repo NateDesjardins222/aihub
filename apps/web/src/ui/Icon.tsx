@@ -42,6 +42,7 @@ export type IconName =
   | 'measure'
   | 'chart'
   | 'journal'
+  | 'wallet'
   | 'practice'
   | 'ladder'
   | 'close'
@@ -135,6 +136,7 @@ const PATHS: Record<IconName, string> = {
   measure: 'M8 2v12M5.6 4.4L8 2l2.4 2.4M5.6 11.6L8 14l2.4-2.4',
   chart: 'M2 13.5h12M4 11V6M7.3 11V3.5M10.6 11V8',
   journal: 'M3.5 2h9v12h-9zM6 5h4.5M6 7.6h4.5M6 10.2h3',
+  wallet: 'M2.5 4.5h11v8h-11zM2.5 4.5l7-2 2.5 2M10.5 8.5h3',
   practice: 'M8 2.2a5.8 5.8 0 100 11.6 5.8 5.8 0 000-11.6zM6.4 5.6l4.6 2.4-4.6 2.4z',
   ladder: 'M2.5 2.5h11v11h-11zM2.5 6.2h11M2.5 9.8h11M8 2.5v11',
   close: 'M3.5 3.5l9 9M12.5 3.5l-9 9',

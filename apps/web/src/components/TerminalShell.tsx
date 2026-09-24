@@ -8,6 +8,7 @@ import { OrderTicket } from '../panels/OrderTicket';
 import { ActivityPanel } from '../panels/ActivityPanel';
 import { Drawer } from '../panels/Drawer';
 import { JournalPanel } from '../panels/JournalPanel';
+import { PayoutSurface } from '../panels/PayoutSurface';
 import { SettingsDialog } from '../settings/SettingsDialog';
 import { useWorkspace } from '../state/workspace';
 import { usePersistentFlag, usePersistentSize, useDragResize } from './usePersistentSize';
@@ -120,6 +121,12 @@ export function TerminalShell(): JSX.Element {
           {surface === 'JOURNAL' ? (
             <Drawer title="Journal" onClose={() => openSurface(null)} width={640} testId="drawer-journal">
               <JournalPanel />
+            </Drawer>
+          ) : null}
+
+          {surface === 'PAYOUT' ? (
+            <Drawer title="Payouts" onClose={() => openSurface(null)} width={520} testId="drawer-payout">
+              <PayoutSurface />
             </Drawer>
           ) : null}
 

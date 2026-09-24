@@ -34,6 +34,7 @@ interface Destination {
 const DESTINATIONS: readonly Destination[] = [
   { id: 'CHARTS', label: 'Trade', icon: 'chart', hint: 'The charts and the order ticket' },
   { id: 'JOURNAL', label: 'Journal', icon: 'journal', hint: 'Journal, calendar and analytics' },
+  { id: 'PAYOUT', label: 'Payouts', icon: 'wallet', hint: 'Payout eligibility and requests' },
 ];
 
 export function AppRail(): JSX.Element {
@@ -62,7 +63,7 @@ export function AppRail(): JSX.Element {
           <button
             key={item.id}
             className={`apprail-btn ${active === item.id ? 'apprail-btn-on' : ''}`}
-            onClick={() => openSurface(item.id === 'CHARTS' ? null : (item.id as 'JOURNAL'))}
+            onClick={() => openSurface(item.id === 'CHARTS' ? null : (item.id as 'JOURNAL' | 'PAYOUT'))}
             title={item.hint}
             aria-label={item.label}
             aria-current={active === item.id ? 'page' : undefined}

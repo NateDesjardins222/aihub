@@ -1,0 +1,102 @@
+/* The trader's payout drawer. Reuses the terminal's tokens. */
+.payout-surface {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+}
+.pay-muted {
+  color: var(--text-secondary);
+}
+.pay-error {
+  color: var(--short);
+}
+.pay-ok {
+  color: var(--long);
+}
+.pay-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pay-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.pay-badge-ok {
+  background: color-mix(in srgb, var(--long) 22%, transparent);
+  color: var(--long);
+}
+.pay-badge-no {
+  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
+  color: var(--text-secondary);
+}
+.pay-model {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+.pay-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+  margin: 0;
+}
+.pay-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pay-grid dt {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pay-grid dd {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+.pay-reasons {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pay-request {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.pay-request label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.pay-request input {
+  font-variant-numeric: tabular-nums;
+}
+.pay-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.pay-submit {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.pay-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
