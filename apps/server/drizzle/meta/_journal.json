@@ -141,6 +141,13 @@
       "when": 1790088479819,
       "tag": "0019_customer_portal",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790088480819,
+      "tag": "0020_certificate_account_ondelete",
+      "breakpoints": true
     }
   ]
 }

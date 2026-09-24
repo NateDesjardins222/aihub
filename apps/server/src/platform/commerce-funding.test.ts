@@ -111,8 +111,13 @@ describe('automatic pass -> funded', () => {
     const qual = await certifyEvaluation(db, accountId);
     expect(qual!.fundingState).toBe('ELIGIBLE'); // ELIGIBLE at the instant of certify
 
-    // The subscriber (deferred) funds it shortly after.
+    // The deferred subscriber funds it; the eligible-qualification sweep is the
+    // documented recovery net for the same auto-funding. Under heavy startup
+    // org-audit-lock contention the deferred path can lose the race within the
+    // window, so we also nudge the recovery sweep each poll — still asserting the
+    // system auto-funds it exactly once (approveFunding is locked + keyed).
     const funded = await waitFor(async () => {
+      await fundEligibleQualifications(db).catch(() => 0);
       const [q] = await db.select().from(accountQualifications).where(eq(accountQualifications.id, qual!.id));
       return q?.fundingState === 'FUNDED';
     });

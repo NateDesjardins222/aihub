@@ -18,6 +18,7 @@ import { provisioningRoutes } from './routes/provisioning.js';
 import { checkoutRoutes, commerceStatusRoutes, whopWebhookRoutes } from './routes/commerce.js';
 import { customerConsoleRoutes } from './routes/customers.js';
 import { onboardingRoutes } from './routes/onboarding.js';
+import { verifyRoutes } from './routes/verify.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
@@ -37,6 +38,8 @@ import { seedDefaultAgreements } from '../platform/agreements.js';
 import { defaultOrganizationId } from '../platform/provisioning.js';
 import { registerProvisioningRecovery, retryPendingProvisioning } from '../platform/commerce-fulfillment.js';
 import { registerNotificationConsumer, startNotificationWorker } from '../platform/notifications.js';
+import { registerRecognition } from '../platform/recognition.js';
+import { runInactivitySweep } from '../platform/account-inactivity.js';
 
 export interface BuiltApp {
   readonly app: FastifyInstance;
@@ -270,6 +273,21 @@ export async function buildApp(): Promise<BuiltApp> {
   void retryPendingProvisioning(db).catch(() => undefined);
 
   /*
+   * Recognition: a deferred bystander issues certificates and achievements on
+   * evaluation.qualified / account.funded / payout.paid / account.completed,
+   * exactly once per triggering event. Downstream of the lifecycle; never blocks
+   * it. Certificates carry only a SAFE public display name.
+   */
+  const stopRecognition = registerRecognition(db);
+
+  /*
+   * Funded-account inactivity closure is a scheduled sweep (runInactivitySweep),
+   * driven by an external scheduler/cron on a calendar cadence — deliberately NOT
+   * run eagerly at startup, where scanning every funded account would contend with
+   * live provisioning/funding. It is idempotent and can be invoked on demand.
+   */
+
+  /*
    * Seed the required agreements (dev placeholder content) so the onboarding
    * gate has current versions to enforce. Idempotent — republishing identical
    * content is a no-op.
@@ -301,6 +319,7 @@ export async function buildApp(): Promise<BuiltApp> {
     stopCertifying();
     stopAutoFunding();
     stopProvisioningRecovery();
+    stopRecognition();
     stopNotificationConsumer();
     stopNotificationWorker();
     outboxWorker.stop();
@@ -331,6 +350,8 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(commerceStatusRoutes, { prefix: '/api/v1/commerce' });
   // The customer-facing onboarding flow (identity, contact, agreements, products).
   await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
+  // Public, unauthenticated certificate verification (safe projection only).
+  await app.register(verifyRoutes, { prefix: '/api/v1/verify' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });

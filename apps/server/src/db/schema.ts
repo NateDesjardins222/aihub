@@ -1808,7 +1808,9 @@ export const certificates = pgTable(
     customerIdentityId: uuid('customer_identity_id')
       .notNull()
       .references(() => customerIdentities.id, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').references(() => accounts.id),
+    // A certificate is earned recognition: if an account row is ever removed, the
+    // certificate survives with a null account reference (never un-earned).
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
     /** A SAFE public name (e.g. "Nathan D."). Never the legal full name. */
     publicDisplayName: varchar('public_display_name', { length: 80 }).notNull(),
     amountMicros: micros('amount_micros'),
