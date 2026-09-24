@@ -17,6 +17,7 @@ import { payoutRoutes } from './routes/payouts.js';
 import { provisioningRoutes } from './routes/provisioning.js';
 import { checkoutRoutes, commerceStatusRoutes, whopWebhookRoutes } from './routes/commerce.js';
 import { customerConsoleRoutes } from './routes/customers.js';
+import { onboardingRoutes } from './routes/onboarding.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
@@ -328,6 +329,8 @@ export async function buildApp(): Promise<BuiltApp> {
   // The server-authoritative order status the onboarding UI polls (never the
   // browser's checkout callback), IDOR-guarded to the order's owner.
   await app.register(commerceStatusRoutes, { prefix: '/api/v1/commerce' });
+  // The customer-facing onboarding flow (identity, contact, agreements, products).
+  await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });

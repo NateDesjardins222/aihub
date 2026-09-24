@@ -55,7 +55,11 @@ export const profileConfigSchema = z.object({
   execution: z.record(z.string(), z.unknown()).nullable().default(null),
   instruments: instrumentPolicySchema.default({ allowed: null, maxContracts: null, perInstrument: {} }),
   display: z
-    .object({ startingBalanceMicros: z.number().int().positive().optional() })
+    .object({
+      startingBalanceMicros: z.number().int().positive().optional(),
+      /** The list price shown at checkout, in integer micro-dollars. Informational. */
+      priceMicros: z.number().int().nonnegative().optional(),
+    })
     .default({}),
   /** Opaque to the engine; carried so a firm's payout terms travel with the product. */
   payoutRules: z.unknown().nullable().default(null),

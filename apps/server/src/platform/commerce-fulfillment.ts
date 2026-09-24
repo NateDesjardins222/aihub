@@ -20,8 +20,10 @@ import { commercialOrders, entitlements } from '../db/schema.js';
 import { recordAudit } from './audit.js';
 import { events } from './events.js';
 import { SYSTEM_ACTOR, type Actor } from './actor.js';
-import { CommerceError, fulfillCompletedOrder } from './commerce.js';
+import { CommerceError, fulfillCompletedOrder, markOrderCompleted } from './commerce.js';
 import { evaluateProvisioningGate } from './provisioning-gate.js';
+import { MockCommerceProvider, signMockCommerceEvent } from './commerce-provider.js';
+import { markCommerceEventProcessed, recordCommerceEvent } from './commerce-events.js';
 
 type CommercialOrderRow = typeof commercialOrders.$inferSelect;
 
@@ -168,6 +170,39 @@ export async function retryPendingProvisioning(db: Database): Promise<number> {
     if (result?.status === 'PROVISIONED') provisioned += 1;
   }
   return provisioned;
+}
+
+/**
+ * Simulate a provider PAYMENT_SUCCEEDED for an order — the SERVER-SIDE stand-in
+ * for the provider webhook, used by the mock onboarding flow (non-production).
+ * It mints a genuinely signed mock event and routes it through the SAME
+ * record -> dedup -> gated-fulfillment path the real webhook uses, so a browser
+ * "pay" click triggers a verified SERVER event (never a browser-side provision),
+ * and the reconciliation ledger records it. The browser cannot forge this: the
+ * mock secret lives only on the server.
+ */
+export async function simulateProviderPayment(
+  db: Database,
+  input: { organizationId: string; orderId: string; actor?: Actor },
+): Promise<FulfillmentResult & { eventStatus: string }> {
+  const actor = input.actor ?? SYSTEM_ACTOR;
+  const provider = new MockCommerceProvider();
+  const rawBody = JSON.stringify({
+    id: `sim_${input.orderId}_${Date.now()}`,
+    type: 'payment.succeeded',
+    atlasOrderId: input.orderId,
+  });
+  const raw = { rawBody, headers: signMockCommerceEvent(rawBody) };
+  const outcome = await recordCommerceEvent(db, { organizationId: input.organizationId, provider, raw, actor });
+  if (outcome.kind !== 'ACCEPTED') {
+    // A duplicate/rejected event: return the order's current provisioning state.
+    const existing = await fulfillPurchaseGated(db, input.orderId, { actor });
+    return { ...existing, eventStatus: outcome.kind };
+  }
+  await markOrderCompleted(db, input.orderId, { actor });
+  const result = await fulfillPurchaseGated(db, input.orderId, { actor });
+  await markCommerceEventProcessed(db, outcome.row.id, { atlasOrderId: input.orderId });
+  return { ...result, eventStatus: 'ACCEPTED' };
 }
 
 /**

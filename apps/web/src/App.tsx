@@ -26,6 +26,13 @@ const IconGallery = lazy(() => import('./dev/IconGallery').then((m) => ({ defaul
  */
 const CheckoutApp = lazy(() => import('./checkout/CheckoutApp').then((m) => ({ default: m.CheckoutApp })));
 
+/*
+ * The customer onboarding flow (VISITOR → verified → agreements → product →
+ * checkout → server-driven provisioning → account ready). Its own path and
+ * bundle, behind sign-in, so the terminal never downloads it.
+ */
+const OnboardingApp = lazy(() => import('./onboarding/OnboardingApp').then((m) => ({ default: m.OnboardingApp })));
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -42,6 +49,7 @@ export function App(): JSX.Element {
   const admin = useIsAdminPath();
   const icons = typeof window !== 'undefined' && window.location.pathname.startsWith('/icons');
   const checkout = typeof window !== 'undefined' && window.location.pathname.startsWith('/checkout');
+  const onboarding = typeof window !== 'undefined' && window.location.pathname.startsWith('/onboarding');
 
   useEffect(() => {
     void boot();
@@ -65,6 +73,13 @@ export function App(): JSX.Element {
     return (
       <Suspense fallback={<div className="boot-splash">Loading checkout…</div>}>
         <CheckoutApp />
+      </Suspense>
+    );
+  }
+  if (onboarding) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading…</div>}>
+        <OnboardingApp />
       </Suspense>
     );
   }
