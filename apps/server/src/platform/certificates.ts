@@ -96,6 +96,16 @@ export function safePublicDisplayName(preferred: string | null, displayName: str
   return `${first} ${lastInitial}.`.slice(0, 80);
 }
 
+/** True for a Postgres unique-constraint violation (SQLSTATE 23505), at any wrap depth. */
+function isUniqueViolation(err: unknown): boolean {
+  let e: unknown = err;
+  for (let i = 0; i < 5 && e; i += 1) {
+    if (typeof e === 'object' && e !== null && 'code' in e && (e as { code?: unknown }).code === '23505') return true;
+    e = typeof e === 'object' && e !== null && 'cause' in e ? (e as { cause?: unknown }).cause : null;
+  }
+  return false;
+}
+
 /** A short, human, non-guessable public certificate id (HT-C-XXXXXXXX). */
 function makePublicId(dedupeKey: string): string {
   const h = createHash('sha256').update(dedupeKey).digest('hex').slice(0, 8).toUpperCase();
@@ -142,24 +152,36 @@ export async function issueCertificate(db: Database, input: IssueCertificateInpu
   });
   const publicDisplayName = await resolveSafeName(db, input.userId, identity.id);
 
-  const [row] = await db
-    .insert(certificates)
-    .values({
-      organizationId: input.organizationId,
-      certificatePublicId: makePublicId(`${input.organizationId}:${input.dedupeKey}`),
-      verificationToken: makeToken(),
-      type: input.type,
-      customerIdentityId: identity.id,
-      accountId: input.accountId,
-      publicDisplayName,
-      amountMicros: input.amountMicros ?? null,
-      milestoneValueMicros: input.milestoneValueMicros ?? null,
-      templateVersion: input.templateVersion ?? TEMPLATE_VERSION,
-      renderStatus: 'PENDING',
-      dedupeKey: input.dedupeKey,
-    })
-    .onConflictDoNothing({ target: [certificates.organizationId, certificates.dedupeKey] })
-    .returning();
+  // The public id is deterministic from (org, dedupeKey), so a concurrent
+  // duplicate collides on BOTH the (org, dedupeKey) index and the global
+  // certificate_public_id index. ON CONFLICT names only the former, so a race
+  // that Postgres reports against the public-id index escapes as a 23505 rather
+  // than doing nothing — we treat any unique violation here as the same
+  // "someone else already issued it" outcome and fall through to the fetch.
+  let row: typeof certificates.$inferSelect | undefined;
+  try {
+    [row] = await db
+      .insert(certificates)
+      .values({
+        organizationId: input.organizationId,
+        certificatePublicId: makePublicId(`${input.organizationId}:${input.dedupeKey}`),
+        verificationToken: makeToken(),
+        type: input.type,
+        customerIdentityId: identity.id,
+        accountId: input.accountId,
+        publicDisplayName,
+        amountMicros: input.amountMicros ?? null,
+        milestoneValueMicros: input.milestoneValueMicros ?? null,
+        templateVersion: input.templateVersion ?? TEMPLATE_VERSION,
+        renderStatus: 'PENDING',
+        dedupeKey: input.dedupeKey,
+      })
+      .onConflictDoNothing({ target: [certificates.organizationId, certificates.dedupeKey] })
+      .returning();
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    row = undefined;
+  }
 
   if (!row) {
     // A concurrent issuance won; return the existing certificate.

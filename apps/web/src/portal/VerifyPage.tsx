@@ -25,6 +25,9 @@ const TYPE_LABEL: Record<string, string> = {
   FUNDED_TRADER: 'Funded Trader',
   PAYOUT: 'Payout',
   ACCOUNT_COMPLETED: 'Account Completed',
+  TENK_CLUB: '$10K Club',
+  FIFTYK_CLUB: '$50K Club',
+  HUNDREDK_CLUB: '$100K Club',
 };
 
 function money(micros: number | null): string {
