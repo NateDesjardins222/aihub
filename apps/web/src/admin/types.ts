@@ -126,6 +126,23 @@ export interface AdminAccountDetail {
     } | null;
     fundedFrom: { accountId: string; publicId: string; qualificationId: string } | null;
   };
+  /** Read-only view of the trader's personal risk controls (Milestone 5). */
+  personalRisk?: {
+    tradingDay: string | null;
+    controls: Array<{
+      controlType: string;
+      kind: string;
+      mode: 'FLEXIBLE' | 'LOCKED';
+      locked: boolean;
+      lockedTradingDay: string | null;
+      valueMicros: number | null;
+      valueInt: number | null;
+      windowStart: string | null;
+      windowEnd: string | null;
+      sessions: string[] | null;
+      usage: Record<string, unknown> | null;
+    }>;
+  } | null;
 }
 
 export interface AdminOrder {

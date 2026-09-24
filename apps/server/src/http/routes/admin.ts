@@ -93,6 +93,7 @@ import {
   listNotes,
   redactNote,
 } from '../../platform/notes.js';
+import { getPersonalRiskProfile } from '../../platform/personal-risk.js';
 
 interface AdminDeps {
   readonly engine: TradingEngine;
@@ -830,6 +831,13 @@ export function adminRoutes(deps: AdminDeps) {
         accountAudit(db, row.account.id, 100),
       ]);
 
+      // Trader personal risk controls — READ ONLY for the owner console. The
+      // operator sees exactly what the trader set (and any lock), but there is
+      // no owner path to loosen or disable a personal control: this is the same
+      // authoritative projection the trader reads, surfaced for visibility only.
+      // Best-effort: a projection error must not blank the whole account page.
+      const personalRisk = await getPersonalRiskProfile(db, row.account.id).catch(() => null);
+
       // The commercial lifecycle view of this account: the qualification it
       // earned (if an evaluation that passed), and, if this is a funded-sim
       // account, the evaluation it came from. Both link the two halves so an
@@ -920,6 +928,29 @@ export function adminRoutes(deps: AdminDeps) {
           tradeDate: trade.tradeDate,
         })),
         audit: audit.map(presentAudit),
+        // Read-only trader personal risk controls (Milestone 5). enabled-only
+        // so the operator sees the active restrictions; the client renders this
+        // without any control to change it.
+        personalRisk: personalRisk
+          ? {
+              tradingDay: personalRisk.tradingDay,
+              controls: personalRisk.controls
+                .filter((c) => c.enabled)
+                .map((c) => ({
+                  controlType: c.controlType,
+                  kind: c.kind,
+                  mode: c.mode,
+                  locked: c.locked,
+                  lockedTradingDay: c.lockedTradingDay,
+                  valueMicros: c.valueMicros,
+                  valueInt: c.valueInt,
+                  windowStart: c.windowStart,
+                  windowEnd: c.windowEnd,
+                  sessions: c.sessions,
+                  usage: c.usage,
+                })),
+            }
+          : null,
       });
     });
 

@@ -306,6 +306,43 @@ export function AdminAccountPage({
         ) : null}
       </Panel>
 
+      <Panel title="Trader personal risk controls">
+        <p className="adm-dim" style={{ margin: '0 0 10px' }}>
+          Read-only. These are the trader’s own tighten-only controls; an operator can see them but
+          cannot loosen or disable them. Firm rules always apply on top.
+        </p>
+        {!data.personalRisk || data.personalRisk.controls.length === 0 ? (
+          <p className="adm-dim" data-testid="admin-personal-risk-empty">
+            The trader has no personal risk controls enabled.
+          </p>
+        ) : (
+          <table className="adm-table" data-testid="admin-personal-risk">
+            <thead>
+              <tr>
+                <th>Control</th>
+                <th>Setting</th>
+                <th>Mode</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.personalRisk.controls.map((c) => (
+                <tr key={c.controlType}>
+                  <td>{personalControlLabel(c.controlType)}</td>
+                  <td className="num">{personalControlValue(c)}</td>
+                  <td>{c.mode === 'LOCKED' ? 'Locked' : 'Flexible'}</td>
+                  <td>
+                    {c.locked
+                      ? `🔒 locked until next trading day`
+                      : 'active'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+
       <Panel title={`Lifecycles (${data.lifecycles.length})`}>
         <table className="adm-table">
           <thead>
@@ -502,4 +539,40 @@ function Def({ label, value }: { label: string; value: string }): JSX.Element {
 function dollars(micros: unknown): string {
   if (typeof micros !== 'number') return '—';
   return `$${(micros / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+const PERSONAL_CONTROL_LABELS: Record<string, string> = {
+  DAILY_LOSS_LIMIT: 'Daily loss limit',
+  MAX_TRADES: 'Max trades per day',
+  DAILY_DRAWDOWN: 'Daily drawdown limit',
+  MAX_POSITION: 'Max position size',
+  DAILY_CONTRACT_LIMIT: 'Max contracts per day',
+  PROFIT_LOCK: 'Daily profit lock',
+  CONSECUTIVE_LOSS_LOCK: 'Consecutive loss lock',
+  COOLDOWN: 'Loss cooldown',
+  TRADING_WINDOW: 'Trading window',
+  SESSION_RESTRICTION: 'Session restriction',
+};
+
+function personalControlLabel(type: string): string {
+  return PERSONAL_CONTROL_LABELS[type] ?? type;
+}
+
+/** Human-readable value for one personal control, matching its kind. */
+function personalControlValue(c: {
+  kind: string; valueMicros: number | null; valueInt: number | null;
+  windowStart: string | null; windowEnd: string | null; sessions: string[] | null;
+}): string {
+  switch (c.kind) {
+    case 'MICROS':
+      return dollars(c.valueMicros);
+    case 'INT':
+      return c.valueInt == null ? '—' : String(c.valueInt);
+    case 'WINDOW':
+      return c.windowStart && c.windowEnd ? `${c.windowStart}–${c.windowEnd}` : '—';
+    case 'SESSIONS':
+      return c.sessions && c.sessions.length > 0 ? c.sessions.map((s) => s.replace('_', ' ')).join(', ') : '—';
+    default:
+      return '—';
+  }
 }
