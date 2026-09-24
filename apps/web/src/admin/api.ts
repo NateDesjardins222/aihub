@@ -22,6 +22,9 @@ import type {
   FundingQualification,
   FundingQualificationDetail,
   AdminExposure,
+  PayoutListRow,
+  PayoutCase,
+  PayoutExposure,
   ProductConfig,
   TraderNote,
 } from './types';
@@ -185,4 +188,14 @@ export const adminApi = {
 
   grantEvaluation: (body: { userId?: string; email?: string; profileKey: string }) =>
     api.post<{ accountId: string; orderId: string; entitlementId: string }>(`${BASE}/grants`, body),
+
+  // -- payouts --------------------------------------------------------------
+  payoutQueue: (state?: string) =>
+    api.get<{ rows: PayoutListRow[]; nextCursor: string | null }>(
+      `${BASE}/payouts${state && state !== 'ALL' ? `?state=${encodeURIComponent(state)}` : ''}`,
+    ),
+  payoutCase: (id: string) => api.get<PayoutCase>(`${BASE}/payouts/${id}`),
+  payoutExposure: () => api.get<PayoutExposure>(`${BASE}/payouts/exposure`),
+  payoutAction: (id: string, action: string, body: Record<string, unknown>) =>
+    api.post<{ id: string; state: string }>(`${BASE}/payouts/${id}/${action}`, body),
 };

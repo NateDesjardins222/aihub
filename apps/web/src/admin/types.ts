@@ -412,3 +412,97 @@ export interface AdminExposure {
   scannedAccounts: number;
   generatedAt: number;
 }
+
+// -- Payout engine ----------------------------------------------------------
+
+export interface PayoutListRow {
+  id: string;
+  state: string;
+  accountId: string;
+  accountPublicId: string | null;
+  accountName: string;
+  accountStatus: string;
+  adminHold: string | null;
+  productName: string | null;
+  accountType: string;
+  traderEmail: string | null;
+  requestedGrossMicros: number;
+  traderShareMicros: number | null;
+  firmShareMicros: number | null;
+  balanceMicros: number;
+  protectedBufferMicros: number | null;
+  withdrawableBeforeMicros: number | null;
+  payoutOrdinal: number;
+  holdKind: string | null;
+  createdAt: string;
+}
+
+export interface PayoutEligibilityView {
+  state: 'ELIGIBLE' | 'NOT_ELIGIBLE';
+  reasonCodes: string[];
+  grossWithdrawableMicros: number;
+  qualifyingWinningDays: number;
+  bestDayMicros: number;
+  consistencyRatio: number | null;
+  bufferEstablished: boolean;
+  dailyModeUnlocked: boolean;
+  minRequestMicros: number;
+  maxRequestMicros: number;
+}
+
+export interface PayoutCase {
+  request: {
+    id: string;
+    state: string;
+    requestedGrossMicros: number;
+    grossEligibleMicros: number | null;
+    traderShareMicros: number | null;
+    firmShareMicros: number | null;
+    balanceAdjustmentMicros: number | null;
+    protectedBufferMicros: number | null;
+    withdrawableBeforeMicros: number | null;
+    payoutOrdinal: number;
+    holdKind: string | null;
+    reason: string | null;
+    eligibilitySnapshot: unknown;
+    createdAt: string;
+    decidedAt: string | null;
+    paidAt: string | null;
+  };
+  account: {
+    id: string;
+    publicId: string | null;
+    name: string;
+    accountType: string;
+    status: string;
+    adminHold: string | null;
+    balanceMicros: number;
+    startingBalanceMicros: number;
+  };
+  policy: {
+    model: string;
+    profitSplitPercent: number;
+    fundedBufferMicros: number;
+    requiredWinningDays: number;
+    payoutConsistencyThreshold: number | null;
+  };
+  liveEligibility: PayoutEligibilityView;
+  ledger: Array<{
+    entryType: string;
+    amountMicros: number;
+    balanceBeforeMicros: number;
+    balanceAfterMicros: number;
+    traderShareMicros: number | null;
+    firmShareMicros: number | null;
+    createdAt: string;
+  }>;
+  audit: Array<{ action: string; reason: string | null; newState: unknown; createdAt: string }>;
+}
+
+export interface PayoutExposure {
+  realizedPaid: { today: number; last7d: number; last30d: number; allTime: number };
+  requestedLiabilityMicros: number;
+  approvedUnpaidMicros: number;
+  eligibleWithdrawableMicros: number;
+  byModel: Record<string, { requestedLiabilityMicros: number; paidAllTimeMicros: number }>;
+}
