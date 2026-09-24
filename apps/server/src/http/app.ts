@@ -16,6 +16,7 @@ import { adminRoutes } from './routes/admin.js';
 import { payoutRoutes } from './routes/payouts.js';
 import { provisioningRoutes } from './routes/provisioning.js';
 import { checkoutRoutes, commerceStatusRoutes, whopWebhookRoutes } from './routes/commerce.js';
+import { customerConsoleRoutes } from './routes/customers.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
@@ -322,6 +323,7 @@ export async function buildApp(): Promise<BuiltApp> {
   // /admin/payouts/* (owner) under their own RBAC.
   await app.register(payoutRoutes(), { prefix: '/api/v1' });
   await app.register(provisioningRoutes, { prefix: '/api/v1/provisioning' });
+  await app.register(customerConsoleRoutes, { prefix: '/api/v1/admin' });
   await app.register(checkoutRoutes(), { prefix: '/api/v1/checkout' });
   // The server-authoritative order status the onboarding UI polls (never the
   // browser's checkout callback), IDOR-guarded to the order's owner.

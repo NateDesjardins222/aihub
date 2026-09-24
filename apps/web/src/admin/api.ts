@@ -204,4 +204,62 @@ export const adminApi = {
   economicsScenarios: () => api.get<{ scenarios: string[]; base: unknown }>(`${BASE}/economics/scenarios`),
   economicsRun: (body: { scenario: string; seed: number; purchases: number; trials: number }) =>
     api.post<EconomicsRun>(`${BASE}/economics/run`, body),
+
+  // Customer / Commerce console.
+  customers: (q: string) =>
+    api.get<{ customers: CustomerSearchRow[] }>(`${BASE}/customers?q=${encodeURIComponent(q)}&limit=50`),
+  customer: (id: string) => api.get<CustomerDetail>(`${BASE}/customers/${id}`),
+  customerExceptions: () => api.get<{ counts: Record<string, number> }>(`${BASE}/customers/exceptions`),
+  customerReconciliation: () =>
+    api.get<{ reconciliation: CustomerReconciliation }>(`${BASE}/customers/reconciliation`),
+  customerQueue: (name: string) =>
+    api.get<{ rows: Array<Record<string, unknown>> }>(`${BASE}/customers/queues/${name}`),
+  customerRetryProvisioning: (orderId: string, reason: string) =>
+    api.post<{ orderId: string; result: { status: string } }>(
+      `${BASE}/customers/orders/${orderId}/retry-provisioning`,
+      { reason },
+    ),
+  customerRequireReverification: (id: string, reason: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/customers/${id}/require-reverification`, { reason }),
+  customerReviewDecision: (id: string, decision: 'IDENTITY_VERIFIED' | 'REJECTED', reason: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/customers/${id}/review-decision`, { decision, reason }),
+  customerHold: (id: string, status: 'ACTIVE' | 'HOLD' | 'CLOSED', reason: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/customers/${id}/hold`, { status, reason }),
+  customerResendNotification: (id: string, reason: string) =>
+    api.post<{ requeued: boolean }>(`${BASE}/customers/notifications/${id}/resend`, { reason }),
 };
+
+export interface CustomerSearchRow {
+  customerIdentityId: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  identityStatus: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface CustomerReconciliation {
+  paymentEventsReceived: number;
+  paymentEventsProcessed: number;
+  orders: { provisioned: number; completed: number; blocked: number; failed: number; refunded: number };
+  entitlements: number;
+  accounts: { evaluation: number; funded: number };
+  discrepancies: { unprocessedCommerceEvents: number; provisioningExceptions: number; unreconciledPayments: number };
+  balanced: boolean;
+}
+
+export interface CustomerDetail {
+  identity: { id: string; identityStatus: string; status: string; legalName: string | null; country: string | null };
+  user: { id: string; email: string; displayName: string; role: string } | null;
+  contacts: Array<{ id: string; channel: string; value: string; status: string; isPrimary: boolean }>;
+  verifications: Array<{ id: string; provider: string; status: string; reasonCode: string | null; createdAt: string }>;
+  acceptances: Array<{ id: string; agreementType: string; contentHash: string; acceptedAt: string }>;
+  outstandingAgreements: Array<{ agreementType: string; versionId: string; version: number }>;
+  orders: Array<{ id: string; status: string; source: string; amountMicros: number | null; provisionNote: string | null; createdAt: string }>;
+  entitlements: Array<{ id: string; kind: string; status: string; consumedByAccountId: string | null }>;
+  accounts: Array<{ id: string; publicId: string; name: string; accountType: string; status: string; adminHold: string | null; balanceMicros: number }>;
+  notifications: Array<{ id: string; type: string; channel: string; status: string; provider: string | null; createdAt: string }>;
+  audit: Array<{ id: string; action: string; subjectType: string; createdAt: string; reason: string | null }>;
+  providers: { identity: string; commerce: string; email: string; sms: string };
+}

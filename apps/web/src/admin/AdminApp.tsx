@@ -24,6 +24,7 @@ import { AdminRiskPage } from './pages/RiskPage';
 import { AdminFundingPage } from './pages/FundingPage';
 import { AdminPayoutsPage } from './pages/PayoutsPage';
 import { AdminEconomicsPage } from './pages/EconomicsPage';
+import { AdminCustomersPage } from './pages/CustomersPage';
 import { AdminAuditPage } from './pages/AuditPage';
 import { AdminSystemPage } from './pages/SystemPage';
 import './Admin.css';
@@ -34,6 +35,7 @@ export type AdminRoute =
   | { name: 'USER'; id: string }
   | { name: 'ACCOUNTS' }
   | { name: 'ACCOUNT'; id: string }
+  | { name: 'CUSTOMERS' }
   | { name: 'TRADING' }
   | { name: 'RISK' }
   | { name: 'FUNDING' }
@@ -54,6 +56,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   if (parts[0] === 'accounts') {
     return parts[1] ? { name: 'ACCOUNT', id: parts[1] } : { name: 'ACCOUNTS' };
   }
+  if (parts[0] === 'customers') return { name: 'CUSTOMERS' };
   if (parts[0] === 'trading') return { name: 'TRADING' };
   if (parts[0] === 'risk') return { name: 'RISK' };
   if (parts[0] === 'funding') return { name: 'FUNDING' };
@@ -77,6 +80,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/accounts';
     case 'ACCOUNT':
       return `/admin/accounts/${route.id}`;
+    case 'CUSTOMERS':
+      return '/admin/customers';
     case 'TRADING':
       return '/admin/trading';
     case 'RISK':
@@ -104,6 +109,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'OVERVIEW' }, label: 'Overview' },
   { route: { name: 'USERS' }, label: 'Traders' },
   { route: { name: 'ACCOUNTS' }, label: 'Accounts' },
+  { route: { name: 'CUSTOMERS' }, label: 'Customers' },
   { route: { name: 'TRADING' }, label: 'Trading' },
   { route: { name: 'RISK' }, label: 'Risk' },
   { route: { name: 'FUNDING' }, label: 'Funding' },
@@ -186,6 +192,7 @@ export function AdminApp(): JSX.Element {
         {route.name === 'ACCOUNT' ? (
           <AdminAccountPage id={route.id} go={go} mayMutate={mayMutate} />
         ) : null}
+        {route.name === 'CUSTOMERS' ? <AdminCustomersPage mayMutate={mayMutate} /> : null}
         {route.name === 'TRADING' ? <AdminTradingPage go={go} /> : null}
         {route.name === 'RISK' ? <AdminRiskPage go={go} /> : null}
         {route.name === 'FUNDING' ? <AdminFundingPage go={go} /> : null}
