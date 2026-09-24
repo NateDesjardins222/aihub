@@ -1816,7 +1816,10 @@ export const certificates = pgTable(
     certificatePublicId: varchar('certificate_public_id', { length: 24 }).notNull(),
     /** Random URL-safe slug for the public /verify/<token> route (QR-compatible). */
     verificationToken: varchar('verification_token', { length: 48 }).notNull(),
-    /** EVALUATION_PASSED | FUNDED_TRADER | PAYOUT | ACCOUNT_COMPLETED */
+    /**
+     * EVALUATION_PASSED | FUNDED_TRADER | PAYOUT | ACCOUNT_COMPLETED |
+     * TENK_CLUB | FIFTYK_CLUB | HUNDREDK_CLUB (Milestone 6 clubs).
+     */
     type: varchar('type', { length: 24 }).notNull(),
     customerIdentityId: uuid('customer_identity_id')
       .notNull()
@@ -1831,6 +1834,21 @@ export const certificates = pgTable(
     status: varchar('status', { length: 16 }).notNull().default('ISSUED'),
     revokedReason: text('revoked_reason'),
     templateVersion: varchar('template_version', { length: 24 }).notNull().default('v1'),
+    // ---- Milestone 6: deterministic rendered artifact + storage (frozen at issuance) ----
+    /** The renderer implementation version, frozen onto the certificate. */
+    rendererVersion: varchar('renderer_version', { length: 24 }),
+    /** PENDING | RENDERED | FAILED | DISABLED (no approved master for this type). */
+    renderStatus: varchar('render_status', { length: 16 }).notNull().default('PENDING'),
+    /** Object-store keys for the immutable artifacts (never disk paths). */
+    imageStorageKey: text('image_storage_key'),
+    printStorageKey: text('print_storage_key'),
+    pdfStorageKey: text('pdf_storage_key'),
+    /** sha256 over the print artifact + frozen versions — the structural proof. */
+    renderHash: varchar('render_hash', { length: 64 }),
+    /** Safe last render error (no secrets), when renderStatus = FAILED. */
+    renderError: text('render_error'),
+    /** The LOCKED milestone label value for club certificates ($10k/$50k/$100k). */
+    milestoneValueMicros: micros('milestone_value_micros'),
     /** Exactly-once per triggering event. */
     dedupeKey: varchar('dedupe_key', { length: 200 }).notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1841,6 +1859,66 @@ export const certificates = pgTable(
     uniqueIndex('certificates_token_key').on(t.verificationToken),
     uniqueIndex('certificates_public_id_key').on(t.certificatePublicId),
     index('certificates_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+/**
+ * Milestone 6 — per-certificate reward delivery tracking (in-app + email). A
+ * delivery failure never rolls back issuance; delivery retries asynchronously.
+ */
+export const rewardDelivery = pgTable(
+  'reward_delivery',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    certificateId: uuid('certificate_id')
+      .notNull()
+      .references(() => certificates.id, { onDelete: 'cascade' }),
+    inAppDeliveredAt: timestamp('in_app_delivered_at', { withTimezone: true }),
+    emailQueuedAt: timestamp('email_queued_at', { withTimezone: true }),
+    emailDeliveredAt: timestamp('email_delivered_at', { withTimezone: true }),
+    lastDeliveryError: text('last_delivery_error'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('reward_delivery_certificate_key').on(t.certificateId)],
+);
+
+/**
+ * Milestone 6 — the 100K plaque, and any future manual physical reward. NEVER
+ * routed to a fulfillment provider: manual owner fulfillment only, no automatic
+ * spending. One per (customer, type).
+ */
+export const physicalRewardFulfillment = pgTable(
+  'physical_reward_fulfillment',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    certificateId: uuid('certificate_id').references(() => certificates.id, { onDelete: 'set null' }),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** PLAQUE_100K */
+    type: varchar('type', { length: 24 }).notNull(),
+    /** PENDING_REVIEW | VERIFIED | ORDERED | SHIPPED | DELIVERED | CANCELLED | HOLD */
+    status: varchar('status', { length: 24 }).notNull().default('PENDING_REVIEW'),
+    /** NOT_PROVIDED | PROVIDED | CONFIRMED */
+    shippingAddressStatus: varchar('shipping_address_status', { length: 24 }).notNull().default('NOT_PROVIDED'),
+    fulfillmentNotes: text('fulfillment_notes'),
+    trackingCarrier: varchar('tracking_carrier', { length: 48 }),
+    trackingNumber: varchar('tracking_number', { length: 120 }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('physical_reward_customer_type_key').on(t.organizationId, t.customerIdentityId, t.type),
+    index('physical_reward_status_idx').on(t.organizationId, t.status),
   ],
 );
 

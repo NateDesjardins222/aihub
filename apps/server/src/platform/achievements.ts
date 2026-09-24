@@ -24,13 +24,36 @@ export type AchievementType =
   | 'PAID_10K'
   | 'PAID_25K'
   | 'FIVE_PAYOUT_CLUB'
-  | 'ACCOUNT_COMPLETED';
+  | 'ACCOUNT_COMPLETED'
+  // Milestone 6 clubs — the locked $10k/$50k/$100k lifetime trader-share tiers.
+  | 'TENK_CLUB'
+  | 'FIFTYK_CLUB'
+  | 'HUNDREDK_CLUB';
 
 /** Cumulative trader-share payout thresholds (trader share, not gross). */
 export const PAYOUT_THRESHOLDS: ReadonlyArray<{ type: AchievementType; atMicros: number }> = [
   { type: 'PAID_5K', atMicros: 5_000 * M },
   { type: 'PAID_10K', atMicros: 10_000 * M },
   { type: 'PAID_25K', atMicros: 25_000 * M },
+];
+
+/**
+ * Milestone 6 club tiers: lifetime actual trader-share PAID payouts. Crossing a
+ * threshold issues the club achievement + club certificate exactly once per
+ * customer identity. The certificate prints the LOCKED milestone label value
+ * (`milestoneMicros`), not the actual lifetime total. HUNDREDK_CLUB is a physical
+ * plaque (manual fulfillment).
+ */
+export const CLUB_MILESTONES: ReadonlyArray<{
+  achievement: AchievementType;
+  certificate: 'TENK_CLUB' | 'FIFTYK_CLUB' | 'HUNDREDK_CLUB';
+  atMicros: number;
+  milestoneMicros: number;
+  physical: boolean;
+}> = [
+  { achievement: 'TENK_CLUB', certificate: 'TENK_CLUB', atMicros: 10_000 * M, milestoneMicros: 10_000 * M, physical: false },
+  { achievement: 'FIFTYK_CLUB', certificate: 'FIFTYK_CLUB', atMicros: 50_000 * M, milestoneMicros: 50_000 * M, physical: false },
+  { achievement: 'HUNDREDK_CLUB', certificate: 'HUNDREDK_CLUB', atMicros: 100_000 * M, milestoneMicros: 100_000 * M, physical: true },
 ];
 
 export interface IssueAchievementInput {

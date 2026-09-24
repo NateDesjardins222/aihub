@@ -44,7 +44,6 @@ function policy(model: 'CORE' | 'SELECT' | 'DAILY'): PayoutPolicy {
 function baseInput(over: Partial<EligibilityInput> & { balanceMicros: number }): EligibilityInput {
   return {
     policy: policy('DAILY'),
-    balanceMicros: over.balanceMicros,
     startingBalanceMicros: $(50_000),
     days: [],
     cycleStartDate: null,

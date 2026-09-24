@@ -176,6 +176,13 @@
    "when": 1790088481822,
    "tag": "0024_daily_payout_progression",
    "breakpoints": true
+  },
+  {
+   "idx": 25,
+   "version": "7",
+   "when": 1790088481823,
+   "tag": "0025_rewards_certificates",
+   "breakpoints": true
   }
  ]
 }
