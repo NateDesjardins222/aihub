@@ -85,7 +85,19 @@ export type DomainEventType =
   | 'account.completed'
   | 'certificate.issued'
   | 'certificate.revoked'
-  | 'achievement.issued';
+  | 'achievement.issued'
+  // Native copy trading (Copy Trading V1).
+  | 'copy.group.created'
+  | 'copy.group.paused'
+  | 'copy.group.resumed'
+  | 'copy.group.disabled'
+  | 'copy.group.leader_changed'
+  | 'copy.intent.created'
+  | 'copy.child.accepted'
+  | 'copy.child.rejected'
+  | 'copy.group.diverged'
+  | 'copy.group.resynced'
+  | 'copy.group.flattened';
 
 export interface DomainEvent {
   readonly type: DomainEventType;
