@@ -1,0 +1,47 @@
+{
+  "templateType": "10k-club",
+  "version": "v-test",
+  "renderable": true,
+  "canvas": {
+    "width": 1600,
+    "height": 1200
+  },
+  "fields": {
+    "recipientName": {
+      "x": 800,
+      "y": 560,
+      "width": 1200,
+      "fontFamily": "HappyTraderSerif",
+      "fontSize": 72,
+      "fontWeight": 700,
+      "color": "#f4f5f7",
+      "alignment": "center",
+      "maxLines": 1,
+      "overflow": "shrink"
+    },
+    "value": {
+      "x": 800,
+      "y": 860,
+      "width": 1000,
+      "fontFamily": "HappyTraderSans",
+      "fontSize": 64,
+      "fontWeight": 700,
+      "color": "#c8a24a",
+      "alignment": "center",
+      "maxLines": 1,
+      "overflow": "shrink"
+    },
+    "date": {
+      "x": 800,
+      "y": 960,
+      "width": 900,
+      "fontFamily": "HappyTraderSans",
+      "fontSize": 34,
+      "fontWeight": 400,
+      "color": "#b9bcc4",
+      "alignment": "center",
+      "maxLines": 1,
+      "overflow": "shrink"
+    }
+  }
+}

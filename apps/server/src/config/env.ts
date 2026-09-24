@@ -139,6 +139,34 @@ const envSchema = z.object({
   WHOP_CHECKOUT_RETURN_URL: z.string().optional(),
 
   /**
+   * Milestone 6 — certificate artifact object storage. `local` writes to
+   * ARTIFACT_STORE_DIR (dev + tests); `s3` selects a provider-ready seam that is
+   * disabled unless credentials are supplied. Domain records store opaque keys,
+   * never disk paths.
+   */
+  OBJECT_STORE_PROVIDER: z.enum(['local', 's3']).default('local'),
+  ARTIFACT_STORE_DIR: z.string().default('.artifacts'),
+
+  /**
+   * Milestone 6 — physical framed certificate fulfillment (Prodigi). Provider is
+   * DISABLED by default: PRODIGI_ENABLED must be `true` AND a key present for any
+   * real provider call, else the deterministic mock provider is used. Secrets are
+   * server-side only, never logged or returned to the browser. Production
+   * fulfillment is a later controlled deployment step.
+   */
+  PRODIGI_API_KEY: z.string().optional(),
+  PRODIGI_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  PRODIGI_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /** Master switch for the physical merch commerce surface. Off by default. */
+  MERCH_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /**
    * Automatic pass -> funded provisioning. On by default this milestone: an
    * authoritative pass certifies and then auto-funds via the existing idempotent
    * approveFunding, so a normal customer does not wait for an employee. Set to

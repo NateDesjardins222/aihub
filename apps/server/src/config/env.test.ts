@@ -35,6 +35,11 @@ const base: AppEnv = {
   TRUSTED_PROXY: 'false',
   WHOP_SANDBOX: false,
   HTF_AUTO_FUNDING: true,
+  OBJECT_STORE_PROVIDER: 'local',
+  ARTIFACT_STORE_DIR: '.artifacts',
+  PRODIGI_ENV: 'sandbox',
+  PRODIGI_ENABLED: false,
+  MERCH_ENABLED: false,
 };
 
 describe('the production configuration guard', () => {

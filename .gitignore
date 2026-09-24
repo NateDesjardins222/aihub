@@ -11,3 +11,7 @@ data/recordings/*.jsonl
 .DS_Store
 apps/web/dist/
 apps/server/data/
+
+# Milestone 6 — local certificate artifact object store (dev/tests)
+apps/server/.artifacts/
+.artifacts/

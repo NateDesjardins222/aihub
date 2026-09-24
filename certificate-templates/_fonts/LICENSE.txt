@@ -1,0 +1,10 @@
+Bundled fonts for deterministic certificate rendering.
+
+HappyTraderSans-Regular.ttf / HappyTraderSans-Bold.ttf are copies of DejaVu Sans
+(and HappyTraderSerif-Regular.ttf a copy of DejaVu Serif), renamed for a stable
+family reference. DejaVu fonts are distributed under a free license (Bitstream
+Vera license + public-domain additions) that permits bundling and redistribution.
+See https://dejavu-fonts.github.io/License.html.
+
+These are NON-BRANDED placeholder faces used until final approved typography is
+supplied. They are open-licensed; no proprietary font files are included.

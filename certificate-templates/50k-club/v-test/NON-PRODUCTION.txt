@@ -1,0 +1,1 @@
+This is a NON-PRODUCTION placeholder fixture for automated tests and local development. It is NOT the approved production certificate artwork. Drop the approved master.png + manifest.json into a sibling v1/ directory.
