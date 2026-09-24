@@ -13,6 +13,7 @@ import { marketDataRoutes } from './routes/marketdata.js';
 import { tradingRoutes } from './routes/trading.js';
 import { journalRoutes } from './routes/journal.js';
 import { adminRoutes } from './routes/admin.js';
+import { payoutRoutes } from './routes/payouts.js';
 import { provisioningRoutes } from './routes/provisioning.js';
 import { checkoutRoutes, whopWebhookRoutes } from './routes/commerce.js';
 import { TradingEngine } from '../trading/engine.js';
@@ -264,6 +265,10 @@ export async function buildApp(): Promise<BuiltApp> {
   // The operator console and the machine-to-machine seam. Both are authorised
   // server-side; neither is reachable from the trading terminal's session.
   await app.register(adminRoutes({ engine, market: stack.market }), { prefix: '/api/v1/admin' });
+  // The payout engine: trader eligibility/requests and the owner queue/case/
+  // exposure. Registered at /api/v1 so it carries both /payouts/* (trader) and
+  // /admin/payouts/* (owner) under their own RBAC.
+  await app.register(payoutRoutes(), { prefix: '/api/v1' });
   await app.register(provisioningRoutes, { prefix: '/api/v1/provisioning' });
   await app.register(checkoutRoutes(), { prefix: '/api/v1/checkout' });
   // Public and signature-gated: Whop calls this, so it carries no session auth.
