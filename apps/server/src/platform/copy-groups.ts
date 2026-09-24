@@ -357,6 +357,33 @@ export async function disableGroup(db: Database, userId: string, groupId: string
   return transition(db, userId, groupId, 'DISABLED', 'copy.group.disabled', null);
 }
 
+/**
+ * Pause every ACTIVE group this account LEADS, on the system's authority.
+ *
+ * Used by the breach handler: when a leader account is failed or locked, the
+ * group must stop copying at once and wait for the owner to choose a new,
+ * eligible leader — never a silent promotion of a follower. Followers are left
+ * exactly as they are; pausing flattens nothing. Each group is paused as its own
+ * owner so the audit chain and ownership stay intact. Returns the paused group
+ * ids. Safe to call repeatedly (an already-paused group is not matched).
+ */
+export async function systemPauseGroupsLedBy(
+  db: Database,
+  leaderAccountId: string,
+  reason: string,
+): Promise<string[]> {
+  const led = await db
+    .select({ id: copyGroups.id, userId: copyGroups.userId })
+    .from(copyGroups)
+    .where(and(eq(copyGroups.leaderAccountId, leaderAccountId), eq(copyGroups.status, 'ACTIVE')));
+  const paused: string[] = [];
+  for (const g of led) {
+    await transition(db, g.userId, g.id, 'PAUSED', 'copy.group.paused', reason);
+    paused.push(g.id);
+  }
+  return paused;
+}
+
 export interface GroupFollowerView {
   accountId: string;
   publicId: string;

@@ -30,6 +30,7 @@ import { accountOutboxHandler } from '../platform/projection.js';
 import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
 import { recordEngineActivity } from '../platform/engine-audit.js';
+import { attachCopyBreachHandler } from '../platform/copy-breach.js';
 import {
   certifyPassedEvaluations,
   fundEligibleQualifications,
@@ -283,6 +284,15 @@ export async function buildApp(): Promise<BuiltApp> {
   const stopRecognition = registerRecognition(db);
 
   /*
+   * Copy trading reacts to a leader breach the same bystander way: when the
+   * engine/lifecycle announces account.failed or account.locked, any ACTIVE
+   * group led by that account is paused at once (never a silent promotion of a
+   * follower; pausing flattens nothing). A follower breach needs no reaction —
+   * its own risk pipeline isolates it while the group keeps trading.
+   */
+  const stopCopyBreach = attachCopyBreachHandler(db);
+
+  /*
    * Funded-account inactivity closure is a scheduled sweep (runInactivitySweep),
    * driven by an external scheduler/cron on a calendar cadence — deliberately NOT
    * run eagerly at startup, where scanning every funded account would contend with
@@ -322,6 +332,7 @@ export async function buildApp(): Promise<BuiltApp> {
     stopAutoFunding();
     stopProvisioningRecovery();
     stopRecognition();
+    stopCopyBreach();
     stopNotificationConsumer();
     stopNotificationWorker();
     outboxWorker.stop();
