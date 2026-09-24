@@ -28,9 +28,23 @@ import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
 import { defaultOrganizationId } from '../../platform/provisioning.js';
 import { resolveProfileByKey, ProfileError } from '../../platform/profiles.js';
-import { CommerceError, createPendingOrder, fulfillOrder } from '../../platform/commerce.js';
-import { parseWhopEvent, verifyStandardWebhook, whopConfigured } from '../../platform/whop.js';
+import { CommerceError, createPendingOrder, markOrderCompleted } from '../../platform/commerce.js';
 import { WhopApiError, whopClientFromEnv, type WhopClient } from '../../platform/whop-client.js';
+import {
+  MockCommerceProvider,
+  WhopCommerceProvider,
+  type CommerceProvider,
+  type RawCommerceEvent,
+} from '../../platform/commerce-provider.js';
+import {
+  markCommerceEventFailed,
+  markCommerceEventIgnored,
+  markCommerceEventProcessed,
+  markCommerceEventRejected,
+  recordCommerceEvent,
+} from '../../platform/commerce-events.js';
+import { fulfillPurchaseGated, orderAccountId } from '../../platform/commerce-fulfillment.js';
+import { handleDispute, handleRefund } from '../../platform/commerce-refund.js';
 
 async function organizationOf(userId: string): Promise<string> {
   const { db } = getDb();
@@ -120,13 +134,120 @@ export function checkoutRoutes(deps: { whopClient?: () => WhopClient | null } = 
   };
 }
 
-export async function whopWebhookRoutes(app: FastifyInstance): Promise<void> {
-  const { db } = getDb();
+/**
+ * The shared, provider-neutral webhook handler. It NEVER trusts the browser: the
+ * only way to authorise entitlement/provisioning is a signature-verified,
+ * server-side commerce event routed through here. Every event is recorded and
+ * deduped in `commerce_events` before any provisioning work, so a replay is
+ * harmless; a bad signature is a 401 and the order is untouched.
+ */
+async function handleCommerceWebhook(
+  db: ReturnType<typeof getDb>['db'],
+  provider: CommerceProvider,
+  request: import('fastify').FastifyRequest,
+  reply: import('fastify').FastifyReply,
+): Promise<unknown> {
+  if (!provider.isConfigured()) {
+    throw new ApiError(503, 'PAYMENTS_NOT_CONFIGURED', `${provider.name} payments are not configured.`);
+  }
+  const rawBody = (request as unknown as { rawBody?: string }).rawBody ?? '';
+  const raw: RawCommerceEvent = { rawBody, headers: request.headers };
+  const organizationId = await defaultOrganizationId(db);
+  const actor = { type: 'SERVICE' as const, label: `${provider.name.toLowerCase()}-webhook`, ip: request.ip };
 
-  // This encapsulated instance keeps the RAW body so the Standard Webhooks HMAC
-  // is computed over the exact bytes Whop signed - a re-serialised object would
-  // reorder keys and never match. The parent's JSON parser is inherited, so it
-  // is removed first; this replacement is scoped to this plugin.
+  const outcome = await recordCommerceEvent(db, { organizationId, provider, raw, actor });
+
+  // A bad signature or stale timestamp: recorded REJECTED, and a 401. The order
+  // (if any) is never touched.
+  if (outcome.kind === 'REJECTED') {
+    throw ApiError.unauthorized(`Invalid webhook signature: ${outcome.reason}.`);
+  }
+
+  // A replay/duplicate: the work already happened (or is in flight). Ack 200 and
+  // return the already-provisioned account when we can resolve it — idempotent.
+  if (outcome.kind === 'DUPLICATE') {
+    const n = provider.normalizeEvent(raw);
+    const accountId = n.atlasOrderId ? await orderAccountId(db, n.atlasOrderId).catch(() => null) : null;
+    return reply.code(200).send({ ok: true, duplicate: true, orderId: n.atlasOrderId, accountId });
+  }
+
+  const n = outcome.normalized;
+  const eventId = outcome.row.id;
+
+  const loadOrder = async (id: string | null) => {
+    if (!id) return null;
+    const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, id));
+    return order ?? null;
+  };
+
+  switch (n.kind) {
+    case 'PAYMENT_SUCCEEDED': {
+      if (!n.atlasOrderId) {
+        await markCommerceEventRejected(db, eventId, 'UNKNOWN_ORDER');
+        throw ApiError.badRequest('MISSING_ORDER_REFERENCE', 'The payment carried no Atlas order id.');
+      }
+      const order = await loadOrder(n.atlasOrderId);
+      if (!order) {
+        await markCommerceEventRejected(db, eventId, 'UNKNOWN_ORDER');
+        throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
+      }
+      try {
+        // Money success is recorded first (durable), then provisioning is gated —
+        // so a blocked purchase parks recoverably rather than being lost.
+        await markOrderCompleted(db, order.id, { externalReference: n.receiptId, actor });
+        const result = await fulfillPurchaseGated(db, order.id, { actor });
+        await markCommerceEventProcessed(db, eventId, { atlasOrderId: order.id });
+        if (result.status === 'PROVISIONED') {
+          return reply.code(200).send({ ok: true, status: result.status, orderId: order.id, accountId: result.accountId, reused: result.reused });
+        }
+        // Blocked/failed: money kept, provisioning deferred. NOT an HTTP error —
+        // the payment was accepted; the customer/owner see the recoverable state.
+        return reply.code(200).send({
+          ok: true,
+          status: result.status,
+          orderId: order.id,
+          ...(result.status === 'PROVISION_BLOCKED' ? { blockedReasons: result.blockedReasons } : {}),
+        });
+      } catch (err) {
+        await markCommerceEventFailed(db, eventId, String(err), { atlasOrderId: order.id });
+        if (err instanceof CommerceError) {
+          const status = err.code === 'PRODUCT_NOT_FOUND' ? 404 : 409;
+          throw new ApiError(status, err.code, err.message);
+        }
+        throw err;
+      }
+    }
+    case 'REFUND': {
+      const order = await loadOrder(n.atlasOrderId);
+      if (!order) {
+        await markCommerceEventIgnored(db, eventId);
+        return reply.code(200).send({ ok: true, ignored: true, kind: n.kind });
+      }
+      await handleRefund(db, { order, actor });
+      await markCommerceEventProcessed(db, eventId, { atlasOrderId: order.id });
+      return reply.code(200).send({ ok: true, status: 'REFUNDED', orderId: order.id });
+    }
+    case 'DISPUTE_OPENED':
+    case 'DISPUTE_CLOSED': {
+      const order = await loadOrder(n.atlasOrderId);
+      if (!order) {
+        await markCommerceEventIgnored(db, eventId);
+        return reply.code(200).send({ ok: true, ignored: true, kind: n.kind });
+      }
+      await handleDispute(db, { order, opened: n.kind === 'DISPUTE_OPENED', actor });
+      await markCommerceEventProcessed(db, eventId, { atlasOrderId: order.id });
+      return reply.code(200).send({ ok: true, status: n.kind, orderId: order.id });
+    }
+    default: {
+      // A non-payment event we do not act on (payment.failed, heartbeat, unknown).
+      await markCommerceEventIgnored(db, eventId);
+      return reply.code(200).send({ ok: true, ignored: true, kind: n.kind });
+    }
+  }
+}
+
+/** Install a raw-body JSON parser scoped to a webhook plugin. */
+function useRawBody(app: FastifyInstance): void {
   app.removeContentTypeParser('application/json');
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
     (request as unknown as { rawBody?: string }).rawBody = body as string;
@@ -136,56 +257,57 @@ export async function whopWebhookRoutes(app: FastifyInstance): Promise<void> {
       done(new ApiError(400, 'INVALID_JSON', 'The webhook body was not valid JSON.'), undefined);
     }
   });
+}
+
+/**
+ * The ONLY source the onboarding "Account Ready" screen trusts: the server's own
+ * view of the order. The browser polls this after checkout; it never infers
+ * readiness from a checkout success callback. IDOR-guarded to the order's owner.
+ */
+export async function commerceStatusRoutes(app: FastifyInstance): Promise<void> {
+  const { db } = getDb();
+  app.get(
+    '/orders/:id/status',
+    { preHandler: requireUser, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, id));
+      if (!order || order.userId !== request.user!.id) {
+        throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
+      }
+      const accountId = order.status === 'PROVISIONED' ? await orderAccountId(db, order.id) : null;
+      return reply.send({
+        orderId: order.id,
+        status: order.status, // PENDING｜COMPLETED｜PROVISIONED｜PROVISION_BLOCKED｜PROVISION_FAILED｜REFUNDED
+        accountId,
+        provisionNote: order.provisionNote ?? null,
+      });
+    },
+  );
+}
+
+export async function whopWebhookRoutes(app: FastifyInstance): Promise<void> {
+  const { db } = getDb();
+  useRawBody(app);
+  const provider = new WhopCommerceProvider();
 
   app.post(
     '/whop',
     { config: { rateLimit: { max: 240, timeWindow: '1 minute' } } },
-    async (request, reply) => {
-      const secret = env().WHOP_WEBHOOK_SECRET;
-      if (!whopConfigured() || !secret) {
-        throw new ApiError(503, 'PAYMENTS_NOT_CONFIGURED', 'Whop payments are not configured.');
-      }
-
-      const rawBody = (request as unknown as { rawBody?: string }).rawBody ?? '';
-      const verification = verifyStandardWebhook(rawBody, request.headers, secret);
-      if (!verification.ok) {
-        throw ApiError.unauthorized(`Invalid webhook signature: ${verification.reason}.`);
-      }
-
-      const event = parseWhopEvent(request.body);
-      // A webhook we understand but that is not a completed payment (a refund, a
-      // dispute, a heartbeat) is acknowledged and ignored - never fulfilled.
-      if (!event.isPaymentSuccess) {
-        return reply.code(200).send({ ok: true, ignored: true, type: event.type });
-      }
-      if (!event.atlasOrderId) {
-        throw ApiError.badRequest('MISSING_ORDER_REFERENCE', 'The payment carried no Atlas order id.');
-      }
-
-      const [order] = await db
-        .select()
-        .from(commercialOrders)
-        .where(eq(commercialOrders.id, event.atlasOrderId));
-      if (!order) throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
-
-      try {
-        const result = await fulfillOrder(db, order.id, {
-          externalReference: event.receiptId,
-          actor: { type: 'SERVICE', label: 'whop-webhook', ip: request.ip },
-        });
-        return reply.code(200).send({
-          ok: true,
-          orderId: result.orderId,
-          accountId: result.accountId,
-          reused: result.reused,
-        });
-      } catch (err) {
-        if (err instanceof CommerceError) {
-          const status = err.code === 'PRODUCT_NOT_FOUND' ? 404 : 409;
-          throw new ApiError(status, err.code, err.message);
-        }
-        throw err;
-      }
-    },
+    (request, reply) => handleCommerceWebhook(db, provider, request, reply),
   );
+
+  // A MOCK server-side event endpoint, NON-PRODUCTION ONLY, so the browser
+  // acceptance harness and tests can post a genuinely signature-verified event
+  // (with the mock secret) — proving provisioning happens only from a verified
+  // server-side event, never from a browser success screen. It is not a real
+  // money path and never active in production.
+  if (env().NODE_ENV !== 'production') {
+    const mock = new MockCommerceProvider();
+    app.post(
+      '/mock',
+      { config: { rateLimit: { max: 240, timeWindow: '1 minute' } } },
+      (request, reply) => handleCommerceWebhook(db, mock, request, reply),
+    );
+  }
 }

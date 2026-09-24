@@ -27,6 +27,32 @@ import { hashPassword } from '../auth/password.js';
 import { defaultOrganizationId } from './provisioning.js';
 import { publishProfileVersion } from './profiles.js';
 import { parseWhopEvent, verifyStandardWebhook, whopConfigured } from './whop.js';
+import { ensureCustomerIdentity } from './customer-identity.js';
+import { confirmContactVerification, startContactVerification } from './contact-verification.js';
+import { resolveIdentityVerification, startIdentityVerification } from './identity-verification.js';
+import { acceptAgreements, outstandingAgreements, seedDefaultAgreements } from './agreements.js';
+
+/**
+ * Satisfy the provisioning gate for a buyer: verified contacts + verified
+ * identity + accepted agreements. With the gate satisfied, a paid webhook
+ * provisions immediately; without it, the order would park PROVISION_BLOCKED
+ * (proven in commerce-fulfillment.test.ts).
+ */
+async function satisfyGate(
+  db: ReturnType<typeof getDb>['db'],
+  organizationId: string,
+  userId: string,
+): Promise<void> {
+  const identity = await ensureCustomerIdentity(db, { organizationId, userId });
+  const email = await startContactVerification(db, { identityId: identity.id, channel: 'EMAIL', value: `${userId}@buyer.test` });
+  await confirmContactVerification(db, { challengeId: email.challengeId, code: email.devCode! });
+  const sms = await startContactVerification(db, { identityId: identity.id, channel: 'SMS', value: '+15551230000' });
+  await confirmContactVerification(db, { challengeId: sms.challengeId, code: sms.devCode! });
+  await startIdentityVerification(db, { identityId: identity.id, legalName: 'Whop Buyer' });
+  await resolveIdentityVerification(db, { identityId: identity.id });
+  const outstanding = await outstandingAgreements(db, organizationId, identity.id);
+  await acceptAgreements(db, { organizationId, identityId: identity.id, userId, versionIds: outstanding.map((o) => o.versionId) });
+}
 
 const M = 1_000_000;
 // A Standard Webhooks secret: "ws_" + base64 of the key bytes.
@@ -141,6 +167,10 @@ beforeAll(async () => {
     payload: { email, password: 'whop-buyer-password' },
   });
   token = JSON.parse(login.body).accessToken;
+
+  // The buyer must clear the provisioning gate for a paid webhook to provision.
+  await seedDefaultAgreements(db, organizationId);
+  await satisfyGate(db, organizationId, buyer!.id);
 });
 
 afterEach(() => {
@@ -155,7 +185,9 @@ afterAll(async () => {
       await db.delete(accountQualifications).where(inArray(accountQualifications.accountId, ids));
     }
   }
-  for (const id of users_) await db.delete(users).where(eq(users.id, id));
+  // The buyer now has append-only agreement acceptances (a trigger rejects the
+  // cascade DELETE), so the user rows are left in the test DB — random emails
+  // never collide across runs. In production these are never deleted.
   await app.close();
   globalThis.fetch = realFetch;
   delete process.env['WHOP_WEBHOOK_SECRET'];
@@ -268,7 +300,7 @@ describe('webhook fulfilment', () => {
     expect(out.accountId).toBeTruthy();
 
     const [order] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, orderId));
-    expect(order!.status).toBe('COMPLETED');
+    expect(order!.status).toBe('PROVISIONED');
     const [account] = await db.select().from(accounts).where(eq(accounts.id, out.accountId));
     expect(account!.accountType).toBe('EVALUATION');
     const ents = await db.select().from(entitlements).where(eq(entitlements.commercialOrderId, orderId));

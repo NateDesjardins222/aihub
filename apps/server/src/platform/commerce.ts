@@ -248,7 +248,35 @@ export async function fulfillOrder(
 ): Promise<{ orderId: string; entitlementId: string; accountId: string; reused: boolean }> {
   const actor = opts.actor ?? SYSTEM_ACTOR;
 
-  const { order, alreadyComplete } = await db.transaction(async (tx) => {
+  const { order, alreadyComplete } = await markOrderCompleted(db, orderId, {
+    externalReference: opts.externalReference,
+    actor,
+  });
+
+  // The single authoritative fulfilment path, shared with the admin/test flow.
+  const done = await fulfillCompletedOrder(db, order, { actor, activate: opts.activate });
+  return {
+    orderId: order.id,
+    entitlementId: done.entitlementId,
+    accountId: done.accountId,
+    reused: alreadyComplete || done.reused,
+  };
+}
+
+/**
+ * Record the money success on an order: flip PENDING → COMPLETED exactly once
+ * under a FOR UPDATE row lock, with the audit + event. This is deliberately
+ * SEPARATE from provisioning so a paid order is durably recorded even when
+ * provisioning is deferred by the gate (see commerce-fulfillment.ts). Calling it
+ * on an order past PENDING is a no-op that returns the current row.
+ */
+export async function markOrderCompleted(
+  db: Database,
+  orderId: string,
+  opts: { externalReference?: string | null; actor?: Actor } = {},
+): Promise<{ order: CommercialOrderRow; alreadyComplete: boolean }> {
+  const actor = opts.actor ?? SYSTEM_ACTOR;
+  return db.transaction(async (tx) => {
     const scoped = tx as unknown as Database;
     const [row] = await tx
       .select()
@@ -256,7 +284,9 @@ export async function fulfillOrder(
       .where(eq(commercialOrders.id, orderId))
       .for('update');
     if (!row) throw new CommerceError('PRODUCT_NOT_FOUND', 'No such order.');
-    if (row.status === 'COMPLETED') return { order: row, alreadyComplete: true };
+    // Any status past PENDING means the money was already recorded — a replay or
+    // a retry after a gate block/provision failure. Return without re-auditing.
+    if (row.status !== 'PENDING') return { order: row, alreadyComplete: true };
     const [updated] = await tx
       .update(commercialOrders)
       .set({
@@ -286,15 +316,6 @@ export async function fulfillOrder(
     });
     return { order: committed, alreadyComplete: false };
   });
-
-  // The single authoritative fulfilment path, shared with the admin/test flow.
-  const done = await fulfillCompletedOrder(db, order, { actor, activate: opts.activate });
-  return {
-    orderId: order.id,
-    entitlementId: done.entitlementId,
-    accountId: done.accountId,
-    reused: alreadyComplete || done.reused,
-  };
 }
 
 /**
@@ -308,7 +329,7 @@ export async function fulfillOrder(
  * (order, kind) and provisioning is serialised and keyed, so a duplicate call
  * (a retried webhook, a double grant) converges to the same single account.
  */
-async function fulfillCompletedOrder(
+export async function fulfillCompletedOrder(
   db: Database,
   order: CommercialOrderRow,
   opts: { actor?: Actor; activate?: boolean } = {},

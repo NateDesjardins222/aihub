@@ -15,7 +15,7 @@ import { journalRoutes } from './routes/journal.js';
 import { adminRoutes } from './routes/admin.js';
 import { payoutRoutes } from './routes/payouts.js';
 import { provisioningRoutes } from './routes/provisioning.js';
-import { checkoutRoutes, whopWebhookRoutes } from './routes/commerce.js';
+import { checkoutRoutes, commerceStatusRoutes, whopWebhookRoutes } from './routes/commerce.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
@@ -28,6 +28,7 @@ import { recordEngineActivity } from '../platform/engine-audit.js';
 import { certifyPassedEvaluations, registerAutoCertification } from '../platform/commerce-certify.js';
 import { seedDefaultAgreements } from '../platform/agreements.js';
 import { defaultOrganizationId } from '../platform/provisioning.js';
+import { registerProvisioningRecovery, retryPendingProvisioning } from '../platform/commerce-fulfillment.js';
 
 export interface BuiltApp {
   readonly app: FastifyInstance;
@@ -231,6 +232,15 @@ export async function buildApp(): Promise<BuiltApp> {
   void certifyPassedEvaluations(db).catch(() => undefined);
 
   /*
+   * A paid purchase whose identity/agreements gate was not yet satisfied parks
+   * recoverably. This subscriber re-drives a customer's blocked orders the moment
+   * they clear the gate, and the startup sweep recovers any left by a crash — so a
+   * payment is never lost and provisioning is exactly-once and idempotent.
+   */
+  const stopProvisioningRecovery = registerProvisioningRecovery(db);
+  void retryPendingProvisioning(db).catch(() => undefined);
+
+  /*
    * Seed the required agreements (dev placeholder content) so the onboarding
    * gate has current versions to enforce. Idempotent — republishing identical
    * content is a no-op.
@@ -260,6 +270,7 @@ export async function buildApp(): Promise<BuiltApp> {
   app.addHook('onClose', async () => {
     stopRecording();
     stopCertifying();
+    stopProvisioningRecovery();
     outboxWorker.stop();
     await accountListener?.close().catch(() => undefined);
     engine.stop();
@@ -282,7 +293,11 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(payoutRoutes(), { prefix: '/api/v1' });
   await app.register(provisioningRoutes, { prefix: '/api/v1/provisioning' });
   await app.register(checkoutRoutes(), { prefix: '/api/v1/checkout' });
-  // Public and signature-gated: Whop calls this, so it carries no session auth.
+  // The server-authoritative order status the onboarding UI polls (never the
+  // browser's checkout callback), IDOR-guarded to the order's owner.
+  await app.register(commerceStatusRoutes, { prefix: '/api/v1/commerce' });
+  // Public and signature-gated: the provider calls this, so it carries no session
+  // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });
 
   return { app, stack, gateway, engine };
