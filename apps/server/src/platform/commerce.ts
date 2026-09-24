@@ -335,12 +335,18 @@ export async function fulfillCompletedOrder(
   opts: { actor?: Actor; activate?: boolean } = {},
 ): Promise<{ entitlementId: string; accountId: string; reused: boolean }> {
   const actor = opts.actor ?? SYSTEM_ACTOR;
+  // A RESET order re-purchases a failed account's original product version to
+  // start a fresh trading account. It grants a RESET-kind entitlement (so the
+  // (order,kind) uniqueness is independent of the original EVALUATION grant) and,
+  // once provisioned, records the replacement linkage. The failed account is
+  // never touched — it stays terminal in History. See account-reset.ts.
+  const isReset = order.source === 'RESET';
   const ent = await grantEntitlement(db, {
     organizationId: order.organizationId,
     userId: order.userId,
     commercialOrderId: order.id,
     productVersionId: order.productVersionId,
-    kind: 'EVALUATION',
+    kind: isReset ? 'RESET' : 'EVALUATION',
     source: order.source,
     actor,
   });
@@ -348,7 +354,29 @@ export async function fulfillCompletedOrder(
     actor,
     activate: opts.activate,
   });
+  if (isReset) {
+    // The failed account this reset replaces is carried on the order as
+    // `reset-of:<accountId>` (created by createResetOrder). Idempotent: the same
+    // linkage is written on every re-drive of this order.
+    const resetOf = parseResetOfReference(order.externalReference);
+    if (resetOf) {
+      await db
+        .update(accounts)
+        .set({ resetOfAccountId: resetOf })
+        .where(eq(accounts.id, provisioned.accountId));
+    }
+  }
   return { entitlementId: ent.id, accountId: provisioned.accountId, reused: provisioned.reused };
+}
+
+/** The order-carried reset linkage token, or null. */
+export function resetOfReference(failedAccountId: string): string {
+  return `reset-of:${failedAccountId}`;
+}
+function parseResetOfReference(ref: string | null): string | null {
+  if (!ref || !ref.startsWith('reset-of:')) return null;
+  const id = ref.slice('reset-of:'.length);
+  return id.length > 0 ? id : null;
 }
 
 /**

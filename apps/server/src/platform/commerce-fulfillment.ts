@@ -36,12 +36,17 @@ export type FulfillmentResult =
   | { status: 'PROVISION_BLOCKED'; orderId: string; blockedReasons: string[] }
   | { status: 'PROVISION_FAILED'; orderId: string; error: string };
 
-/** The account an order's entitlement provisioned, if any. */
+/**
+ * The account an order's entitlement provisioned, if any. An order grants exactly
+ * one entitlement (EVALUATION for a purchase/grant, RESET for a reset
+ * re-purchase), so this matches on the order alone rather than a fixed kind — a
+ * reset order's provisioned account must resolve too.
+ */
 export async function orderAccountId(db: Database, orderId: string): Promise<string | null> {
   const [ent] = await db
     .select({ accountId: entitlements.consumedByAccountId })
     .from(entitlements)
-    .where(and(eq(entitlements.commercialOrderId, orderId), eq(entitlements.kind, 'EVALUATION')));
+    .where(eq(entitlements.commercialOrderId, orderId));
   return ent?.accountId ?? null;
 }
 
@@ -97,7 +102,9 @@ export async function fulfillPurchaseGated(
     return { status: 'PROVISIONED', orderId, accountId: accountId ?? '', reused: true };
   }
 
-  const enforce = opts.enforceGate ?? order.source === 'PURCHASE';
+  // Both a first purchase and a reset re-purchase are customer-paid orders that
+  // must clear the identity/contact/agreements gate before provisioning.
+  const enforce = opts.enforceGate ?? (order.source === 'PURCHASE' || order.source === 'RESET');
   if (enforce) {
     const gate = await evaluateProvisioningGate(db, order.organizationId, order.userId);
     if (!gate.satisfied) {
@@ -183,7 +190,7 @@ export async function retryPendingProvisioning(db: Database): Promise<number> {
     .from(commercialOrders)
     .where(
       and(
-        eq(commercialOrders.source, 'PURCHASE'),
+        inArray(commercialOrders.source, ['PURCHASE', 'RESET']),
         inArray(commercialOrders.status, ['COMPLETED', 'PROVISION_BLOCKED', 'PROVISION_FAILED']),
       ),
     );
@@ -252,7 +259,7 @@ export function registerProvisioningRecovery(db: Database): () => void {
           .where(
             and(
               eq(commercialOrders.userId, userId),
-              eq(commercialOrders.source, 'PURCHASE'),
+              inArray(commercialOrders.source, ['PURCHASE', 'RESET']),
               inArray(commercialOrders.status, ['COMPLETED', 'PROVISION_BLOCKED', 'PROVISION_FAILED']),
             ),
           )

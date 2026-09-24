@@ -42,7 +42,10 @@ export type NotificationType =
   | 'DISPUTE_ACTION'
   | 'SECURITY_LOGIN'
   | 'PASSWORD_CHANGED'
-  | 'ACCOUNT_RESTORED';
+  | 'ACCOUNT_RESTORED'
+  | 'ACCOUNT_INACTIVITY_WARNING'
+  | 'ACCOUNT_INACTIVITY_CLOSED'
+  | 'ACCOUNT_COMPLETED';
 
 /** Channel policy: SMS is reserved for verification, milestones, payout, security. */
 const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
@@ -65,6 +68,9 @@ const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
   SECURITY_LOGIN: ['EMAIL'],
   PASSWORD_CHANGED: ['EMAIL'],
   ACCOUNT_RESTORED: ['EMAIL'],
+  ACCOUNT_INACTIVITY_WARNING: ['EMAIL', 'SMS'],
+  ACCOUNT_INACTIVITY_CLOSED: ['EMAIL'],
+  ACCOUNT_COMPLETED: ['EMAIL', 'SMS'],
 };
 
 const TEMPLATE_VERSION = 'v1';
@@ -110,6 +116,21 @@ function render(type: NotificationType, data: Record<string, unknown>): { subjec
       return { subject: 'Your password was changed', body: 'Your account password was changed.' };
     case 'ACCOUNT_RESTORED':
       return { subject: 'Your account was restored', body: 'Access to your account has been restored.' };
+    case 'ACCOUNT_INACTIVITY_WARNING':
+      return {
+        subject: 'Your funded account needs trading activity',
+        body: 'Your funded account has no qualifying trading activity this month. Trade before the month ends to keep it active.',
+      };
+    case 'ACCOUNT_INACTIVITY_CLOSED':
+      return {
+        subject: 'Your funded account was closed for inactivity',
+        body: 'Your funded account was closed because a calendar month completed with no qualifying trading activity. It remains in your account history.',
+      };
+    case 'ACCOUNT_COMPLETED':
+      return {
+        subject: 'Your funded account reached its payout maximum',
+        body: 'Congratulations — your funded account completed its fifth payout cycle. It is now complete and moved to your account history.',
+      };
   }
 }
 

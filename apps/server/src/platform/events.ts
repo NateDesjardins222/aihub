@@ -78,7 +78,14 @@ export type DomainEventType =
   | 'commerce.dispute_opened'
   | 'commerce.dispute_closed'
   | 'notification.sent'
-  | 'notification.failed';
+  | 'notification.failed'
+  // Customer portal lifecycle (Customer Portal V1).
+  | 'account.inactivity_warning'
+  | 'account.inactivity_closed'
+  | 'account.completed'
+  | 'certificate.issued'
+  | 'certificate.revoked'
+  | 'achievement.issued';
 
 export interface DomainEvent {
   readonly type: DomainEventType;
