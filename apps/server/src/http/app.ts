@@ -11,6 +11,7 @@ import { instrumentRoutes } from './routes/instruments.js';
 import { accountRoutes, ruleTemplateRoutes } from './routes/accounts.js';
 import { marketDataRoutes } from './routes/marketdata.js';
 import { tradingRoutes } from './routes/trading.js';
+import { copyRoutes } from './routes/copy.js';
 import { journalRoutes } from './routes/journal.js';
 import { adminRoutes } from './routes/admin.js';
 import { payoutRoutes } from './routes/payouts.js';
@@ -335,6 +336,8 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(ruleTemplateRoutes, { prefix: '/api/v1/rule-templates' });
   await app.register(marketDataRoutes({ ...stack, engine }), { prefix: '/api/v1/marketdata' });
   await app.register(tradingRoutes({ engine, market: stack.market, execution }), { prefix: '/api/v1' });
+  // Native copy trading orchestrates the same execution provider seam.
+  await app.register(copyRoutes({ execution }), { prefix: '/api/v1/copy' });
   await app.register(journalRoutes({ engine, replay: stack.replay }), { prefix: '/api/v1/journal' });
   // The operator console and the machine-to-machine seam. Both are authorised
   // server-side; neither is reachable from the trading terminal's session.
