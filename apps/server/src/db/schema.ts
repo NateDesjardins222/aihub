@@ -428,13 +428,22 @@ export const commercialOrders = pgTable(
     externalProvider: varchar('external_provider', { length: 40 }),
     /** The external system's reference (e.g. a Stripe session id). Opaque. */
     externalReference: varchar('external_reference', { length: 200 }),
-    /** PENDING | COMPLETED | FAILED | CANCELLED | REFUNDED */
-    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    /**
+     * PENDING | COMPLETED | PROVISIONED | PROVISION_BLOCKED | PROVISION_FAILED |
+     * FAILED | CANCELLED | REFUNDED. COMPLETED means money settled server-side;
+     * PROVISION_BLOCKED / PROVISION_FAILED are the recoverable "PAYMENT SUCCEEDED /
+     * PROVISIONING FAILED" states — the money is retained, provisioning is deferred.
+     */
+    status: varchar('status', { length: 24 }).notNull().default('PENDING'),
     /** Informational only; Atlas processes no money this milestone. */
     amountMicros: micros('amount_micros'),
     currency: varchar('currency', { length: 8 }),
     /** Dedupe key: a webhook that fires twice completes one order, not two. */
     idempotencyKey: varchar('idempotency_key', { length: 200 }),
+    /** Why provisioning is blocked/failed (gate reasons or the caught error). */
+    provisionNote: text('provision_note'),
+    refundedAt: timestamp('refunded_at', { withTimezone: true }),
+    refundReason: text('refund_reason'),
     createdAt: now(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },
@@ -1437,4 +1446,320 @@ export const economicsRuns = pgTable(
     createdAt: now(),
   },
   (t) => [index('economics_runs_org_idx').on(t.organizationId)],
+);
+
+// ---------------------------------------------------------------------------
+// Happy Trader Funding — Customer Identity + Commerce Provisioning V1.
+//
+// "Email is not the person." A permanent customer_identities row is the spine
+// every commercial/KYC/agreement fact hangs from; it sits beside `users` (the
+// auth principal), never replacing it. Contact verification, identity
+// verification, and versioned agreement acceptance gate an ungated purchase
+// from provisioning. See docs/customer-identity-v1.md.
+//
+// No real KYC/commerce/notification provider is wired: the mock/local adapters
+// are the working default and are never presented as production integrations.
+
+/**
+ * The permanent human customer. One per auth principal in V1 (unique user_id).
+ * `identity_status` is the denormalised current verification state, kept in step
+ * with the latest identity_verifications row under the identity's advisory lock.
+ * Never stores document images, SSN/TIN, or raw provider payloads.
+ */
+export const customerIdentities = pgTable(
+  'customer_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** ACTIVE | HOLD | CLOSED — operational, NOT a verification state. */
+    status: varchar('status', { length: 24 }).notNull().default('ACTIVE'),
+    legalName: text('legal_name'),
+    dateOfBirth: date('date_of_birth'),
+    /** Informational; NO country eligibility list is enforced in V1. */
+    country: varchar('country', { length: 2 }),
+    /** UNVERIFIED|CONTACT_PENDING|CONTACT_VERIFIED|IDENTITY_PENDING|STEP_UP_REQUIRED|UNDER_REVIEW|IDENTITY_VERIFIED|REJECTED */
+    identityStatus: varchar('identity_status', { length: 24 }).notNull().default('UNVERIFIED'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('customer_identities_user_key').on(t.userId),
+    index('customer_identities_org_idx').on(t.organizationId),
+    index('customer_identities_org_status_idx').on(t.organizationId, t.identityStatus),
+  ],
+);
+
+/**
+ * A proven reachable channel. A person may have several; at most one primary per
+ * channel (a partial unique index enforces it). Verified contact is NOT identity.
+ */
+export const verifiedContacts = pgTable(
+  'verified_contacts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** EMAIL | SMS */
+    channel: varchar('channel', { length: 8 }).notNull(),
+    /** Normalised: email lowercased, phone E.164. */
+    value: varchar('value', { length: 254 }).notNull(),
+    /** PENDING | VERIFIED | REVOKED */
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('verified_contacts_identity_channel_value_key').on(
+      t.customerIdentityId,
+      t.channel,
+      t.value,
+    ),
+    index('verified_contacts_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+/**
+ * The short-lived proof-of-contact challenge. The plaintext code is NEVER stored
+ * (only a salted hash) and NEVER returned in a production response. Attempt-capped
+ * and TTL'd; a new challenge for the same target voids the prior live one.
+ */
+export const contactVerificationChallenges = pgTable(
+  'contact_verification_challenges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    channel: varchar('channel', { length: 8 }).notNull(),
+    value: varchar('value', { length: 254 }).notNull(),
+    codeHash: text('code_hash').notNull(),
+    salt: text('salt').notNull(),
+    /** PENDING | CONSUMED | EXPIRED | VOID */
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(5),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('contact_challenges_identity_idx').on(t.customerIdentityId, t.channel, t.status),
+  ],
+);
+
+/**
+ * A KYC verification attempt. Stores the DECISION and provider reference, never
+ * the documents. The latest terminal row drives customer_identities.identity_status.
+ * `provider` records which adapter produced it (MOCK | STRIPE) so a mock decision
+ * is never mistaken for a production one.
+ */
+export const identityVerifications = pgTable(
+  'identity_verifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** MOCK | STRIPE */
+    provider: varchar('provider', { length: 24 }).notNull(),
+    providerRef: varchar('provider_ref', { length: 200 }),
+    /** UNVERIFIED|IDENTITY_PENDING|STEP_UP_REQUIRED|UNDER_REVIEW|IDENTITY_VERIFIED|REJECTED */
+    status: varchar('status', { length: 24 }).notNull(),
+    /** Coarse reason (DOCUMENT_UNREADABLE|NAME_MISMATCH|STEP_UP|MANUAL_DECLINE); never a raw provider blob. */
+    reasonCode: varchar('reason_code', { length: 48 }),
+    legalName: text('legal_name'),
+    dateOfBirth: date('date_of_birth'),
+    /** Structured address; NO document images. */
+    addressJson: jsonb('address_json'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('identity_verifications_identity_idx').on(t.customerIdentityId, t.status),
+    index('identity_verifications_org_status_idx').on(t.organizationId, t.status),
+    index('identity_verifications_provider_ref_idx').on(t.provider, t.providerRef),
+  ],
+);
+
+/**
+ * A versioned agreement. Append-only (a trigger rejects UPDATE/DELETE): a material
+ * change publishes a NEW version, never edits an old one. Body is clearly-labelled
+ * DEV PLACEHOLDER content in V1 — not counsel-approved. `content_hash` is the
+ * immutable identifier of exactly what was shown.
+ */
+export const agreementVersions = pgTable(
+  'agreement_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    /** TERMS_OF_USE | TRADER_PLEDGE | PRIVACY | RISK_DISCLOSURE */
+    agreementType: varchar('agreement_type', { length: 32 }).notNull(),
+    version: integer('version').notNull(),
+    title: varchar('title', { length: 120 }).notNull(),
+    body: text('body').notNull(),
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    isRequired: boolean('is_required').notNull().default(true),
+    requiresReacceptance: boolean('requires_reacceptance').notNull().default(false),
+    publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('agreement_versions_type_version_key').on(
+      t.organizationId,
+      t.agreementType,
+      t.version,
+    ),
+    uniqueIndex('agreement_versions_type_hash_key').on(
+      t.organizationId,
+      t.agreementType,
+      t.contentHash,
+    ),
+  ],
+);
+
+/**
+ * The immutable acceptance record. Append-only (a trigger rejects UPDATE/DELETE):
+ * a prior acceptance is NEVER overwritten. Unique per (identity, version), so a
+ * double-submit is a no-op. `content_hash` is copied at acceptance — the exact
+ * thing agreed to.
+ */
+export const agreementAcceptances = pgTable(
+  'agreement_acceptances',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    agreementVersionId: uuid('agreement_version_id')
+      .notNull()
+      .references(() => agreementVersions.id),
+    agreementType: varchar('agreement_type', { length: 32 }).notNull(),
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Security metadata: ip, user-agent, product_version context. */
+    sessionMeta: jsonb('session_meta'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('agreement_acceptances_identity_version_key').on(
+      t.customerIdentityId,
+      t.agreementVersionId,
+    ),
+    index('agreement_acceptances_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+/**
+ * The commerce event ledger: authenticity, uniqueness, replay, and audit for
+ * every inbound provider event. Unique (provider, provider_event_id) is the
+ * structural dedup — a replayed webhook is dropped before any provisioning work.
+ * A rejected/failed event is RECORDED, never silently dropped (reconciliation).
+ */
+export const commerceEvents = pgTable(
+  'commerce_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    /** MOCK | WHOP */
+    provider: varchar('provider', { length: 16 }).notNull(),
+    providerEventId: varchar('provider_event_id', { length: 200 }).notNull(),
+    /** PAYMENT_SUCCEEDED|PAYMENT_FAILED|REFUND|DISPUTE_OPENED|DISPUTE_CLOSED|UNKNOWN */
+    kind: varchar('kind', { length: 24 }).notNull(),
+    atlasOrderId: uuid('atlas_order_id').references(() => commercialOrders.id),
+    /** RECEIVED | PROCESSED | IGNORED | REJECTED | FAILED */
+    status: varchar('status', { length: 16 }).notNull().default('RECEIVED'),
+    signatureOk: boolean('signature_ok').notNull().default(false),
+    /** BAD_SIGNATURE|STALE|MALFORMED|UNKNOWN_ORDER|UNKNOWN_PRODUCT|PRICE_MISMATCH */
+    rejectReason: varchar('reject_reason', { length: 48 }),
+    /** sha256 of the raw body; NO secrets. */
+    payloadDigest: varchar('payload_digest', { length: 64 }),
+    amountMicros: micros('amount_micros'),
+    currency: varchar('currency', { length: 8 }),
+    providerCustomerId: varchar('provider_customer_id', { length: 200 }),
+    receiptId: varchar('receipt_id', { length: 200 }),
+    lastError: varchar('last_error', { length: 200 }),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('commerce_events_provider_event_key').on(t.provider, t.providerEventId),
+    index('commerce_events_org_status_idx').on(t.organizationId, t.status),
+    index('commerce_events_order_idx').on(t.atlasOrderId),
+  ],
+);
+
+/**
+ * One logical customer notification. Unique (organization_id, dedupe_key) is the
+ * at-most-once guard: a retried event never sends "FUNDED READY" seventeen times.
+ * An unconfigured provider yields a visible SUPPRESSED row, never a fake SENT.
+ * Strictly downstream of the authoritative transaction — see docs/notifications-v1.md.
+ */
+export const notificationMessages = pgTable(
+  'notification_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id').references(() => customerIdentities.id, {
+      onDelete: 'cascade',
+    }),
+    /** One of the ~19 notification types (see docs/notifications-v1.md §5). */
+    type: varchar('type', { length: 40 }).notNull(),
+    /** EMAIL | SMS */
+    channel: varchar('channel', { length: 8 }).notNull(),
+    recipient: varchar('recipient', { length: 254 }).notNull(),
+    templateVersion: varchar('template_version', { length: 24 }).notNull().default('v1'),
+    dedupeKey: varchar('dedupe_key', { length: 200 }).notNull(),
+    /** PENDING | SENT | FAILED | SUPPRESSED */
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    terminal: boolean('terminal').notNull().default(false),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(6),
+    /** MOCK | RESEND | TWILIO */
+    provider: varchar('provider', { length: 16 }),
+    providerRef: varchar('provider_ref', { length: 200 }),
+    lastError: varchar('last_error', { length: 200 }),
+    payload: jsonb('payload'),
+    availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('notification_messages_dedupe_key').on(t.organizationId, t.dedupeKey),
+    index('notification_messages_status_idx').on(t.status, t.channel),
+    index('notification_messages_identity_idx').on(t.customerIdentityId),
+  ],
 );

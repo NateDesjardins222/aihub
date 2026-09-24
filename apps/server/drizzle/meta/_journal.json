@@ -127,6 +127,13 @@
       "when": 1790088477819,
       "tag": "0017_payouts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790088478819,
+      "tag": "0018_customer_identity",
+      "breakpoints": true
     }
   ]
 }
