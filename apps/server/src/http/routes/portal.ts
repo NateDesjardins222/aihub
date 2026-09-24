@@ -9,9 +9,9 @@
  * them, it does not re-implement them.
  */
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
-import { accounts, customerIdentities, users } from '../../db/schema.js';
+import { accounts, customerIdentities, trades, users } from '../../db/schema.js';
 import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
 import {
@@ -130,6 +130,36 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!analytics) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
       return reply.send(analytics);
+    },
+  );
+
+  // Individual round-trip trades, for the equity-curve → day → trade drilldown.
+  // Owner-scoped; a date range narrows to one day when from === to.
+  app.get<{ Params: { id: string }; Querystring: { from?: string; to?: string } }>(
+    '/accounts/:id/trades',
+    async (request, reply) => {
+      await assertOwned(db, request.user!.id, request.params.id);
+      const conds = [eq(trades.accountId, request.params.id)];
+      if (request.query.from) conds.push(gte(trades.tradeDate, request.query.from));
+      if (request.query.to) conds.push(lte(trades.tradeDate, request.query.to));
+      const rows = await db
+        .select({
+          id: trades.id, symbol: trades.symbol, contractCode: trades.contractCode, side: trades.side, qty: trades.qty,
+          entryTime: trades.entryTime, exitTime: trades.exitTime, grossPnlMicros: trades.grossPnlMicros,
+          feesMicros: trades.feesMicros, netPnlMicros: trades.netPnlMicros, tradeDate: trades.tradeDate,
+        })
+        .from(trades)
+        .where(and(...conds))
+        .orderBy(desc(trades.exitTime))
+        .limit(500);
+      return reply.send({
+        trades: rows.map((r) => ({
+          id: r.id, symbol: r.symbol, contractCode: r.contractCode, side: r.side, qty: r.qty,
+          entryTimeMs: r.entryTime ? r.entryTime.getTime() : null,
+          exitTimeMs: r.exitTime ? r.exitTime.getTime() : null,
+          grossPnlMicros: r.grossPnlMicros, feesMicros: r.feesMicros, netPnlMicros: r.netPnlMicros, tradeDate: r.tradeDate,
+        })),
+      });
     },
   );
 
