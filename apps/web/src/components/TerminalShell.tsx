@@ -5,6 +5,7 @@ import { AppRail } from './AppRail';
 import { DrawingRail } from '../panels/DrawingRail';
 import { ChartGrid } from '../panels/ChartGrid';
 import { OrderTicket } from '../panels/OrderTicket';
+import { CopyPanel } from '../panels/CopyPanel';
 import { ActivityPanel } from '../panels/ActivityPanel';
 import { Drawer } from '../panels/Drawer';
 import { JournalPanel } from '../panels/JournalPanel';
@@ -104,6 +105,7 @@ export function TerminalShell(): JSX.Element {
                 </div>
                 <div className="terminal-right-body">
                   <OrderTicket />
+                  <CopyPanel />
                 </div>
               </div>
             </>

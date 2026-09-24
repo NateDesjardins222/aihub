@@ -16,6 +16,8 @@ import { useSession, activeInstrument, selectedAccount } from '../state/session'
 import { formatMicros, pnlClass } from '../state/format';
 import { useTrading } from '../trading/store';
 import { tradingApi } from '../trading/api';
+import { copyApi } from '../trading/copy-api';
+import { useCopy, activeLeaderGroupFor, activeFollowerCount, previewFollowerQty } from '../trading/copy-store';
 import { sendIntent, useFlights } from '../trading/flight';
 import { useExecution } from '../state/execution';
 import { describeRejection } from '../trading/rejection';
@@ -42,6 +44,27 @@ export function OrderTicket(): JSX.Element {
   const refresh = useTrading((s) => s.refresh);
   const showPnl = useTraining((s) => s.visibility.pnl);
   const defaults = useExecution((s) => s.defaults);
+
+  /*
+   * Copy awareness.
+   *
+   * If the SELECTED account leads an ACTIVE copy group, an order entered here
+   * fans out to every enabled follower — so the ticket says so, previews the
+   * per-follower sizes, and routes the submission through the copy intent
+   * endpoint. For any other account (a follower, or one in no group) nothing
+   * below changes and the order is an ordinary single-account order: that
+   * byte-for-byte sameness is what keeps non-copy trading unaffected.
+   *
+   * Switching accounts changes which group (if any) is the leader here; it never
+   * mutates the group itself. Selecting a follower account does NOT make it a
+   * leader — it simply trades that one account, as it always did.
+   */
+  const copyLoaded = useCopy((s) => s.loaded);
+  const loadCopy = useCopy((s) => s.load);
+  const copyGroup = useCopy((s) => activeLeaderGroupFor(s, accountId));
+  useEffect(() => {
+    if (!copyLoaded) void loadCopy();
+  }, [copyLoaded, loadCopy]);
 
   const [qty, setQty] = useState(1);
   const [type, setType] = useState<OrderType>('MARKET');
@@ -97,7 +120,7 @@ export function OrderTicket(): JSX.Element {
 
   // Anything that changes WHAT would be sent disarms it: an armed BUY 3 is
   // not consent to BUY 10.
-  useEffect(() => setArmed(null), [instrument?.root, qty, type, accountId]);
+  useEffect(() => setArmed(null), [instrument?.root, qty, type, accountId, copyGroup?.id]);
 
   useEffect(() => {
     if (armed === null) return undefined;
@@ -136,7 +159,10 @@ export function OrderTicket(): JSX.Element {
        * order - that is how a trader scales into a position, and swallowing it
        * would be worse than sending it.
        */
-      const intent = `ticket:${accountId}:${instrument.root}:${side}:${qty}:${type}`;
+      // The copy group's identity is part of the intent key, so an order entered
+      // while leading a group is a different intent from the same order entered
+      // solo — the two never collapse onto one another.
+      const intent = `ticket:${copyGroup?.id ?? accountId}:${instrument.root}:${side}:${qty}:${type}`;
       const bracket =
         defaults.bracketMode === 'AUTO' && (defaults.stopTicks > 0 || defaults.targetTicks > 0)
           ? {
@@ -145,6 +171,8 @@ export function OrderTicket(): JSX.Element {
                 defaults.targetTicks > 0 ? { unit: 'TICKS' as const, value: defaults.targetTicks } : null,
             }
           : null;
+      const limitPx = type === 'LIMIT' || type === 'STOP_LIMIT' ? Number(limitPrice) : null;
+      const stopPx = type === 'STOP_MARKET' || type === 'STOP_LIMIT' ? Number(stopPrice) : null;
       void run(() =>
         sendIntent(
           {
@@ -152,28 +180,50 @@ export function OrderTicket(): JSX.Element {
             label: `${side} ${qty} ${instrument.root}`,
             accountId,
             symbol: instrument.root,
-            prefix: 'ticket',
+            prefix: copyGroup ? 'copy' : 'ticket',
             ...(pressedAt === undefined ? {} : { pressedAt }),
           },
           (clientOrderId) =>
-            tradingApi.submit({
-              accountId,
-              clientOrderId,
-              symbol: instrument.root,
-              side,
-              qty,
-              type,
-              limitPrice: type === 'LIMIT' || type === 'STOP_LIMIT' ? Number(limitPrice) : null,
-              stopPrice: type === 'STOP_MARKET' || type === 'STOP_LIMIT' ? Number(stopPrice) : null,
-              tif: defaults.tif,
-              // Only AUTO attaches anything. On OFF - the default - nothing
-              // protective exists until it is dragged off the position marker.
-              bracket,
-            }),
+            copyGroup
+              ? // Fan out: the server sizes, validates and executes each account
+                // independently; the clientOrderId is the group-scoped idempotency
+                // key, so a double-press collapses to one copy intent.
+                copyApi
+                  .submitIntent(copyGroup.id, clientOrderId, {
+                    symbol: instrument.root,
+                    side,
+                    qty,
+                    type,
+                    limitPrice: limitPx,
+                    stopPrice: stopPx,
+                    tif: defaults.tif,
+                    bracket,
+                  })
+                  .then((result) => {
+                    // Refresh the group's derived sync view so a rejected or
+                    // skipped follower shows up without waiting for the poll.
+                    void useCopy.getState().refreshSync(copyGroup.id);
+                    void useCopy.getState().refreshIntents(copyGroup.id);
+                    return result;
+                  })
+              : tradingApi.submit({
+                  accountId,
+                  clientOrderId,
+                  symbol: instrument.root,
+                  side,
+                  qty,
+                  type,
+                  limitPrice: limitPx,
+                  stopPrice: stopPx,
+                  tif: defaults.tif,
+                  // Only AUTO attaches anything. On OFF - the default - nothing
+                  // protective exists until it is dragged off the position marker.
+                  bracket,
+                }),
         ),
       );
     },
-    [accountId, defaults, instrument, limitPrice, qty, run, stopPrice, type],
+    [accountId, copyGroup, defaults, instrument, limitPrice, qty, run, stopPrice, type],
   );
 
   /**
@@ -198,6 +248,18 @@ export function OrderTicket(): JSX.Element {
     },
     [armed, defaults.confirmOrders, submit],
   );
+
+  // A display-only mirror of the server's sizing, so a trader sees the fan-out
+  // before pressing. The server remains the authority; a zero-lot follower is
+  // shown as skipped exactly as the server will skip it.
+  const copyPreview = useMemo(() => {
+    if (!copyGroup) return null;
+    const followers = copyGroup.followers
+      .filter((f) => f.enabled && f.eligible)
+      .map((f) => ({ name: f.nickname || f.name, qty: previewFollowerQty(copyGroup, f, qty) }));
+    const reach = 1 + followers.filter((f) => f.qty > 0).length;
+    return { followers, reach };
+  }, [copyGroup, qty]);
 
   if (!instrument) return <div className="tk-empty">No instrument selected.</div>;
 
@@ -229,6 +291,26 @@ export function OrderTicket(): JSX.Element {
           <span className="tk-contract-root">{instrument.root}</span>
         </span>
       </div>
+
+      {copyGroup && copyPreview ? (
+        <div className="tk-copy" data-testid="ticket-copy" title="This account leads a copy group — orders fan out to its followers">
+          <div className="tk-copy-head">
+            <span className="tk-copy-dot" aria-hidden="true" />
+            COPY ACTIVE · {copyPreview.reach} account{copyPreview.reach === 1 ? '' : 's'}
+          </div>
+          <div className="tk-copy-prev">
+            <span className="tk-copy-leg">
+              <b>{qty}</b> leader
+            </span>
+            {copyPreview.followers.map((f) => (
+              <span key={f.name} className={`tk-copy-leg ${f.qty === 0 ? 'tk-copy-skip' : ''}`}>
+                <b>{f.qty === 0 ? '—' : f.qty}</b> {f.name}
+                {f.qty === 0 ? ' (skip)' : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <label className="tk-field">
         <span className="tk-label">Order type</span>

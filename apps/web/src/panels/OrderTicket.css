@@ -418,3 +418,60 @@
   gap: 5px;
   font-size: var(--fs-sm);
 }
+
+/*
+ * Copy-active banner.
+ *
+ * Shown only when the selected account leads an ACTIVE copy group. It states the
+ * fan-out reach and previews the per-account sizes, so a trader pressing BUY on
+ * a leader knows exactly how many accounts, and how many contracts each, before
+ * the order goes. It is display only; the server sizes and executes.
+ */
+.tk-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 8px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-dim, var(--accent));
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+}
+
+.tk-copy-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.tk-copy-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.tk-copy-prev {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--text-secondary);
+}
+
+.tk-copy-leg {
+  white-space: nowrap;
+}
+
+.tk-copy-leg b {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-copy-skip {
+  color: var(--text-muted);
+  opacity: 0.7;
+}

@@ -1,0 +1,419 @@
+/*
+ * Copy trading control.
+ *
+ * Lives in the right column beside the order ticket, so it obeys the same width
+ * budget: narrow, dense, 13px text, controls the height of a ticket field. It is
+ * a management surface, not the order-entry surface — the fan-out itself is a
+ * property of the order ticket when the leader account is selected.
+ */
+.cp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  font-size: var(--fs-md);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cp-title {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.cp-muted {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.cp-empty {
+  line-height: 1.5;
+}
+
+.cp-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--short-bg);
+  color: var(--short);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+}
+
+.cp-error-x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.cp-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- setup / create ---- */
+.cp-setup,
+.cp-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cp-setup-lead {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.cp-field {
+  display: block;
+  min-width: 0;
+}
+
+.cp-label {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+.cp-field input,
+.cp-field select,
+.cp-addrow select {
+  width: 100%;
+  height: var(--h-control);
+  padding: 0 8px;
+  font-size: var(--fs-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.cp-setup-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ---- card ---- */
+.cp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg, var(--radius));
+}
+
+.cp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.cp-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-pill {
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--bg-active);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cp-pill-on {
+  background: var(--long-bg);
+  color: var(--long);
+}
+
+.cp-pill-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.cp-leader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cp-role {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 1px 4px;
+  border-radius: var(--radius);
+}
+
+.cp-acct {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cp-acct-sm {
+  font-size: var(--fs-sm);
+}
+
+.cp-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.cp-dot {
+  opacity: 0.5;
+}
+
+.cp-diverged {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.cp-flag {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.cp-flag-warn {
+  color: var(--warn);
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* ---- followers ---- */
+.cp-followers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cp-follower {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px;
+  border-radius: var(--radius);
+  background: var(--bg-base);
+}
+
+.cp-follower-off {
+  opacity: 0.5;
+}
+
+.cp-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.cp-toggle input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.cp-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.cp-size-in {
+  width: 46px;
+  height: 22px;
+  padding: 0 4px;
+  font-size: var(--fs-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.cp-x {
+  margin-left: auto;
+}
+
+.cp-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  font-size: var(--fs-sm);
+  background: none;
+  color: var(--accent);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.cp-cap {
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
+.cp-addrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cp-addrow select {
+  flex: 1 1 auto;
+}
+
+/* ---- actions ---- */
+.cp-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.cp-actions button {
+  flex: 1 1 0;
+}
+
+.cp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.cp-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cp .cp-primary,
+.cp .cp-ghost,
+.cp .cp-danger,
+.cp .cp-danger-ghost {
+  height: var(--h-control);
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.cp .cp-sm {
+  height: 26px;
+  padding: 0 8px;
+}
+
+.cp-primary {
+  background: var(--accent);
+  color: var(--bg-void, #fff);
+  border-color: var(--accent) !important;
+}
+
+.cp-ghost {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.cp-danger {
+  background: var(--short-bg);
+  color: var(--short);
+  border-color: var(--short) !important;
+}
+
+.cp-danger-ghost {
+  background: none;
+  color: var(--short);
+  align-self: flex-start;
+}
+
+.cp button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cp-link {
+  display: inline-block;
+  margin-left: 6px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+
+/* ---- settings disclosure ---- */
+.cp-more {
+  font-size: var(--fs-sm);
+}
+
+.cp-more > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  padding: 2px 0;
+  list-style: none;
+}
+
+.cp-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cp-more[open] > summary {
+  margin-bottom: 6px;
+}
+
+.cp-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.cp-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
