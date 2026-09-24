@@ -258,6 +258,34 @@ export async function publicVerification(db: Database, token: string): Promise<P
   };
 }
 
+/**
+ * Fetch an owner's certificate artifact (image or pdf) by id. Owner-scoped: the
+ * certificate must belong to the calling user's identity, or null is returned
+ * (no IDOR, no enumeration signal). Returns the object-store key + expected
+ * content type; the route streams it from the store.
+ */
+export async function ownedCertificateArtifact(
+  db: Database,
+  userId: string,
+  certificateId: string,
+  kind: 'image' | 'pdf',
+): Promise<{ storageKey: string; contentType: string; filename: string } | null> {
+  const [identity] = await db.select({ id: customerIdentities.id }).from(customerIdentities).where(eq(customerIdentities.userId, userId));
+  if (!identity) return null;
+  const [row] = await db
+    .select()
+    .from(certificates)
+    .where(and(eq(certificates.id, certificateId), eq(certificates.customerIdentityId, identity.id)));
+  if (!row || row.status !== 'ISSUED' || row.renderStatus !== 'RENDERED') return null;
+  const storageKey = kind === 'pdf' ? row.pdfStorageKey : row.imageStorageKey;
+  if (!storageKey) return null;
+  return {
+    storageKey,
+    contentType: kind === 'pdf' ? 'application/pdf' : 'image/png',
+    filename: `${row.certificatePublicId}.${kind === 'pdf' ? 'pdf' : 'png'}`,
+  };
+}
+
 /** A trader's own certificates (owner-scoped by identity), newest first. */
 export async function listCertificatesForUser(db: Database, userId: string) {
   const [identity] = await db

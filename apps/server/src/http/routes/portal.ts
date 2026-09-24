@@ -24,7 +24,8 @@ import {
 } from '../../platform/portal-accounts.js';
 import { accountAnalytics } from '../../platform/analytics.js';
 import { createResetOrder, resetQuote, ResetError } from '../../platform/account-reset.js';
-import { listCertificatesForUser } from '../../platform/certificates.js';
+import { listCertificatesForUser, ownedCertificateArtifact, validateCertificateDisplayName } from '../../platform/certificates.js';
+import { objectStore } from '../../platform/object-store.js';
 import {
   listAchievementsForUser,
   setAchievementsPublic,
@@ -261,6 +262,23 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ certificates: await listCertificatesForUser(db, request.user!.id) });
   });
 
+  // Owner-scoped artifact download. A certificate the caller does not own (or an
+  // unrendered one) returns 404 — no IDOR, no enumeration beyond found/not-found.
+  const artifactRoute = (kind: 'image' | 'pdf') =>
+    app.get<{ Params: { id: string } }>(`/certificates/:id/${kind}`, async (request, reply) => {
+      const found = await ownedCertificateArtifact(db, request.user!.id, request.params.id, kind);
+      if (!found) throw ApiError.notFound('CERTIFICATE_NOT_FOUND', 'No such certificate artifact.');
+      const obj = await objectStore().get(found.storageKey);
+      if (!obj) throw ApiError.notFound('ARTIFACT_NOT_FOUND', 'The artifact is not available.');
+      return reply
+        .header('content-type', found.contentType)
+        .header('content-disposition', `attachment; filename="${found.filename}"`)
+        .header('cache-control', 'private, max-age=0, no-store')
+        .send(obj.data);
+    });
+  artifactRoute('image');
+  artifactRoute('pdf');
+
   // ---- Achievements -------------------------------------------------------
   app.get('/achievements', async (request, reply) => {
     return reply.send(await listAchievementsForUser(db, request.user!.id));
@@ -299,9 +317,15 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch<{ Body: { preferredDisplayName: string | null } }>('/profile', async (request, reply) => {
     const raw = request.body?.preferredDisplayName;
-    const value = typeof raw === 'string' ? raw.trim().slice(0, 80) : null;
-    // A public display name is presentation-only and must never carry an email.
-    if (value && value.includes('@')) throw ApiError.badRequest('INVALID_DISPLAY_NAME', 'A public display name cannot contain an email address.');
+    // Clearing the name is allowed (falls back to the derived safe name).
+    let value: string | null = null;
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      // This is the certificate display name — validate it can render safely and
+      // cannot inject markup/script/control characters or an email.
+      const check = validateCertificateDisplayName(raw);
+      if (!check.ok) throw ApiError.badRequest('INVALID_DISPLAY_NAME', check.reason);
+      value = check.value;
+    }
     const organizationId = await defaultOrganizationId(db);
     await ensureCustomerIdentity(db, { organizationId, userId: request.user!.id });
     await db

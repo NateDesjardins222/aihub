@@ -334,3 +334,13 @@
   .pt-cards { grid-template-columns: 1fr; }
   .pt-switcher-btn { min-width: 0; }
 }
+
+/* ---- Certificate Vault (Milestone 6) ------------------------------------ */
+.pt-cert-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.pt-cert-preview { background: var(--pt-surface-2); border-bottom: 1px solid var(--pt-line); aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
+.pt-cert-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pt-cert-pending { color: var(--pt-dim); font-size: 13px; letter-spacing: 0.02em; }
+.pt-cert-body { padding: 14px 16px 16px; }
+.pt-cert-name { font-size: 17px; font-weight: 600; margin-top: 8px; color: var(--pt-text); }
+.pt-cert-meta { display: flex; gap: 12px; align-items: baseline; margin-top: 4px; font-size: 14px; }
+.pt-cert-id { font-size: 11px; letter-spacing: 0.04em; margin-top: 6px; }

@@ -97,7 +97,13 @@ export interface Analytics {
   equity: { points: Array<{ tExitMs: number; equityMicros: number; drawdownMicros: number }>; maxDrawdownMicros: number; finalEquityMicros: number };
   breakdowns: { byInstrument: Breakdown[]; bySide: Breakdown[]; byDayOfWeek?: Breakdown[] };
 }
-export interface Cert { id: string; certificatePublicId: string; verificationToken: string; type: string; publicDisplayName: string; amountMicros: number | null; status: string; issuedAt: number }
+export interface Cert {
+  id: string; certificatePublicId: string; verificationToken: string; type: string;
+  publicDisplayName: string; amountMicros: number | null; status: string; issuedAt: number;
+  // Milestone 6 — rendered-artifact state for the Certificate Vault.
+  milestoneValueMicros?: number | null; renderStatus?: string; hasImage?: boolean; hasPdf?: boolean;
+  physicalEligible?: boolean; templateVersion?: string; accountId?: string | null;
+}
 export interface Achievement { id: string; type: string; isPublic: boolean; meta: Record<string, unknown> | null; earnedAt: number }
 export interface AchievementsView { achievementsPublic: boolean; achievements: Achievement[] }
 export interface LifecycleEntry { seq: number; startedAt: number; endedAt: number | null; endReason: string | null; finalStatus: string | null; startingBalanceMicros: number }

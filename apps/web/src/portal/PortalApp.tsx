@@ -16,6 +16,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { AccountsPage } from './pages/AccountsPage';
 import { AccountDetailPage } from './pages/AccountDetailPage';
 import { PayoutsPage } from './pages/PayoutsPage';
+import { CertificatesPage } from './pages/CertificatesPage';
 import { AchievementsPage } from './pages/AchievementsPage';
 import { BillingPage } from './pages/BillingPage';
 import { SupportPage } from './pages/SupportPage';
@@ -27,6 +28,7 @@ export type Route =
   | { name: 'accounts' }
   | { name: 'account'; id: string; tab: string }
   | { name: 'payouts' }
+  | { name: 'certificates' }
   | { name: 'achievements' }
   | { name: 'billing' }
   | { name: 'support' }
@@ -44,7 +46,7 @@ export function parseRoute(pathname: string, hash: string): Route {
     return { name: 'account', id: parts[1], tab };
   }
   if (parts[0] === 'accounts') return { name: 'accounts' };
-  const simple = ['payouts', 'achievements', 'billing', 'support', 'profile', 'verification', 'security', 'notifications'] as const;
+  const simple = ['payouts', 'certificates', 'achievements', 'billing', 'support', 'profile', 'verification', 'security', 'notifications'] as const;
   if (simple.includes(parts[0] as (typeof simple)[number])) return { name: parts[0] } as Route;
   return { name: 'dashboard' };
 }
@@ -61,6 +63,7 @@ const NAV: Array<{ name: Route['name']; label: string }> = [
   { name: 'dashboard', label: 'Dashboard' },
   { name: 'accounts', label: 'Accounts' },
   { name: 'payouts', label: 'Payouts' },
+  { name: 'certificates', label: 'Certificates' },
   { name: 'achievements', label: 'Achievements' },
   { name: 'billing', label: 'Billing' },
   { name: 'support', label: 'Support' },
@@ -151,6 +154,7 @@ export function PortalApp(): JSX.Element {
         {route.name === 'accounts' && <AccountsPage onOpen={(id) => go({ name: 'account', id, tab: 'overview' })} onToast={showToast} onChanged={loadAccounts} />}
         {route.name === 'account' && <AccountDetailPage accountId={route.id} tab={route.tab} onTab={(t) => go({ name: 'account', id: route.id, tab: t })} onBack={() => go({ name: 'accounts' })} onToast={showToast} />}
         {route.name === 'payouts' && <PayoutsPage accounts={activeAccounts} selectedId={selected?.id ?? null} onToast={showToast} />}
+        {route.name === 'certificates' && <CertificatesPage onToast={showToast} />}
         {route.name === 'achievements' && <AchievementsPage onToast={showToast} />}
         {route.name === 'billing' && <BillingPage accounts={accounts} />}
         {route.name === 'support' && <SupportPage />}
