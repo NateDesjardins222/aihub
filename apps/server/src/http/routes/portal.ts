@@ -32,6 +32,13 @@ import {
 } from '../../platform/achievements.js';
 import { ensureCustomerIdentity } from '../../platform/customer-identity.js';
 import { defaultOrganizationId } from '../../platform/provisioning.js';
+import {
+  getPersonalRiskProfile,
+  upsertPersonalControl,
+  PersonalControlError,
+} from '../../platform/personal-risk.js';
+import type { PersonalControlMode, PersonalControlType, PersonalControlValue } from '@atlas/contracts';
+import { PERSONAL_CONTROL_TYPES } from '@atlas/contracts';
 
 function mapPortalError(err: unknown): never {
   if (err instanceof PortalAccountError) {
@@ -41,6 +48,11 @@ function mapPortalError(err: unknown): never {
   if (err instanceof ResetError) {
     if (err.code === 'ACCOUNT_NOT_FOUND') throw ApiError.notFound(err.code, err.message);
     throw ApiError.badRequest(err.code, err.message);
+  }
+  if (err instanceof PersonalControlError) {
+    if (err.code === 'ACCOUNT_NOT_FOUND') throw ApiError.notFound(err.code, err.message);
+    if (err.code === 'STALE_VERSION') throw ApiError.conflict(err.code, err.message);
+    throw ApiError.badRequest(err.code, err.message, err.detail);
   }
   throw err;
 }
@@ -118,6 +130,58 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!analytics) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
       return reply.send(analytics);
+    },
+  );
+
+  // ---- Personal risk controls (Milestone 5) -------------------------------
+  // Read the account's personal controls + live server-derived usage. The
+  // browser renders this; it never enforces or computes risk.
+  app.get<{ Params: { id: string } }>('/accounts/:id/controls', async (request, reply) => {
+    await assertOwned(db, request.user!.id, request.params.id);
+    try {
+      return reply.send(await getPersonalRiskProfile(db, request.params.id));
+    } catch (err) {
+      mapPortalError(err);
+    }
+  });
+
+  // Create or update one control. Server-authoritative: validation, locked-mode
+  // (tighten-only until the next trading day) and concurrency are enforced here,
+  // never trusting the client. Ownership is resolved from the caller's session.
+  app.put<{
+    Params: { id: string; controlType: string };
+    Body: {
+      enabled?: boolean;
+      mode?: PersonalControlMode;
+      value?: PersonalControlValue;
+      expectedVersion?: number;
+    };
+  }>(
+    '/accounts/:id/controls/:controlType',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      await assertOwned(db, request.user!.id, request.params.id);
+      const controlType = request.params.controlType as PersonalControlType;
+      if (!PERSONAL_CONTROL_TYPES.includes(controlType)) {
+        throw ApiError.badRequest('UNKNOWN_CONTROL', 'Unknown control.');
+      }
+      const mode: PersonalControlMode = request.body?.mode === 'LOCKED' ? 'LOCKED' : 'FLEXIBLE';
+      try {
+        const view = await upsertPersonalControl(db, {
+          accountId: request.params.id,
+          ownerUserId: request.user!.id,
+          actorUserId: request.user!.id,
+          source: 'TRADER',
+          controlType,
+          enabled: request.body?.enabled === true,
+          mode,
+          value: request.body?.value ?? {},
+          expectedVersion: request.body?.expectedVersion,
+        });
+        return reply.send(view);
+      } catch (err) {
+        mapPortalError(err);
+      }
     },
   );
 

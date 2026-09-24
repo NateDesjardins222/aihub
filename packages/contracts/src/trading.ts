@@ -206,6 +206,23 @@ export type RejectReason =
   | 'ORDER_NOT_MODIFIABLE'
   | 'STALE_ORDER_VERSION'
   | 'RATE_LIMITED'
+  /**
+   * Trader-configured PERSONAL risk controls (Milestone 5). These are additive
+   * and can only make an account MORE restrictive than firm rules — they never
+   * loosen a firm limit, and they only ever block exposure-INCREASING orders
+   * (reduce / flatten / protective actions are never blocked). Firm rules remain
+   * authoritative; personal controls are evaluated only when the firm gate allows.
+   */
+  | 'PERSONAL_DAILY_LOSS_LIMIT'
+  | 'PERSONAL_MAX_TRADES'
+  | 'PERSONAL_DAILY_DRAWDOWN'
+  | 'PERSONAL_MAX_POSITION'
+  | 'PERSONAL_DAILY_CONTRACT_LIMIT'
+  | 'PERSONAL_PROFIT_LOCK'
+  | 'PERSONAL_CONSECUTIVE_LOSS_LOCK'
+  | 'PERSONAL_COOLDOWN'
+  | 'PERSONAL_TRADING_WINDOW'
+  | 'PERSONAL_SESSION_RESTRICTION'
   | 'INTERNAL_ERROR';
 
 export interface RiskRejection {

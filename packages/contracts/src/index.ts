@@ -1,6 +1,7 @@
 export * from './instrument.js';
 export * from './marketdata.js';
 export * from './infrastructure.js';
+export * from './personal-risk.js';
 export * from './trading.js';
 export * from './account.js';
 export * from './ws.js';

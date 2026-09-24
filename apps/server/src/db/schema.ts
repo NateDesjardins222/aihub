@@ -647,6 +647,13 @@ export const orders = pgTable(
     rejectReason: varchar('reject_reason', { length: 40 }),
     /** Optimistic concurrency: a drag-modify carrying a stale version is rejected. */
     version: integer('version').notNull().default(0),
+    /**
+     * Set true the first time a fill of this order INCREASES exposure (M5).
+     * Personal "max trades per day" counts an order once regardless of partial
+     * fills, so the fill path flips this false→true exactly once and increments
+     * the per-day opening-trade counter only on that transition.
+     */
+    openedExposure: boolean('opened_exposure').notNull().default(false),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -2181,5 +2188,121 @@ export const providerOpsEvents = pgTable(
   (t) => [
     index('provider_ops_events_provider_idx').on(t.providerId),
     index('provider_ops_events_occurred_idx').on(t.occurredAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Trader Personal Risk Controls (Milestone 5)
+//
+// A trader-configured, server-authoritative risk-control system that can only
+// make an account MORE restrictive than firm rules. Account- and owner-scoped;
+// changes are versioned (optimistic concurrency) and audited; per-trading-day
+// usage counters are maintained on the fill path so the order-path gate reads
+// them cheaply. Firm rules always win — nothing here loosens a firm limit.
+// ---------------------------------------------------------------------------
+
+/** One personal control per (account, controlType). */
+export const traderRiskControls = pgTable(
+  'trader_risk_controls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    /** DAILY_LOSS_LIMIT | MAX_TRADES | DAILY_DRAWDOWN | MAX_POSITION | ... */
+    controlType: varchar('control_type', { length: 32 }).notNull(),
+    /** The switch. Typing a value never enables a control; this must be true. */
+    enabled: boolean('enabled').notNull().default(false),
+    /** FLEXIBLE | LOCKED. LOCKED = tighten-only until the next trading day. */
+    mode: varchar('mode', { length: 12 }).notNull().default('FLEXIBLE'),
+    /** Currency magnitude (MICROS controls), always positive. */
+    valueMicros: micros('value_micros'),
+    /** Integer magnitude (INT controls): trades/contracts/losses/minutes. */
+    valueInt: integer('value_int'),
+    /** HH:MM exchange-tz bounds (TRADING_WINDOW). */
+    windowStart: varchar('window_start', { length: 5 }),
+    windowEnd: varchar('window_end', { length: 5 }),
+    /** Allowed session keys (SESSION_RESTRICTION). */
+    sessionsJson: jsonb('sessions_json'),
+    /** When LOCKED was entered, and the trading day it was locked on. */
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
+    lockedTradingDay: date('locked_trading_day'),
+    /** Optimistic concurrency: a stale concurrent edit is rejected. */
+    version: integer('version').notNull().default(0),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('trader_risk_controls_account_type_key').on(t.accountId, t.controlType),
+    index('trader_risk_controls_account_idx').on(t.accountId),
+  ],
+);
+
+/** Append-only audit of every personal-control change. */
+export const traderRiskControlEvents = pgTable(
+  'trader_risk_control_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    controlType: varchar('control_type', { length: 32 }).notNull(),
+    /** created | updated | enabled | disabled | locked | tightened | expired */
+    action: varchar('action', { length: 24 }).notNull(),
+    oldState: jsonb('old_state'),
+    newState: jsonb('new_state'),
+    mode: varchar('mode', { length: 12 }),
+    effectiveTradingDay: date('effective_trading_day'),
+    actorUserId: uuid('actor_user_id'),
+    /** TRADER | OWNER | SYSTEM */
+    source: varchar('source', { length: 12 }).notNull().default('TRADER'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('trader_risk_control_events_account_idx').on(t.accountId, t.createdAt),
+  ],
+);
+
+/**
+ * Running per-(account, tradeDate) counters, maintained on the fill path so the
+ * order-path gate reads them cheaply. A new trading day is a new row, so
+ * counters reset intrinsically at the authoritative day rollover.
+ */
+export const traderRiskDayState = pgTable(
+  'trader_risk_day_state',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    tradeDate: date('trade_date').notNull(),
+    /** Opening trades today (one per originating order that opened exposure). */
+    openingTradeCount: integer('opening_trade_count').notNull().default(0),
+    /** Filled opening/increasing contracts today. */
+    contractsOpened: integer('contracts_opened').notNull().default(0),
+    /** Current consecutive losing-trade streak (breakeven is neutral). */
+    consecutiveLosses: integer('consecutive_losses').notNull().default(0),
+    /** Exchange/exit time (ms) the most recent losing trade closed at. */
+    lastLossClosedAtMs: bigint('last_loss_closed_at_ms', { mode: 'number' }),
+    /** Intraday high-water equity for the personal daily-drawdown reference. */
+    dayHighEquityMicros: micros('day_high_equity_micros'),
+    /** Running realized net trading P&L for the day (fees included). */
+    realizedNetPnlMicros: micros('realized_net_pnl_micros').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('trader_risk_day_state_account_date_key').on(t.accountId, t.tradeDate),
   ],
 );
