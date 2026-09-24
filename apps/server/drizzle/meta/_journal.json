@@ -134,6 +134,13 @@
       "when": 1790088478819,
       "tag": "0018_customer_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790088479819,
+      "tag": "0019_customer_portal",
+      "breakpoints": true
     }
   ]
 }

@@ -347,6 +347,21 @@ export const accounts = pgTable(
     fundedProfileVersionId: uuid('funded_profile_version_id').references(
       () => accountProfileVersions.id,
     ),
+    /**
+     * A trader's human-friendly label for this account ("NQ Account", "Morning
+     * ES"). Presentation only: never affects accounting, audit, provisioning,
+     * entitlements, trade ownership, or payout ownership. `publicId` stays
+     * authoritative. (Customer Portal V1.)
+     */
+    nickname: varchar('nickname', { length: 60 }),
+    /**
+     * When this account was created by a RESET of a failed account, the account
+     * it replaced. The failed account is preserved in history, never erased.
+     * (Account Lifecycle UX V1.)
+     */
+    resetOfAccountId: uuid('reset_of_account_id'),
+    /** Presentation preference only: a trader hid this terminal account from lists. */
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1484,6 +1499,10 @@ export const customerIdentities = pgTable(
     country: varchar('country', { length: 2 }),
     /** UNVERIFIED|CONTACT_PENDING|CONTACT_VERIFIED|IDENTITY_PENDING|STEP_UP_REQUIRED|UNDER_REVIEW|IDENTITY_VERIFIED|REJECTED */
     identityStatus: varchar('identity_status', { length: 24 }).notNull().default('UNVERIFIED'),
+    /** The SAFE public name shown on shared certificates (never the legal name). */
+    preferredDisplayName: varchar('preferred_display_name', { length: 80 }),
+    /** Global opt-in for public achievement display. Default off (private). */
+    achievementsPublic: boolean('achievements_public').notNull().default(false),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1761,5 +1780,76 @@ export const notificationMessages = pgTable(
     uniqueIndex('notification_messages_dedupe_key').on(t.organizationId, t.dedupeKey),
     index('notification_messages_status_idx').on(t.status, t.channel),
     index('notification_messages_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Happy Trader Funding — Certificates & Achievements V1.
+//
+// Event-driven, idempotent, privacy-controlled recognition. A certificate is
+// publicly verifiable at /verify/<token> exposing only safe data; achievements
+// are restrained (no game economy) with per-trader visibility. Issuance is
+// exactly-once per triggering event via a unique dedupe_key. See
+// docs/certificates-achievements-v1.md.
+
+export const certificates = pgTable(
+  'certificates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    /** HT-C-XXXX — the immutable public certificate id. */
+    certificatePublicId: varchar('certificate_public_id', { length: 24 }).notNull(),
+    /** Random URL-safe slug for the public /verify/<token> route (QR-compatible). */
+    verificationToken: varchar('verification_token', { length: 48 }).notNull(),
+    /** EVALUATION_PASSED | FUNDED_TRADER | PAYOUT | ACCOUNT_COMPLETED */
+    type: varchar('type', { length: 24 }).notNull(),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').references(() => accounts.id),
+    /** A SAFE public name (e.g. "Nathan D."). Never the legal full name. */
+    publicDisplayName: varchar('public_display_name', { length: 80 }).notNull(),
+    amountMicros: micros('amount_micros'),
+    /** ISSUED | REVOKED */
+    status: varchar('status', { length: 16 }).notNull().default('ISSUED'),
+    revokedReason: text('revoked_reason'),
+    templateVersion: varchar('template_version', { length: 24 }).notNull().default('v1'),
+    /** Exactly-once per triggering event. */
+    dedupeKey: varchar('dedupe_key', { length: 200 }).notNull(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('certificates_dedupe_key').on(t.organizationId, t.dedupeKey),
+    uniqueIndex('certificates_token_key').on(t.verificationToken),
+    uniqueIndex('certificates_public_id_key').on(t.certificatePublicId),
+    index('certificates_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+export const achievements = pgTable(
+  'achievements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** FUNDED | FIRST_PAYOUT | PAID_5K | PAID_10K | PAID_25K | FIVE_PAYOUT_CLUB | ACCOUNT_COMPLETED */
+    type: varchar('type', { length: 32 }).notNull(),
+    /** Exactly-once per (identity, milestone). */
+    dedupeKey: varchar('dedupe_key', { length: 200 }).notNull(),
+    isPublic: boolean('is_public').notNull().default(false),
+    meta: jsonb('meta'),
+    earnedAt: timestamp('earned_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('achievements_dedupe_key').on(t.organizationId, t.dedupeKey),
+    index('achievements_identity_idx').on(t.customerIdentityId),
   ],
 );
