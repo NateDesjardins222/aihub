@@ -45,7 +45,9 @@ export type NotificationType =
   | 'ACCOUNT_RESTORED'
   | 'ACCOUNT_INACTIVITY_WARNING'
   | 'ACCOUNT_INACTIVITY_CLOSED'
-  | 'ACCOUNT_COMPLETED';
+  | 'ACCOUNT_COMPLETED'
+  // Milestone 6 — a rendered certificate/reward is ready to view in the vault.
+  | 'CERTIFICATE_READY';
 
 /** Channel policy: SMS is reserved for verification, milestones, payout, security. */
 const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
@@ -71,6 +73,7 @@ const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
   ACCOUNT_INACTIVITY_WARNING: ['EMAIL', 'SMS'],
   ACCOUNT_INACTIVITY_CLOSED: ['EMAIL'],
   ACCOUNT_COMPLETED: ['EMAIL', 'SMS'],
+  CERTIFICATE_READY: ['EMAIL'],
 };
 
 const TEMPLATE_VERSION = 'v1';
@@ -130,6 +133,11 @@ function render(type: NotificationType, data: Record<string, unknown>): { subjec
       return {
         subject: 'Your funded account reached its payout maximum',
         body: 'Congratulations — your funded account completed its fifth payout cycle. It is now complete and moved to your account history.',
+      };
+    case 'CERTIFICATE_READY':
+      return {
+        subject: 'Your Happy Trader certificate is ready',
+        body: 'A new certificate has been added to your Certificate Vault. View, download or share it from your dashboard.',
       };
   }
 }
