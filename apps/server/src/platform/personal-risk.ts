@@ -15,7 +15,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { accounts, traderRiskControlEvents, traderRiskControls, traderRiskDayState } from '../db/schema.js';
+import { accounts, traderRiskControlEvents, traderRiskControls } from '../db/schema.js';
 import type {
   PersonalControlMode,
   PersonalControlType,
@@ -24,14 +24,21 @@ import type {
   PersonalRiskProfileView,
 } from '@atlas/contracts';
 import { PERSONAL_CONTROL_KIND, PERSONAL_CONTROL_TYPES } from '@atlas/contracts';
+import { isStricter, validateControlValue } from '../trading/personal-risk.js';
+import type { PersonalDayState } from '../trading/personal-risk.js';
 import {
-  isStricter,
-  validateControlValue,
-  type PersonalConfig,
-  type PersonalControl,
-  type PersonalDayState,
-} from '../trading/personal-risk.js';
+  loadPersonalConfig,
+  hasEnabledControls,
+  getDayState,
+  applyFillToDayState,
+  updateDayHighEquity,
+} from '../trading/personal-risk-store.js';
 import { recordAudit } from './audit.js';
+import { defaultOrganizationId } from './provisioning.js';
+
+// Re-export the order-path store functions so existing importers (routes, tests)
+// resolve them through the platform service too.
+export { loadPersonalConfig, hasEnabledControls, getDayState, applyFillToDayState, updateDayHighEquity };
 
 export class PersonalControlError extends Error {
   constructor(
@@ -72,17 +79,6 @@ function lockActive(row: ControlRow, currentTradeDate: string | null): boolean {
   return row.lockedTradingDay >= currentTradeDate;
 }
 
-function toControl(row: ControlRow): PersonalControl {
-  return {
-    controlType: row.controlType as PersonalControlType,
-    enabled: row.enabled,
-    mode: row.mode as PersonalControlMode,
-    lockedTradingDay: row.lockedTradingDay ?? null,
-    ...rowValue(row),
-    version: row.version,
-  };
-}
-
 function toView(row: ControlRow, currentTradeDate: string | null): PersonalControlView {
   return {
     controlType: row.controlType as PersonalControlType,
@@ -102,44 +98,6 @@ async function loadAccount(db: Database, accountId: string): Promise<AccountRow>
   const [acct] = await db.select().from(accounts).where(eq(accounts.id, accountId));
   if (!acct) throw new PersonalControlError('ACCOUNT_NOT_FOUND', 'No such account.');
   return acct;
-}
-
-/** The runtime config the order-path gate consumes: every stored control. */
-export async function loadPersonalConfig(db: Database, accountId: string): Promise<PersonalConfig> {
-  const rows = await db.select().from(traderRiskControls).where(eq(traderRiskControls.accountId, accountId));
-  const map = new Map<PersonalControlType, PersonalControl>();
-  // The lock state is irrelevant to the gate's config (it only affects edits).
-  for (const row of rows) map.set(row.controlType as PersonalControlType, toControl(row));
-  return map;
-}
-
-/** Whether any personal control is enabled — a cheap short-circuit for the gate. */
-export async function hasEnabledControls(db: Database, accountId: string): Promise<boolean> {
-  const rows = await db
-    .select({ enabled: traderRiskControls.enabled })
-    .from(traderRiskControls)
-    .where(and(eq(traderRiskControls.accountId, accountId), eq(traderRiskControls.enabled, true)));
-  return rows.length > 0;
-}
-
-/** Today's per-day counters for the gate (null when no trades yet today). */
-export async function getDayState(
-  db: Database,
-  accountId: string,
-  tradeDate: string,
-): Promise<PersonalDayState | null> {
-  const [row] = await db
-    .select()
-    .from(traderRiskDayState)
-    .where(and(eq(traderRiskDayState.accountId, accountId), eq(traderRiskDayState.tradeDate, tradeDate)));
-  if (!row) return null;
-  return {
-    openingTradeCount: row.openingTradeCount,
-    contractsOpened: row.contractsOpened,
-    consecutiveLosses: row.consecutiveLosses,
-    lastLossClosedAtMs: row.lastLossClosedAtMs ?? null,
-    dayHighEquityMicros: row.dayHighEquityMicros ?? null,
-  };
 }
 
 export interface PersonalControlProfileOptions {
@@ -293,6 +251,9 @@ export async function upsertPersonalControl(db: Database, input: UpsertControlIn
     });
   }
   const currentTradeDate = acct.currentTradeDate ?? null;
+  // Practice/test accounts can carry a null org; fall back to the default org
+  // exactly as the portal route does, so a control row always has an org.
+  const organizationId = acct.organizationId ?? (await defaultOrganizationId(db));
 
   // Validate the value whenever one is meaningful (enabling requires validity;
   // a stored value is always kept sane so re-enabling later is safe).
@@ -380,7 +341,7 @@ export async function upsertPersonalControl(db: Database, input: UpsertControlIn
       const [row] = await tx
         .insert(traderRiskControls)
         .values({
-          organizationId: acct.organizationId!,
+          organizationId,
           accountId: input.accountId,
           userId: input.ownerUserId,
           controlType: input.controlType,
@@ -396,7 +357,7 @@ export async function upsertPersonalControl(db: Database, input: UpsertControlIn
     }
 
     await tx.insert(traderRiskControlEvents).values({
-      organizationId: acct.organizationId!,
+      organizationId,
       accountId: input.accountId,
       userId: input.ownerUserId,
       controlType: input.controlType,
@@ -414,9 +375,9 @@ export async function upsertPersonalControl(db: Database, input: UpsertControlIn
 
   // Tamper-evident audit AFTER commit (recordAudit takes its own advisory lock;
   // running it inside the outer transaction risks lock contention). Best-effort.
-  if (acct.organizationId) {
+  if (organizationId) {
     await recordAudit(db, {
-      organizationId: acct.organizationId,
+      organizationId,
       actor: { type: 'USER', userId: input.actorUserId },
       subjectType: 'ACCOUNT',
       subjectId: input.accountId,

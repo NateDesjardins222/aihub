@@ -117,6 +117,14 @@ import {
   type InstrumentPolicy,
   type RiskRejection,
 } from './risk.js';
+import { evaluatePersonalRisk } from './personal-risk.js';
+import {
+  loadPersonalConfig,
+  getDayState,
+  applyFillToDayState,
+  updateDayHighEquity,
+} from './personal-risk-store.js';
+import { sessionAuthority } from '../infra/session-authority.js';
 import {
   presentOrder,
   presentPosition,
@@ -1392,6 +1400,16 @@ export class TradingEngine {
       throw new OrderRejectedError(rejection.reason, rejection.message, rejection.detail);
     }
 
+    // Personal risk controls (M5): additive, tighten-only, evaluated ONLY when
+    // the firm gate allowed the order and ONLY against exposure-increasing
+    // orders (reduce/flatten/protective are never blocked). Firm rules stay
+    // authoritative — this can never remove a firm allow/reject.
+    const personalRejection = await this.checkPersonalRisk(input, spec, position, snapshot, now);
+    if (personalRejection) {
+      await this.recordRisk(input.accountId, null, personalRejection);
+      throw new OrderRejectedError(personalRejection.reason, personalRejection.message, personalRejection.detail);
+    }
+
     const entry = createOrder(
       {
         id: randomUUID(),
@@ -1634,6 +1652,9 @@ export class TradingEngine {
       markTicks,
     );
     const sessionId = await this.currentSessionId(accountId);
+    // The authoritative trading day for the personal per-day counters, matched
+    // to the same day the order-path gate reads.
+    const personalTradeDate = this.accountTradingDate();
 
     if (result.fills.length > 0 || changedOrders.length > 0) {
       await this.db.transaction(async (tx) => {
@@ -1748,6 +1769,48 @@ export class TradingEngine {
           const row = this.tradeRow(accountId, spec, lot, roundTurnFees, excursion, sessionId);
           await tx.insert(trades).values(row as never);
           tradeRows.push(row as Record<string, unknown>);
+        }
+
+        // Personal risk day-state counters (M5). Count an opening trade once per
+        // originating order (the opened_exposure flag flips false→true), add the
+        // exposure-increasing filled quantity to the day's contract counter, and
+        // fold each closed round-trip's net P&L into the consecutive-loss /
+        // cooldown / realized counters. A reduction contributes nothing.
+        {
+          let running = position.qty;
+          let openingTrades = 0;
+          let contractsOpened = 0;
+          const counted = new Set<string>();
+          for (const fill of result.fills) {
+            const order = result.orders.find((o) => o.id === fill.orderId);
+            if (!order) continue;
+            const signed = order.side === 'BUY' ? fill.qty : -fill.qty;
+            const inc = increasingQty(running, signed);
+            running += signed;
+            if (inc > 0) {
+              contractsOpened += inc;
+              if (!counted.has(fill.orderId)) {
+                counted.add(fill.orderId);
+                const flipped = await tx
+                  .update(ordersTable)
+                  .set({ openedExposure: true })
+                  .where(and(eq(ordersTable.id, fill.orderId), eq(ordersTable.openedExposure, false)))
+                  .returning({ id: ordersTable.id });
+                if (flipped.length > 0) openingTrades += 1;
+              }
+            }
+          }
+          const closedTradeNets = tradeRows.map(
+            (r) => Number((r as { netPnlMicros?: number }).netPnlMicros ?? 0),
+          );
+          if (openingTrades > 0 || contractsOpened > 0 || closedTradeNets.length > 0) {
+            await applyFillToDayState(tx as unknown as Database, accountId, personalTradeDate, {
+              openingTrades,
+              contractsOpened,
+              closedTradeNets,
+              nowMs: Date.now(),
+            });
+          }
         }
 
         // Account balance: realized P&L less fees, settled immediately.
@@ -2499,6 +2562,81 @@ export class TradingEngine {
       failedReason: account.failedReason,
       instruments: await this.instrumentPolicy(account),
     };
+  }
+
+  /**
+   * Personal risk-control gate (M5). Additive to the firm gate: it can only
+   * reject an exposure-INCREASING order, never allow one the firm gate blocked
+   * and never block a reduce/flatten/protective order. Runs under the same
+   * account mutex as the firm gate, so the day-state it reads is consistent with
+   * the fills that produced it.
+   */
+  private async checkPersonalRisk(
+    input: SubmitOrderInput,
+    spec: InstrumentSpec,
+    position: { qty: number },
+    snapshot: { exchangeTs: number } | null,
+    now: number,
+  ): Promise<RiskRejection | null> {
+    // The engine closing a breach must never be blocked by a personal control.
+    if (input.liquidation) return null;
+
+    const config = await loadPersonalConfig(this.db, input.accountId);
+    let anyEnabled = false;
+    for (const c of config.values()) {
+      if (c.enabled) {
+        anyEnabled = true;
+        break;
+      }
+    }
+    if (!anyEnabled) return null; // cheap short-circuit: no personal controls
+
+    const tradeDate = this.accountTradingDate();
+    let dayState = await getDayState(this.db, input.accountId, tradeDate);
+
+    const [acct] = await this.db
+      .select({
+        balanceMicros: accounts.balanceMicros,
+        dayStartBalanceMicros: accounts.dayStartBalanceMicros,
+        dayStartEquityMicros: accounts.dayStartEquityMicros,
+      })
+      .from(accounts)
+      .where(eq(accounts.id, input.accountId));
+    // Realized net day P&L (fees included) from the account ledger columns.
+    const dayPnlMicros = (acct?.balanceMicros ?? 0) - (acct?.dayStartBalanceMicros ?? 0);
+
+    // Equity (and the intraday high-water) is only needed by the drawdown
+    // control, so it is only marked when that control is enabled.
+    let equityMicros: number | null = null;
+    if (config.get('DAILY_DRAWDOWN')?.enabled) {
+      const val = await this.valuation(input.accountId);
+      equityMicros = val?.equityMicros ?? null;
+      if (equityMicros != null) {
+        await updateDayHighEquity(
+          this.db,
+          input.accountId,
+          tradeDate,
+          equityMicros,
+          acct?.dayStartEquityMicros ?? equityMicros,
+        );
+        dayState = await getDayState(this.db, input.accountId, tradeDate);
+      }
+    }
+
+    const marketNowMs = snapshot?.exchangeTs ?? now;
+    const sessionState = sessionAuthority.status(spec.root, marketNowMs).state;
+
+    return evaluatePersonalRisk(config, dayState, {
+      positionQty: position.qty,
+      side: input.side,
+      qty: input.qty,
+      dayPnlMicros,
+      equityMicros,
+      marketNowMs,
+      nowMs: now,
+      sessionTimezone: spec.sessionTimezone,
+      sessionState,
+    });
   }
 
   /**
