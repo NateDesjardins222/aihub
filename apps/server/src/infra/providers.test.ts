@@ -21,6 +21,8 @@ import { RithmicExecutionProvider } from '../execution/providers/rithmic-executi
 import { ScriptedExecutionProvider } from '../execution/providers/scripted-execution.js';
 import { ExternalExecutionError } from '../execution/external-provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
+import type { ExternalExecutionAdapter } from '../execution/external-provider.js';
+import type { ExecutionProviderKind } from '@atlas/contracts';
 import { redactedRithmicDescription } from './rithmic-config.js';
 import type { ExecutionProvider } from '../execution/provider.js';
 
@@ -120,7 +122,11 @@ describe('ExecutionRegistry routing + readiness (M4-F)', () => {
   it('routes SIMULATION as always-ready and reports external readiness honestly', async () => {
     const scripted = new ScriptedExecutionProvider();
     const rithmic = new RithmicExecutionProvider();
-    const reg = new ExecutionRegistry(sim, new Map([['scripted', scripted], ['rithmic', rithmic]]));
+    const adapters = new Map<ExecutionProviderKind, ExternalExecutionAdapter>([
+      ['scripted', scripted],
+      ['rithmic', rithmic],
+    ]);
+    const reg = new ExecutionRegistry(sim, adapters);
 
     expect(reg.configuredKind()).toBe('simulation');
     expect(reg.externalReadiness('SIMULATION', 'simulation').ready).toBe(true);
