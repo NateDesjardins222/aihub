@@ -714,3 +714,20 @@
 /* Owner V3: audit explorer JSON + neutral health dot. */
 .adm-audit-json { margin: 0; padding: 8px 10px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.03); border-radius: 6px; max-height: 320px; overflow: auto; }
 .adm-health-neutral { background: rgba(255,255,255,0.35); }
+
+/* Economics simulator: the raw assumptions dump. */
+.adm-json {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre;
+}
+.adm-table td[data-neg='true'] {
+  color: var(--short);
+}

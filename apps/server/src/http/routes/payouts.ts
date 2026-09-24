@@ -29,6 +29,18 @@ import {
   requestPayout,
 } from '../../platform/payouts.js';
 import { firmExposure, getPayoutCase, listPayouts } from '../../platform/payout-queries.js';
+import { economicsRuns } from '../../db/schema.js';
+import { desc } from 'drizzle-orm';
+import {
+  baseAssumptions,
+  monteCarlo,
+  reserveModel,
+  scenario,
+  sensitivity,
+  simulate,
+  withCapSchedule,
+  type ScenarioName,
+} from '../../platform/economics-sim.js';
 
 const confirmed = z.object({ confirm: z.literal(true), reason: z.string().min(3).max(500) });
 
@@ -176,6 +188,54 @@ export function payoutRoutes() {
     action('cancel', (id, body, actor) => cancelPayout(db, { payoutRequestId: id, actor, reason: body.reason ?? null }), { requireReason: true });
     action('process', (id, _body, actor) => markProcessing(db, { payoutRequestId: id, actor }));
     action('pay', (id, _body, actor) => markPaid(db, { payoutRequestId: id, actor }));
+
+    // -- economics simulator (owner-only, synthetic) -------------------------
+
+    const SCENARIOS: ScenarioName[] = ['BASE', 'GOOD_FOR_FIRM', 'GOOD_FOR_TRADER', 'HIGH_PASS_RATE', 'HIGH_PAYOUT_RATE', 'HIGH_REPEAT_PAYOUT', 'HIGH_CAC', 'HIGH_FRAUD', 'DAILY_PAYOUT_STRESS', 'SELECT_HIGH_SKILL'];
+
+    app.get('/admin/economics/scenarios', { preHandler: requireRole('SUPER_ADMIN') }, async () => ({
+      scenarios: SCENARIOS,
+      base: baseAssumptions(),
+    }));
+
+    app.post('/admin/economics/run', { preHandler: requireRole('SUPER_ADMIN'), config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request) => {
+      const body = z
+        .object({
+          scenario: z.enum(SCENARIOS as [ScenarioName, ...ScenarioName[]]).default('BASE'),
+          seed: z.number().int().default(2026),
+          purchases: z.number().int().min(1000).max(1_000_000).default(100_000),
+          trials: z.number().int().min(1).max(200).default(40),
+        })
+        .parse(request.body ?? {});
+      const organizationId = await organizationOf(request.user!.id);
+      const assumptions = scenario(body.scenario);
+      const result = simulate(assumptions, body.seed, body.purchases);
+      const sens = sensitivity(assumptions, body.seed, Math.min(body.purchases, 100_000));
+      const mc = monteCarlo(assumptions, body.seed, body.trials, Math.min(body.purchases, 20_000));
+      const caps = {
+        conservative: simulate(withCapSchedule(assumptions, 'CONSERVATIVE'), body.seed, body.purchases),
+        current: simulate(withCapSchedule(assumptions, 'CURRENT'), body.seed, body.purchases),
+        generous: simulate(withCapSchedule(assumptions, 'GENEROUS'), body.seed, body.purchases),
+      };
+      const reserve = reserveModel(0, result.grossTraderPayoutsMicros, mc.payoutExpense, 1.5);
+      const results = { result, sensitivity: sens, monteCarlo: mc, caps, reserve, scenario: body.scenario };
+      const [saved] = await db
+        .insert(economicsRuns)
+        .values({ organizationId, seed: body.seed, purchases: body.purchases, assumptions, results, createdByUserId: request.user!.id })
+        .returning({ id: economicsRuns.id });
+      return { id: saved!.id, assumptions, ...results };
+    });
+
+    app.get('/admin/economics/runs', { preHandler: requireRole('SUPER_ADMIN') }, async (request) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const rows = await db
+        .select({ id: economicsRuns.id, seed: economicsRuns.seed, purchases: economicsRuns.purchases, createdAt: economicsRuns.createdAt })
+        .from(economicsRuns)
+        .where(eq(economicsRuns.organizationId, organizationId))
+        .orderBy(desc(economicsRuns.createdAt))
+        .limit(25);
+      return { rows: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })) };
+    });
   };
 }
 

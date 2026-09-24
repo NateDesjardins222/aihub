@@ -25,6 +25,7 @@ import type {
   PayoutListRow,
   PayoutCase,
   PayoutExposure,
+  EconomicsRun,
   ProductConfig,
   TraderNote,
 } from './types';
@@ -198,4 +199,9 @@ export const adminApi = {
   payoutExposure: () => api.get<PayoutExposure>(`${BASE}/payouts/exposure`),
   payoutAction: (id: string, action: string, body: Record<string, unknown>) =>
     api.post<{ id: string; state: string }>(`${BASE}/payouts/${id}/${action}`, body),
+
+  // -- economics simulator (owner-only) -------------------------------------
+  economicsScenarios: () => api.get<{ scenarios: string[]; base: unknown }>(`${BASE}/economics/scenarios`),
+  economicsRun: (body: { scenario: string; seed: number; purchases: number; trials: number }) =>
+    api.post<EconomicsRun>(`${BASE}/economics/run`, body),
 };

@@ -506,3 +506,62 @@ export interface PayoutExposure {
   eligibleWithdrawableMicros: number;
   byModel: Record<string, { requestedLiabilityMicros: number; paidAllTimeMicros: number }>;
 }
+
+// -- Economics simulator ----------------------------------------------------
+
+export interface EconProductResult {
+  key: string;
+  model: string;
+  sizeMicros: number;
+  purchases: number;
+  grossRevenueMicros: number;
+  fundedAccounts: number;
+  payoutRecipients: number;
+  payoutEvents: number;
+  grossTraderPayoutsMicros: number;
+  firmRetainedSplitMicros: number;
+}
+export interface EconResult {
+  purchases: number;
+  grossRevenueMicros: number;
+  avgRevenuePerPurchaseMicros: number;
+  passes: number;
+  passRate: number;
+  fundedAccounts: number;
+  payoutRecipients: number;
+  purchaseToPayoutPct: number;
+  payoutEvents: number;
+  grossTraderPayoutsMicros: number;
+  firmRetainedSplitMicros: number;
+  payoutToRevenuePct: number;
+  processingCostMicros: number;
+  fraudCostMicros: number;
+  platformCostMicros: number;
+  supportCostMicros: number;
+  cacMicros: number;
+  fixedCostsMicros: number;
+  contributionMicros: number;
+  contributionMargin: number;
+  byProduct: EconProductResult[];
+}
+export interface EconDistribution { mean: number; median: number; p5: number; p25: number; p75: number; p95: number; }
+export interface EconSensitivityPoint { factor: number; contributionMicros: number; contributionMargin: number; }
+export interface EconomicsRun {
+  id: string;
+  scenario: string;
+  assumptions: unknown;
+  result: EconResult;
+  sensitivity: { payoutExpense: EconSensitivityPoint[]; passRate: EconSensitivityPoint[]; cac: EconSensitivityPoint[] };
+  monteCarlo: {
+    trials: number;
+    purchasesPerTrial: number;
+    revenue: EconDistribution;
+    payoutExpense: EconDistribution;
+    contribution: EconDistribution;
+    contributionMarginBps: EconDistribution;
+    fundedAccounts: EconDistribution;
+    payoutRecipients: EconDistribution;
+  };
+  caps: { conservative: EconResult; current: EconResult; generous: EconResult };
+  reserve: { reserveMicros: number; tailMicros: number; basisMicros: number };
+}
