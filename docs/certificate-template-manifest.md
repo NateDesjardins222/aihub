@@ -88,3 +88,18 @@ The manifest + master + resolved field values + `rendererVersion` fully determin
 the output. Because the manifest is versioned alongside the master, a design change
 is a new `<version>` directory with its own manifest; previously issued certificates
 keep their frozen `templateVersion` and are never re-laid-out.
+
+---
+
+## M6.1 update — calibrated V1 manifests
+
+The five V1 manifests are calibrated to the actual 1536×1024 master pixels
+(canvas `{width:1536,height:1024}`), with fields `recipientName` (center, Sans 700,
+74), `value` (center, Sans 700, 44) and `date` (right, Sans 400, 30) — the 10K
+manifest omits `date` because its master has a baked sample date. Field positions
+were measured from the masters' blank placement lines
+(`apps/server/scripts/measure-cert-masters.mjs`) and verified with golden renders
+(`apps/server/scripts/render-golden-certs.mjs`). Full coordinate table:
+`docs/production-certificate-assets-v1.md`. When installing a corrected or
+higher-resolution master, keep `canvas` equal to the master's real pixels and
+re-calibrate the field coordinates.

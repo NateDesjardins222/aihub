@@ -112,3 +112,23 @@ resolution (never an upscaled thumbnail). Physical fulfillment uses the dedicate
 `render_status`: `PENDING` (record issued, render queued) → `RENDERED` (artifacts
 stored) → or `FAILED` (transient error; retryable) / `DISABLED` (no approved master
 for this type/version). The reward is valid regardless of render status.
+
+---
+
+## M6.1 update — production rendering & field formatting
+
+- **Fail closed in production:** `resolveTemplateVersion()` returns `v1` when an
+  approved master is installed; the `v-test` fixture is a fallback **only** when
+  `NODE_ENV != production`. With no approved `v1`, production renders `DISABLED`
+  and never uses non-production artwork.
+- **Deterministic field formatting** (`certificate-render-service.ts`): `isoDate()`
+  → `YYYY-MM-DD` (UTC); `accountSize()` → `NNK`; `money()` → canonical thousands;
+  recipient rendered uppercase from the immutable snapshot.
+- **Visual regression:** rendering with no fields is pixel-identical to the master,
+  and rendering with values changes pixels only inside the manifest field boxes —
+  proving the approved artwork is never modified. See
+  `certificate-production-templates.test.ts`.
+- **Print artifact:** the immutable print artifact is the full-resolution PNG tied
+  to certificateId + templateVersion + rendererVersion + renderHash. The current
+  1536×1024 masters are ~110 DPI at 11×14 (digital-ready; physical print needs
+  higher-resolution masters — not upscaled).

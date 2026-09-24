@@ -124,3 +124,15 @@ the amount/name/date, supply an arbitrary print URL or SKU, mark an order paid, 
 mark it shipped. Provider webhooks are signature-verified and replay-idempotent. No
 secrets reach the browser. Path traversal is impossible in the local artifact
 adapter.
+
+---
+
+## M6.1 update — print artifact & resolution
+
+Framed orders use the certificate's **immutable full-resolution PNG** print
+artifact (frozen with its renderHash), never an upscaled thumbnail. The approved
+V1 masters are 1536×1024 (~110 DPI at 11×14), which is **below print quality** —
+physical framed printing is gated on higher-resolution masters (~4200×3300 for
+300 DPI); see `docs/production-certificate-assets-v1.md`. Digital issuance is
+unaffected. The 100K plaque remains manual and is never routed through this
+automated framed-certificate commerce or Prodigi.

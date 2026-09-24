@@ -102,3 +102,20 @@ No AI generation, no CSS-drawn certificates, no new artwork invented by code, no
 leaderboard/social directory. See `docs/certificate-rendering-architecture.md`,
 `docs/certificate-template-manifest.md`, `docs/physical-certificate-commerce-v1.md`,
 and `docs/daily-payout-balance-progression.md`.
+
+---
+
+## M6.1 update — approved V1 masters integrated
+
+The five digital certificate types now ship approved Happy Trader Funding **V1
+production masters** (`certificate-templates/<type>/v1/`, 1536×1024). Production
+issuance renders from these; the non-production `v-test` fixtures are used only
+when `NODE_ENV != production`. Dynamic fields render exactly as the artwork
+requires: recipient in **uppercase** (immutable snapshot keeps original casing),
+FUNDED value as the compact **account size** (`50K`), payout/completed as the
+actual paid amount, club types as the **locked** milestone value, and the date as
+**`YYYY-MM-DD`** (UTC, from the reward event). See
+`docs/production-certificate-assets-v1.md` and
+`docs/m6-1-production-certificate-integration-report.md`. The 10K master carries a
+baked sample date (its dynamic date field is omitted pending a corrected export);
+the 100K club remains a manual plaque.
