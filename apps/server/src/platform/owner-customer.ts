@@ -23,6 +23,9 @@ import {
   verifiedContacts,
 } from '../db/schema.js';
 import { outstandingAgreements } from './agreements.js';
+import { listGroupViews } from './copy-groups.js';
+import { listIntents } from './copy-orchestrator.js';
+import { groupSyncView } from './copy-divergence.js';
 import { activeIdentityProviderName } from './identity-providers.js';
 import { activeCommerceProviderName } from './commerce-provider.js';
 import { activeEmailProviderName, activeSmsProviderName } from './notification-providers.js';
@@ -131,6 +134,14 @@ export async function customerDetail(db: Database, organizationId: string, ident
     .orderBy(desc(auditLog.createdAt))
     .limit(50);
 
+  // Copy trading — the operator's read-only view of this customer's groups:
+  // leader, followers, status, recent intents with reject counts, and the
+  // derived divergence. Reuses the owner-scoped read helpers with the CUSTOMER's
+  // own user id, so nothing is recomputed and the same authority the trader sees
+  // is what the operator sees. Same-owner-only by construction (a group can only
+  // reference this customer's accounts); this is not fraud and is never flagged.
+  const copyGroups = await customerCopyGroups(db, identity.userId).catch(() => []);
+
   return {
     identity,
     user: user ? { id: user.id, email: user.email, displayName: user.displayName, role: user.role } : null,
@@ -141,6 +152,7 @@ export async function customerDetail(db: Database, organizationId: string, ident
     orders,
     entitlements: ents,
     accounts: accts,
+    copyGroups,
     notifications,
     audit,
     providers: {
@@ -150,6 +162,41 @@ export async function customerDetail(db: Database, organizationId: string, ident
       sms: activeSmsProviderName(),
     },
   };
+}
+
+/**
+ * A customer's copy groups for the operator 360: each group's leader/followers/
+ * status, its live divergence, and a small window of recent intents summarised
+ * by accepted/rejected/skipped counts (with each child's reject code kept, so an
+ * operator can see WHY a follower was refused). Read-only; reuses the same
+ * owner-scoped read helpers the trader's own client uses, with the customer's
+ * user id — never recomputed here.
+ */
+export async function customerCopyGroups(db: Database, userId: string) {
+  const groups = await listGroupViews(db, userId);
+  const out = [];
+  for (const g of groups) {
+    const [sync, intents] = await Promise.all([
+      groupSyncView(db, userId, g.id).catch(() => null),
+      listIntents(db, userId, g.id, 10).catch(() => []),
+    ]);
+    out.push({
+      group: g,
+      sync,
+      recentIntents: intents.map((i) => ({
+        intentId: i.intentId,
+        kind: i.kind,
+        accepted: i.accepted,
+        rejected: i.rejected,
+        skipped: i.skipped,
+        total: i.total,
+        rejections: i.children
+          .filter((c) => c.status === 'REJECTED')
+          .map((c) => ({ accountId: c.accountId, publicId: c.publicId, code: c.rejectCode })),
+      })),
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -259,6 +259,15 @@ export interface CustomerDetail {
   orders: Array<{ id: string; status: string; source: string; amountMicros: number | null; provisionNote: string | null; createdAt: string }>;
   entitlements: Array<{ id: string; kind: string; status: string; consumedByAccountId: string | null }>;
   accounts: Array<{ id: string; publicId: string; name: string; accountType: string; status: string; adminHold: string | null; balanceMicros: number }>;
+  copyGroups: Array<{
+    group: {
+      id: string; name: string; status: string; sizingMode: string;
+      leader: { accountId: string; publicId: string; name: string; status: string; eligible: boolean } | null;
+      followers: Array<{ accountId: string; publicId: string; name: string; status: string; enabled: boolean; eligible: boolean; sizingMultiplierMilli: number | null; sizingFixedQty: number | null }>;
+    };
+    sync: { status: string; divergedAccountIds: string[] } | null;
+    recentIntents: Array<{ intentId: string; kind: string; accepted: number; rejected: number; skipped: number; total: number; rejections: Array<{ accountId: string; publicId: string; code: string | null }> }>;
+  }>;
   notifications: Array<{ id: string; type: string; channel: string; status: string; provider: string | null; createdAt: string }>;
   audit: Array<{ id: string; action: string; subjectType: string; createdAt: string; reason: string | null }>;
   providers: { identity: string; commerce: string; email: string; sms: string };

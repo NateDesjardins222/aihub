@@ -731,3 +731,19 @@
 .adm-table td[data-neg='true'] {
   color: var(--short);
 }
+
+/* Copy trading section in the customer 360. */
+.adm-copy-group {
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.adm-copy-group:first-child {
+  border-top: none;
+}
+.adm-copy-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}

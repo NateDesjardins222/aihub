@@ -309,6 +309,59 @@ function CustomerDetailView({
         />
       </Panel>
 
+      <Panel title="Copy trading">
+        {d.copyGroups.length === 0 ? (
+          <p className="adm-muted">No copy groups.</p>
+        ) : (
+          <div data-testid="customer-copy-groups">
+            {d.copyGroups.map(({ group, sync, recentIntents }) => (
+              <div key={group.id} className="adm-copy-group">
+                <div className="adm-copy-head">
+                  <strong>{group.name}</strong>
+                  <StatusPill status={group.status} />
+                  <span className="adm-dim">{group.sizingMode}</span>
+                  {sync ? <StatusPill status={sync.status} /> : null}
+                  {sync && sync.divergedAccountIds.length > 0 ? (
+                    <span className="adm-error">{sync.divergedAccountIds.length} diverged</span>
+                  ) : null}
+                </div>
+                <SimpleTable
+                  rows={[
+                    [
+                      'LEADER',
+                      group.leader ? `${group.leader.name} (${group.leader.publicId})` : '—',
+                      group.leader?.status ?? '—',
+                      group.leader?.eligible ? 'eligible' : 'ineligible',
+                      '',
+                    ],
+                    ...group.followers.map((f) => [
+                      'follower',
+                      `${f.name} (${f.publicId})`,
+                      f.status,
+                      f.eligible ? 'eligible' : 'ineligible',
+                      f.enabled ? 'enabled' : 'disabled',
+                    ]),
+                  ]}
+                  head={['Role', 'Account', 'Status', 'Eligibility', 'State']}
+                />
+                {recentIntents.length > 0 ? (
+                  <SimpleTable
+                    rows={recentIntents.map((i) => [
+                      i.kind,
+                      `${i.accepted}✓ / ${i.rejected}✗ / ${i.skipped}⊘`,
+                      i.rejections.length > 0
+                        ? i.rejections.map((r) => `${r.publicId}:${r.code ?? '?'}`).join(', ')
+                        : '—',
+                    ])}
+                    head={['Intent', 'Accepted/Rejected/Skipped', 'Rejections']}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
       <Panel title="Notifications">
         <table className="adm-table" data-testid="customer-notifications">
           <thead>
