@@ -169,6 +169,15 @@ export type RejectReason =
   | 'MARKET_CLOSED'
   | 'MARKET_DATA_STALE'
   | 'MARKET_DATA_UNAVAILABLE'
+  /** The market-data feed for this instrument is disconnected (not merely stale). */
+  | 'MARKET_DATA_DISCONNECTED'
+  /** The specific tradeable contract has expired / is past its last trading day. */
+  | 'CONTRACT_EXPIRED'
+  /**
+   * The account's configured execution provider is not available to accept the
+   * order (unconfigured, disconnected, or in a reconciliation-required state).
+   */
+  | 'EXECUTION_PROVIDER_UNAVAILABLE'
   /**
    * The open position was opened against a different market from the one being
    * served - a practice recording rather than the live feed, or the other way
