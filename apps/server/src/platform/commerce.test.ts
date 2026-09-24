@@ -106,6 +106,9 @@ async function evalVersionId(): Promise<string> {
 beforeAll(async () => {
   process.env['DATABASE_URL'] =
     process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
+  // This file exercises the MANUAL funding path (approve/decline). Disable the
+  // automatic pass->funded subscriber here so it does not race certify->decline.
+  process.env['HTF_AUTO_FUNDING'] = 'false';
   app = (await buildApp()).app;
   await app.ready();
   db = getDb().db;

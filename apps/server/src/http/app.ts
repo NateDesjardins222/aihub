@@ -25,7 +25,12 @@ import { accountOutboxHandler } from '../platform/projection.js';
 import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
 import { recordEngineActivity } from '../platform/engine-audit.js';
-import { certifyPassedEvaluations, registerAutoCertification } from '../platform/commerce-certify.js';
+import {
+  certifyPassedEvaluations,
+  fundEligibleQualifications,
+  registerAutoCertification,
+  registerAutoFunding,
+} from '../platform/commerce-certify.js';
 import { seedDefaultAgreements } from '../platform/agreements.js';
 import { defaultOrganizationId } from '../platform/provisioning.js';
 import { registerProvisioningRecovery, retryPendingProvisioning } from '../platform/commerce-fulfillment.js';
@@ -232,6 +237,16 @@ export async function buildApp(): Promise<BuiltApp> {
   void certifyPassedEvaluations(db).catch(() => undefined);
 
   /*
+   * Automatic pass -> funded: certification emits evaluation.qualified, and this
+   * funds it through the existing idempotent approveFunding so a normal customer
+   * is funded without an employee. The startup sweep funds any ELIGIBLE
+   * qualification a crash left un-funded. Exactly-once by approveFunding's lock +
+   * fund:<qualId> idempotency key.
+   */
+  const stopAutoFunding = registerAutoFunding(db);
+  void fundEligibleQualifications(db).catch(() => undefined);
+
+  /*
    * A paid purchase whose identity/agreements gate was not yet satisfied parks
    * recoverably. This subscriber re-drives a customer's blocked orders the moment
    * they clear the gate, and the startup sweep recovers any left by a crash — so a
@@ -270,6 +285,7 @@ export async function buildApp(): Promise<BuiltApp> {
   app.addHook('onClose', async () => {
     stopRecording();
     stopCertifying();
+    stopAutoFunding();
     stopProvisioningRecovery();
     outboxWorker.stop();
     await accountListener?.close().catch(() => undefined);

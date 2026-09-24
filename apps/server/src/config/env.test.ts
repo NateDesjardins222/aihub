@@ -32,6 +32,7 @@ const base: AppEnv = {
   REPLAY_DIR: './data/recordings',
   TRUSTED_PROXY: 'false',
   WHOP_SANDBOX: false,
+  HTF_AUTO_FUNDING: true,
 };
 
 describe('the production configuration guard', () => {

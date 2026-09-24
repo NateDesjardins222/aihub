@@ -107,6 +107,17 @@ const envSchema = z.object({
   WHOP_CHECKOUT_RETURN_URL: z.string().optional(),
 
   /**
+   * Automatic pass -> funded provisioning. On by default this milestone: an
+   * authoritative pass certifies and then auto-funds via the existing idempotent
+   * approveFunding, so a normal customer does not wait for an employee. Set to
+   * `false` to require a manual owner approval instead.
+   */
+  HTF_AUTO_FUNDING: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
+  /**
    * Identity verification (Stripe Identity). OPTIONAL and NOT wired in this
    * milestone. With these unset the identity provider is the deterministic MOCK;
    * the Stripe adapter exists only as a seam that reports itself unconfigured and
