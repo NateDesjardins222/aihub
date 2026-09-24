@@ -53,8 +53,8 @@ try {
   await page.goto(`${WEB}/portal`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[data-testid=portal-app]', { timeout: 20_000 });
   await page.waitForTimeout(800);
-  const pips = await page.locator('.pt-pip').count();
-  say(pips === 5, 'the dashboard shows the five active-slot meter', `${pips} pips`);
+  const summary = await page.locator('[data-testid=pt-summary]').count();
+  say(summary === 1, 'the command center summary renders from server state');
   await shot(page, 'portal-dashboard');
 
   // -- accounts: a card renders and a nickname persists (presentation-only) ---
@@ -77,17 +77,21 @@ try {
 
   // -- deep analytics render for the owner ------------------------------------
   await page.locator('[data-testid=pt-account-card] .pt-btn').first().click();
-  await page.waitForSelector('[data-testid=pt-analytics-metrics]', { timeout: 10_000 });
-  const metrics = await page.locator('[data-testid=pt-analytics-metrics] .pt-metric').count();
-  say(metrics >= 6, 'the account analytics view renders the metric registry', `${metrics} metrics`);
+  await page.waitForSelector('[data-testid=pt-tab-overview]', { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  const metrics = await page.locator('.pt-metric').count();
+  say(metrics >= 6, 'the account detail renders the authoritative metric registry', `${metrics} metrics`);
   await shot(page, 'portal-analytics');
 
   // -- profile: a preferred public display name saves and persists ------------
-  await page.locator('[data-testid=pt-nav-profile]').click();
-  await page.waitForSelector('.pt-nick', { timeout: 10_000 });
-  const pname = page.locator('.pt-nick').first();
+  // Profile lives in the avatar menu in V2, not the primary nav.
+  await page.locator('[data-testid=pt-profile]').click();
+  await page.waitForTimeout(200);
+  await page.locator('.pt-menu-item', { hasText: 'Profile' }).first().click();
+  await page.waitForSelector('.pt-input', { timeout: 10_000 });
+  const pname = page.locator('.pt-input').first();
   await pname.fill('Demo D.');
-  await page.locator('.pt-btn').first().click();
+  await page.locator('.pt-btn.primary').first().click();
   await page.waitForTimeout(500);
   const profile = await get('/api/v1/portal/profile');
   say(profile.body?.preferredDisplayName === 'Demo D.', 'a preferred public display name is saved (legal identity stays separate)');
