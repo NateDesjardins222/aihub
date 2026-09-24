@@ -130,6 +130,15 @@ export const useSession = create<SessionState>((set, get) => ({
       api.get<{ instruments: ApiInstrument[] }>('/api/v1/instruments'),
     ]);
 
+    // Handoff from the portal's "Trade →": /?account=<publicId>. The account
+    // list is owner-scoped, so matching a publicId against it IS the ownership
+    // check — a publicId the caller does not own simply will not be found, and
+    // the browser never asserts a permission the server did not grant. The param
+    // is consumed once, then stripped from the URL so a later refresh or a manual
+    // account switch is not overridden by a stale query string.
+    const handoff = readAccountHandoff();
+    const handoffAccount = handoff ? accountsResponse.accounts.find((a) => a.publicId === handoff) : undefined;
+
     const remembered = localStorage.getItem(SELECTED_ACCOUNT_KEY);
     const stillExists = accountsResponse.accounts.some((a) => a.id === remembered);
     // With nothing remembered, open on a PRACTICE account rather than whatever
@@ -137,9 +146,17 @@ export const useSession = create<SessionState>((set, get) => ({
     // loss limit, and a trader opening the terminal to try something out should
     // not have to notice that before their first order.
     const practice = accountsResponse.accounts.find((a) => a.accountType === 'PRACTICE');
-    const selectedAccountId = stillExists
-      ? remembered
-      : (practice?.id ?? accountsResponse.accounts[0]?.id ?? null);
+    const selectedAccountId = handoffAccount
+      ? handoffAccount.id
+      : stillExists
+        ? remembered
+        : (practice?.id ?? accountsResponse.accounts[0]?.id ?? null);
+
+    // Persist an explicit handoff selection so it survives the reload the
+    // portal link triggers, exactly as a manual selection would.
+    if (handoffAccount) {
+      try { localStorage.setItem(SELECTED_ACCOUNT_KEY, handoffAccount.id); } catch { /* ignore */ }
+    }
 
     set({
       accounts: accountsResponse.accounts,
@@ -151,6 +168,31 @@ export const useSession = create<SessionState>((set, get) => ({
 
 export function selectedAccount(state: SessionState): ApiAccount | null {
   return state.accounts.find((a) => a.id === state.selectedAccountId) ?? null;
+}
+
+/**
+ * Read and consume the `?account=<publicId>` handoff the portal's "Trade →"
+ * link adds. Returns the requested publicId once, then removes the param from
+ * the address bar (without a navigation) so it applies to this load only. The
+ * value is validated against the owner-scoped account list by the caller; here
+ * we only sanitise the shape a public id can take.
+ */
+function readAccountHandoff(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('account');
+    if (!raw) return null;
+    params.delete('account');
+    const qs = params.toString();
+    const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+    window.history.replaceState(window.history.state, '', url);
+    // Public ids are short alphanumeric handles (e.g. SIM-001234); reject
+    // anything else rather than pass an unexpected string down the line.
+    return /^[A-Za-z0-9-]{1,64}$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 export function activeInstrument(state: SessionState): ApiInstrument | null {
