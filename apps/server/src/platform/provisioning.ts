@@ -22,6 +22,7 @@ import {
 import { recordAudit } from './audit.js';
 import { events } from './events.js';
 import { SYSTEM_ACTOR, type Actor } from './actor.js';
+import { assertActiveSlotAvailable } from './account-limit.js';
 import {
   ProfileError,
   resolveProfileByKey,
@@ -62,6 +63,17 @@ export interface ProvisionInput {
   readonly metadata?: Record<string, unknown> | null;
   /** Provision straight into ACTIVE. Otherwise the account starts PENDING. */
   readonly activate?: boolean;
+  /**
+   * Enforce the five-active-account invariant inside the creation transaction.
+   * When set, the transaction takes a per-user advisory lock and refuses (throws
+   * AccountLimitError) if the trader already holds five active (EVALUATION or
+   * FUNDED_SIM, ACTIVE/PENDING, un-archived) accounts. Off by default so
+   * practice/seed/admin-direct provisioning is unaffected; the commerce purchase
+   * path opts in. A reused (idempotent) provision never re-checks: it returns
+   * before the transaction, so re-driving an already-provisioned order is never
+   * blocked.
+   */
+  readonly enforceActiveLimit?: boolean;
   readonly idempotencyKey?: string | null;
   readonly actor?: Actor;
 }
@@ -186,6 +198,13 @@ export async function provisionAccount(
     rules.accountSizeMicros;
 
   const created = await db.transaction(async (tx) => {
+    // The five-active-account invariant. Taken here, inside the creation
+    // transaction, so the per-user lock is held across the count and the insert:
+    // two concurrent provisions for the same trader serialise, and the second
+    // reads the first's committed account and refuses. Throws AccountLimitError.
+    if (input.enforceActiveLimit) {
+      await assertActiveSlotAvailable(tx as unknown as Database, input.userId);
+    }
     const [account] = await tx
       .insert(accounts)
       .values({

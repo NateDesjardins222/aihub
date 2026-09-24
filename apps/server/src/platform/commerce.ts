@@ -472,6 +472,12 @@ export async function provisionFromEntitlement(
       userId: ent.userId,
       profileVersionId: ent.productVersionId,
       activate: opts.activate ?? true,
+      // A purchased evaluation consumes an active slot. Enforce the five-active
+      // invariant transactionally: the entitlement is already GRANTED and
+      // durable, so a limit refusal parks the order recoverably (the gate layer
+      // maps AccountLimitError to PROVISION_BLOCKED / ACTIVE_LIMIT_REACHED) and
+      // the purchase is never lost — it provisions once a slot frees.
+      enforceActiveLimit: true,
       idempotencyKey: `ent:${ent.id}`,
       actor,
       metadata: { entitlementId: ent.id, commercialOrderId: ent.commercialOrderId },
@@ -757,6 +763,13 @@ export async function approveFunding(
       throw new CommerceError('NO_FUNDED_DESTINATION', 'This product has no funded destination.');
     }
 
+    // Funding is EARNED and must never be denied by the active-account limit.
+    // The invariant is preserved without enforcement here: the evaluation is
+    // frozen PASSED (a terminal, non-active state) before this qualification can
+    // be approved, so its slot is already free — the funded account fills the
+    // slot the passed evaluation vacated, and the trader's active count is
+    // unchanged. Enforcing here could only ever wrongly refuse a legitimately
+    // earned funded account, so we deliberately do not.
     const funded = await provisionAccount(scoped, {
       organizationId: qual.organizationId,
       userId: evalAccount.userId,

@@ -22,10 +22,14 @@ import { events } from './events.js';
 import { SYSTEM_ACTOR, type Actor } from './actor.js';
 import { CommerceError, fulfillCompletedOrder, markOrderCompleted } from './commerce.js';
 import { evaluateProvisioningGate } from './provisioning-gate.js';
+import { AccountLimitError, countActiveAccounts, MAX_ACTIVE_ACCOUNTS } from './account-limit.js';
 import { MockCommerceProvider, signMockCommerceEvent } from './commerce-provider.js';
 import { markCommerceEventProcessed, recordCommerceEvent } from './commerce-events.js';
 
 type CommercialOrderRow = typeof commercialOrders.$inferSelect;
+
+/** The blocked-reason token when a purchase parks against the active-account limit. */
+export const ACTIVE_LIMIT_REASON = 'ACTIVE_LIMIT_REACHED';
 
 export type FulfillmentResult =
   | { status: 'PROVISIONED'; orderId: string; accountId: string; entitlementId?: string; reused: boolean }
@@ -102,6 +106,20 @@ export async function fulfillPurchaseGated(
     }
   }
 
+  // The five-active-account invariant, checked BEFORE we attempt provisioning so
+  // an at-limit trader parks in a clean recoverable state (PROVISION_BLOCKED /
+  // ACTIVE_LIMIT_REACHED) rather than a hard failure. This read-only check is
+  // advisory — the authoritative guard is the per-user advisory lock inside
+  // provisionAccount, which the catch below maps to the same blocked state. The
+  // entitlement is granted and durable, so the purchase provisions once a slot
+  // frees (the sweep re-drives it). Applies to every order that provisions an
+  // evaluation, since that path enforces the limit for all sources.
+  const activeCount = await countActiveAccounts(db, order.userId);
+  if (activeCount >= MAX_ACTIVE_ACCOUNTS) {
+    await setProvisionState(db, order, 'PROVISION_BLOCKED', ACTIVE_LIMIT_REASON, actor);
+    return { status: 'PROVISION_BLOCKED', orderId, blockedReasons: [ACTIVE_LIMIT_REASON] };
+  }
+
   try {
     const done = await fulfillCompletedOrder(db, order, { actor });
     await db.transaction(async (tx) => {
@@ -141,6 +159,13 @@ export async function fulfillPurchaseGated(
       reused: done.reused,
     };
   } catch (err) {
+    // A concurrent purchase took the last slot between the read-only check and
+    // the transactional guard: not a failure, a recoverable block. Park it as
+    // ACTIVE_LIMIT_REACHED so the sweep re-drives it once a slot frees.
+    if (err instanceof AccountLimitError) {
+      await setProvisionState(db, order, 'PROVISION_BLOCKED', ACTIVE_LIMIT_REASON, actor);
+      return { status: 'PROVISION_BLOCKED', orderId, blockedReasons: [ACTIVE_LIMIT_REASON] };
+    }
     await setProvisionState(db, order, 'PROVISION_FAILED', String(err), actor);
     return { status: 'PROVISION_FAILED', orderId, error: String(err).slice(0, 200) };
   }
