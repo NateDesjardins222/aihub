@@ -29,6 +29,7 @@ const TOOL_ICON: Record<DrawingKind, IconName> = {
   HORIZONTAL_RAY: 'horizontal-ray',
   VERTICAL_LINE: 'vertical',
   CROSS_LINE: 'cross-line',
+  PARALLEL_CHANNEL: 'parallel-channel',
   ARROW: 'arrow-marker',
   ARROW_MARKER: 'arrow-marker',
   ARROW_MARK_UP: 'arrow-up',
@@ -59,9 +60,11 @@ const SHORTCUT: Partial<Record<DrawingKind, string>> = {
 };
 
 // Category order and grouping follow the supplied TradingView reference. Tools
-// not yet built (channels, pitchforks, brushes, volume-based, and the rest of
+// not yet built (pitchforks, brushes, volume-based, and the rest of
 // projection/shapes) are documented as deferred in the milestone report rather
-// than shown here as dead rows.
+// than shown here as dead rows. The Channels group is deliberately named
+// "Channels & Pitchforks" so a pitchfork joins it later instead of standing
+// alone as a one-item category.
 const CATEGORIES: ReadonlyArray<{ name: string; tools: readonly DrawingKind[] }> = [
   {
     name: 'Lines',
@@ -75,6 +78,7 @@ const CATEGORIES: ReadonlyArray<{ name: string; tools: readonly DrawingKind[] }>
       'CROSS_LINE',
     ],
   },
+  { name: 'Channels & Pitchforks', tools: ['PARALLEL_CHANNEL'] },
   { name: 'Arrows', tools: ['ARROW'] },
   { name: 'Shapes', tools: ['RECTANGLE'] },
   { name: 'Fibonacci', tools: ['FIB_RETRACEMENT'] },

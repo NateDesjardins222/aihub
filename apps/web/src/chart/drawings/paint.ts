@@ -338,6 +338,39 @@ export function drawDrawing(
       }
       break;
     }
+    case 'PARALLEL_CHANNEL': {
+      const c = points[2];
+      if (!a || !b || !c) break;
+      // The far rail is the base rail shifted by the vertical gap between the
+      // base line and the third anchor — so the two rails stay parallel however
+      // the base is angled. Same maths as the hit test, so what a trader sees is
+      // exactly what they can grab.
+      const baseYatC = a.y + ((b.y - a.y) * (c.x - a.x)) / (b.x - a.x || 1);
+      const dy = c.y - baseYatC;
+      const a2: Point = { x: a.x, y: a.y + dy };
+      const b2: Point = { x: b.x, y: b.y + dy };
+
+      if (drawing.style.filled && drawing.style.fillOpacity > 0) {
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.fillStyle = withAlpha(drawing.style.fillColor, drawing.style.fillOpacity);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(a2.x, a2.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      line(ctx, a, b);
+      line(ctx, a2, b2);
+      if (drawing.style.showPrice) {
+        priceTag(ctx, projection, b.y, drawing.anchors[1]!.price, drawing.style.color, pricePrecision);
+        priceTag(ctx, projection, b2.y, drawing.anchors[2]!.price, drawing.style.color, pricePrecision);
+      }
+      break;
+    }
     case 'RAY': {
       if (!a || !b) break;
       line(ctx, a, extend(a, b, projection));

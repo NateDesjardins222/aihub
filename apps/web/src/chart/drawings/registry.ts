@@ -282,6 +282,17 @@ export const TOOLS: readonly ToolDef[] = [
     props: [COLOR, WIDTH, DASH, SHOW_PRICE],
   },
   {
+    kind: 'PARALLEL_CHANNEL',
+    name: KIND_LABEL.PARALLEL_CHANNEL,
+    family: 'CHANNELS',
+    anchors: ANCHOR_COUNT.PARALLEL_CHANNEL,
+    // A faint interior so the candles inside the channel stay readable — the
+    // same restraint as the rectangle's default fill.
+    style: { filled: true, fillColor: '#5b9dff', fillOpacity: 0.06 },
+    options: {},
+    props: [BORDER, WIDTH, DASH, FILL_COLOR, SHOW_PRICE],
+  },
+  {
     kind: 'ARROW',
     name: KIND_LABEL.ARROW,
     family: 'ARROWS',
@@ -592,7 +603,7 @@ export function option<T>(drawing: Drawing, key: string, fallback: T): T {
 // Measurer.
 export const FAMILY_LABEL: Record<ToolFamily, string> = {
   LINES: 'Lines',
-  CHANNELS: 'Channels',
+  CHANNELS: 'Channels & Pitchforks',
   ARROWS: 'Arrows',
   FIBONACCI: 'Fibonacci',
   SHAPES: 'Shapes',
@@ -604,6 +615,7 @@ export const FAMILY_LABEL: Record<ToolFamily, string> = {
 export function toolsByFamily(): Array<{ family: ToolFamily; tools: readonly ToolDef[] }> {
   const order: ToolFamily[] = [
     'LINES',
+    'CHANNELS',
     'ARROWS',
     'SHAPES',
     'FIBONACCI',

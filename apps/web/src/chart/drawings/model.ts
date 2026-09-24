@@ -20,6 +20,7 @@ export type DrawingKind =
   | 'HORIZONTAL_RAY'
   | 'VERTICAL_LINE'
   | 'CROSS_LINE'
+  | 'PARALLEL_CHANNEL'
   | 'ARROW'
   | 'ARROW_MARKER'
   | 'ARROW_MARK_UP'
@@ -240,6 +241,7 @@ export const STORED_ANCHORS: Record<DrawingKind, number> = {
   HORIZONTAL_RAY: 1,
   VERTICAL_LINE: 1,
   CROSS_LINE: 1,
+  PARALLEL_CHANNEL: 3,
   ARROW: 2,
   ARROW_MARKER: 2,
   ARROW_MARK_UP: 1,
@@ -270,6 +272,8 @@ export const ANCHOR_COUNT: Record<DrawingKind, number> = {
   HORIZONTAL_RAY: 1,
   VERTICAL_LINE: 1,
   CROSS_LINE: 1,
+  // Two clicks set the base line; a third sets the channel's width.
+  PARALLEL_CHANNEL: 3,
   ARROW: 2,
   ARROW_MARKER: 2,
   ARROW_MARK_UP: 1,
@@ -307,6 +311,7 @@ export const KIND_LABEL: Record<DrawingKind, string> = {
   HORIZONTAL_RAY: 'Horizontal ray',
   VERTICAL_LINE: 'Vertical line',
   CROSS_LINE: 'Cross line',
+  PARALLEL_CHANNEL: 'Parallel channel',
   ARROW: 'Arrow',
   ARROW_MARKER: 'Arrow marker',
   ARROW_MARK_UP: 'Arrow mark up',
@@ -940,6 +945,36 @@ export function hitTest(
       return cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom
         ? { kind: 'BODY' }
         : null;
+    }
+
+    case 'PARALLEL_CHANNEL': {
+      if (points.length < 3) return null;
+      const [a, b, c] = points as [Point, Point, Point];
+      // The offset that makes the far rail parallel to the base rail: the
+      // vertical gap from the base line to the third anchor, applied at both
+      // ends (matches the painter exactly, so hit and paint never disagree).
+      const baseYatC = a.y + ((b.y - a.y) * (c.x - a.x)) / (b.x - a.x || 1);
+      const dy = c.y - baseYatC;
+      const a2: Point = { x: a.x, y: a.y + dy };
+      const b2: Point = { x: b.x, y: b.y + dy };
+      // Grabbable on either rail…
+      if (
+        distanceToSegment(cursor, a, b) <= HIT_TOLERANCE ||
+        distanceToSegment(cursor, a2, b2) <= HIT_TOLERANCE
+      ) {
+        return { kind: 'BODY' };
+      }
+      // …and anywhere in the band between them, within the base line's span.
+      const left = Math.min(a.x, b.x) - HIT_TOLERANCE;
+      const right = Math.max(a.x, b.x) + HIT_TOLERANCE;
+      if (cursor.x < left || cursor.x > right) return null;
+      const span = b.x - a.x || 1;
+      const t = (cursor.x - a.x) / span;
+      const baseY = a.y + (b.y - a.y) * t;
+      const farY = baseY + dy;
+      const top = Math.min(baseY, farY) - HIT_TOLERANCE;
+      const bottom = Math.max(baseY, farY) + HIT_TOLERANCE;
+      return cursor.y >= top && cursor.y <= bottom ? { kind: 'BODY' } : null;
     }
 
     case 'RAY': {
