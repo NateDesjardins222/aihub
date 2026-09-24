@@ -15,6 +15,7 @@ import type {
   AdminProductDraft,
   AdminProfile,
   AdminRisk,
+  AdminInfra,
   AdminSystem,
   AdminTrading,
   AdminUser,
@@ -165,6 +166,8 @@ export const adminApi = {
   risk: () => api.get<AdminRisk>(`${BASE}/risk`),
 
   system: () => api.get<AdminSystem>(`${BASE}/system`),
+
+  infra: () => api.get<AdminInfra>(`${BASE}/infra`),
 
   // Commercial account lifecycle: the passed queue and the funding decision.
   fundingQueue: (state: string) =>

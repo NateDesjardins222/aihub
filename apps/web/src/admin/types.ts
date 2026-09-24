@@ -336,6 +336,37 @@ export interface AdminSystem {
   build: { nodeEnv: string; version: string | null; at: number };
 }
 
+export interface AdminProviderHealth {
+  providerId: string;
+  role: 'MARKET_DATA' | 'EXECUTION';
+  kind: string;
+  configState: 'UNCONFIGURED' | 'CONFIGURED';
+  health: 'UNCONFIGURED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED' | 'ERROR';
+  isSimulation: boolean;
+  detail: string;
+  lastConnectAt: number | null;
+  lastDisconnectAt: number | null;
+  lastMessageAt: number | null;
+  lastHeartbeatAt: number | null;
+  reconnectCount: number;
+  subscriptionCount: number;
+  lastError: string | null;
+}
+
+/** Production-infrastructure posture + provider health (M4-Z). Read-only. */
+export interface AdminInfra {
+  generatedAt: number;
+  posture: {
+    configuredExecutionProvider: 'simulation' | 'rithmic' | 'scripted';
+    defaultExecutionMode: 'SIMULATION';
+    externalLiveEnabled: boolean;
+    marketDataProvider: string;
+    marketDataRedistribution: string;
+    rithmic: { configState: 'UNCONFIGURED' | 'CONFIGURED'; description: string };
+  };
+  providers: AdminProviderHealth[];
+}
+
 export interface FundingQualification {
   id: string;
   fundingState: 'ELIGIBLE' | 'FUNDED' | 'DECLINED';

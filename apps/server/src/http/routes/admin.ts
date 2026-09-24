@@ -42,6 +42,8 @@ import { ApiError } from '../errors.js';
 import { requireRole, requireUser } from '../auth-plugin.js';
 import type { TradingEngine } from '../../trading/engine.js';
 import type { MarketDataService } from '../../marketdata/service.js';
+import type { ExecutionRegistry } from '../../execution/registry.js';
+import { buildInfraHealth } from '../../infra/health.js';
 import { loadAccountAndTemplate, ruleConfigFor } from '../../trading/account-rules.js';
 import {
   ProvisioningError,
@@ -96,6 +98,8 @@ interface AdminDeps {
   readonly engine: TradingEngine;
   /** The market feed, for the System page's honest health reporting. */
   readonly market: MarketDataService;
+  /** The execution provider registry, for the Infrastructure page (M4-Z). */
+  readonly registry: ExecutionRegistry;
 }
 
 const OPEN_ORDER_STATUSES = ['PENDING', 'ACCEPTED', 'WORKING', 'PARTIALLY_FILLED'];
@@ -219,6 +223,17 @@ export function adminRoutes(deps: AdminDeps) {
     // raise the bar where they mutate something.
     app.addHook('preHandler', requireUser);
     app.addHook('preHandler', requireRole('SUPPORT'));
+
+    // ------------------------------------------------------------ infrastructure
+    // Read-only production-infrastructure posture + provider health (M4-Z). Every
+    // figure comes from the running providers and server-side config; NOTHING here
+    // is a credential, and NOTHING is settable from this page. The default
+    // execution mode is SIMULATION and an unconfigured professional provider
+    // reports UNCONFIGURED, never CONNECTED.
+    app.get('/infra', async (_request, reply) => {
+      const health = buildInfraHealth({ registry: deps.registry, market: deps.market });
+      return reply.send(health);
+    });
 
     // ---------------------------------------------------------------- overview
     app.get('/overview', async (request, reply) => {

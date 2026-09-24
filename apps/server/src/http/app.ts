@@ -23,6 +23,10 @@ import { verifyRoutes } from './routes/verify.js';
 import { portalRoutes } from './routes/portal.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
+import { ExecutionRegistry } from '../execution/registry.js';
+import { RithmicExecutionProvider } from '../execution/providers/rithmic-execution.js';
+import type { ExecutionProviderKind } from '@atlas/contracts';
+import type { ExternalExecutionAdapter } from '../execution/external-provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
 import { getDb, getLockSql } from '../db/client.js';
 import { OutboxWorker, notifyAccountChanged } from '../platform/outbox.js';
@@ -225,6 +229,16 @@ export async function buildApp(): Promise<BuiltApp> {
   // Order flow routes through the execution provider seam; today that is the
   // simulator wrapping this engine. A live provider would slot in here.
   const execution = new AtlasSimulationExecutionProvider(engine);
+  // The execution registry decides — SERVER-SIDE — which provider serves an
+  // account by mode. SIMULATION (the Atlas engine) is the default and the only
+  // reachable path in this milestone; external adapters are registered as HONEST
+  // seams (Rithmic reports UNCONFIGURED without server-side credentials and never
+  // fakes CONNECTED). The scripted double is a test-only adapter and is NOT
+  // registered here. Nothing about this is reachable from the browser.
+  const externalAdapters = new Map<ExecutionProviderKind, ExternalExecutionAdapter>([
+    ['rithmic', new RithmicExecutionProvider()],
+  ]);
+  const registry = new ExecutionRegistry(execution, externalAdapters);
   const gateway = new MarketDataGateway(stack.market, engine);
   gateway.register(app);
 
@@ -352,7 +366,7 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(journalRoutes({ engine, replay: stack.replay }), { prefix: '/api/v1/journal' });
   // The operator console and the machine-to-machine seam. Both are authorised
   // server-side; neither is reachable from the trading terminal's session.
-  await app.register(adminRoutes({ engine, market: stack.market }), { prefix: '/api/v1/admin' });
+  await app.register(adminRoutes({ engine, market: stack.market, registry }), { prefix: '/api/v1/admin' });
   // The payout engine: trader eligibility/requests and the owner queue/case/
   // exposure. Registered at /api/v1 so it carries both /payouts/* (trader) and
   // /admin/payouts/* (owner) under their own RBAC.
