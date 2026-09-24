@@ -21,35 +21,64 @@ import { objectStore, newArtifactKey } from './object-store.js';
 
 const M = 1_000_000;
 
-function money(micros: number | null | undefined): string {
+/** Canonical certificate money: "$5,000", "$25,000" (cents only when a real amount carries them). */
+export function money(micros: number | null | undefined): string {
   if (micros == null) return '';
   return `$${(micros / M).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-function monthYear(d: Date): string {
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+/** Account size in the approved compact form: $50,000 → "50K", $300,000 → "300K". */
+export function accountSize(micros: number | null | undefined): string {
+  if (micros == null) return '';
+  const dollars = micros / M;
+  // Account sizes are whole thousands; fall back to canonical money if not.
+  if (dollars >= 1000 && Number.isInteger(dollars) && dollars % 1000 === 0) return `${dollars / 1000}K`;
+  return money(micros);
 }
 
-/** Choose the version to render: approved v1 if installed, else the v-test fixture. */
+/**
+ * The authoritative certificate date, formatted exactly as the approved artwork
+ * requires: YYYY-MM-DD, from the reward's own event timestamp in UTC (never the
+ * browser clock or a locale format). Deterministic.
+ */
+export function isoDate(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Choose the version to render: approved v1 if installed. The v-test fixture is a
+ * NON-PRODUCTION calibration artifact — it is used only outside production, so a
+ * production render with no approved v1 master fails CLOSED (DISABLED) rather than
+ * silently shipping fixture artwork.
+ */
 export function resolveTemplateVersion(dirKey: string): string | null {
   if (templateAvailable(dirKey, 'v1')) return 'v1';
-  if (templateAvailable(dirKey, 'v-test')) return 'v-test';
+  if (process.env['NODE_ENV'] !== 'production' && templateAvailable(dirKey, 'v-test')) return 'v-test';
   return null;
 }
 
 type CertRow = typeof certificates.$inferSelect;
 
-/** The dynamic fields a certificate type prints (value = the type's headline number). */
+/**
+ * The dynamic fields a certificate type prints. The recipient name renders in the
+ * approved uppercase presentation (the immutable snapshot in the DB keeps its
+ * original casing). FUNDED prints the account SIZE ("50K"); payouts/completed print
+ * the actual paid amount; club milestones print the LOCKED milestone value.
+ */
 function fieldsFor(row: CertRow): Record<string, string> {
   const value =
-    row.type === 'TENK_CLUB' || row.type === 'FIFTYK_CLUB' || row.type === 'HUNDREDK_CLUB'
-      ? money(row.milestoneValueMicros)
-      : money(row.amountMicros);
+    row.type === 'FUNDED_TRADER'
+      ? accountSize(row.amountMicros)
+      : row.type === 'TENK_CLUB' || row.type === 'FIFTYK_CLUB' || row.type === 'HUNDREDK_CLUB'
+        ? money(row.milestoneValueMicros)
+        : money(row.amountMicros);
   return {
-    recipientName: row.publicDisplayName,
+    recipientName: (row.publicDisplayName ?? '').toUpperCase(),
     value,
-    date: monthYear(row.issuedAt),
+    date: isoDate(row.issuedAt),
   };
 }
 

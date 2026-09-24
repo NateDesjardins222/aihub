@@ -1,0 +1,50 @@
+{
+  "templateType": "50k-club",
+  "version": "v1",
+  "renderable": true,
+  "canvas": {
+    "width": 1536,
+    "height": 1024
+  },
+  "fields": {
+    "recipientName": {
+      "x": 768,
+      "y": 574,
+      "width": 980,
+      "fontFamily": "HappyTraderSans",
+      "fontSize": 74,
+      "fontWeight": 700,
+      "letterSpacing": 3,
+      "color": "#F5F6F8",
+      "alignment": "center",
+      "maxLines": 1,
+      "overflow": "shrink"
+    },
+    "value": {
+      "x": 768,
+      "y": 690,
+      "width": 720,
+      "fontFamily": "HappyTraderSans",
+      "fontSize": 44,
+      "fontWeight": 700,
+      "letterSpacing": 2,
+      "color": "#F5F6F8",
+      "alignment": "center",
+      "maxLines": 1,
+      "overflow": "shrink"
+    },
+    "date": {
+      "x": 1435,
+      "y": 109,
+      "width": 360,
+      "fontFamily": "HappyTraderSans",
+      "fontSize": 30,
+      "fontWeight": 400,
+      "letterSpacing": 6,
+      "color": "#C9CCD3",
+      "alignment": "right",
+      "maxLines": 1,
+      "overflow": "shrink"
+    }
+  }
+}
