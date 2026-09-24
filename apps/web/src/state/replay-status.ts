@@ -17,11 +17,22 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { fetchMarketStatus } from '../market/api';
 
+/**
+ * How the feed relates to the live market, for the terminal's data-mode
+ * indicator (M4-Y). Driven ONLY by the server's authoritative connection state
+ * and mode — the browser never invents it. There is deliberately no LIVE/PAPER
+ * execution value here: execution mode is a separate, server-owned seam, and
+ * the terminal never shows a live-execution badge it was not told to.
+ */
+export type TerminalDataMode = 'REALTIME' | 'DELAYED' | 'REPLAY' | 'DISCONNECTED';
+
 interface ReplayStatusState {
   /** True only when the active provider is the replay. */
   isReplay: boolean;
   /** True when a replay is routed AND not advancing. */
   replayPaused: boolean;
+  /** The authoritative feed data mode, from the server's connection status. */
+  dataMode: TerminalDataMode;
   blind: boolean;
   /**
    * How many events the recording has emitted.
@@ -38,6 +49,7 @@ interface ReplayStatusState {
 export const useReplayStatus = create<ReplayStatusState>((set) => ({
   isReplay: false,
   replayPaused: false,
+  dataMode: 'DELAYED',
   blind: false,
   cursor: 0,
   set: (patch) => set(patch),
@@ -54,9 +66,13 @@ export async function refreshReplayStatus(): Promise<void> {
   try {
     const status = await fetchMarketStatus();
     const routed = status.connection.mode === 'REPLAY';
+    const connState = status.connection.state.toUpperCase();
+    const disconnected = connState === 'DISCONNECTED' || connState === 'ERROR';
+    const dataMode: TerminalDataMode = disconnected ? 'DISCONNECTED' : status.connection.mode;
     useReplayStatus.getState().set({
       isReplay: routed,
       replayPaused: routed && status.replay.loaded && !status.replay.playing,
+      dataMode,
       blind: status.replay.blind,
       cursor: status.replay.cursor,
     });

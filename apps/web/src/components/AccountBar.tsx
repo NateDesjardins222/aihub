@@ -245,8 +245,18 @@ export function AccountBar({
           freshness.state === 'MARKET_CLOSED' && marketState !== 'OPEN' ? null : (
             <Pill text={freshness.state.replace('_', ' ')} tone="warn" />
           )
+        ) : replay.dataMode === 'REPLAY' ? null : replay.dataMode === 'DISCONNECTED' ? (
+          <Pill text="DISCONNECTED" tone="bad" />
         ) : (
-          <Pill text="DELAYED" tone="neutral" />
+          // The feed's data mode, from the server's authoritative connection
+          // status — never hardcoded. REALTIME reads REALTIME, a delayed feed
+          // reads DELAYED. There is no LIVE-execution badge: execution mode is a
+          // separate server-owned seam, and every order here is simulated (SIM).
+          <Pill
+            text={replay.dataMode}
+            tone={replay.dataMode === 'REALTIME' ? 'ok' : 'neutral'}
+            testId="feed-mode"
+          />
         )}
       </span>
 
