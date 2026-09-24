@@ -260,5 +260,9 @@ function presentEligibility(ctx: Awaited<ReturnType<typeof getPayoutEligibility>
     model: ctx.policy.model,
     balanceMicros: ctx.account.balanceMicros,
     startingBalanceMicros: ctx.account.startingBalanceMicros,
+    // Milestone 6 — DAILY progressive qualifying balance (null on non-DAILY / first payout).
+    previousDailyQualifyingBalanceMicros: e.previousDailyQualifyingBalanceMicros,
+    currentQualifyingBalanceMicros: e.currentQualifyingBalanceMicros,
+    requiredNextQualifyingBalanceMicros: e.requiredNextQualifyingBalanceMicros,
   };
 }

@@ -141,6 +141,38 @@ export interface EligibilityContext {
   readonly cycleStartDate: string | null;
 }
 
+/** The universal maximum number of payout cycles an account may be paid. */
+export const MAX_PAYOUT_CYCLES = 5;
+
+/**
+ * The qualifying account balance snapshotted at the approval of this account's
+ * previous approved Daily payout (Milestone 6). Derived from the immutable
+ * per-request snapshot, never a mutable running total. The progression invariant
+ * makes these monotonically increasing, so the maximum is the most recent.
+ * Excludes the request currently being decided (excludeId).
+ */
+async function previousDailyQualifyingBalance(
+  db: Database,
+  accountId: string,
+  excludeId?: string,
+): Promise<number | null> {
+  const rows = await db
+    .select({ id: payoutRequests.id, snap: payoutRequests.qualifyingBalanceAtApproval })
+    .from(payoutRequests)
+    .where(
+      and(
+        eq(payoutRequests.accountId, accountId),
+        inArray(payoutRequests.state, ['APPROVED', 'PROCESSING', 'PAID']),
+      ),
+    );
+  let max: number | null = null;
+  for (const r of rows) {
+    if (r.id === excludeId) continue;
+    if (r.snap != null && (max === null || r.snap > max)) max = r.snap;
+  }
+  return max;
+}
+
 async function buildContext(db: Database, account: AccountRow, forRequest?: PayoutRow | null): Promise<EligibilityContext> {
   const policy = await payoutPolicyFor(db, account);
   if (!policy) throw new PayoutError('NO_PAYOUT_POLICY', 'This account has no payout policy on its product version.');
@@ -149,6 +181,8 @@ async function buildContext(db: Database, account: AccountRow, forRequest?: Payo
   const paidCount = await countApprovedPayouts(db, account.id);
   const nextOrdinal = paidCount + 1;
   const hold = forRequest?.holdKind as 'RISK' | 'FRAUD' | 'MANUAL' | null | undefined;
+  const prevDailyQualifying =
+    policy.model === 'DAILY' ? await previousDailyQualifyingBalance(db, account.id, forRequest?.id) : null;
   const eligibility = evaluatePayoutEligibility(
     {
       policy,
@@ -163,6 +197,12 @@ async function buildContext(db: Database, account: AccountRow, forRequest?: Payo
       // When re-checking to approve THIS request, it must not count itself as a
       // blocking pending request.
       hasPendingRequest: await pendingRequestExists(db, account.id, forRequest?.id),
+      previousDailyQualifyingBalanceMicros: prevDailyQualifying,
+      // Prior paid/approved cycles. The request being decided is never in an
+      // approved state here (approvePayout early-returns for approved requests
+      // before this runs), so it is not double-counted.
+      paidCycleCount: paidCount,
+      maxPayoutCycles: MAX_PAYOUT_CYCLES,
     },
     nextOrdinal,
   );
@@ -386,6 +426,10 @@ export async function approvePayout(db: Database, input: DecideInput): Promise<P
         traderShareMicros: acc.traderShareMicros,
         firmShareMicros: acc.firmShareMicros,
         balanceAdjustmentMicros: acc.balanceAdjustmentMicros,
+        // Milestone 6: snapshot the authoritative qualifying balance used for
+        // this payout — the pre-debit balance — at the exactly-once approval
+        // boundary. Drives the DAILY progression rule for the next payout.
+        qualifyingBalanceAtApproval: balanceBefore,
         decidedByUserId: input.actor.type === 'USER' || input.actor.type === 'ADMIN' ? input.actor.userId ?? null : null,
         decidedAt: new Date(),
         reason: input.reason ?? null,
@@ -485,6 +529,48 @@ export async function markPaid(db: Database, input: DecideInput): Promise<Payout
       .returning();
     await audit(scoped, account!, updated!, 'payout.paid', input.actor, request, { paid: true });
     await publish(scoped, account!, 'payout.paid', request.id);
+
+    // Account completion (Milestone 6): the previously-missing producer for
+    // COMPLETED — MAX PAYOUT CYCLES REACHED. When the account's Nth (max) payout
+    // reaches PAID, mark the account COMPLETED once and publish account.completed
+    // with the total trader-share paid from THIS account, which the recognition
+    // subscriber turns into the ACCOUNT_COMPLETED certificate. Idempotent: the
+    // status guard makes a duplicate settlement a no-op.
+    const paidRows = await tx
+      .select({ trader: payoutRequests.traderShareMicros })
+      .from(payoutRequests)
+      .where(and(eq(payoutRequests.accountId, request.accountId), eq(payoutRequests.state, 'PAID')));
+    if (paidRows.length >= MAX_PAYOUT_CYCLES && account!.status !== 'COMPLETED') {
+      const totalTraderShareMicros = paidRows.reduce((sum, r) => sum + (r.trader ?? 0), 0);
+      await tx
+        .update(accounts)
+        .set({ status: 'COMPLETED', seq: sql`${accounts.seq} + 1`, updatedAt: new Date() })
+        .where(eq(accounts.id, request.accountId));
+      await recordAudit(scoped, {
+        organizationId: account!.organizationId,
+        actor: input.actor,
+        subjectType: 'ACCOUNT',
+        subjectId: account!.id,
+        accountId: account!.id,
+        userId: account!.userId,
+        action: 'account.completed',
+        prevState: { status: account!.status },
+        newState: { status: 'COMPLETED', totalTraderShareMicros },
+      });
+      await events.publish(scoped, {
+        type: 'account.completed',
+        organizationId: account!.organizationId,
+        accountId: account!.id,
+        userId: account!.userId,
+        payload: { accountId: account!.id, totalTraderShareMicros },
+      });
+      await enqueueOutbox(scoped, {
+        aggregateId: account!.id,
+        aggregateType: 'ACCOUNT',
+        type: 'account.completed',
+        payload: { accountId: account!.id, totalTraderShareMicros },
+      });
+    }
     return updated!;
   });
 }

@@ -1365,6 +1365,12 @@ export const payoutRequests = pgTable(
     balanceAdjustmentMicros: micros('balance_adjustment_micros'),
     protectedBufferMicros: micros('protected_buffer_micros'),
     withdrawableBeforeMicros: micros('withdrawable_before_micros'),
+    /**
+     * Milestone 6: the authoritative qualifying account balance (pre-debit)
+     * snapshotted at APPROVED. Drives the DAILY progressive-balance rule for the
+     * next payout. Null until approved.
+     */
+    qualifyingBalanceAtApproval: micros('qualifying_balance_at_approval'),
     /** Reason codes + winning days + best day + consistency at request time. */
     eligibilitySnapshot: jsonb('eligibility_snapshot'),
     /** 1-based ordinal within the account's payouts; drives progressive caps. */

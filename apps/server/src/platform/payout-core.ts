@@ -69,7 +69,13 @@ export type PayoutReasonCode =
   | 'RISK_HOLD'
   | 'FRAUD_HOLD'
   | 'MANUAL_REVIEW'
-  | 'ALREADY_PENDING';
+  | 'ALREADY_PENDING'
+  // DAILY only (Milestone 6): each successive Daily payout must qualify at a
+  // strictly higher account balance than the balance used for the previous
+  // approved Daily payout. See docs/daily-payout-balance-progression.md.
+  | 'DAILY_BALANCE_PROGRESSION_NOT_MET'
+  // The account has already been paid its maximum number of payout cycles.
+  | 'MAX_CYCLES_REACHED';
 
 /** One finalized trading day for an account. `netMicros = ending - starting`. */
 export interface DayStat {
@@ -179,6 +185,25 @@ export interface EligibilityInput {
   readonly hold: 'RISK' | 'FRAUD' | 'MANUAL' | null;
   /** A non-terminal request already exists for this account. */
   readonly hasPendingRequest: boolean;
+  /**
+   * DAILY only (Milestone 6): the qualifying account balance snapshotted at the
+   * approval of this account's previous approved Daily payout, or null if there
+   * has been none. Each successive Daily payout must qualify STRICTLY ABOVE it.
+   * Derived from an immutable per-request snapshot, never from a mutable total.
+   * Optional; defaults to null (rule inert) so pre-M6 callers are unaffected.
+   */
+  readonly previousDailyQualifyingBalanceMicros?: number | null;
+  /**
+   * How many payout cycles this account has already been paid/approved. Once it
+   * reaches the maximum (below), no further payout qualifies and the account is
+   * completed. Optional; defaults to 0.
+   */
+  readonly paidCycleCount?: number;
+  /**
+   * The maximum number of payout cycles an account may be paid (universal: 5).
+   * Optional; defaults to Infinity (cap inert) so pre-M6 callers are unaffected.
+   */
+  readonly maxPayoutCycles?: number;
 }
 
 export interface PayoutEligibility {
@@ -193,6 +218,12 @@ export interface PayoutEligibility {
   readonly dailyModeUnlocked: boolean;
   readonly minRequestMicros: number;
   readonly maxRequestMicros: number;
+  /** DAILY progression display (null on non-DAILY or first payout). */
+  readonly previousDailyQualifyingBalanceMicros: number | null;
+  /** DAILY: the current authoritative qualifying balance (= account balance). */
+  readonly currentQualifyingBalanceMicros: number;
+  /** DAILY: strictly-higher target for the next payout (= previous + 1 micro). */
+  readonly requiredNextQualifyingBalanceMicros: number | null;
 }
 
 /**
@@ -207,6 +238,9 @@ export function evaluatePayoutEligibility(
   nextOrdinal: number,
 ): PayoutEligibility {
   const { policy } = input;
+  const previousDailyQualifyingBalanceMicros = input.previousDailyQualifyingBalanceMicros ?? null;
+  const paidCycleCount = input.paidCycleCount ?? 0;
+  const maxPayoutCycles = input.maxPayoutCycles ?? Number.POSITIVE_INFINITY;
   const protectedMicros = policy.fundedBufferMicros;
   const withdrawable = grossWithdrawableMicros(
     input.balanceMicros,
@@ -246,6 +280,9 @@ export function evaluatePayoutEligibility(
   if (input.hold === 'FRAUD') reasons.push('FRAUD_HOLD');
   if (input.hold === 'MANUAL') reasons.push('MANUAL_REVIEW');
   if (input.hasPendingRequest) reasons.push('ALREADY_PENDING');
+  // An account that has already been paid its maximum cycles is complete; no
+  // further payout qualifies. This overrides the model gates below.
+  if (paidCycleCount >= maxPayoutCycles) reasons.push('MAX_CYCLES_REACHED');
 
   // Model gates.
   const dailyUnlockedNow =
@@ -257,6 +294,17 @@ export function evaluatePayoutEligibility(
     if (!dailyUnlockedNow) {
       if (winDays < policy.requiredWinningDays) reasons.push('INSUFFICIENT_WINNING_DAYS');
       if (!bufferEstablished) reasons.push('BUFFER_NOT_MET');
+    }
+    // Progressive qualifying balance (Milestone 6): each successive Daily payout
+    // must qualify at a STRICTLY higher account balance than the balance used for
+    // the previous approved Daily payout. The exact previous threshold is not
+    // enough. Integer micro-dollars; no float comparison. First payout (null) is
+    // inert. See docs/daily-payout-balance-progression.md.
+    if (
+      previousDailyQualifyingBalanceMicros !== null &&
+      input.balanceMicros <= previousDailyQualifyingBalanceMicros
+    ) {
+      reasons.push('DAILY_BALANCE_PROGRESSION_NOT_MET');
     }
   } else {
     if (winDays < policy.requiredWinningDays) reasons.push('INSUFFICIENT_WINNING_DAYS');
@@ -284,6 +332,13 @@ export function evaluatePayoutEligibility(
     dailyModeUnlocked: dailyUnlockedNow,
     minRequestMicros: minReq,
     maxRequestMicros: maxReq,
+    previousDailyQualifyingBalanceMicros:
+      policy.model === 'DAILY' ? previousDailyQualifyingBalanceMicros : null,
+    currentQualifyingBalanceMicros: input.balanceMicros,
+    requiredNextQualifyingBalanceMicros:
+      policy.model === 'DAILY' && previousDailyQualifyingBalanceMicros !== null
+        ? previousDailyQualifyingBalanceMicros + 1
+        : null,
   };
 }
 
