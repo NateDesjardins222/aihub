@@ -148,6 +148,13 @@
       "when": 1790088480819,
       "tag": "0020_certificate_account_ondelete",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790088481819,
+      "tag": "0021_copy_trading",
+      "breakpoints": true
     }
   ]
 }

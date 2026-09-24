@@ -1855,3 +1855,144 @@ export const achievements = pgTable(
     index('achievements_identity_idx').on(t.customerIdentityId),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Native copy trading (Atlas Native Copy Trading V1)
+// ---------------------------------------------------------------------------
+
+/**
+ * A copy group: one leader account and up to four follower accounts, ALL owned
+ * by the same verified Happy Trader customer identity. The group orchestrates
+ * the existing execution/risk pipeline; it never holds money or trading
+ * authority. See docs/copy-trading-v1.md.
+ */
+export const copyGroups = pgTable(
+  'copy_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 80 }).notNull(),
+    /** The current leader; nullable when the leader was lost (group PAUSED). */
+    leaderAccountId: uuid('leader_account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    /** SAME | MULTIPLIER | FIXED — the group default sizing mode. */
+    sizingMode: varchar('sizing_mode', { length: 16 }).notNull().default('SAME'),
+    /** ACTIVE | PAUSED | DISABLED */
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    /** Optimistic concurrency on config edits. */
+    version: integer('version').notNull().default(0),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('copy_groups_identity_idx').on(t.customerIdentityId),
+    index('copy_groups_user_idx').on(t.userId),
+    index('copy_groups_leader_idx').on(t.leaderAccountId),
+    // An account leads at most one non-disabled group (loop/chain prevention).
+    uniqueIndex('copy_groups_active_leader_key')
+      .on(t.leaderAccountId)
+      .where(sql`status <> 'DISABLED' and leader_account_id is not null`),
+  ],
+);
+
+export const copyFollowers = pgTable(
+  'copy_followers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    copyGroupId: uuid('copy_group_id')
+      .notNull()
+      .references(() => copyGroups.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(true),
+    /** MULTIPLIER mode: the multiplier in THOUSANDTHS (0.5 → 500). Integer math. */
+    sizingMultiplierMilli: integer('sizing_multiplier_milli'),
+    /** FIXED mode: the fixed contract quantity this follower attempts. */
+    sizingFixedQty: integer('sizing_fixed_qty'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('copy_followers_group_account_key').on(t.copyGroupId, t.accountId),
+    index('copy_followers_account_idx').on(t.accountId),
+  ],
+);
+
+/**
+ * One immutable logical copy action (leader BUY/SELL/modify/cancel/flatten). Its
+ * idempotency key, unique per group, is the exactly-once identity: a retried,
+ * double-clicked or replayed action converges to ONE intent.
+ */
+export const copyIntents = pgTable(
+  'copy_intents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    copyGroupId: uuid('copy_group_id')
+      .notNull()
+      .references(() => copyGroups.id, { onDelete: 'cascade' }),
+    leaderAccountId: uuid('leader_account_id').notNull(),
+    /** SUBMIT | MODIFY | CANCEL | FLATTEN */
+    kind: varchar('kind', { length: 12 }).notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 120 }).notNull(),
+    symbol: varchar('symbol', { length: 12 }),
+    side: varchar('side', { length: 4 }),
+    qty: integer('qty'),
+    orderType: varchar('order_type', { length: 16 }),
+    limitTicks: integer('limit_ticks'),
+    stopTicks: integer('stop_ticks'),
+    bracketConfig: jsonb('bracket_config'),
+    /** The leader's resulting order (for MODIFY/CANCEL correlation). */
+    leaderOrderId: uuid('leader_order_id'),
+    /** PENDING | FANNED_OUT | COMPLETE (bookkeeping; children hold outcomes). */
+    state: varchar('state', { length: 16 }).notNull().default('PENDING'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('copy_intents_group_idem_key').on(t.copyGroupId, t.idempotencyKey),
+    index('copy_intents_group_idx').on(t.copyGroupId, t.createdAt),
+  ],
+);
+
+/**
+ * One account's slice of a copy intent. `order_id` references the authoritative
+ * `orders` row once placed; this row is orchestration metadata and never carries
+ * money. Unique per (intent, account) — the per-account exactly-once backstop.
+ */
+export const copyChildren = pgTable(
+  'copy_children',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    copyIntentId: uuid('copy_intent_id')
+      .notNull()
+      .references(() => copyIntents.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    /** LEADER | FOLLOWER */
+    role: varchar('role', { length: 8 }).notNull(),
+    requestedQty: integer('requested_qty').notNull().default(0),
+    sizingNote: varchar('sizing_note', { length: 200 }),
+    /** PENDING | ACCEPTED | REJECTED | SKIPPED */
+    status: varchar('status', { length: 12 }).notNull().default('PENDING'),
+    /** The authoritative order this child produced, if any. */
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+    rejectCode: varchar('reject_code', { length: 48 }),
+    rejectMessage: text('reject_message'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('copy_children_intent_account_key').on(t.copyIntentId, t.accountId),
+    index('copy_children_account_idx').on(t.accountId),
+    index('copy_children_order_idx').on(t.orderId),
+  ],
+);
