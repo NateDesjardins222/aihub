@@ -116,6 +116,6 @@ FUNDED value as the compact **account size** (`50K`), payout/completed as the
 actual paid amount, club types as the **locked** milestone value, and the date as
 **`YYYY-MM-DD`** (UTC, from the reward event). See
 `docs/production-certificate-assets-v1.md` and
-`docs/m6-1-production-certificate-integration-report.md`. The 10K master carries a
-baked sample date (its dynamic date field is omitted pending a corrected export);
-the 100K club remains a manual plaque.
+`docs/m6-1-production-certificate-integration-report.md`. The corrected blank 10K
+master is installed with the dynamic date re-enabled; the 100K club remains a
+manual plaque.

@@ -44,14 +44,12 @@ never routed through the automated digital/Prodigi pipeline.
 | funded-trader | ✓ (uppercase) | account size `50K` | `YYYY-MM-DD` (top-right) |
 | payout | ✓ | payout amount `$5,000` | `YYYY-MM-DD` |
 | account-completed | ✓ | cumulative paid `$25,000` | `YYYY-MM-DD` |
-| 10k-club | ✓ | locked `$10,000` | — (see below) |
+| 10k-club | ✓ | locked `$10,000` | `YYYY-MM-DD` |
 | 50k-club | ✓ | locked `$50,000` | `YYYY-MM-DD` |
 
-**10k-club date:** the supplied 10k master has a **baked sample date** in the
-top-right, so its manifest omits the dynamic `date` field to avoid a double date.
-Re-export the 10k master **without** the baked date and add the `date` field back
-(copy the field block from `50k-club/v1/manifest.json`) to make it dynamic like
-the others. This is the one outstanding asset correction (see the M6.1 report).
+**10k-club date:** the corrected blank 10k master (no baked date) is installed and
+its manifest now renders the dynamic `date` like the other four types. (The earlier
+supplied 10k master had a baked sample date; that has been replaced.)
 
 ### Print resolution
 

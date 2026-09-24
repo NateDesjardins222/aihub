@@ -95,8 +95,8 @@ keep their frozen `templateVersion` and are never re-laid-out.
 
 The five V1 manifests are calibrated to the actual 1536×1024 master pixels
 (canvas `{width:1536,height:1024}`), with fields `recipientName` (center, Sans 700,
-74), `value` (center, Sans 700, 44) and `date` (right, Sans 400, 30) — the 10K
-manifest omits `date` because its master has a baked sample date. Field positions
+74), `value` (center, Sans 700, 44) and `date` (right, Sans 400, 30) on all five
+(the 10K's corrected blank master replaced the earlier baked-date one). Field positions
 were measured from the masters' blank placement lines
 (`apps/server/scripts/measure-cert-masters.mjs`) and verified with golden renders
 (`apps/server/scripts/render-golden-certs.mjs`). Full coordinate table:

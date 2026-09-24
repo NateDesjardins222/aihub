@@ -41,7 +41,7 @@ supplied WebP to PNG; decoded pixels only, no re-compression or resampling).
 - funded-trader: `recipientName` (uppercase), `value` = account size `50K`, `date` `YYYY-MM-DD`.
 - payout: `recipientName`, `value` = trader-share payout `$5,000`, `date`.
 - account-completed: `recipientName`, `value` = cumulative paid `$25,000`, `date`.
-- 10k-club: `recipientName`, `value` = LOCKED `$10,000` (date baked in master → dynamic date omitted, see §12).
+- 10k-club: `recipientName`, `value` = LOCKED `$10,000`, `date` (dynamic; the corrected blank master replaced the earlier baked-date one — see §12).
 - 50k-club: `recipientName`, `value` = LOCKED `$50,000`, `date`.
 
 Everything else is baked artwork and is never touched.
@@ -108,11 +108,13 @@ Prodigi. Fulfilled by owner operations through the existing 100K plaque queue.
 
 ## 12. Remaining blockers (asset corrections only — no code work)
 
-1. **10K master baked date** — re-export the 10K master without the baked
-   `2026-09-23`, then re-add the `date` field to its manifest (copy from 50k).
-   Until then 10K shows that fixed date. This is the one functional caveat.
+1. **10K master baked date — RESOLVED.** The corrected blank 10K master (no baked
+   date) was supplied and installed, and the dynamic `YYYY-MM-DD` date field was
+   re-enabled in its manifest (x=1435, y=110, size 30), matching the other four
+   types. `$10,000` remains the fixed rendered milestone; recipient stays dynamic.
 2. **11×14 print-resolution masters** — supply ~4200×3300 masters to enable
-   physical framed printing; re-calibrate manifests to the new canvas.
+   physical framed printing; re-calibrate manifests to the new canvas. (Only
+   outstanding item.)
 
 Everything else is done and green. No production credentials are required; Prodigi
 stays disabled; no real order/charge is made.

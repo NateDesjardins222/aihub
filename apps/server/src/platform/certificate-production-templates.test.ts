@@ -24,7 +24,7 @@ const GOLDEN: Record<string, Record<string, string>> = {
   'funded-trader': { recipientName: 'NATETRADEZ', value: '50K', date: '2026-09-23' },
   payout: { recipientName: 'NATETRADEZ', value: '$5,000', date: '2026-09-23' },
   'account-completed': { recipientName: 'NATETRADEZ', value: '$25,000', date: '2026-09-23' },
-  '10k-club': { recipientName: 'NATETRADEZ', value: '$10,000' },
+  '10k-club': { recipientName: 'NATETRADEZ', value: '$10,000', date: '2026-09-23' },
   '50k-club': { recipientName: 'NATETRADEZ', value: '$50,000', date: '2026-09-23' },
 };
 

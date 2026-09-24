@@ -35,7 +35,7 @@ the renderer only uses `v1` and never falls back to a fixture; a missing/invalid
 | Funded Trader | uppercase name | account size `50K` (from account config) | `YYYY-MM-DD` top-right |
 | Payout | uppercase name | actual trader-share payout `$5,000` | `YYYY-MM-DD` |
 | Account Completed | uppercase name | cumulative paid trader-share `$25,000` | `YYYY-MM-DD` |
-| $10K Club | uppercase name | LOCKED `$10,000` | (baked in master — see below) |
+| $10K Club | uppercase name | LOCKED `$10,000` | `YYYY-MM-DD` |
 | $50K Club | uppercase name | LOCKED `$50,000` | `YYYY-MM-DD` |
 
 - **Date** — `YYYY-MM-DD` in UTC from the reward's authoritative event timestamp
@@ -61,7 +61,7 @@ value, 400 for date. Colours `#F5F6F8` (recipient/value), `#C9CCD3` (date).
 | funded-trader | 768,569,74 | 768,690,44 | 1435,111,30 |
 | payout | 768,565,74 | 768,689,44 | 1435,103,30 |
 | account-completed | 768,558,74 | 768,685,44 | 1435,102,30 |
-| 10k-club | 768,573,74 | 768,691,44 | — (omitted) |
+| 10k-club | 768,573,74 | 768,691,44 | 1435,110,30 |
 | 50k-club | 768,574,74 | 768,690,44 | 1435,109,30 |
 
 recipientName width 980, value width 720, date width 360; all shrink-to-fit,
@@ -72,14 +72,9 @@ blank placement lines) and verified with golden renders
 
 ## OUTSTANDING asset corrections
 
-1. **10K master has a baked sample date.** Unlike the other four masters (blank
-   top-right date line), the supplied `10k-club` master has `2026-09-23` baked
-   into the top-right. To avoid a doubled/garbled date, the 10k manifest **omits**
-   the dynamic `date` field, so 10K certificates currently show that baked date
-   regardless of issuance date. **Required fix:** re-export the 10K master
-   **without** the baked date, then add the `date` field back to
-   `certificate-templates/10k-club/v1/manifest.json` (copy the `date` block from
-   `50k-club/v1/manifest.json`). No code change needed.
+1. **10K master baked date — RESOLVED.** The corrected blank 10K master (no baked
+   date) is installed and its manifest now renders the dynamic `YYYY-MM-DD` date
+   like the other four types (field at x=1435, y=110, size 30). No further action.
 
 2. **Print resolution for the 11×14 framed certificate.** The masters are
    1536×1024 (~110 DPI at 11×14). That is crisp on screen and in the PDF, but
