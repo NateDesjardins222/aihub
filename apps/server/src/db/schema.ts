@@ -1996,3 +1996,190 @@ export const copyChildren = pgTable(
     index('copy_children_order_idx').on(t.orderId),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Production trading infrastructure (Milestone 4). Additive; simulation default.
+// ---------------------------------------------------------------------------
+
+/**
+ * How an Atlas account's orders are executed (M4-P). Default is SIMULATION; an
+ * EXTERNAL_* mapping requires explicit server-side administrative action — a
+ * customer can never self-promote. Copy trading operates on Atlas account ids
+ * regardless of the provider behind each account.
+ */
+export const providerAccountMappings = pgTable(
+  'provider_account_mappings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    /** SIMULATION | EXTERNAL_PAPER | EXTERNAL_LIVE */
+    executionMode: varchar('execution_mode', { length: 20 }).notNull().default('SIMULATION'),
+    /** simulation | rithmic | scripted */
+    executionProvider: varchar('execution_provider', { length: 20 }).notNull().default('simulation'),
+    /** Opaque provider environment label (e.g. "paper", "prod"). */
+    providerEnvironment: varchar('provider_environment', { length: 40 }),
+    /** The provider's own account id. Never authoritative to the browser. */
+    providerAccountId: varchar('provider_account_id', { length: 120 }),
+    /** ACTIVE | SUSPENDED */
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    mappedAt: timestamp('mapped_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One mapping per account (the account's current execution routing).
+    uniqueIndex('provider_account_mappings_account_key').on(t.accountId),
+    index('provider_account_mappings_mode_idx').on(t.executionMode),
+  ],
+);
+
+/**
+ * The lifecycle of an order Atlas sent to an EXTERNAL venue (M4-N). Atlas ids are
+ * canonical; the provider order id is stored separately and is never authority to
+ * the browser. `idempotency_key` (the client order id) is unique so a retried
+ * command cannot create a second external order. `avg_fill_price` is a provider-
+ * reported reference price (real), NOT an Atlas money figure (those stay micros).
+ */
+export const externalOrders = pgTable(
+  'external_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    /** Atlas canonical order id (the only authority exposed to clients). */
+    atlasOrderId: uuid('atlas_order_id').notNull(),
+    /** The venue's order id; null until acknowledged. */
+    providerOrderId: varchar('provider_order_id', { length: 120 }),
+    providerAccountId: varchar('provider_account_id', { length: 120 }),
+    symbol: varchar('symbol', { length: 12 }).notNull(),
+    contractCode: varchar('contract_code', { length: 24 }),
+    side: varchar('side', { length: 4 }).notNull(),
+    orderType: varchar('order_type', { length: 16 }).notNull(),
+    requestedQty: integer('requested_qty').notNull(),
+    filledQty: integer('filled_qty').notNull().default(0),
+    avgFillPrice: real('avg_fill_price'),
+    /** ExternalOrderState */
+    state: varchar('state', { length: 20 }).notNull().default('PENDING_SUBMIT'),
+    /** The provider's own raw status string, kept for diagnosis. */
+    providerStatus: varchar('provider_status', { length: 60 }),
+    /** Client order id — idempotency key; a retry with this key never re-orders. */
+    idempotencyKey: varchar('idempotency_key', { length: 120 }).notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('external_orders_idempotency_key').on(t.idempotencyKey),
+    index('external_orders_account_idx').on(t.accountId),
+    index('external_orders_atlas_order_idx').on(t.atlasOrderId),
+    index('external_orders_provider_order_idx').on(t.providerOrderId),
+    index('external_orders_state_idx').on(t.state),
+  ],
+);
+
+/** Append-only audit of external execution reports (M4-N). `dedupe_key` unique
+ * suppresses duplicate venue reports. */
+export const externalExecutionEvents = pgTable(
+  'external_execution_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    externalOrderId: uuid('external_order_id')
+      .notNull()
+      .references(() => externalOrders.id, { onDelete: 'cascade' }),
+    providerOrderId: varchar('provider_order_id', { length: 120 }),
+    state: varchar('state', { length: 20 }).notNull(),
+    filledQty: integer('filled_qty').notNull().default(0),
+    lastFillQty: integer('last_fill_qty').notNull().default(0),
+    avgFillPrice: real('avg_fill_price'),
+    providerStatus: varchar('provider_status', { length: 60 }),
+    eventTs: timestamp('event_ts', { withTimezone: true }).notNull(),
+    /** Optional idempotency for duplicate-report suppression. */
+    dedupeKey: varchar('dedupe_key', { length: 160 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('external_execution_events_order_idx').on(t.externalOrderId),
+    uniqueIndex('external_execution_events_dedupe_key').on(t.dedupeKey).where(sql`dedupe_key is not null`),
+  ],
+);
+
+/** Reconciliation status per account against an external venue (M4-O). */
+export const reconciliationState = pgTable(
+  'reconciliation_state',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    providerAccountId: varchar('provider_account_id', { length: 120 }),
+    /** IN_SYNC | RECONCILIATION_REQUIRED | UNKNOWN */
+    state: varchar('state', { length: 30 }).notNull().default('IN_SYNC'),
+    detail: text('detail'),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('reconciliation_state_account_key').on(t.accountId)],
+);
+
+/** Market-data entitlement domain (M4-S). SOFTWARE domain only — not an exchange
+ * agreement, not legal permission to redistribute. */
+export const marketDataEntitlements = pgTable(
+  'market_data_entitlements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    /** Null for a provider/exchange-wide entitlement; set for a specific user. */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** CME | CBOT | NYMEX | COMEX */
+    exchange: varchar('exchange', { length: 12 }).notNull(),
+    /** DELAYED | REALTIME_TOP | REALTIME_DEPTH */
+    dataLevel: varchar('data_level', { length: 20 }).notNull(),
+    /** DISPLAY | NON_DISPLAY */
+    displayUse: varchar('display_use', { length: 16 }).notNull().default('DISPLAY'),
+    /** ENTITLED | NOT_ENTITLED | PENDING | UNKNOWN */
+    status: varchar('status', { length: 16 }).notNull().default('UNKNOWN'),
+    providerEntitlementRef: varchar('provider_entitlement_ref', { length: 120 }),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('market_data_entitlements_user_idx').on(t.userId),
+    index('market_data_entitlements_exchange_idx').on(t.exchange),
+  ],
+);
+
+/** Coarse, bounded provider operational events (M4-T). NEVER market ticks and
+ * NEVER a credential — connect/disconnect/reconnect/degraded/error lifecycle. */
+export const providerOpsEvents = pgTable(
+  'provider_ops_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    providerId: varchar('provider_id', { length: 40 }).notNull(),
+    /** MARKET_DATA | EXECUTION */
+    role: varchar('role', { length: 16 }).notNull(),
+    /** connect | disconnect | reconnect | degraded | error | ... */
+    kind: varchar('kind', { length: 40 }).notNull(),
+    /** Redacted, secret-free detail. */
+    detail: text('detail'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: now(),
+  },
+  (t) => [
+    index('provider_ops_events_provider_idx').on(t.providerId),
+    index('provider_ops_events_occurred_idx').on(t.occurredAt),
+  ],
+);
