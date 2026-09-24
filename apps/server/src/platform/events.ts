@@ -45,7 +45,19 @@ export type DomainEventType =
   | 'funding.requested'
   | 'funding.approved'
   | 'funding.declined'
-  | 'account.funded';
+  | 'account.funded'
+  | 'payout.eligibility_unlocked'
+  | 'payout.requested'
+  | 'payout.blocked'
+  | 'payout.under_review'
+  | 'payout.approved'
+  | 'payout.rejected'
+  | 'payout.cancelled'
+  | 'payout.processing'
+  | 'payout.paid'
+  | 'payout.failed'
+  | 'payout.hold_placed'
+  | 'payout.hold_removed';
 
 export interface DomainEvent {
   readonly type: DomainEventType;

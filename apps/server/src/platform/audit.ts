@@ -20,7 +20,7 @@ import type { Database } from '../db/client.js';
 import { auditLog } from '../db/schema.js';
 import type { Actor } from './actor.js';
 
-export type AuditSubject = 'ACCOUNT' | 'USER' | 'PROFILE' | 'ORDER' | 'ORGANIZATION';
+export type AuditSubject = 'ACCOUNT' | 'USER' | 'PROFILE' | 'ORDER' | 'ORGANIZATION' | 'PAYOUT';
 
 export interface AuditEntry {
   readonly organizationId: string | null;
