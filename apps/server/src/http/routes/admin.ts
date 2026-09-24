@@ -94,6 +94,14 @@ import {
   redactNote,
 } from '../../platform/notes.js';
 import { getPersonalRiskProfile } from '../../platform/personal-risk.js';
+import {
+  certificateStoreSummary,
+  listStoreOrders,
+  updateStoreOrder,
+  listPlaqueFulfillments,
+  updatePlaqueFulfillment,
+  CertificateStoreError,
+} from '../../platform/certificate-store.js';
 
 interface AdminDeps {
   readonly engine: TradingEngine;
@@ -1980,6 +1988,59 @@ export function adminRoutes(deps: AdminDeps) {
         },
       });
     });
+
+    // ---- Certificate Store (Milestone 6) — operational, no fake-cert backdoor --
+    app.get('/certificate-store', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      return reply.send(await certificateStoreSummary(db, organizationId));
+    });
+
+    app.get<{ Querystring: { status?: string } }>('/certificate-store/orders', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      return reply.send({ orders: await listStoreOrders(db, organizationId, { status: request.query.status }) });
+    });
+
+    app.get('/certificate-store/plaques', async (request, reply) => {
+      const organizationId = await organizationOf(request.user!.id);
+      return reply.send({ plaques: await listPlaqueFulfillments(db, organizationId) });
+    });
+
+    const mapStoreError = (err: unknown): never => {
+      if (err instanceof CertificateStoreError) {
+        throw new ApiError(err.code === 'NOT_FOUND' ? 404 : 409, err.code, err.message);
+      }
+      throw err;
+    };
+
+    app.post<{ Params: { id: string }; Body: { action?: string; carrier?: string; trackingNumber?: string } }>(
+      '/certificate-store/orders/:id/action',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        const action = String(request.body?.action ?? '') as 'ship' | 'deliver' | 'refund' | 'replace' | 'cancel';
+        try {
+          const row = await updateStoreOrder(db, organizationId, request.params.id, action, { carrier: request.body?.carrier ?? null, trackingNumber: request.body?.trackingNumber ?? null }, actorFor(request));
+          return reply.send({ id: row.id, status: row.status });
+        } catch (err) {
+          return mapStoreError(err);
+        }
+      },
+    );
+
+    app.post<{ Params: { id: string }; Body: { action?: string; notes?: string; trackingCarrier?: string; trackingNumber?: string } }>(
+      '/certificate-store/plaques/:id/action',
+      { preHandler: requireRole('ADMIN'), config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const organizationId = await organizationOf(request.user!.id);
+        const action = String(request.body?.action ?? '') as 'verify' | 'order' | 'ship' | 'deliver' | 'hold' | 'cancel';
+        try {
+          const row = await updatePlaqueFulfillment(db, organizationId, request.params.id, action, { notes: request.body?.notes ?? null, trackingCarrier: request.body?.trackingCarrier ?? null, trackingNumber: request.body?.trackingNumber ?? null }, actorFor(request));
+          return reply.send({ id: row.id, status: row.status });
+        } catch (err) {
+          return mapStoreError(err);
+        }
+      },
+    );
   };
 }
 

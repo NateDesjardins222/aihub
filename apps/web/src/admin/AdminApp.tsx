@@ -28,6 +28,7 @@ import { AdminCustomersPage } from './pages/CustomersPage';
 import { AdminAuditPage } from './pages/AuditPage';
 import { AdminSystemPage } from './pages/SystemPage';
 import { AdminInfraPage } from './pages/InfraPage';
+import { AdminCertificateStorePage } from './pages/CertificateStorePage';
 import './Admin.css';
 
 export type AdminRoute =
@@ -46,7 +47,8 @@ export type AdminRoute =
   | { name: 'PRODUCTS' }
   | { name: 'PRODUCT'; key: string }
   | { name: 'SYSTEM' }
-  | { name: 'INFRA' };
+  | { name: 'INFRA' }
+  | { name: 'CERTSTORE' };
 
 export function parseAdminRoute(pathname: string): AdminRoute {
   const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
@@ -70,6 +72,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   }
   if (parts[0] === 'system') return { name: 'SYSTEM' };
   if (parts[0] === 'infrastructure' || parts[0] === 'infra') return { name: 'INFRA' };
+  if (parts[0] === 'certificate-store' || parts[0] === 'certstore') return { name: 'CERTSTORE' };
   return { name: 'OVERVIEW' };
 }
 
@@ -105,6 +108,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/system';
     case 'INFRA':
       return '/admin/infrastructure';
+    case 'CERTSTORE':
+      return '/admin/certificate-store';
     default:
       return '/admin';
   }
@@ -124,6 +129,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'PRODUCTS' }, label: 'Products' },
   { route: { name: 'SYSTEM' }, label: 'System' },
   { route: { name: 'INFRA' }, label: 'Infrastructure' },
+  { route: { name: 'CERTSTORE' }, label: 'Certificate Store' },
 ];
 
 export function AdminApp(): JSX.Element {
@@ -211,6 +217,7 @@ export function AdminApp(): JSX.Element {
         ) : null}
         {route.name === 'SYSTEM' ? <AdminSystemPage /> : null}
         {route.name === 'INFRA' ? <AdminInfraPage /> : null}
+        {route.name === 'CERTSTORE' ? <AdminCertificateStorePage mayMutate={mayMutate} /> : null}
       </main>
     </div>
   );
