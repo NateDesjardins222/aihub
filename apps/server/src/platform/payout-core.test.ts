@@ -119,6 +119,24 @@ describe('withdrawable + progressive caps', () => {
     expect(capForOrdinal(p, 9)).toBe($(3000)); // established cap
     expect(capForOrdinal(CORE_50K, 5)).toBe($(2000)); // flat cap
   });
+
+  it('request ceiling = min(eligible, productCap, 50% of eligible)', () => {
+    // 50% binds: withdrawable $3,000, cap $2,000 → floor(0.5×3,000)=$1,500 < cap.
+    const fiftyBinds = evaluatePayoutEligibility(
+      { policy: CORE_50K, balanceMicros: $(53_000), startingBalanceMicros: $(50_000), days: winningDays(5), ...CLEAN },
+      1,
+    );
+    expect(fiftyBinds.grossWithdrawableMicros).toBe($(3000));
+    expect(fiftyBinds.maxRequestMicros).toBe($(1500)); // 50% < $2,000 cap
+
+    // Cap binds: withdrawable $10,000 → 50% = $5,000, but the $2,000 cap is lower.
+    const capBinds = evaluatePayoutEligibility(
+      { policy: CORE_50K, balanceMicros: $(60_000), startingBalanceMicros: $(50_000), days: winningDays(5), ...CLEAN },
+      1,
+    );
+    expect(capBinds.grossWithdrawableMicros).toBe($(10_000));
+    expect(capBinds.maxRequestMicros).toBe($(2000)); // cap < 50%
+  });
 });
 
 describe('winning-day counting is per cycle, server side', () => {
@@ -219,9 +237,12 @@ describe('DAILY buffer + daily-mode unlock', () => {
     expect(unlocked.dailyModeUnlocked).toBe(true);
     expect(unlocked.grossWithdrawableMicros).toBe($(1500)); // 3,500 - 2,000
 
-    const res = resolvePayoutRequest(unlocked, DAILY_50K, $(1000), $(53_500));
+    // Request ceiling now composes the 50%-of-eligible rule: withdrawable $1,500
+    // → max request floor(0.5 × 1,500) = $750. A $700 request is within it.
+    expect(unlocked.maxRequestMicros).toBe($(750));
+    const res = resolvePayoutRequest(unlocked, DAILY_50K, $(700), $(53_500));
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.balanceAfterMicros).toBe($(52_500));
+    if (res.ok) expect(res.balanceAfterMicros).toBe($(52_800));
   });
 
   it('once unlocked, later payouts need no new winning days — buffer stays protected', () => {
@@ -233,10 +254,13 @@ describe('DAILY buffer + daily-mode unlock', () => {
     expect(later.qualifyingWinningDays).toBe(0);
     expect(later.state).toBe('ELIGIBLE'); // no winning-day gate once unlocked
     expect(later.grossWithdrawableMicros).toBe($(500)); // 2,500 - 2,000 buffer protected
-    // Cannot withdraw into the buffer.
+    // Cannot withdraw into the buffer. With the 50%-of-eligible ceiling
+    // (withdrawable $500 → max $250) a $600 request now binds on ABOVE_MAXIMUM
+    // before the withdrawable gate; either way the buffer is protected.
+    expect(later.maxRequestMicros).toBe($(250));
     const overdraw = resolvePayoutRequest(later, DAILY_50K, $(600), $(52_500));
     expect(overdraw.ok).toBe(false);
-    if (!overdraw.ok) expect(overdraw.reason).toBe('INSUFFICIENT_WITHDRAWABLE_PROFIT');
+    if (!overdraw.ok) expect(overdraw.reason).toBe('ABOVE_MAXIMUM');
   });
 });
 

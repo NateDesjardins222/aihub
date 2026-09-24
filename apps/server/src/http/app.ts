@@ -19,6 +19,7 @@ import { checkoutRoutes, commerceStatusRoutes, whopWebhookRoutes } from './route
 import { customerConsoleRoutes } from './routes/customers.js';
 import { onboardingRoutes } from './routes/onboarding.js';
 import { verifyRoutes } from './routes/verify.js';
+import { portalRoutes } from './routes/portal.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
@@ -352,6 +353,9 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
   // Public, unauthenticated certificate verification (safe projection only).
   await app.register(verifyRoutes, { prefix: '/api/v1/verify' });
+  // The customer portal: a trader's own accounts, analytics, reset, certificates,
+  // achievements and profile. Every route is owner-scoped.
+  await app.register(portalRoutes, { prefix: '/api/v1/portal' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });

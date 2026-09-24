@@ -33,7 +33,14 @@ const LINES: Record<
   DAILY: { evalConsistency: 0.4, payoutConsistency: null, buffers: { 25: 1000, 50: 2000, 100: 4000 }, sizes: { 25: 90, 50: 145, 100: 250 } },
 };
 
+// Launch payout request caps by account size (docs/account-lifecycle-ux-v1 §5):
+// 25K=$1,000, 50K=$2,000, 100K=$3,500, 300K Gold=$5,000. A flat cap per size
+// (one element applies to every ordinal); the request ceiling further composes
+// min(eligible, this cap, 50% of eligible) in the payout engine.
+const REQUEST_CAP_BY_SIZE_K: Record<number, number> = { 25: 1000, 50: 2000, 100: 3500, 300: 5000 };
+
 function payoutRules(line: Line, sizeK: number) {
+  const capMicros = (REQUEST_CAP_BY_SIZE_K[sizeK] ?? 1000) * M;
   return {
     model: line,
     profitSplitPercent: 0.9,
@@ -42,7 +49,7 @@ function payoutRules(line: Line, sizeK: number) {
     requiredWinningDays: 5,
     payoutConsistencyThreshold: LINES[line].payoutConsistency,
     fundedBufferMicros: (LINES[line].buffers[sizeK] ?? 0) * M,
-    requestCaps: { minRequestMicros: 250 * M, maxRequestMicrosByOrdinal: [2000 * M, 3000 * M, 4000 * M] },
+    requestCaps: { minRequestMicros: 250 * M, maxRequestMicrosByOrdinal: [capMicros] },
   };
 }
 

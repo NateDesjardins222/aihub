@@ -226,7 +226,14 @@ export function evaluatePayoutEligibility(
   const bufferEstablished =
     policy.fundedBufferMicros === 0 || totalNet >= policy.fundedBufferMicros;
   const minReq = policy.requestCaps.minRequestMicros;
-  const maxReq = capForOrdinal(policy, nextOrdinal);
+  // Request ceiling = min(eligible, productCap, 50% of eligible profit after the
+  // buffer). floor(0.5 × withdrawable) ≤ withdrawable, so the eligible term is
+  // subsumed; the effective ceiling is min(productCap, 50%). Composed with — not
+  // layered against — the existing withdrawable gate (docs/account-lifecycle-ux-v1
+  // §5). The 90/10 split and the APPROVED balance debit are unchanged downstream.
+  const productCap = capForOrdinal(policy, nextOrdinal);
+  const fiftyPct = Math.floor(0.5 * withdrawable);
+  const maxReq = Math.min(withdrawable, productCap, fiftyPct);
 
   const reasons: PayoutReasonCode[] = [];
 

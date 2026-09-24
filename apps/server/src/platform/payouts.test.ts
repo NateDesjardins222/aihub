@@ -243,10 +243,12 @@ describe('DAILY buffer + SELECT consistency', () => {
     const acct = await makeFunded('htf-daily-50k-t', { balance: $(53_500), winDays: 5 });
     const elig = await getPayoutEligibility(db, acct);
     expect(elig.eligibility.grossWithdrawableMicros).toBe($(1500)); // 3,500 - 2,000 buffer
-    const req = await requestPayout(db, { accountId: acct, userId: elig.account.userId, requestedGrossMicros: $(1000), idempotencyKey: `d-${acct}`, actor: SYSTEM_ACTOR });
+    // Ceiling composes 50% of eligible: max request = floor(0.5 × 1,500) = $750.
+    expect(elig.eligibility.maxRequestMicros).toBe($(750));
+    const req = await requestPayout(db, { accountId: acct, userId: elig.account.userId, requestedGrossMicros: $(700), idempotencyKey: `d-${acct}`, actor: SYSTEM_ACTOR });
     await approvePayout(db, { payoutRequestId: req.id, actor: SYSTEM_ACTOR });
-    expect(await balanceOf(acct)).toBe($(52_500));
-    // Remaining withdrawable is now 500; a $600 request is refused.
+    expect(await balanceOf(acct)).toBe($(52_800));
+    // The buffer stays protected: a $600 request exceeds the new ceiling and is refused.
     await expect(
       requestPayout(db, { accountId: acct, userId: elig.account.userId, requestedGrossMicros: $(600), actor: SYSTEM_ACTOR }),
     ).rejects.toBeInstanceOf(PayoutError);
