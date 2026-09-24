@@ -344,3 +344,4 @@
 .pt-cert-name { font-size: 17px; font-weight: 600; margin-top: 8px; color: var(--pt-text); }
 .pt-cert-meta { display: flex; gap: 12px; align-items: baseline; margin-top: 4px; font-size: 14px; }
 .pt-cert-id { font-size: 11px; letter-spacing: 0.04em; margin-top: 6px; }
+.pt-cert-merch { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--pt-line); }

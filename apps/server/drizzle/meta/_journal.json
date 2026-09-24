@@ -183,6 +183,13 @@
    "when": 1790088481823,
    "tag": "0025_rewards_certificates",
    "breakpoints": true
+  },
+  {
+   "idx": 26,
+   "version": "7",
+   "when": 1790088481824,
+   "tag": "0026_physical_certificate_orders",
+   "breakpoints": true
   }
  ]
 }

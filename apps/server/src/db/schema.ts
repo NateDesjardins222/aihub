@@ -1922,6 +1922,57 @@ export const physicalRewardFulfillment = pgTable(
   ],
 );
 
+/**
+ * Milestone 6 — physical framed certificate orders (Prodigi merch). Payment and
+ * fulfillment are server-authoritative; a merch order NEVER provisions a trading
+ * account. Only an earned, rendered certificate can be ordered; the immutable
+ * print artifact is what is manufactured.
+ */
+export const physicalCertificateOrders = pgTable(
+  'physical_certificate_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    certificateId: uuid('certificate_id')
+      .notNull()
+      .references(() => certificates.id, { onDelete: 'restrict' }),
+    sku: varchar('sku', { length: 48 }).notNull(),
+    quantity: integer('quantity').notNull().default(1),
+    retailAmountMicros: micros('retail_amount_micros').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull().default('USD'),
+    /** PENDING_PAYMENT | PAID | PREFLIGHT | SUBMITTED | IN_PRODUCTION | SHIPPED | DELIVERED | CANCELLED | FULFILLMENT_FAILED | REFUND_PENDING | REFUNDED | REPLACEMENT_PENDING | REPLACED */
+    status: varchar('status', { length: 24 }).notNull().default('PENDING_PAYMENT'),
+    fulfillmentProvider: varchar('fulfillment_provider', { length: 16 }).notNull().default('MOCK'),
+    providerOrderId: varchar('provider_order_id', { length: 120 }),
+    providerQuoteAmountMicros: micros('provider_quote_amount_micros'),
+    shippingAmountMicros: micros('shipping_amount_micros'),
+    estimatedContributionMicros: micros('estimated_contribution_micros'),
+    shippingAddressSnapshot: jsonb('shipping_address_snapshot'),
+    trackingCarrier: varchar('tracking_carrier', { length: 48 }),
+    trackingNumber: varchar('tracking_number', { length: 120 }),
+    trackingUrl: text('tracking_url'),
+    failureCode: varchar('failure_code', { length: 48 }),
+    failureDetailSafe: text('failure_detail_safe'),
+    idempotencyKey: varchar('idempotency_key', { length: 200 }),
+    createdAt: now(),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('physical_cert_orders_identity_idx').on(t.customerIdentityId),
+    index('physical_cert_orders_org_status_idx').on(t.organizationId, t.status),
+    uniqueIndex('physical_cert_orders_provider_key').on(t.fulfillmentProvider, t.providerOrderId),
+  ],
+);
+
 export const achievements = pgTable(
   'achievements',
   {

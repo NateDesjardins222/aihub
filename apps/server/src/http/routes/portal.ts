@@ -27,6 +27,16 @@ import { createResetOrder, resetQuote, ResetError } from '../../platform/account
 import { listCertificatesForUser, ownedCertificateArtifact, validateCertificateDisplayName } from '../../platform/certificates.js';
 import { objectStore } from '../../platform/object-store.js';
 import {
+  createPhysicalCertificateOrder,
+  confirmPhysicalCertificatePayment,
+  listPhysicalOrdersForUser,
+  getPhysicalOrderForUser,
+  PhysicalOrderError,
+  PHYSICAL_RETAIL_MICROS,
+  PHYSICAL_SKU,
+} from '../../platform/physical-orders.js';
+import { env } from '../../config/env.js';
+import {
   listAchievementsForUser,
   setAchievementsPublic,
   setAchievementVisibility,
@@ -278,6 +288,64 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
     });
   artifactRoute('image');
   artifactRoute('pdf');
+
+  // ---- Physical framed certificate commerce (Milestone 6) -----------------
+  const mapPhysicalError = (err: unknown): never => {
+    if (err instanceof PhysicalOrderError) {
+      const status = err.code === 'CERTIFICATE_NOT_FOUND' || err.code === 'ORDER_NOT_FOUND' ? 404 : err.code === 'MERCH_DISABLED' ? 403 : 400;
+      throw new ApiError(status, err.code, err.message);
+    }
+    throw err;
+  };
+
+  // Product descriptor for the "Order Framed Copy" surface.
+  app.get('/merch/framed-certificate', async (_request, reply) =>
+    reply.send({ enabled: env().MERCH_ENABLED, sku: PHYSICAL_SKU, retailAmountMicros: PHYSICAL_RETAIL_MICROS, currency: 'USD', size: '11x14' }),
+  );
+
+  app.post<{ Params: { id: string }; Body: { address?: unknown; idempotencyKey?: string } }>(
+    '/certificates/:id/order-framed',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      if (!env().MERCH_ENABLED) throw new ApiError(403, 'MERCH_DISABLED', 'Framed certificate ordering is not enabled.');
+      try {
+        const order = await createPhysicalCertificateOrder(db, {
+          userId: request.user!.id,
+          certificateId: request.params.id,
+          address: request.body?.address,
+          idempotencyKey: request.body?.idempotencyKey ?? null,
+        });
+        // Production wires a Whop merch checkout here; this build returns the
+        // order so a signature-verified payment event (or the non-prod simulate
+        // route) confirms it. A browser success never fulfills.
+        return reply.code(201).send({ orderId: order.id, status: order.status, retailAmountMicros: order.retailAmountMicros, sku: order.sku });
+      } catch (err) {
+        return mapPhysicalError(err);
+      }
+    },
+  );
+
+  app.get('/physical-orders', async (request, reply) =>
+    reply.send({ orders: await listPhysicalOrdersForUser(db, request.user!.id) }),
+  );
+
+  app.get<{ Params: { id: string } }>('/physical-orders/:id', async (request, reply) => {
+    const order = await getPhysicalOrderForUser(db, request.user!.id, request.params.id);
+    if (!order) throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
+    return reply.send(order);
+  });
+
+  // Non-production only: stand in for a signature-verified merch payment webhook
+  // so the dev/test flow can confirm payment → preflight → submit.
+  if (env().NODE_ENV !== 'production') {
+    app.post<{ Params: { id: string } }>('/physical-orders/:id/dev/simulate-payment', async (request, reply) => {
+      // Must belong to the caller.
+      const owned = await getPhysicalOrderForUser(db, request.user!.id, request.params.id);
+      if (!owned) throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
+      const row = await confirmPhysicalCertificatePayment(db, request.params.id, { receiptId: `dev_${Date.now()}` });
+      return reply.send({ id: row.id, status: row.status, failureCode: row.failureCode });
+    });
+  }
 
   // ---- Achievements -------------------------------------------------------
   app.get('/achievements', async (request, reply) => {
