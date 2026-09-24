@@ -26,6 +26,8 @@ import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
 import { recordEngineActivity } from '../platform/engine-audit.js';
 import { certifyPassedEvaluations, registerAutoCertification } from '../platform/commerce-certify.js';
+import { seedDefaultAgreements } from '../platform/agreements.js';
+import { defaultOrganizationId } from '../platform/provisioning.js';
 
 export interface BuiltApp {
   readonly app: FastifyInstance;
@@ -227,6 +229,15 @@ export async function buildApp(): Promise<BuiltApp> {
    */
   const stopCertifying = registerAutoCertification(db);
   void certifyPassedEvaluations(db).catch(() => undefined);
+
+  /*
+   * Seed the required agreements (dev placeholder content) so the onboarding
+   * gate has current versions to enforce. Idempotent — republishing identical
+   * content is a no-op.
+   */
+  void defaultOrganizationId(db)
+    .then((organizationId) => seedDefaultAgreements(db, organizationId))
+    .catch(() => undefined);
 
   /*
    * The outbox delivery worker keeps the operational read model current and
