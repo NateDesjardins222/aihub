@@ -57,7 +57,28 @@ export type DomainEventType =
   | 'payout.paid'
   | 'payout.failed'
   | 'payout.hold_placed'
-  | 'payout.hold_removed';
+  | 'payout.hold_removed'
+  // Customer identity + contact + agreements (Customer Identity V1).
+  | 'customer_identity.created'
+  | 'contact.challenge_started'
+  | 'contact.verified'
+  | 'identity.verification_started'
+  | 'identity.step_up_required'
+  | 'identity.under_review'
+  | 'identity.verified'
+  | 'identity.rejected'
+  | 'agreement.accepted'
+  // Commerce provisioning + notifications (Commerce Provisioning / Notifications V1).
+  | 'commerce.event_received'
+  | 'commerce.event_rejected'
+  | 'entitlement.provisioned'
+  | 'entitlement.provisioning_blocked'
+  | 'entitlement.provisioning_failed'
+  | 'commerce.refunded'
+  | 'commerce.dispute_opened'
+  | 'commerce.dispute_closed'
+  | 'notification.sent'
+  | 'notification.failed';
 
 export interface DomainEvent {
   readonly type: DomainEventType;

@@ -105,6 +105,29 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   /** Where Whop returns the buyer after the embedded checkout completes. */
   WHOP_CHECKOUT_RETURN_URL: z.string().optional(),
+
+  /**
+   * Identity verification (Stripe Identity). OPTIONAL and NOT wired in this
+   * milestone. With these unset the identity provider is the deterministic MOCK;
+   * the Stripe adapter exists only as a seam that reports itself unconfigured and
+   * NEVER fabricates a verified result. The mock being active is not evidence a
+   * real KYC verification occurred.
+   */
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_IDENTITY_WEBHOOK_SECRET: z.string().optional(),
+
+  /**
+   * Notification providers (Resend email, Twilio SMS). OPTIONAL and NOT wired in
+   * this milestone. Unset → the deterministic MOCK providers record what would
+   * have been sent; the real adapters are seams that report unconfigured and mark
+   * a message SUPPRESSED rather than faking a delivery. Trading/payment/
+   * provisioning never wait on any of these.
+   */
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().optional(),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
