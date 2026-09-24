@@ -50,6 +50,38 @@ const envSchema = z.object({
     .enum(['none', 'internal', 'delayed-external', 'realtime-external'])
     .default('none'),
 
+  /**
+   * Execution provider selection — DELIBERATE and SERVER-SIDE, never inferred and
+   * never settable from the browser. `simulation` is the Atlas engine (default,
+   * the only reachable execution path in this milestone). `rithmic`/`scripted`
+   * exist as seams; an external provider is only reached by an explicit per-
+   * account mapping AND a configured, connected provider.
+   */
+  EXECUTION_PROVIDER: z.enum(['simulation', 'rithmic', 'scripted']).default('simulation'),
+  /**
+   * Master gate for EXTERNAL_LIVE. Even a configured+connected external provider
+   * and an account mapped to EXTERNAL_LIVE cannot send a live order unless this
+   * is true. Ships false; nothing in this milestone sets it true.
+   */
+  EXTERNAL_LIVE_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  /**
+   * Rithmic (R | Protocol) connection settings. SERVER-SIDE ONLY, all optional so
+   * Atlas boots and tests with the provider UNCONFIGURED. Credentials are never
+   * logged, never returned from an API, never sent to the browser. No values here
+   * fake connectivity: without a dev kit + credentials the adapter reports
+   * UNCONFIGURED. See docs/rithmic-integration-readiness-v1.md.
+   */
+  RITHMIC_ENV: z.enum(['test', 'paper', 'live']).optional(),
+  RITHMIC_GATEWAY: z.string().optional(),
+  RITHMIC_SYSTEM: z.string().optional(),
+  RITHMIC_USER: z.string().optional(),
+  RITHMIC_PASSWORD: z.string().optional(),
+  RITHMIC_FCM_ID: z.string().optional(),
+  RITHMIC_IB_ID: z.string().optional(),
+  RITHMIC_APP_NAME: z.string().optional(),
+  RITHMIC_APP_VERSION: z.string().optional(),
+
   /** Simulation fill model. */
   FILL_MODEL: z.enum(['SIMPLE', 'ADVANCED']).default('ADVANCED'),
   FILL_LATENCY_MS: z.coerce.number().int().default(120),

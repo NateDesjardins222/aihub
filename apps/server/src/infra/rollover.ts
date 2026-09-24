@@ -20,8 +20,8 @@ import {
   lastTradingDay,
   resolveActiveContract,
   type ActiveContract,
-  type InstrumentSpec,
 } from '@atlas/instruments';
+import type { InstrumentSpec } from '@atlas/contracts';
 
 export type RollPhase = 'STEADY' | 'ROLL_WINDOW' | 'EXPIRING';
 
