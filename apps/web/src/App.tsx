@@ -33,6 +33,13 @@ const CheckoutApp = lazy(() => import('./checkout/CheckoutApp').then((m) => ({ d
  */
 const OnboardingApp = lazy(() => import('./onboarding/OnboardingApp').then((m) => ({ default: m.OnboardingApp })));
 
+/*
+ * The customer portal (dashboard, accounts, analytics, certificates,
+ * achievements, profile). Its own path and bundle, behind sign-in, beside the
+ * terminal — a trader who only trades never downloads it.
+ */
+const PortalApp = lazy(() => import('./portal/PortalApp').then((m) => ({ default: m.PortalApp })));
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -50,6 +57,7 @@ export function App(): JSX.Element {
   const icons = typeof window !== 'undefined' && window.location.pathname.startsWith('/icons');
   const checkout = typeof window !== 'undefined' && window.location.pathname.startsWith('/checkout');
   const onboarding = typeof window !== 'undefined' && window.location.pathname.startsWith('/onboarding');
+  const portal = typeof window !== 'undefined' && window.location.pathname.startsWith('/portal');
 
   useEffect(() => {
     void boot();
@@ -80,6 +88,13 @@ export function App(): JSX.Element {
     return (
       <Suspense fallback={<div className="boot-splash">Loading…</div>}>
         <OnboardingApp />
+      </Suspense>
+    );
+  }
+  if (portal) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading portal…</div>}>
+        <PortalApp />
       </Suspense>
     );
   }
