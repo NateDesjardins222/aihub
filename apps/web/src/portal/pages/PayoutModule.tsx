@@ -48,6 +48,10 @@ export function reasonText(code: string, el?: PayoutEligibility | null): string 
       return 'This payout requires a manual review before it can proceed.';
     case 'ALREADY_PENDING':
       return 'You already have a payout request in progress. Only one can be open at a time.';
+    case 'DAILY_BALANCE_PROGRESSION_NOT_MET':
+      return 'Your balance must exceed the qualifying balance used for your previous Daily payout.';
+    case 'MAX_CYCLES_REACHED':
+      return 'This account has reached its maximum number of payout cycles and is now complete.';
     default:
       return code.replace(/_/g, ' ').toLowerCase();
   }
@@ -124,6 +128,32 @@ export function PayoutModule({ accountId, onToast }: { accountId: string; onToas
           </p>
         )}
       </Card>
+
+      {el.model === 'DAILY' && (
+        <Card>
+          <div className="pt-section-title" style={{ marginTop: 0 }}>Daily qualifying balance</div>
+          {el.previousDailyQualifyingBalanceMicros == null ? (
+            <p className="pt-note" data-testid="pt-daily-progression" style={{ margin: 0 }}>First payout — no previous qualifying-balance threshold.</p>
+          ) : (
+            <>
+              <div className="pt-metrics" data-testid="pt-daily-progression">
+                <Metric label="Previous qualifying balance" value={<Money micros={el.previousDailyQualifyingBalanceMicros} />} />
+                <Metric label="Current qualifying balance" value={<Money micros={el.currentQualifyingBalanceMicros ?? el.balanceMicros} />} />
+                <Metric label="Required next" value={<>&gt; <Money micros={el.previousDailyQualifyingBalanceMicros} /></>} />
+                <Metric
+                  label="Remaining"
+                  value={<Money micros={Math.max(0, (el.requiredNextQualifyingBalanceMicros ?? 0) - (el.currentQualifyingBalanceMicros ?? el.balanceMicros))} />}
+                />
+              </div>
+              {el.reasonCodes.includes('DAILY_BALANCE_PROGRESSION_NOT_MET') && (
+                <p className="pt-note" style={{ marginBottom: 0 }}>
+                  Your balance must exceed the qualifying balance used for your previous Daily payout.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+      )}
 
       {eligible ? (
         <Card>

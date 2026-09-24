@@ -115,6 +115,10 @@ export interface PayoutEligibility {
   bufferEstablished: boolean; fundedBufferMicros: number | null; dailyModeUnlocked: boolean;
   minRequestMicros: number; maxRequestMicros: number; profitSplitPercent: number; model: string;
   balanceMicros: number; startingBalanceMicros: number;
+  // Milestone 6 — DAILY progressive qualifying balance (null on non-DAILY / first payout).
+  previousDailyQualifyingBalanceMicros?: number | null;
+  currentQualifyingBalanceMicros?: number | null;
+  requiredNextQualifyingBalanceMicros?: number | null;
 }
 export type { PersonalRiskProfileView };
 
