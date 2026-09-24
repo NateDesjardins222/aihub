@@ -102,13 +102,13 @@ export function PortalApp(): JSX.Element {
   ];
 
   return (
-    <div className="pt">
+    <div className="pt" data-testid="portal-app">
       <header className="pt-top">
         <div className="pt-mark" aria-hidden />
         <div className="pt-brand">Happy Trader <span className="g">Portal</span></div>
         <nav className="pt-nav">
           {nav.map(([v, label]) => (
-            <button key={v} className={view === v || (v === 'accounts' && view === 'detail') ? 'on' : ''} onClick={() => { setView(v); }}>
+            <button key={v} data-testid={`pt-nav-${v}`} className={view === v || (v === 'accounts' && view === 'detail') ? 'on' : ''} onClick={() => { setView(v); }}>
               {label}
             </button>
           ))}
@@ -257,7 +257,7 @@ function AccountCard({ a, onOpen, onToast, reload }: { a: AccountSummary; onOpen
   };
   const terminal = a.status === 'ACTIVE' && (a.accountType === 'EVALUATION' || a.accountType === 'FUNDED_SIM');
   return (
-    <div className="pt-card">
+    <div className="pt-card" data-testid="pt-account-card">
       <div className="pt-row">
         <h3>{a.nickname || a.name}</h3>
         <span className={`pt-badge ${badgeClass(a.portalState)}`}><span className="dot" />{stateLabel(a.portalState)}</span>
@@ -305,7 +305,7 @@ function AccountDetail({ accountId, onBack }: { accountId: string; onBack: () =>
       </div>
       <p className="pt-sub">#{detail.publicId}{detail.product ? ` · ${detail.product.name}` : ''}</p>
 
-      <div className="pt-metrics">
+      <div className="pt-metrics" data-testid="pt-analytics-metrics">
         <Metric k="Net P&L" v={money(t.netPnlMicros)} cls={netClass} />
         <Metric k="Win rate" v={pct(t.winRate)} />
         <Metric k="Profit factor" v={t.profitFactor == null ? '—' : t.profitFactor.toFixed(2)} />

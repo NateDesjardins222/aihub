@@ -40,6 +40,12 @@ const OnboardingApp = lazy(() => import('./onboarding/OnboardingApp').then((m) =
  */
 const PortalApp = lazy(() => import('./portal/PortalApp').then((m) => ({ default: m.PortalApp })));
 
+/*
+ * Public certificate verification (/verify/:token). Unauthenticated and its own
+ * bundle — rendered before the sign-in gate so a shared/QR link works for anyone.
+ */
+const VerifyPage = lazy(() => import('./portal/VerifyPage').then((m) => ({ default: m.VerifyPage })));
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -62,6 +68,15 @@ export function App(): JSX.Element {
   useEffect(() => {
     void boot();
   }, [boot]);
+
+  // Public certificate verification: no session required, before the sign-in gate.
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/verify')) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Verifying…</div>}>
+        <VerifyPage />
+      </Suspense>
+    );
+  }
 
   // The icon gallery is a static development page: no session, no data.
   if (icons) {
