@@ -36,6 +36,7 @@ import {
 import { OrderRejectedError, type TradingEngine } from '../../trading/engine.js';
 import type { ExecutionProvider } from '../../execution/provider.js';
 import { toEnginePosition, unscaleTicks } from '../../trading/mapping.js';
+import { offsetToTicks, toTicks } from '../../trading/order-levels.js';
 import {
   dailyStats,
   loadAccountAndTemplate,
@@ -57,33 +58,6 @@ interface Deps {
    * still use `engine` directly.
    */
   readonly execution: ExecutionProvider;
-}
-
-/** Bracket offsets arrive in ticks, points or dollars; the engine wants ticks. */
-function offsetToTicks(
-  spec: ReturnType<typeof requireInstrument>,
-  offset: { unit: 'TICKS' | 'POINTS' | 'DOLLARS'; value: number } | null | undefined,
-  qty: number,
-): number | null {
-  if (!offset) return null;
-  switch (offset.unit) {
-    case 'TICKS':
-      return Math.max(1, Math.round(offset.value));
-    case 'POINTS':
-      return Math.max(1, Math.round(offset.value * ticksPerPoint(spec)));
-    case 'DOLLARS': {
-      const ticks = microsToTicks(spec, Math.round(offset.value * MICROS), qty);
-      return ticks > 0 ? ticks : null;
-    }
-  }
-}
-
-function toTicks(
-  spec: ReturnType<typeof requireInstrument>,
-  price: number | null | undefined,
-): number | null {
-  if (price === null || price === undefined) return null;
-  return priceToTicks(spec, price);
 }
 
 /** Verify the account belongs to the caller before anything else happens. */
