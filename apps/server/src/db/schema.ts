@@ -1259,3 +1259,182 @@ export const outboxEvents = pgTable(
   },
   (t) => [index('outbox_aggregate_idx').on(t.aggregateId)],
 );
+
+// ---------------------------------------------------------------------------
+// Happy Trader Funding — Payout Engine V1.
+//
+// The production-grade eligibility/state/accounting architecture that will one
+// day govern real funded payouts. No money leaves the firm in V1: PROCESSING
+// and PAID are operator/mock transitions. Every money term is pinned to the
+// account's immutable product version (config.payoutRules); nothing is
+// hard-coded. Mirrors the commercial lifecycle's idempotent-under-lock pattern.
+
+/**
+ * A Core/Select/Daily qualification cycle for a funded account.
+ *
+ * Core opens a fresh cycle after every approved payout (winning days reset).
+ * Daily opens one cycle and, once its initial winning-days + buffer are met,
+ * flips `dailyModeUnlocked` and never requires 5 winning days again.
+ */
+export const payoutCycles = pgTable(
+  'payout_cycles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    model: varchar('model', { length: 8 }).notNull(),
+    /** 1-based cycle number; drives the progressive request cap. */
+    ordinal: integer('ordinal').notNull(),
+    /** Winning-day window start (exclusive). Days on/before this do not count. */
+    startedOn: date('started_on'),
+    /** DAILY: buffer + initial winning days established, payouts unlocked. */
+    dailyModeUnlocked: boolean('daily_mode_unlocked').notNull().default(false),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('payout_cycles_account_ordinal').on(t.accountId, t.ordinal),
+    index('payout_cycles_org_idx').on(t.organizationId),
+  ],
+);
+
+/**
+ * One payout request and its state-machine position.
+ *
+ * The balance is debited exactly once, at APPROVED; the ledger DEBIT is the
+ * proof. `version` is a CAS guard so two operators approving at once cannot both
+ * act. `idempotencyKey` makes a duplicate request (refresh, retry) a no-op.
+ */
+export const payoutRequests = pgTable(
+  'payout_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The product version whose payoutRules governed this request. */
+    productVersionId: uuid('product_version_id').references(() => accountProfileVersions.id),
+    cycleId: uuid('cycle_id').references(() => payoutCycles.id),
+    state: varchar('state', { length: 20 }).notNull().default('REQUESTED'),
+    requestedGrossMicros: micros('requested_gross_micros').notNull(),
+    grossEligibleMicros: micros('gross_eligible_micros'),
+    traderShareMicros: micros('trader_share_micros'),
+    firmShareMicros: micros('firm_share_micros'),
+    feesMicros: micros('fees_micros').notNull().default(0),
+    balanceAdjustmentMicros: micros('balance_adjustment_micros'),
+    protectedBufferMicros: micros('protected_buffer_micros'),
+    withdrawableBeforeMicros: micros('withdrawable_before_micros'),
+    /** Reason codes + winning days + best day + consistency at request time. */
+    eligibilitySnapshot: jsonb('eligibility_snapshot'),
+    /** 1-based ordinal within the account's payouts; drives progressive caps. */
+    payoutOrdinal: integer('payout_ordinal').notNull().default(1),
+    /** RISK | FRAUD | MANUAL, null when none. */
+    holdKind: varchar('hold_kind', { length: 16 }),
+    reason: text('reason'),
+    idempotencyKey: varchar('idempotency_key', { length: 200 }),
+    version: integer('version').notNull().default(0),
+    requestedByUserId: uuid('requested_by_user_id').references(() => users.id),
+    decidedByUserId: uuid('decided_by_user_id').references(() => users.id),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('payout_requests_idem_key').on(t.organizationId, t.idempotencyKey),
+    index('payout_requests_org_state_idx').on(t.organizationId, t.state),
+    index('payout_requests_account_idx').on(t.accountId),
+  ],
+);
+
+/**
+ * The append-only payout ledger. Never updated or deleted (a trigger enforces
+ * it). One row per money event: the DEBIT at approval, an optional REVERSAL if a
+ * later step fails, and the SETTLEMENT when marked paid. Given a request id the
+ * whole accounting is reconstructable. Trades are never touched to make a payout.
+ */
+export const payoutLedger = pgTable(
+  'payout_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    payoutRequestId: uuid('payout_request_id')
+      .notNull()
+      .references(() => payoutRequests.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    entryType: varchar('entry_type', { length: 16 }).notNull(),
+    amountMicros: micros('amount_micros').notNull(),
+    balanceBeforeMicros: micros('balance_before_micros').notNull(),
+    balanceAfterMicros: micros('balance_after_micros').notNull(),
+    grossEligibleMicros: micros('gross_eligible_micros'),
+    traderShareMicros: micros('trader_share_micros'),
+    firmShareMicros: micros('firm_share_micros'),
+    protectedBufferMicros: micros('protected_buffer_micros'),
+    productVersionId: uuid('product_version_id').references(() => accountProfileVersions.id),
+    meta: jsonb('meta'),
+    createdAt: now(),
+  },
+  (t) => [
+    // The debit/settlement of a request happens at most once — this is the
+    // structural guard that a duplicate approval or webhook cannot double-move.
+    uniqueIndex('payout_ledger_request_entry').on(t.payoutRequestId, t.entryType),
+    index('payout_ledger_account_idx').on(t.accountId),
+    index('payout_ledger_org_idx').on(t.organizationId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Economics Simulator V1 — owner-only, synthetic. No FKs to trader/account
+// data; a run is a pure computation cached for the owner. Deleting all of these
+// changes nothing in production.
+
+export const economicsScenarios = pgTable(
+  'economics_scenarios',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    name: varchar('name', { length: 120 }).notNull(),
+    baseScenario: varchar('base_scenario', { length: 40 }),
+    assumptions: jsonb('assumptions').notNull(),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('economics_scenarios_org_idx').on(t.organizationId)],
+);
+
+export const economicsRuns = pgTable(
+  'economics_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    scenarioId: uuid('scenario_id').references(() => economicsScenarios.id),
+    seed: bigint('seed', { mode: 'number' }).notNull(),
+    purchases: integer('purchases').notNull(),
+    /** The assumption set frozen at run time, so the result is reproducible. */
+    assumptions: jsonb('assumptions').notNull(),
+    /** Aggregates + per product/size + sensitivity + Monte Carlo distributions. */
+    results: jsonb('results').notNull(),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [index('economics_runs_org_idx').on(t.organizationId)],
+);

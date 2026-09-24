@@ -120,6 +120,13 @@
       "when": 1790088476819,
       "tag": "0016_trader_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790088477819,
+      "tag": "0017_payouts",
+      "breakpoints": true
     }
   ]
 }
