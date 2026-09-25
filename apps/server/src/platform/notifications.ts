@@ -59,7 +59,14 @@ export type NotificationType =
   | 'ENFORCEMENT_INFORMATION_REQUESTED'
   | 'ENFORCEMENT_DECISION'
   | 'ENFORCEMENT_HOLD_RELEASED'
-  | 'ENFORCEMENT_APPEAL_UPDATE';
+  | 'ENFORCEMENT_APPEAL_UPDATE'
+  // Milestone 12 — customer-facing support notices.
+  | 'SUPPORT_TICKET_CREATED'
+  | 'SUPPORT_STAFF_REPLY'
+  | 'SUPPORT_INFO_NEEDED'
+  | 'SUPPORT_RESOLVED'
+  | 'SUPPORT_REOPENED'
+  | 'SUPPORT_REMEDIATION_COMPLETED';
 
 /** Channel policy: SMS is reserved for verification, milestones, payout, security. */
 const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
@@ -97,6 +104,12 @@ const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
   ENFORCEMENT_DECISION: ['EMAIL'],
   ENFORCEMENT_HOLD_RELEASED: ['EMAIL'],
   ENFORCEMENT_APPEAL_UPDATE: ['EMAIL'],
+  SUPPORT_TICKET_CREATED: ['EMAIL'],
+  SUPPORT_STAFF_REPLY: ['EMAIL'],
+  SUPPORT_INFO_NEEDED: ['EMAIL'],
+  SUPPORT_RESOLVED: ['EMAIL'],
+  SUPPORT_REOPENED: ['EMAIL'],
+  SUPPORT_REMEDIATION_COMPLETED: ['EMAIL'],
 };
 
 const TEMPLATE_VERSION = 'v1';
@@ -199,6 +212,18 @@ function render(type: NotificationType, data: Record<string, unknown>): { subjec
         subject: 'An update on your appeal',
         body: 'There is an update on your appeal. Please open your account to see the current status.',
       };
+    case 'SUPPORT_TICKET_CREATED':
+      return { subject: 'We received your request', body: 'Thank you — we received your support request and will be in touch. You can follow it from your dashboard.' };
+    case 'SUPPORT_STAFF_REPLY':
+      return { subject: 'A reply to your support request', body: 'Our team replied to your support request. Open your dashboard to read it.' };
+    case 'SUPPORT_INFO_NEEDED':
+      return { subject: 'We need a little more information', body: 'Your support request needs some more information from you. Please open your dashboard to reply.' };
+    case 'SUPPORT_RESOLVED':
+      return { subject: 'Your support request is resolved', body: 'We have resolved your support request. Open your dashboard to see the resolution.' };
+    case 'SUPPORT_REOPENED':
+      return { subject: 'Your support request was reopened', body: 'Your support request has been reopened and our team is looking at it again.' };
+    case 'SUPPORT_REMEDIATION_COMPLETED':
+      return { subject: 'An update on your support request', body: 'An action related to your support request has been completed. Open your dashboard for details.' };
   }
 }
 

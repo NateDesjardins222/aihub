@@ -35,6 +35,8 @@ import { ownerFinanceRoutes } from './routes/owner-finance.js';
 import { ownerAffiliateRoutes } from './routes/owner-affiliates.js';
 import { affiliatePublicRoutes } from './routes/affiliate-public.js';
 import { affiliatePortalRoutes } from './routes/affiliate-portal.js';
+import { ownerSupportRoutes } from './routes/owner-support.js';
+import { supportPortalRoutes } from './routes/support-portal.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -430,6 +432,9 @@ export async function buildApp(): Promise<BuiltApp> {
   // Affiliate program: public intake/tracking + authenticated self-service portal.
   await app.register(affiliatePublicRoutes(), { prefix: '/api/v1/affiliates' });
   await app.register(affiliatePortalRoutes(), { prefix: '/api/v1/affiliates' });
+  // Customer Support + Disputes + Resolution (M12).
+  await app.register(ownerSupportRoutes(), { prefix: '/api/v1/admin/ops' });
+  await app.register(supportPortalRoutes(), { prefix: '/api/v1/support' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });
