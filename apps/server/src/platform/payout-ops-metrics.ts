@@ -7,9 +7,9 @@
  * the target raises an operational SLA-breach alert; it never accuses the customer
  * or alters eligibility.
  */
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { payoutOperations, payoutReconciliationRecords, payoutRequests } from '../db/schema.js';
+import { accounts, payoutOperations, payoutReconciliationRecords, payoutRequests, users } from '../db/schema.js';
 import { events } from './events.js';
 import { systemClock, type Clock } from './clock.js';
 import { getOpsConfig } from './payout-ops-config.js';
@@ -119,20 +119,19 @@ export async function ownerOverview(db: Database, organizationId: string, clock:
     .where(and(eq(payoutReconciliationRecords.organizationId, organizationId), sql`${payoutReconciliationRecords.mismatchType} <> 'NONE'`));
 
   // Dollar figures from the linked requests (trader share).
-  const dollars = async (opState: string[]): Promise<{ count: number; micros: number }> => {
-    const [row] = await db.execute(sql`
-      SELECT count(*)::int AS c, coalesce(sum(pr.trader_share_micros),0)::bigint AS m
-      FROM payout_operations po JOIN payout_requests pr ON pr.id = po.payout_request_id
-      WHERE po.organization_id = ${organizationId} AND po.requested_at >= ${dayStart}
-        AND po.op_state = ANY(${opState})
-    `) as unknown as Array<{ c: number; m: string | number }>;
+  const dollars = async (opStates: string[]): Promise<{ count: number; micros: number }> => {
+    const [row] = await db
+      .select({ c: sql<number>`count(*)::int`, m: sql<number>`coalesce(sum(${payoutRequests.traderShareMicros}),0)::bigint` })
+      .from(payoutOperations)
+      .innerJoin(payoutRequests, eq(payoutRequests.id, payoutOperations.payoutRequestId))
+      .where(and(eq(payoutOperations.organizationId, organizationId), gte(payoutOperations.requestedAt, dayStart), inArray(payoutOperations.opState, opStates)));
     return { count: Number(row?.c ?? 0), micros: Number(row?.m ?? 0) };
   };
-  const requestedDollars = await db.execute(sql`
-    SELECT coalesce(sum(pr.requested_gross_micros),0)::bigint AS m
-    FROM payout_operations po JOIN payout_requests pr ON pr.id = po.payout_request_id
-    WHERE po.organization_id = ${organizationId} AND po.requested_at >= ${dayStart}
-  `) as unknown as Array<{ m: string | number }>;
+  const [reqDollars] = await db
+    .select({ m: sql<number>`coalesce(sum(${payoutRequests.requestedGrossMicros}),0)::bigint` })
+    .from(payoutOperations)
+    .innerJoin(payoutRequests, eq(payoutRequests.id, payoutOperations.payoutRequestId))
+    .where(and(eq(payoutOperations.organizationId, organizationId), gte(payoutOperations.requestedAt, dayStart)));
   const submittedDollars = await dollars(['SUBMITTED', 'PROCESSING', 'PAID', 'RECONCILED']);
   const paidDollars = await dollars(['PAID', 'RECONCILED']);
 
@@ -144,7 +143,7 @@ export async function ownerOverview(db: Database, organizationId: string, clock:
     requestedToday: recentOps.length,
     submittedToday: submittedDollars.count,
     paidToday: paidDollars.count,
-    dollarsRequestedMicros: Number(requestedDollars[0]?.m ?? 0),
+    dollarsRequestedMicros: Number(reqDollars?.m ?? 0),
     dollarsSubmittedMicros: submittedDollars.micros,
     dollarsPaidMicros: paidDollars.micros,
     fastLaneRate: fastLaneCount / total,
@@ -167,25 +166,28 @@ export async function ownerOverview(db: Database, organizationId: string, clock:
 
 /** The list views for the owner console (fast lane, exceptions, processing, …). */
 export async function listOperations(db: Database, organizationId: string, filter: { opStates?: string[]; limit?: number } = {}): Promise<Array<OpRow & { requestedGrossMicros: number; traderShareMicros: number | null; accountPublicId: string | null; traderEmail: string | null }>> {
-  const rows = await db.execute(sql`
-    SELECT po.*, pr.requested_gross_micros, pr.trader_share_micros, a.public_id AS account_public_id, u.email AS trader_email
-    FROM payout_operations po
-    JOIN payout_requests pr ON pr.id = po.payout_request_id
-    JOIN accounts a ON a.id = po.account_id
-    LEFT JOIN users u ON u.id = a.user_id
-    WHERE po.organization_id = ${organizationId}
-      ${filter.opStates && filter.opStates.length > 0 ? sql`AND po.op_state = ANY(${filter.opStates})` : sql``}
-    ORDER BY po.requested_at DESC
-    LIMIT ${filter.limit ?? 200}
-  `) as unknown as Array<Record<string, unknown>>;
-  // Map snake_case rows to a camelCase-ish shape the routes forward.
+  const conds = [eq(payoutOperations.organizationId, organizationId)];
+  if (filter.opStates && filter.opStates.length > 0) conds.push(inArray(payoutOperations.opState, filter.opStates));
+  const rows = await db
+    .select({
+      op: payoutOperations,
+      requestedGrossMicros: payoutRequests.requestedGrossMicros,
+      traderShareMicros: payoutRequests.traderShareMicros,
+      accountPublicId: accounts.publicId,
+      traderEmail: users.email,
+    })
+    .from(payoutOperations)
+    .innerJoin(payoutRequests, eq(payoutRequests.id, payoutOperations.payoutRequestId))
+    .innerJoin(accounts, eq(accounts.id, payoutOperations.accountId))
+    .leftJoin(users, eq(users.id, accounts.userId))
+    .where(and(...conds))
+    .orderBy(desc(payoutOperations.requestedAt))
+    .limit(filter.limit ?? 200);
   return rows.map((r) => ({
-    ...(r as unknown as OpRow),
-    requestedGrossMicros: Number(r['requested_gross_micros'] ?? 0),
-    traderShareMicros: r['trader_share_micros'] == null ? null : Number(r['trader_share_micros']),
-    accountPublicId: (r['account_public_id'] as string) ?? null,
-    traderEmail: (r['trader_email'] as string) ?? null,
+    ...r.op,
+    requestedGrossMicros: r.requestedGrossMicros,
+    traderShareMicros: r.traderShareMicros,
+    accountPublicId: r.accountPublicId ?? null,
+    traderEmail: r.traderEmail ?? null,
   }));
 }
-
-void payoutRequests;

@@ -137,7 +137,7 @@ export async function treasuryGate(
       FROM payout_operations po
       JOIN payout_requests pr ON pr.id = po.payout_request_id
       WHERE po.organization_id = ${organizationId}
-        AND po.submitted_at >= ${since}
+        AND po.submitted_at >= ${since.toISOString()}::timestamptz
         AND po.op_state IN ('SUBMITTED','PROCESSING','PAID','RECONCILED')
     `) as unknown as Array<{ total: string | number }>;
     const total = Number(agg?.total ?? 0);

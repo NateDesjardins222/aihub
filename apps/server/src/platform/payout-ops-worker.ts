@@ -9,10 +9,11 @@
  * it is no longer PAYABLE, so two workers can never double-submit. A server restart
  * simply picks the durable rows back up.
  */
-import { sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { systemClock, type Clock } from './clock.js';
 import { reconcilePayout, submitPayable } from './payout-operations.js';
+import { payoutOperations } from '../db/schema.js';
 import { getOpsConfig } from './payout-ops-config.js';
 import { markSlaBreachIfNeeded } from './payout-ops-metrics.js';
 
@@ -44,17 +45,20 @@ export async function reconcileStaleBatch(db: Database, organizationId: string, 
   const config = await getOpsConfig(db, organizationId);
   const staleMs = (config.reconStaleThresholdSeconds ?? 900) * 1000;
   const cutoff = new Date(clock.now() - staleMs);
-  const rows = await db.execute(sql`
-    SELECT payout_request_id FROM payout_operations
-    WHERE organization_id = ${organizationId}
-      AND op_state IN ('SUBMITTED','PROCESSING')
-      AND submitted_at IS NOT NULL AND submitted_at < ${cutoff}
-    ORDER BY submitted_at ASC
-    LIMIT ${opts.limit ?? 20}
-  `) as unknown as Array<{ payout_request_id: string }>;
+  const rows = await db
+    .select({ id: payoutOperations.payoutRequestId })
+    .from(payoutOperations)
+    .where(and(
+      eq(payoutOperations.organizationId, organizationId),
+      inArray(payoutOperations.opState, ['SUBMITTED', 'PROCESSING']),
+      isNotNull(payoutOperations.submittedAt),
+      lt(payoutOperations.submittedAt, cutoff),
+    ))
+    .orderBy(asc(payoutOperations.submittedAt))
+    .limit(opts.limit ?? 20);
   let n = 0;
   for (const row of rows) {
-    try { await reconcilePayout(db, row.payout_request_id, { trigger: 'PERIODIC', clock }); n += 1; } catch { /* keep going */ }
+    try { await reconcilePayout(db, row.id, { trigger: 'PERIODIC', clock }); n += 1; } catch { /* keep going */ }
   }
   return n;
 }

@@ -353,7 +353,7 @@ describe('PAID requires authoritative provider evidence', () => {
     const o = await op(rid);
     const paidHook = mockPayoutProvider().advance(o.idempotencyKey, 'PAID')!;
     await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: paidHook.providerEventId, providerPayoutId: paidHook.providerPayoutId, normalizedType: 'PAYOUT_PAID' });
-    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: 'late_processing_evt', providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
+    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: `late_processing_evt_${rid}`, providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
     expect((await op(rid)).opState).toBe('PAID');
   });
 
@@ -408,7 +408,7 @@ describe('returned payment + cancellation', () => {
     const paidHook = mockPayoutProvider().advance(o.idempotencyKey, 'PAID')!;
     await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: paidHook.providerEventId, providerPayoutId: paidHook.providerPayoutId, normalizedType: 'PAYOUT_PAID' });
     const settledBefore = await db.select().from(payoutLedger).where(and(eq(payoutLedger.payoutRequestId, rid), eq(payoutLedger.entryType, 'SETTLEMENT')));
-    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: 'return_evt', providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_RETURNED' });
+    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: `return_evt_${rid}`, providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_RETURNED' });
     expect((await op(rid)).opState).toBe('RETURNED');
     // Settlement ledger history is preserved (never deleted).
     const settledAfter = await db.select().from(payoutLedger).where(and(eq(payoutLedger.payoutRequestId, rid), eq(payoutLedger.entryType, 'SETTLEMENT')));
@@ -432,8 +432,8 @@ describe('provider fail-closed + config', () => {
     await runFastLane(db, rid);
     await submitPayable(db, rid);
     const o = await op(rid);
-    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: 'dup_evt_1', providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
-    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: 'dup_evt_1', providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
+    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: `dup_evt_1_${rid}`, providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
+    await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: `dup_evt_1_${rid}`, providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
     const rows = await db.select().from(payoutProviderEvents).where(eq(payoutProviderEvents.providerEventId, 'dup_evt_1'));
     expect(rows).toHaveLength(1);
   });

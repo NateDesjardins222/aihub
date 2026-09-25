@@ -314,11 +314,19 @@ export async function submitPayable(db: Database, payoutRequestId: string, opts:
     const config = await getOpsConfig(scoped, op.organizationId);
     const traderShare = request!.traderShareMicros ?? request!.requestedGrossMicros;
 
-    // Re-check the gate at submission time — the world may have changed.
+    // Re-check the gate at submission time — the world may have changed. A
+    // treasury/provider block here is a DELAY, not a terminal exception: the
+    // payout is already APPROVED (owed), so it stays PAYABLE and the durable
+    // worker resumes it once conditions clear. The advisory category + message
+    // surface "approved, temporarily delayed" without denying anyone.
     const gate = await treasuryGate(scoped, op.organizationId, traderShare, config);
     if (!gate.ok) {
-      // Delayed, not denied: the payout stays economically APPROVED (owed).
-      return routeException(scoped, op, gate.category, gate.reason, clock);
+      const delayed = await patchOp(scoped, op.id, {
+        opState: 'PAYABLE', exceptionCategory: gate.category,
+        customerSafeCategory: 'UNDER_REVIEW', lastError: gate.reason,
+      });
+      await events.publish(scoped, { type: 'payout.exception', organizationId: op.organizationId, accountId: op.accountId, payload: { payoutRequestId, category: gate.category, delayed: true } });
+      return delayed;
     }
 
     const provider = resolvePayoutProvider(op.provider);
