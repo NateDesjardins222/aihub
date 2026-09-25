@@ -16,6 +16,7 @@ import { events } from './events.js';
 import { enqueueOutbox } from './outbox.js';
 import { SYSTEM_ACTOR, type Actor } from './actor.js';
 import { orderAccountId } from './commerce-fulfillment.js';
+import { reverseCommissionForOrder } from './affiliate-commissions.js';
 
 type CommercialOrderRow = typeof commercialOrders.$inferSelect;
 
@@ -102,6 +103,8 @@ export async function handleRefund(
   // If an account was provisioned, hold it for owner review (outside the order tx).
   const accountId = await orderAccountId(db, order.id);
   if (accountId) await holdAccount(db, accountId, `Refund on order ${order.id}`, actor);
+  // Reverse any affiliate commission for this order (idempotent; §18).
+  await reverseCommissionForOrder(db, order.id, `refund: ${input.reason ?? 'provider_refund'}`, actor).catch(() => undefined);
   return { status: 'REFUNDED', heldAccountId: accountId };
 }
 
@@ -140,6 +143,10 @@ export async function handleDispute(
 
   if (input.opened && accountId) {
     await holdAccount(db, accountId, `Dispute opened on order ${order.id}`, actor);
+  }
+  // A chargeback reverses any affiliate commission for this order (idempotent; §19).
+  if (input.opened) {
+    await reverseCommissionForOrder(db, order.id, `chargeback: ${input.reason ?? 'dispute_opened'}`, actor).catch(() => undefined);
   }
   return { status: input.opened ? 'DISPUTE_OPENED' : 'DISPUTE_CLOSED', heldAccountId: accountId };
 }
