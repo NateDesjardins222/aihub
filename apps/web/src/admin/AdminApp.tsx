@@ -30,6 +30,7 @@ import { AdminSystemPage } from './pages/SystemPage';
 import { AdminInfraPage } from './pages/InfraPage';
 import { AdminCertificateStorePage } from './pages/CertificateStorePage';
 import { AdminEnforcementPage } from './pages/EnforcementPage';
+import { AdminPayoutOperationsPage } from './pages/PayoutOperationsPage';
 import './Admin.css';
 
 export type AdminRoute =
@@ -48,6 +49,7 @@ export type AdminRoute =
   | { name: 'PRODUCTS' }
   | { name: 'PRODUCT'; key: string }
   | { name: 'ENFORCEMENT' }
+  | { name: 'PAYOUT_OPS' }
   | { name: 'SYSTEM' }
   | { name: 'INFRA' }
   | { name: 'CERTSTORE' };
@@ -73,6 +75,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
     return parts[1] ? { name: 'PRODUCT', key: decodeURIComponent(parts[1]) } : { name: 'PRODUCTS' };
   }
   if (parts[0] === 'enforcement') return { name: 'ENFORCEMENT' };
+  if (parts[0] === 'payout-operations' || parts[0] === 'payout-ops') return { name: 'PAYOUT_OPS' };
   if (parts[0] === 'system') return { name: 'SYSTEM' };
   if (parts[0] === 'infrastructure' || parts[0] === 'infra') return { name: 'INFRA' };
   if (parts[0] === 'certificate-store' || parts[0] === 'certstore') return { name: 'CERTSTORE' };
@@ -109,6 +112,8 @@ export function adminPath(route: AdminRoute): string {
       return `/admin/products/${encodeURIComponent(route.key)}`;
     case 'ENFORCEMENT':
       return '/admin/enforcement';
+    case 'PAYOUT_OPS':
+      return '/admin/payout-operations';
     case 'SYSTEM':
       return '/admin/system';
     case 'INFRA':
@@ -130,6 +135,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'FUNDING' }, label: 'Funding' },
   { route: { name: 'PAYOUTS' }, label: 'Payouts' },
   { route: { name: 'ENFORCEMENT' }, label: 'Enforcement' },
+  { route: { name: 'PAYOUT_OPS' }, label: 'Payout Ops' },
   { route: { name: 'ECONOMICS' }, label: 'Economics' },
   { route: { name: 'AUDIT' }, label: 'Audit' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
@@ -223,6 +229,9 @@ export function AdminApp(): JSX.Element {
         ) : null}
         {route.name === 'ENFORCEMENT' ? (
           <AdminEnforcementPage mayMutate={mayMutate} maySuper={role === 'SUPER_ADMIN'} />
+        ) : null}
+        {route.name === 'PAYOUT_OPS' ? (
+          <AdminPayoutOperationsPage mayMutate={mayMutate} maySuper={role === 'SUPER_ADMIN'} />
         ) : null}
         {route.name === 'SYSTEM' ? <AdminSystemPage /> : null}
         {route.name === 'INFRA' ? <AdminInfraPage /> : null}

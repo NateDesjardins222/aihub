@@ -276,7 +276,53 @@ export const adminApi = {
     api.post<{ requestId: string }>(`${BASE}/enforcement/cases/${id}/info-request`, body),
   enfDecideAppeal: (appealId: string, body: { decision: string; rationaleInternal?: string; customerSafeExplanation?: string; overrideSameReviewer?: boolean }) =>
     api.post<{ ok: boolean }>(`${BASE}/enforcement/appeals/${appealId}/decide`, body),
+
+  // -- payout operations (M8) -----------------------------------------------
+  poOverview: () => api.get<PoOverview>(`${BASE}/payout-ops/overview`),
+  poOperations: (state?: string) =>
+    api.get<{ operations: PoOperation[] }>(`${BASE}/payout-ops/operations${state ? `?state=${encodeURIComponent(state)}` : ''}`),
+  poOperation: (id: string) => api.get<PoOperationDetail>(`${BASE}/payout-ops/operations/${id}`),
+  poConfig: () => api.get<{ config: PoConfig; providerHealth: { id: string; isMock: boolean; configured: boolean; state: string } }>(`${BASE}/payout-ops/config`),
+  poUpdateConfig: (body: Partial<PoConfig> & { expectedVersion?: number }) =>
+    api.patch<{ config: PoConfig }>(`${BASE}/payout-ops/config`, body),
+  poCircuitBreaker: (action: 'OPEN' | 'CLOSE', reason: string) =>
+    api.post<{ ok: boolean; open: boolean }>(`${BASE}/payout-ops/circuit-breaker`, { action, reason }),
+  poRetry: (id: string) => api.post<{ opState: string }>(`${BASE}/payout-ops/operations/${id}/retry`, {}),
+  poReconcile: (id: string) => api.post<{ mismatchType: string; autoResolved: boolean }>(`${BASE}/payout-ops/operations/${id}/reconcile`, {}),
+  poManualResolution: (id: string, body: { resolution: 'MARK_PAID' | 'ACKNOWLEDGE_RETURN'; reason: string; externalReference: string; amountMicros: number }) =>
+    api.post<{ opState: string }>(`${BASE}/payout-ops/operations/${id}/manual-resolution`, body),
 };
+
+export interface PoOverview {
+  requestedToday: number; submittedToday: number; paidToday: number;
+  dollarsRequestedMicros: number; dollarsSubmittedMicros: number; dollarsPaidMicros: number;
+  fastLaneRate: number; exceptionRate: number; providerFailureRate: number; reconciliationMismatchRate: number;
+  medianRequestToSubmissionMs: number | null; p90RequestToSubmissionMs: number | null;
+  p95RequestToSubmissionMs: number | null; p99RequestToSubmissionMs: number | null;
+  overFiveMinuteCount: number; exceptionCount: number; failedCount: number; returnedCount: number; reconciliationMismatchCount: number;
+  provider: { id: string; configured: boolean; state: string }; circuitBreakerOpen: boolean;
+}
+export interface PoOperation {
+  payoutRequestId: string; accountId: string; accountPublicId: string | null; traderEmail: string | null;
+  opState: string; exceptionCategory: string | null; customerSafeCategory: string | null; fastLane: boolean;
+  provider: string | null; providerPayoutId: string | null; requestedGrossMicros: number; traderShareMicros: number | null;
+  slaBreached: boolean; requestedAt: string; submittedAt: string | null; paidAt: string | null; requestToSubmissionMs: number | null;
+}
+export interface PoConfig {
+  productionEnabled: boolean; provider: string | null; reserveThresholdMicros: number;
+  maxSingleAutoMicros: number | null; maxAggregateAutoPerDayMicros: number | null;
+  circuitBreakerOpen: boolean; reconStaleThresholdSeconds: number; version: number;
+}
+export interface PoOperationDetail {
+  operation: Record<string, unknown> & { opState: string; exceptionCategory: string | null; fastLane: boolean; providerPayoutId: string | null; slaBreached: boolean };
+  request: Record<string, unknown> | null;
+  checks: Array<{ id: string; checkType: string; result: string; category: string | null; detailSafe: string | null; createdAt: string }>;
+  attempts: Array<{ id: string; attemptNumber: number; provider: string; normalizedResult: string | null; errorCategory: string | null; retryable: boolean; providerPayoutId: string | null; startedAt: string; completedAt: string | null }>;
+  providerEvents: Array<{ id: string; providerEventId: string; normalizedType: string; processingState: string; receivedAt: string }>;
+  reconciliation: Array<{ id: string; mismatchType: string; resolution: string; autoResolved: boolean; createdAt: string }>;
+  timings: { requestToApprovalMs: number | null; requestToSubmissionMs: number | null; submissionToAckMs: number | null; submissionToPaidMs: number | null };
+  timeline: Array<{ at: string; label: string }>;
+}
 
 export interface CustomerSearchRow {
   customerIdentityId: string;

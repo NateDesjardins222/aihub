@@ -22,6 +22,7 @@ import { BillingPage } from './pages/BillingPage';
 import { SupportPage } from './pages/SupportPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ReviewPage } from './pages/ReviewPage';
+import { PayoutMethodsPage } from './pages/PayoutMethodsPage';
 import './Portal.css';
 
 export type Route =
@@ -37,7 +38,8 @@ export type Route =
   | { name: 'verification' }
   | { name: 'security' }
   | { name: 'notifications' }
-  | { name: 'review' };
+  | { name: 'review' }
+  | { name: 'payout-methods' };
 
 const ACCOUNT_TABS = ['overview', 'performance', 'controls', 'rules', 'activity'];
 
@@ -48,7 +50,7 @@ export function parseRoute(pathname: string, hash: string): Route {
     return { name: 'account', id: parts[1], tab };
   }
   if (parts[0] === 'accounts') return { name: 'accounts' };
-  const simple = ['payouts', 'certificates', 'achievements', 'billing', 'support', 'profile', 'verification', 'security', 'notifications', 'review'] as const;
+  const simple = ['payouts', 'certificates', 'achievements', 'billing', 'support', 'profile', 'verification', 'security', 'notifications', 'review', 'payout-methods'] as const;
   if (simple.includes(parts[0] as (typeof simple)[number])) return { name: parts[0] } as Route;
   return { name: 'dashboard' };
 }
@@ -161,6 +163,7 @@ export function PortalApp(): JSX.Element {
         {route.name === 'billing' && <BillingPage accounts={accounts} />}
         {route.name === 'support' && <SupportPage />}
         {route.name === 'review' && <ReviewPage onToast={showToast} />}
+        {route.name === 'payout-methods' && <PayoutMethodsPage onToast={showToast} />}
         {(route.name === 'profile' || route.name === 'verification' || route.name === 'security' || route.name === 'notifications') && (
           <ProfilePage section={route.name} onToast={showToast} />
         )}
@@ -233,7 +236,7 @@ function ProfileMenu({ email, onGo, onSignOut }: { email: string; onGo: (r: Rout
   }, [open]);
   const initial = (email[0] ?? '?').toUpperCase();
   const items: Array<[Route['name'], string]> = [
-    ['profile', 'Profile'], ['verification', 'Verification'], ['security', 'Security'], ['notifications', 'Notifications'], ['review', 'Account review'],
+    ['profile', 'Profile'], ['verification', 'Verification'], ['security', 'Security'], ['notifications', 'Notifications'], ['review', 'Account review'], ['payout-methods', 'Payout methods'],
   ];
   return (
     <div className="pt-switcher" onClick={(e) => e.stopPropagation()}>
