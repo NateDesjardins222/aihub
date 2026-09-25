@@ -204,6 +204,13 @@
    "when": 1758900000000,
    "tag": "0028_payout_operations",
    "breakpoints": true
+  },
+  {
+   "idx": 29,
+   "version": "7",
+   "when": 1759000000000,
+   "tag": "0029_rithmic_provider",
+   "breakpoints": true
   }
  ]
 }

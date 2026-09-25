@@ -113,6 +113,15 @@ export function AdminInfraPage(): JSX.Element {
                 value={data.posture.rithmic.configState}
                 hint={data.posture.rithmic.description}
               />
+              <PostureRow
+                label="Rithmic (R | Protocol)"
+                value={data.posture.rithmic.enabled ? `${data.posture.rithmic.environment} · enabled` : 'disabled'}
+                hint={
+                  data.posture.rithmic.enabled
+                    ? `system=${data.posture.rithmic.systemName ?? '—'} host=${data.posture.rithmic.endpointHost ?? '—'} · market-data ${data.posture.rithmic.marketDataEnabled ? 'on' : 'off'} · execution ${data.posture.rithmic.executionEnabled ? 'on' : 'off'}`
+                    : 'Rithmic Test wire integration is off (RITHMIC_ENABLED=false)'
+                }
+              />
             </div>
           </>
         ) : null}

@@ -12,6 +12,7 @@ import { rithmicCodec, type RithmicCodec, type DecodedMessage } from '../protoco
 import { MessageRouter } from '../protocol/router.js';
 import { HeartbeatWatchdog, backoffDelayMs, mayRetry, type BackoffPolicy, DEFAULT_BACKOFF } from '../../infra/connection-lifecycle.js';
 import type { RithmicTransport, TransportFactory } from '../transport/transport.js';
+import { rithmicMetrics } from '../metrics.js';
 
 export type PlantKind = 'DISCOVERY' | 'TICKER' | 'ORDER' | 'HISTORY' | 'PNL' | 'REPOSITORY';
 
@@ -146,6 +147,7 @@ export class RithmicPlant {
   }
 
   private async connectOnce(): Promise<void> {
+    rithmicMetrics.inc('connection_attempts');
     this.setState('CONNECTING');
     const transport = this.opts.transportFactory(this.opts.url);
     this.transport = transport;
@@ -170,6 +172,7 @@ export class RithmicPlant {
         this.metrics.lastErrorCode = code;
         this.metrics.lastErrorAt = this.now();
         // A hard auth failure is terminal; a transient one reconnects.
+        rithmicMetrics.inc('auth_failure');
         if (code === 'AUTH_FAILED' || code === 'PERMISSION_DENIED' || code === 'AGREEMENT_REQUIRED') {
           this.setState('FAILED');
           try { transport.close(); } catch { /* ignore */ }
@@ -181,6 +184,7 @@ export class RithmicPlant {
     } else {
       this.setState('AUTHENTICATED'); // discovery needs no login
     }
+    if (this.opts.login && this.state === 'AUTHENTICATED') rithmicMetrics.inc('auth_success');
     this.attempts = 0;
     this.startHeartbeat();
     if (this.opts.onAuthenticated) await this.opts.onAuthenticated(this);
@@ -199,11 +203,13 @@ export class RithmicPlant {
     this.metrics.messagesReceived += 1;
     this.metrics.lastMessageAt = this.now();
     this.watchdog.feed(this.now());
+    if (this.kind === 'TICKER') rithmicMetrics.inc('market_messages');
     let decoded: DecodedMessage;
     try {
       decoded = this.codec.decode(data);
     } catch {
       this.metrics.decodeErrors += 1;
+      rithmicMetrics.inc('decode_failures');
       return; // never throw out of the message pump
     }
     if (decoded.name === 'ResponseHeartbeat' || decoded.name === 'RequestHeartbeat') {
@@ -332,6 +338,7 @@ export class RithmicPlant {
       return;
     }
     this.metrics.reconnectCount += 1;
+    rithmicMetrics.inc('reconnects');
     this.setState('RECONNECTING');
     const delay = withJitter(backoffDelayMs(this.backoff, this.attempts));
     this.reconnectTimer = this.scheduler.setTimeout(() => { void this.connectOnce(); }, delay);

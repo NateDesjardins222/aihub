@@ -379,7 +379,17 @@ export interface AdminInfra {
     externalLiveEnabled: boolean;
     marketDataProvider: string;
     marketDataRedistribution: string;
-    rithmic: { configState: 'UNCONFIGURED' | 'CONFIGURED'; description: string };
+    rithmic: {
+      configState: 'UNCONFIGURED' | 'CONFIGURED';
+      description: string;
+      enabled: boolean;
+      environment: string;
+      systemName: string | null;
+      endpointHost: string | null;
+      marketDataEnabled: boolean;
+      executionEnabled: boolean;
+      metrics: Record<string, number | null>;
+    };
   };
   providers: AdminProviderHealth[];
 }

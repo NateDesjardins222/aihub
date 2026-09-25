@@ -24,6 +24,8 @@ import type {
 import type { ConnectionState, ConnectionStatus, FeedMode } from '@atlas/contracts';
 import { env } from '../config/env.js';
 import { rithmicConfigState, redactedRithmicDescription } from './rithmic-config.js';
+import { rithmicMetrics } from '../rithmic/metrics.js';
+import { hostOf } from '../rithmic/plants/connection-manager.js';
 import type { ExecutionRegistry } from '../execution/registry.js';
 import type { MarketDataService } from '../marketdata/service.js';
 
@@ -43,6 +45,15 @@ export interface InfraPosture {
   readonly rithmic: {
     readonly configState: ProviderConfigState;
     readonly description: string;
+    /** M9 wire-integration posture (all redacted; never a secret). */
+    readonly enabled: boolean;
+    readonly environment: string;
+    readonly systemName: string | null;
+    readonly endpointHost: string | null;
+    readonly marketDataEnabled: boolean;
+    readonly executionEnabled: boolean;
+    /** Bounded-cardinality provider metrics for observability. */
+    readonly metrics: Record<string, number | null>;
   };
 }
 
@@ -139,6 +150,13 @@ export function buildInfraHealth(deps: {
       rithmic: {
         configState: rithmicConfigState(),
         description: redactedRithmicDescription(),
+        enabled: e.RITHMIC_ENABLED === true,
+        environment: e.RITHMIC_ENVIRONMENT,
+        systemName: e.RITHMIC_SYSTEM_NAME ?? e.RITHMIC_SYSTEM ?? null,
+        endpointHost: e.RITHMIC_ENDPOINT ? hostOf(e.RITHMIC_ENDPOINT) : null,
+        marketDataEnabled: e.RITHMIC_MARKET_DATA_ENABLED === true,
+        executionEnabled: e.RITHMIC_EXECUTION_ENABLED === true,
+        metrics: rithmicMetrics.snapshot(),
       },
     },
     providers,

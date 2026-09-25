@@ -13,6 +13,7 @@ import type { ExternalOrderState } from '@atlas/contracts';
 import type { RithmicPlant } from './plant.js';
 import { rithmicCodec, type RithmicCodec } from '../protocol/codec.js';
 import { buildNewOrder, executionDedupKey, mapExchangeNotification, mapRithmicNotification } from '../domain/order-normalize.js';
+import { rithmicMetrics } from '../metrics.js';
 
 export interface RithmicAccount {
   readonly fcmId: string;
@@ -136,9 +137,16 @@ export class RithmicOrderService {
   async submit(input: ExternalSubmitInput, ctx: { fcmId: string; ibId: string; providerAccountId: string; exchange: string; tradeRoute: string }, timeoutMs = 12_000): Promise<SubmitResult> {
     this.basketToAtlasByTag(input.clientOrderId, input.atlasOrderId);
     const payload = buildNewOrder(this.codec, input, ctx);
+    rithmicMetrics.inc('orders_submitted');
     return new Promise<SubmitResult>((resolve) => {
       let settled = false;
-      const finish = (r: SubmitResult): void => { if (settled) return; settled = true; off(); clearTimeout(timer); resolve(r); };
+      const finish = (r: SubmitResult): void => {
+        if (settled) return; settled = true; off(); clearTimeout(timer);
+        if (r.state === 'SUBMITTED') rithmicMetrics.inc('order_acks');
+        else if (r.state === 'REJECTED') rithmicMetrics.inc('order_rejects');
+        else rithmicMetrics.inc('unknown_submissions');
+        resolve(r);
+      };
       const timer = setTimeout(() => finish({ atlasOrderId: input.atlasOrderId, clientOrderId: input.clientOrderId, providerOrderId: null, state: 'SUBMISSION_UNKNOWN', reason: 'no acknowledgement within timeout' }), timeoutMs);
       const off = this.plant.router.on('ResponseNewOrder', (m) => {
         const msg = m.message; if (!msg) return;
@@ -162,11 +170,13 @@ export class RithmicOrderService {
 
   async cancel(basketId: string, providerAccountId: string): Promise<void> {
     const manualOrAuto = this.codec.enumValue('RequestNewOrder', 'OrderPlacement', 'AUTO');
+    rithmicMetrics.inc('order_cancels');
     this.plant.send('RequestCancelOrder', { basket_id: basketId, account_id: providerAccountId, manual_or_auto: manualOrAuto, user_msg: ['cxl'] });
   }
 
   async modify(basketId: string, providerAccountId: string, patch: { qty?: number; limitPrice?: number | null; stopPrice?: number | null; exchange: string }): Promise<void> {
     const manualOrAuto = this.codec.enumValue('RequestNewOrder', 'OrderPlacement', 'AUTO');
+    rithmicMetrics.inc('order_modifies');
     const payload: Record<string, unknown> = { basket_id: basketId, account_id: providerAccountId, exchange: patch.exchange, manual_or_auto: manualOrAuto, user_msg: ['mod'] };
     if (patch.qty != null) payload['quantity'] = patch.qty;
     if (patch.limitPrice != null) payload['price'] = patch.limitPrice;
@@ -185,8 +195,9 @@ export class RithmicOrderService {
     const isFill = report.lastFillQty > 0 || report.state === 'FILLED' || report.state === 'PARTIALLY_FILLED';
     if (isFill) {
       const key = executionDedupKey(msg);
-      if (this.seenExec.has(key)) return;
+      if (this.seenExec.has(key)) { rithmicMetrics.inc('duplicate_executions_ignored'); return; }
       this.seenExec.add(key);
+      rithmicMetrics.inc('fills');
     }
     this.updateWorking(basket, report);
     void notifyType;

@@ -2967,3 +2967,68 @@ export const payoutCircuitBreakerEvents = pgTable(
     index('payout_breaker_events_org_idx').on(t.organizationId, t.createdAt),
   ],
 );
+
+// ============================================================================
+// Rithmic / external-provider infrastructure (Milestone 9).
+// Reuses M4 external_orders / external_execution_events / provider_account_mappings
+// / reconciliation_state; these add the genuinely-new durable concepts.
+// ============================================================================
+
+/** Provider accounts discovered from an authenticated Rithmic login (never keyed by email). */
+export const providerDiscoveredAccounts = pgTable(
+  'provider_discovered_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    provider: varchar('provider', { length: 24 }).notNull(),
+    environment: varchar('environment', { length: 16 }).notNull(),
+    fcmId: varchar('fcm_id', { length: 64 }),
+    ibId: varchar('ib_id', { length: 64 }),
+    accountId: varchar('account_id', { length: 120 }).notNull(),
+    displayName: varchar('display_name', { length: 160 }),
+    currency: varchar('currency', { length: 8 }),
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('provider_discovered_accounts_key').on(t.provider, t.environment, t.accountId),
+    index('provider_discovered_accounts_org_idx').on(t.organizationId),
+  ],
+);
+
+/** Append-only provider connection lifecycle events (redacted; never a secret). */
+export const providerConnectionEvents = pgTable(
+  'provider_connection_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    provider: varchar('provider', { length: 24 }).notNull(),
+    plant: varchar('plant', { length: 16 }).notNull(),
+    event: varchar('event', { length: 24 }).notNull(),
+    detail: text('detail'),
+    createdAt: now(),
+  },
+  (t) => [index('provider_connection_events_idx').on(t.provider, t.createdAt)],
+);
+
+/** Append-only reconciliation run records (orders/executions/positions). */
+export const providerReconciliationRuns = pgTable(
+  'provider_reconciliation_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    provider: varchar('provider', { length: 24 }).notNull(),
+    scope: varchar('scope', { length: 16 }).notNull(),
+    trigger: varchar('trigger', { length: 16 }).notNull(),
+    matched: integer('matched').notNull().default(0),
+    mismatch: integer('mismatch').notNull().default(0),
+    unknown: integer('unknown').notNull().default(0),
+    requiresReview: integer('requires_review').notNull().default(0),
+    autoResolved: integer('auto_resolved').notNull().default(0),
+    detail: jsonb('detail'),
+    createdAt: now(),
+  },
+  (t) => [index('provider_reconciliation_runs_idx').on(t.provider, t.createdAt)],
+);
