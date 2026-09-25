@@ -14,11 +14,22 @@ import { globalSearch } from '../../platform/search.js';
 import { queryOpsEvents, correlationTrace } from '../../platform/ops-events.js';
 import { explainObject } from '../../platform/object-explorer.js';
 import { inspectAccount, inspectPayout } from '../../platform/inspectors.js';
+import { commandCenter, dailyBrief } from '../../platform/command-center.js';
 
 export function ownerObservabilityRoutes() {
   return async (app: FastifyInstance): Promise<void> => {
     const { db } = getDb();
     app.addHook('preHandler', requireUser);
+
+    // Command Center: the owner landing aggregate + daily brief.
+    app.get('/command-center', { preHandler: requirePermission('system.read') }, async () => {
+      const org = await defaultOrganizationId(db);
+      return commandCenter(db, org);
+    });
+    app.get('/daily-brief', { preHandler: requirePermission('system.read') }, async () => {
+      const org = await defaultOrganizationId(db);
+      return dailyBrief(db, org);
+    });
 
     app.get('/search', { preHandler: requirePermission('customers.read') }, async (request) => {
       const org = await defaultOrganizationId(db);

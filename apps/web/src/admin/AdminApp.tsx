@@ -12,6 +12,8 @@
  */
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { useSession } from '../state/session';
+import { useChartStore } from '../state/chart-store';
+import { adminApi } from './api';
 import { AdminOverviewPage } from './pages/OverviewPage';
 import { AdminUsersPage } from './pages/UsersPage';
 import { AdminUserPage } from './pages/UserPage';
@@ -31,9 +33,13 @@ import { AdminInfraPage } from './pages/InfraPage';
 import { AdminCertificateStorePage } from './pages/CertificateStorePage';
 import { AdminEnforcementPage } from './pages/EnforcementPage';
 import { AdminPayoutOperationsPage } from './pages/PayoutOperationsPage';
+import { CommandCenterPage, OwnerSystemPage, StaffPage } from './pages/OwnerOsPages';
 import './Admin.css';
 
 export type AdminRoute =
+  | { name: 'COMMAND' }
+  | { name: 'OWNER_SYSTEM' }
+  | { name: 'STAFF' }
   | { name: 'OVERVIEW' }
   | { name: 'USERS' }
   | { name: 'USER'; id: string }
@@ -56,6 +62,9 @@ export type AdminRoute =
 
 export function parseAdminRoute(pathname: string): AdminRoute {
   const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
+  if (parts[0] === 'command') return { name: 'COMMAND' };
+  if (parts[0] === 'ops-system') return { name: 'OWNER_SYSTEM' };
+  if (parts[0] === 'staff') return { name: 'STAFF' };
   // "traders" and "users" are the same directory - the owner vocabulary and the
   // schema vocabulary for the same people.
   if (parts[0] === 'users' || parts[0] === 'traders') {
@@ -84,6 +93,12 @@ export function parseAdminRoute(pathname: string): AdminRoute {
 
 export function adminPath(route: AdminRoute): string {
   switch (route.name) {
+    case 'COMMAND':
+      return '/admin/command';
+    case 'OWNER_SYSTEM':
+      return '/admin/ops-system';
+    case 'STAFF':
+      return '/admin/staff';
     case 'USERS':
       return '/admin/traders';
     case 'USER':
@@ -126,6 +141,7 @@ export function adminPath(route: AdminRoute): string {
 }
 
 const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
+  { route: { name: 'COMMAND' }, label: 'Command Center' },
   { route: { name: 'OVERVIEW' }, label: 'Overview' },
   { route: { name: 'USERS' }, label: 'Traders' },
   { route: { name: 'ACCOUNTS' }, label: 'Accounts' },
@@ -139,8 +155,10 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'ECONOMICS' }, label: 'Economics' },
   { route: { name: 'AUDIT' }, label: 'Audit' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
+  { route: { name: 'OWNER_SYSTEM' }, label: 'Ops System' },
   { route: { name: 'SYSTEM' }, label: 'System' },
   { route: { name: 'INFRA' }, label: 'Infrastructure' },
+  { route: { name: 'STAFF' }, label: 'Staff & Access' },
   { route: { name: 'CERTSTORE' }, label: 'Certificate Store' },
 ];
 
@@ -199,6 +217,8 @@ export function AdminApp(): JSX.Element {
           ))}
         </nav>
         <div className="adm-spacer" />
+        <EnvBadge />
+        <ThemeToggle />
         <span className="adm-role" title="Your role decides what you may do">
           {role.replace('_', ' ')}
         </span>
@@ -209,6 +229,9 @@ export function AdminApp(): JSX.Element {
       </header>
 
       <main className="adm-main">
+        {route.name === 'COMMAND' ? <CommandCenterPage /> : null}
+        {route.name === 'OWNER_SYSTEM' ? <OwnerSystemPage /> : null}
+        {route.name === 'STAFF' ? <StaffPage /> : null}
         {route.name === 'OVERVIEW' ? <AdminOverviewPage go={go} /> : null}
         {route.name === 'USERS' ? <AdminUsersPage go={go} /> : null}
         {route.name === 'USER' ? <AdminUserPage id={route.id} go={go} /> : null}
@@ -247,6 +270,65 @@ function sameSection(current: AdminRoute, target: AdminRoute): boolean {
   if (target.name === 'ACCOUNTS' && current.name === 'ACCOUNT') return true;
   if (target.name === 'PRODUCTS' && current.name === 'PRODUCT') return true;
   return false;
+}
+
+/**
+ * Dark/light toggle for the console. It reuses the platform theme engine
+ * (`setTheme`) so the choice is the same one the terminal uses and applies to
+ * the shared design tokens — no second, drifting palette. `themeMode` is set on
+ * the document by `applyTheme`, so it reflects the truth even for custom themes.
+ */
+function ThemeToggle(): JSX.Element {
+  const setTheme = useChartStore((s) => s.setTheme);
+  const themeId = useChartStore((s) => s.themeId);
+  const [light, setLight] = useState<boolean>(
+    () => document.documentElement.dataset['themeMode'] === 'light',
+  );
+  useEffect(() => {
+    setLight(document.documentElement.dataset['themeMode'] === 'light');
+  }, [themeId]);
+  return (
+    <button
+      type="button"
+      className="adm-theme-toggle"
+      data-testid="admin-theme-toggle"
+      title={light ? 'Switch to dark' : 'Switch to light'}
+      onClick={() => setTheme(light ? 'ATLAS_DARK' : 'CLEAN_LIGHT')}
+    >
+      {light ? '☾ Dark' : '☀ Light'}
+    </button>
+  );
+}
+
+/**
+ * The environment badge. It is deliberately honest (M10 §107): the label comes
+ * from the server's authoritative posture — the EXTERNAL_LIVE master gate — not
+ * from a guess or a build constant. Until the gate is truly enabled the console
+ * says SIMULATION, and it never renders a reassuring word it cannot back up.
+ */
+function EnvBadge(): JSX.Element {
+  const [state, setState] = useState<'loading' | 'live' | 'sim' | 'unknown'>('loading');
+  useEffect(() => {
+    let cancelled = false;
+    adminApi
+      .infra()
+      .then((d) => {
+        if (!cancelled) setState(d.posture.externalLiveEnabled ? 'live' : 'sim');
+      })
+      .catch(() => {
+        if (!cancelled) setState('unknown');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const label = state === 'live' ? 'LIVE' : state === 'sim' ? 'SIMULATION' : state === 'loading' ? '…' : 'ENV?';
+  const tone = state === 'live' ? 'adm-env-live' : state === 'sim' ? 'adm-env-sim' : 'adm-env-unknown';
+  return (
+    <span className={`adm-env ${tone}`} data-testid="admin-env-badge" title="External-live master gate (server-authoritative)">
+      {label}
+    </span>
+  );
 }
 
 /** A real link that navigates in place: middle-click and copy-link still work. */
