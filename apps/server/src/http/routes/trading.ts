@@ -22,6 +22,7 @@ import { normalizeEnvironment, unrealizedPnlMicros } from '@atlas/core';
 import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
 import { getDb } from '../../db/client.js';
+import { assertNotEngaged } from '../../platform/kill-switches.js';
 import {
   accounts,
   dailyAccountStats,
@@ -88,6 +89,12 @@ export function tradingRoutes(deps: Deps) {
       '/orders',
       { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
       async (request, reply) => {
+        // M10-F kill switches: block NEW/increasing exposure when engaged, before
+        // anything else. The risk-reducing endpoints (cancel, cancel-all, flatten,
+        // protect, reverse) are separate routes and are intentionally NOT gated.
+        await assertNotEngaged(db, 'MAINTENANCE_MODE');
+        await assertNotEngaged(db, 'DISABLE_NEW_ORDERS');
+
         const body = orderRequestSchema.parse(request.body);
         await assertOwnership(request.user!.id, body.accountId);
 
