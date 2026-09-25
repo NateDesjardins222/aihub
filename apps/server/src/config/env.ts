@@ -21,7 +21,7 @@ const envSchema = z.object({
    * from "use the professional feed" (an operator decision). See
    * docs/market-data-licensing-gate.md.
    */
-  MARKET_DATA_PROVIDER: z.enum(['yahoo-delayed', 'replay', 'databento']).default('yahoo-delayed'),
+  MARKET_DATA_PROVIDER: z.enum(['yahoo-delayed', 'replay', 'databento', 'rithmic']).default('yahoo-delayed'),
   MARKET_DATA_POLL_MS: z.coerce.number().int().default(5_000),
   /**
    * Quotes older than this are stale: order entry is disabled and the UI is told.

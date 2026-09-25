@@ -13,6 +13,11 @@ process.env['RITHMIC_USER'] = 'atlas-secret-user';
 process.env['RITHMIC_PASSWORD'] = 'atlas-super-secret-password';
 process.env['RITHMIC_FCM_ID'] = 'FCM-SECRET';
 process.env['RITHMIC_IB_ID'] = 'IB-SECRET';
+// M9 wire-connection config: enabled + endpoint + system + creds → CONFIGURED,
+// but market data left disabled so connect() refuses without a network attempt.
+process.env['RITHMIC_ENABLED'] = 'true';
+process.env['RITHMIC_ENDPOINT'] = 'wss://test.gateway.example:443';
+process.env['RITHMIC_SYSTEM_NAME'] = 'Rithmic Test';
 
 import { describe, expect, it } from 'vitest';
 import { RithmicMarketDataProvider } from '../marketdata/providers/rithmic.js';
@@ -33,10 +38,10 @@ function noSecret(s: string): void {
 }
 
 describe('Rithmic market-data scaffold (M4-D)', () => {
-  it('is configured here but refuses to connect (no dev kit) — never fakes CONNECTED', async () => {
+  it('is configured (M9) but refuses to connect while market data is disabled — never fakes CONNECTED', async () => {
     const p = new RithmicMarketDataProvider();
     expect(p.configState()).toBe('CONFIGURED');
-    await expect(p.connect()).rejects.toThrow();
+    await expect(p.connect()).rejects.toThrow(); // RITHMIC_MARKET_DATA_ENABLED=false
     const st = p.getConnectionStatus();
     expect(st.state).not.toBe('CONNECTED');
     expect(p.getQuote('NQ')).toBeNull();

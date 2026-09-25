@@ -12,6 +12,8 @@ import { SessionRecorder } from './recorder.js';
 import { YahooDelayedProvider } from './providers/yahoo.js';
 import { ReplayProvider } from './providers/replay.js';
 import { DatabentoProvider } from './providers/databento.js';
+import { RithmicMarketDataProvider } from './providers/rithmic.js';
+import { resolveRithmicConnection } from '../infra/rithmic-config.js';
 import type { MarketDataProvider } from './provider.js';
 
 export interface MarketDataStack {
@@ -38,6 +40,17 @@ export function createLiveProvider(): MarketDataProvider {
 function buildConfiguredProvider(replay: ReplayProvider): MarketDataProvider {
   const which = env().MARKET_DATA_PROVIDER;
   if (which === 'replay') return replay;
+  if (which === 'rithmic') {
+    // Deliberate selection, fail-fast (never a silent fallback to the dev feed).
+    const r = resolveRithmicConnection();
+    if (!r.ok) {
+      throw new Error(
+        `MARKET_DATA_PROVIDER=rithmic but Rithmic is not configured (${r.reason}). ` +
+          'Set RITHMIC_* server-side or choose a different provider. See docs/rithmic/rithmic-local-setup.md.',
+      );
+    }
+    return new RithmicMarketDataProvider();
+  }
   if (which === 'databento') {
     const apiKey = env().DATABENTO_API_KEY;
     if (!apiKey) {
