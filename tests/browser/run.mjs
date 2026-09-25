@@ -58,6 +58,7 @@ const SUITES = [
   'replay-brackets',
   'layout',
   'admin',
+  'enforcement-acceptance',
   'acceptance',
 ];
 const argv = process.argv.slice(2);

@@ -10,7 +10,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
-import { customerIdentities, users } from '../../db/schema.js';
+import { and } from 'drizzle-orm';
+import { customerIdentities, enforcementCases, users } from '../../db/schema.js';
 import { defaultOrganizationId } from '../../platform/provisioning.js';
 import { requireRole, requireUser } from '../auth-plugin.js';
 import { ApiError } from '../errors.js';
@@ -46,6 +47,22 @@ function mapError(err: unknown): never {
 async function caseOwnerUserId(db: ReturnType<typeof getDb>['db'], customerIdentityId: string): Promise<string | null> {
   const [row] = await db.select({ userId: customerIdentities.userId }).from(customerIdentities).where(eq(customerIdentities.id, customerIdentityId));
   return row?.userId ?? null;
+}
+
+/**
+ * Resolve a case the caller owns, by its public reference (HTR-XXXXXX) or its
+ * internal id, scoped to the caller's identity. Returns null when it is not
+ * theirs — the IDOR guard for the portal, which never trusts a client-supplied
+ * identifier to belong to the caller.
+ */
+async function caseForOwner(db: ReturnType<typeof getDb>['db'], ref: string, customerIdentityId: string) {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+  const isRef = /^HTR-[A-Z0-9]{6}$/i.test(ref);
+  if (!isUuid && !isRef) return null; // never send garbage to a uuid column
+  const column = isRef ? enforcementCases.publicRef : enforcementCases.id;
+  const [row] = await db.select().from(enforcementCases)
+    .where(and(eq(column, ref), eq(enforcementCases.customerIdentityId, customerIdentityId)));
+  return row ?? null;
 }
 
 // ============================================================================
@@ -221,14 +238,17 @@ export function enforcementPortalRoutes() {
       try { await respondToInformationRequest(db, { requestId: id, customerIdentityId: identityId, responseText: b.responseText }); return { ok: true }; } catch (e) { mapError(e); }
     });
 
+    // The customer only ever knows a case by its public reference (HTR-XXXXXX),
+    // never its internal id — so the appeal is looked up by (reference, owner).
+    // Accepting a UUID too keeps the endpoint robust to either identifier.
     app.post('/cases/:id/appeal', async (request) => {
-      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const { id } = z.object({ id: z.string().min(1).max(64) }).parse(request.params);
       const b = z.object({ statement: z.string().min(1).max(8000) }).parse(request.body);
       const identityId = await identityIdForUser(db, request.user!.id);
       if (!identityId) throw ApiError.notFound('NOT_FOUND', 'Not found.');
-      const c = await getCase(db, id);
-      if (!c || c.customerIdentityId !== identityId) throw ApiError.notFound('NOT_FOUND', 'Not found.');
-      try { const appeal = await submitAppeal(db, { caseId: id, customerIdentityId: identityId, customerStatement: b.statement, actor: { type: 'USER', userId: request.user!.id, label: request.user!.email, ip: request.ip } }); return { appealId: appeal.id, status: appeal.status }; } catch (e) { mapError(e); }
+      const c = await caseForOwner(db, id, identityId);
+      if (!c) throw ApiError.notFound('NOT_FOUND', 'Not found.');
+      try { const appeal = await submitAppeal(db, { caseId: c.id, customerIdentityId: identityId, customerStatement: b.statement, actor: { type: 'USER', userId: request.user!.id, label: request.user!.email, ip: request.ip } }); return { appealId: appeal.id, status: appeal.status }; } catch (e) { mapError(e); }
     });
 
     /** A customer-initiated security report becomes a signal (never accuses the customer). */

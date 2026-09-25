@@ -133,6 +133,17 @@ describe('trader portal IDOR', () => {
   it('a trader cannot reach the owner surface', async () => {
     expect((await call('GET', '/api/v1/admin/enforcement/cases', tokens.TRADER)).status).toBe(403);
   });
+  it('a trader appeals their own case by its PUBLIC REFERENCE, not an internal id', async () => {
+    // The customer only ever knows the HTR- reference; appealing by it must work.
+    const c = await openCase(db, { organizationId, customerIdentityId: traderIdentityId, category: 'ACCOUNT_OWNERSHIP', actor: { type: 'ADMIN' as const } });
+    await transitionCase(db, { caseId: c.id, to: 'UNDER_REVIEW', actor: { type: 'ADMIN' as const } });
+    // Confirm an adverse, appealable finding via the SUPER_ADMIN owner route.
+    const f = await call('POST', `/api/v1/admin/enforcement/cases/${c.id}/finding`, tokens.SUPER_ADMIN, { reasonCode: 'ACCOUNT_SHARING_CONFIRMED' });
+    expect(f.status).toBe(200);
+    const r = await call('POST', `/api/v1/portal/enforcement/cases/${c.publicRef}/appeal`, tokens.TRADER, { statement: 'This is my own account.' });
+    expect(r.status).toBe(200);
+    expect(r.json.status).toBe('SUBMITTED');
+  });
   it('a self-report is accepted from an authenticated trader', async () => {
     const r = await call('POST', '/api/v1/portal/enforcement/report', tokens.TRADER, { kind: 'CUSTOMER_REPORTED_ACCESS', detail: 'I saw a login I do not recognise.' });
     // The TRADER has no identity yet in this app instance path; ensure it does not 500.
