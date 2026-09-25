@@ -175,12 +175,13 @@ describe('certificates trigger ONLY from authoritative PAID, exactly once', () =
 
 describe('treasury / circuit breaker preserve liabilities', () => {
   it('opening the breaker after approval never un-debits or makes ineligible', async () => {
-    const f = await makeEligible();
+    const org = await freshOrg();
+    const f = await makeEligible(true, org.id, org.profileKey);
     const id = await reqId(f);
     await runFastLane(db, id); // approved + debited
     const [pr] = await db.select().from(payoutRequests).where(eq(payoutRequests.id, id));
     expect(pr!.state).toBe('APPROVED');
-    await openCircuitBreaker(db, organizationId, 'incident', SYSTEM_ACTOR);
+    await openCircuitBreaker(db, org.id, 'incident', SYSTEM_ACTOR);
     const o = await submitPayable(db, id);
     // Delayed, not denied: it stays PAYABLE (owed, will resume) with an advisory
     // treasury category — never a terminal exception and never un-debited.
@@ -214,14 +215,15 @@ describe('provider outage recovery + worker resume', () => {
   });
 
   it('the stale-reconcile batch reconciles a processing payout the provider has paid', async () => {
-    const f = await makeEligible();
+    const org = await freshOrg();
+    const f = await makeEligible(true, org.id, org.profileKey);
     const id = await reqId(f);
     await runFastLane(db, id); await submitPayable(db, id);
     const o = await op(id);
     mockPayoutProvider().advance(o.idempotencyKey, 'PAID');
     // Force it stale by backdating submittedAt.
     await db.update(payoutOperations).set({ submittedAt: new Date(Date.now() - 3_600_000) }).where(eq(payoutOperations.id, o.id));
-    const n = await reconcileStaleBatch(db, organizationId, { limit: 50 });
+    const n = await reconcileStaleBatch(db, org.id, { limit: 50 });
     expect(n).toBeGreaterThanOrEqual(1);
     const [pr] = await db.select().from(payoutRequests).where(eq(payoutRequests.id, id));
     expect(pr!.state).toBe('PAID');
