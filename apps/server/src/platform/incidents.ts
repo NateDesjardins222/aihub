@@ -48,18 +48,12 @@ export interface OpenIncidentInput {
   readonly actor?: Actor;
 }
 
-/** Find a non-resolved incident with the same dedupe key, or create one. */
-export async function openOrGroupIncident(db: Database, input: OpenIncidentInput): Promise<{ id: string; publicRef: string; grouped: boolean }> {
-  if (input.dedupeKey) {
-    const [existing] = await db
-      .select({ id: incidents.id, publicRef: incidents.publicRef })
-      .from(incidents)
-      .where(and(eq(incidents.dedupeKey, input.dedupeKey), ne(incidents.status, 'RESOLVED')))
-      .limit(1);
-    if (existing) return { id: existing.id, publicRef: existing.publicRef, grouped: true };
-  }
+// Advisory-lock namespace for dedupe-key serialization (arbitrary constant).
+const INCIDENT_DEDUPE_CLASS = 0x494e43; // 'INC'
+
+async function insertIncident(exec: Database, input: OpenIncidentInput): Promise<{ id: string; publicRef: string }> {
   const ref = publicRef();
-  const [row] = await db
+  const [row] = await exec
     .insert(incidents)
     .values({
       organizationId: input.organizationId, publicRef: ref, title: input.title, severity: input.severity ?? 'WARNING',
@@ -68,9 +62,36 @@ export async function openOrGroupIncident(db: Database, input: OpenIncidentInput
     })
     .returning({ id: incidents.id, publicRef: incidents.publicRef });
   if (input.actor) {
-    await recordAudit(db, { organizationId: input.organizationId, actor: input.actor, subjectType: 'ORGANIZATION', subjectId: null, action: 'incident.opened', newState: { publicRef: ref, severity: input.severity ?? 'WARNING' }, reason: input.title });
+    await recordAudit(exec, { organizationId: input.organizationId, actor: input.actor, subjectType: 'ORGANIZATION', subjectId: null, action: 'incident.opened', newState: { publicRef: ref, severity: input.severity ?? 'WARNING' }, reason: input.title });
   }
-  return { id: row!.id, publicRef: row!.publicRef, grouped: false };
+  return { id: row!.id, publicRef: row!.publicRef };
+}
+
+/**
+ * Find a non-resolved incident with the same dedupe key, or create one.
+ *
+ * When a dedupe key is present the check-then-insert runs inside a transaction
+ * behind a per-key advisory lock, so a concurrent storm of identical opens
+ * collapses to exactly ONE incident instead of racing to create duplicates
+ * (the "one incident, not hundreds" guarantee under real concurrency).
+ */
+export async function openOrGroupIncident(db: Database, input: OpenIncidentInput): Promise<{ id: string; publicRef: string; grouped: boolean }> {
+  if (!input.dedupeKey) {
+    const created = await insertIncident(db, input);
+    return { ...created, grouped: false };
+  }
+  const key = input.dedupeKey;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${INCIDENT_DEDUPE_CLASS}, hashtext(${key}))`);
+    const [existing] = await tx
+      .select({ id: incidents.id, publicRef: incidents.publicRef })
+      .from(incidents)
+      .where(and(eq(incidents.dedupeKey, key), ne(incidents.status, 'RESOLVED')))
+      .limit(1);
+    if (existing) return { id: existing.id, publicRef: existing.publicRef, grouped: true };
+    const created = await insertIncident(tx as unknown as Database, input);
+    return { ...created, grouped: false };
+  });
 }
 
 export async function linkToIncident(db: Database, incidentId: string, linkType: string, refId: string): Promise<void> {

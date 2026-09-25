@@ -35,30 +35,12 @@ export interface RaiseAlertInput {
 
 export interface RaisedAlert { readonly id: string; readonly deduped: boolean; readonly count: number }
 
-/**
- * Raise (or coalesce) an alert. Same open dedupe key → bump count + last_seen and
- * escalate severity if higher; otherwise a new OPEN alert. Idempotent-ish under
- * a storm: N identical raises produce ONE row with count N.
- */
-export async function raiseAlert(db: Database, input: RaiseAlertInput): Promise<RaisedAlert> {
-  const sevRank: Record<AlertSeverity, number> = { INFO: 0, NOTICE: 1, WARNING: 2, CRITICAL: 3, EMERGENCY: 4 };
-  if (input.dedupeKey) {
-    const [existing] = await db
-      .select()
-      .from(alerts)
-      .where(and(eq(alerts.dedupeKey, input.dedupeKey), eq(alerts.status, 'OPEN')))
-      .limit(1);
-    if (existing) {
-      const higher = sevRank[input.severity] > sevRank[existing.severity as AlertSeverity] ? input.severity : (existing.severity as AlertSeverity);
-      const [row] = await db
-        .update(alerts)
-        .set({ count: sql`${alerts.count} + 1`, lastSeenAt: new Date(), severity: higher, incidentId: input.incidentId ?? existing.incidentId, updatedAt: new Date() })
-        .where(eq(alerts.id, existing.id))
-        .returning({ id: alerts.id, count: alerts.count });
-      return { id: row!.id, deduped: true, count: row!.count };
-    }
-  }
-  const [row] = await db
+const SEV_RANK: Record<AlertSeverity, number> = { INFO: 0, NOTICE: 1, WARNING: 2, CRITICAL: 3, EMERGENCY: 4 };
+// Advisory-lock namespace for alert dedupe-key serialization (arbitrary constant).
+const ALERT_DEDUPE_CLASS = 0x414c54; // 'ALT'
+
+async function insertAlert(exec: Database, input: RaiseAlertInput): Promise<RaisedAlert> {
+  const [row] = await exec
     .insert(alerts)
     .values({
       organizationId: input.organizationId, severity: input.severity, category: input.category, title: input.title,
@@ -68,6 +50,36 @@ export async function raiseAlert(db: Database, input: RaiseAlertInput): Promise<
     })
     .returning({ id: alerts.id, count: alerts.count });
   return { id: row!.id, deduped: false, count: row!.count };
+}
+
+/**
+ * Raise (or coalesce) an alert. Same open dedupe key → bump count + last_seen and
+ * escalate severity if higher; otherwise a new OPEN alert. Under a concurrent
+ * storm the coalesce runs inside a transaction behind a per-key advisory lock, so
+ * N identical raises produce exactly ONE row with count N (never a race that
+ * splits the storm across duplicate rows).
+ */
+export async function raiseAlert(db: Database, input: RaiseAlertInput): Promise<RaisedAlert> {
+  if (!input.dedupeKey) return insertAlert(db, input);
+  const key = input.dedupeKey;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${ALERT_DEDUPE_CLASS}, hashtext(${key}))`);
+    const [existing] = await tx
+      .select()
+      .from(alerts)
+      .where(and(eq(alerts.dedupeKey, key), eq(alerts.status, 'OPEN')))
+      .limit(1);
+    if (existing) {
+      const higher = SEV_RANK[input.severity] > SEV_RANK[existing.severity as AlertSeverity] ? input.severity : (existing.severity as AlertSeverity);
+      const [row] = await tx
+        .update(alerts)
+        .set({ count: sql`${alerts.count} + 1`, lastSeenAt: new Date(), severity: higher, incidentId: input.incidentId ?? existing.incidentId, updatedAt: new Date() })
+        .where(eq(alerts.id, existing.id))
+        .returning({ id: alerts.id, count: alerts.count });
+      return { id: row!.id, deduped: true, count: row!.count };
+    }
+    return insertAlert(tx as unknown as Database, input);
+  });
 }
 
 export interface ListAlertsQuery { readonly status?: string; readonly severity?: string; readonly limit?: number }

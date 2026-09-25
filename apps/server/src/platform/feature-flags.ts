@@ -49,7 +49,20 @@ export async function setFlag(db: Database, input: SetFlagInput): Promise<{ key:
   const now = new Date();
   let row;
   if (existing) {
-    [row] = await db.update(featureFlags).set({ enabled: input.enabled, description: input.description ?? existing.description, updatedByUserId: input.actor.userId ?? null, updatedAt: now }).where(eq(featureFlags.id, existing.id)).returning();
+    // Conditional update guarded by the pre-image updatedAt. This closes the
+    // check-then-write race: under true concurrency two writers read the same
+    // updatedAt, but only the first UPDATE matches the WHERE; the second sees a
+    // changed row (0 updated) and is reported as a conflict rather than a silent
+    // lost update.
+    const guarded = input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== null;
+    const whereClause = guarded
+      ? and(eq(featureFlags.id, existing.id), eq(featureFlags.updatedAt, existing.updatedAt))
+      : eq(featureFlags.id, existing.id);
+    [row] = await db.update(featureFlags).set({ enabled: input.enabled, description: input.description ?? existing.description, updatedByUserId: input.actor.userId ?? null, updatedAt: now }).where(whereClause).returning();
+    if (!row && guarded) {
+      const [current] = await db.select({ updatedAt: featureFlags.updatedAt }).from(featureFlags).where(eq(featureFlags.id, existing.id));
+      throw ApiError.conflict('FLAG_CONFLICT', 'This flag was changed by someone else; reload and retry.', { currentUpdatedAt: current?.updatedAt.toISOString() ?? null });
+    }
   } else {
     [row] = await db.insert(featureFlags).values({ organizationId: input.organizationId, key: input.key, environment, enabled: input.enabled, description: input.description ?? null, updatedByUserId: input.actor.userId ?? null, updatedAt: now }).returning();
   }
