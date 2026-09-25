@@ -14,7 +14,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "rithmic:generate": "tsx scripts/rithmic-generate.ts",
     "rithmic:verify": "tsx scripts/rithmic-verify.ts",
-    "affiliate:economics": "tsx scripts/affiliate-economics-stress.ts"
+    "affiliate:economics": "tsx scripts/affiliate-economics-stress.ts",
+    "economics:validate": "tsx scripts/economics-validate.ts"
   },
   "dependencies": {
     "@atlas/contracts": "workspace:*",

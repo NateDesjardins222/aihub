@@ -624,6 +624,67 @@ export interface EconomicsRun {
   reserve: { reserveMicros: number; tailMicros: number; basisMicros: number };
 }
 
+// -- Economics engine M13.0 (v2): full lifecycle + time/cash-flow ------------
+
+export interface EconV2Product {
+  key: string; family: string; size: string;
+  customers: number; purchases: number; resets: number; passes: number; fundedAccounts: number; payoutEvents: number;
+  resetRevenueMicros: number; grossSalesMicros: number; netRevenueMicros: number; traderPayoutMicros: number; affiliateExpenseMicros: number;
+  processingCostMicros: number; refundLossMicros: number; chargebackLossMicros: number;
+  operatingAllocationMicros: number; acquisitionCostMicros: number; contributionMicros: number;
+}
+export interface EconV2CashPeriod {
+  monthIndex: number; cashInMicros: number; traderPayoutCashMicros: number; affiliateCashMicros: number;
+  refundCashMicros: number; chargebackCashMicros: number; operatingCashMicros: number; acquisitionCashMicros: number;
+  netCashMicros: number; cumulativeCashMicros: number; reserveRequirementMicros: number; distributableCashMicros: number;
+}
+export interface EconV2Result {
+  customers: number; horizonDays: number; months: number;
+  purchases: number; resets: number; repurchases: number; passes: number; passRate: number;
+  fundedAccounts: number; payoutRecipients: number; purchaseToPayoutPct: number;
+  initialRevenueMicros: number; resetRevenueMicros: number; repurchaseRevenueMicros: number;
+  grossSalesMicros: number; refundLossMicros: number; chargebackLossMicros: number; netRevenueMicros: number;
+  refunds: number; chargebacks: number;
+  payouts: {
+    eligibleAccounts: number; requestedEvents: number; approvedEvents: number; paidEvents: number;
+    grossPayoutMicros: number; traderShareMicros: number; firmShareMicros: number;
+    paidTraderShareMicros: number; approvedUnpaidTraderShareMicros: number;
+  };
+  affiliate: {
+    attributedCustomers: number; commissionsCreated: number; grossCommissionMicros: number; maturedCommissionMicros: number;
+    paidCommissionMicros: number; unpaidLiabilityMicros: number; reversedCommissionMicros: number; canceledCommissionMicros: number;
+    netCommissionExpenseMicros: number; costPctOfAttributableRevenue: number;
+  };
+  processingCostMicros: number; chargebackFeeMicros: number; operatingCostMicros: number; acquisitionCostMicros: number;
+  contributionMicros: number; contributionMargin: number;
+  treasury: {
+    cashCollectedMicros: number; payoutLiabilityMicros: number; affiliateLiabilityMicros: number;
+    refundReserveMicros: number; operatingReserveMicros: number; taxPlaceholderMicros: number; safetyReserveMicros: number;
+    requiredReserveMicros: number; distributableCashMicros: number;
+  };
+  timeline: EconV2CashPeriod[];
+  byProduct: EconV2Product[];
+}
+export interface EconV2Dist { worseTail: 'LOW' | 'HIGH'; mean: number; p10: number; p25: number; median: number; p75: number; p90: number; }
+export interface EconV2SensPoint { value: number; contributionMicros: number; contributionMargin: number; netRevenueMicros: number; traderPayoutMicros: number; }
+export interface EconV2BreakEven { lever: string; breakEvenValue: number | null; decreasingInLever: boolean; baselineContributionMicros: number; }
+export interface EconV2MonteCarlo {
+  trials: number;
+  revenue: EconV2Dist; payoutExpense: EconV2Dist; contribution: EconV2Dist; reserveRequirement: EconV2Dist; distributableCash: EconV2Dist; fundedAccounts: EconV2Dist;
+  probContributionNegative: number; probLiquidityStress: number; suggestedSafetyReserveMicros: number;
+}
+export interface EconV2Bundle {
+  engineVersion: string; modelVersion: string; generatedAt: string;
+  scenario: string; seed: number; customers: number; horizonDays: number; trials: number;
+  assumptions: Record<string, unknown>;
+  result: EconV2Result;
+  sensitivity: Record<string, EconV2SensPoint[]>;
+  monteCarlo: EconV2MonteCarlo;
+  breakEven: EconV2BreakEven[];
+}
+export interface EconV2RunResponse { id: string | null; bundle: EconV2Bundle; }
+export interface EconV2ConfigResponse { scenarios: string[]; base: Record<string, unknown>; authoritative: Record<string, number>; products: unknown[]; }
+
 // ---- enforcement (M7) -------------------------------------------------------
 // A case is a review, never a verdict; severity is triage urgency, not guilt.
 export interface EnfCase {

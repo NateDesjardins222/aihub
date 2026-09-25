@@ -27,6 +27,8 @@ import type {
   PayoutCase,
   PayoutExposure,
   EconomicsRun,
+  EconV2ConfigResponse,
+  EconV2RunResponse,
   ProductConfig,
   TraderNote,
   EnfCase,
@@ -213,6 +215,14 @@ export const adminApi = {
   economicsScenarios: () => api.get<{ scenarios: string[]; base: unknown }>(`${BASE}/economics/scenarios`),
   economicsRun: (body: { scenario: string; seed: number; purchases: number; trials: number }) =>
     api.post<EconomicsRun>(`${BASE}/economics/run`, body),
+
+  // Economics engine M13.0 (v2): full lifecycle + time/cash-flow.
+  economicsV2Config: () => api.get<EconV2ConfigResponse>(`${BASE}/economics/v2/config`),
+  economicsV2Run: (body: {
+    scenario?: string; assumptions?: Record<string, unknown>; seed: number; customers: number; horizonDays: number; trials: number; persist?: boolean;
+  }) => api.post<EconV2RunResponse>(`${BASE}/economics/v2/run`, body),
+  economicsV2ExportUrl: (id: string, format: 'summary' | 'product' | 'timeline' | 'assumptions' | 'json') =>
+    `${BASE}/economics/v2/run/${id}/export?format=${format}`,
 
   // Customer / Commerce console.
   customers: (q: string) =>

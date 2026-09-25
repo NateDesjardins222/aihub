@@ -26,6 +26,7 @@ import { AdminRiskPage } from './pages/RiskPage';
 import { AdminFundingPage } from './pages/FundingPage';
 import { AdminPayoutsPage } from './pages/PayoutsPage';
 import { AdminEconomicsPage } from './pages/EconomicsPage';
+import { AdminEconomicsV2Page } from './pages/EconomicsV2Page';
 import { AdminCustomersPage } from './pages/CustomersPage';
 import { AdminAuditPage } from './pages/AuditPage';
 import { AdminSystemPage } from './pages/SystemPage';
@@ -53,6 +54,7 @@ export type AdminRoute =
   | { name: 'FUNDING' }
   | { name: 'PAYOUTS' }
   | { name: 'ECONOMICS' }
+  | { name: 'ECONOMICS_V2' }
   | { name: 'AUDIT' }
   | { name: 'PRODUCTS' }
   | { name: 'PRODUCT'; key: string }
@@ -84,6 +86,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   if (parts[0] === 'risk') return { name: 'RISK' };
   if (parts[0] === 'funding') return { name: 'FUNDING' };
   if (parts[0] === 'payouts') return { name: 'PAYOUTS' };
+  if (parts[0] === 'economics' && parts[1] === 'v2') return { name: 'ECONOMICS_V2' };
   if (parts[0] === 'economics') return { name: 'ECONOMICS' };
   if (parts[0] === 'audit') return { name: 'AUDIT' };
   if (parts[0] === 'products') {
@@ -131,6 +134,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/payouts';
     case 'ECONOMICS':
       return '/admin/economics';
+    case 'ECONOMICS_V2':
+      return '/admin/economics/v2';
     case 'AUDIT':
       return '/admin/audit';
     case 'PRODUCTS':
@@ -175,6 +180,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'ENFORCEMENT' }, label: 'Enforcement' },
   { route: { name: 'PAYOUT_OPS' }, label: 'Payout Ops' },
   { route: { name: 'ECONOMICS' }, label: 'Economics' },
+  { route: { name: 'ECONOMICS_V2' }, label: 'Economics (M13)' },
   { route: { name: 'AUDIT' }, label: 'Audit' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
   { route: { name: 'OWNER_SYSTEM' }, label: 'Ops System' },
@@ -267,6 +273,7 @@ export function AdminApp(): JSX.Element {
         {route.name === 'FUNDING' ? <AdminFundingPage go={go} /> : null}
         {route.name === 'PAYOUTS' ? <AdminPayoutsPage go={go} mayMutate={mayMutate} /> : null}
         {route.name === 'ECONOMICS' ? <AdminEconomicsPage /> : null}
+        {route.name === 'ECONOMICS_V2' ? <AdminEconomicsV2Page /> : null}
         {route.name === 'AUDIT' ? <AdminAuditPage go={go} /> : null}
         {route.name === 'PRODUCTS' ? <AdminProductsPage go={go} /> : null}
         {route.name === 'PRODUCT' ? (
