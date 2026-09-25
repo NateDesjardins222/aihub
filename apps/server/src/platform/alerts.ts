@@ -107,3 +107,35 @@ export async function alertSummary(db: Database, organizationId: string) {
 }
 
 void isNull;
+
+// ---------------------------------------------------------------------------
+// Notification channels + subscriptions (M10-H)
+// ---------------------------------------------------------------------------
+
+import { alertSubscriptions } from '../db/schema.js';
+
+/** Truthful channel configuration status. IN_APP always works; others honest. */
+export function notificationChannels(): Array<{ channel: string; status: 'CONFIGURED' | 'NOT_CONFIGURED' }> {
+  return [
+    { channel: 'IN_APP', status: 'CONFIGURED' },
+    { channel: 'EMAIL', status: process.env['RESEND_API_KEY'] || process.env['EMAIL_PROVIDER'] ? 'CONFIGURED' : 'NOT_CONFIGURED' },
+    { channel: 'SMS', status: process.env['TWILIO_AUTH_TOKEN'] || process.env['SMS_PROVIDER'] ? 'CONFIGURED' : 'NOT_CONFIGURED' },
+    { channel: 'PUSH', status: process.env['PUSH_PROVIDER'] ? 'CONFIGURED' : 'NOT_CONFIGURED' },
+  ];
+}
+
+export async function listSubscriptions(db: Database, userId: string) {
+  return db.select().from(alertSubscriptions).where(eq(alertSubscriptions.userId, userId));
+}
+
+export async function setSubscription(
+  db: Database,
+  input: { organizationId: string | null; userId: string; channel: string; minSeverity?: string; enabled?: boolean; categories?: unknown },
+): Promise<void> {
+  const [existing] = await db.select({ id: alertSubscriptions.id }).from(alertSubscriptions).where(and(eq(alertSubscriptions.userId, input.userId), eq(alertSubscriptions.channel, input.channel)));
+  if (existing) {
+    await db.update(alertSubscriptions).set({ minSeverity: input.minSeverity ?? 'WARNING', enabled: input.enabled ?? true, categories: (input.categories ?? null) as never, updatedAt: new Date() }).where(eq(alertSubscriptions.id, existing.id));
+  } else {
+    await db.insert(alertSubscriptions).values({ organizationId: input.organizationId, userId: input.userId, channel: input.channel, minSeverity: input.minSeverity ?? 'WARNING', enabled: input.enabled ?? true, categories: (input.categories ?? null) as never });
+  }
+}
