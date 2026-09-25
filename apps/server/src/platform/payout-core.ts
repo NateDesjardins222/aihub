@@ -13,6 +13,13 @@ import { z } from 'zod';
 
 export const MICROS = 1_000_000;
 
+/**
+ * The universal maximum number of payout cycles an account may be paid before it
+ * completes. Lives here (the pure module) so the payout service and the economics
+ * engine share one authoritative constant. Re-exported from `payouts.ts`.
+ */
+export const MAX_PAYOUT_CYCLES = 5;
+
 export type PayoutModel = 'CORE' | 'SELECT' | 'DAILY';
 
 /**

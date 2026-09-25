@@ -42,6 +42,17 @@ import {
   withCapSchedule,
   type ScenarioName,
 } from '../../platform/economics-sim.js';
+// M13.0 economics engine (v2): full lifecycle + time/cash-flow + affiliate/refunds.
+import {
+  AUTHORITATIVE as ECON_AUTHORITATIVE,
+  SCENARIO_NAMES as ECON_SCENARIOS,
+  assumptionsSchema as econAssumptionsSchema,
+  defaultAssumptions as econDefaultAssumptions,
+  loadAuthoritativeProducts as econLoadProducts,
+  runEconomics,
+  serialize as econSerialize,
+  type ScenarioName as EconScenarioName,
+} from '../../platform/economics/index.js';
 
 const confirmed = z.object({ confirm: z.literal(true), reason: z.string().min(3).max(500) });
 
@@ -250,6 +261,106 @@ export function payoutRoutes() {
         .orderBy(desc(economicsRuns.createdAt))
         .limit(25);
       return { rows: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })) };
+    });
+
+    // -- M13.0 economics engine (owner-only, MODELED/SIMULATION — never accounting) --
+    // Runs are stored immutably in `economics_runs` (insert-only): the frozen
+    // assumptions + full bundle make every run reproducible and auditable. Never any
+    // production side effect. `purchases` column holds the customer count for this v2.
+
+    app.get('/admin/economics/v2/config', { preHandler: requireRole('SUPER_ADMIN') }, async () => ({
+      scenarios: ECON_SCENARIOS,
+      base: econDefaultAssumptions(),
+      authoritative: ECON_AUTHORITATIVE,
+      products: econLoadProducts(),
+    }));
+
+    app.post('/admin/economics/v2/run', { preHandler: requireRole('SUPER_ADMIN'), config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request) => {
+      const body = z
+        .object({
+          scenario: z.enum(ECON_SCENARIOS as [EconScenarioName, ...EconScenarioName[]]).default('BASE'),
+          assumptions: econAssumptionsSchema.optional(),
+          seed: z.number().int().default(2026),
+          customers: z.number().int().min(1).max(200_000).default(5000),
+          horizonDays: z.number().int().min(1).max(3650).default(365),
+          trials: z.number().int().min(1).max(200).default(40),
+          persist: z.boolean().default(true),
+        })
+        .parse(request.body ?? {});
+      const bundle = runEconomics({
+        scenario: body.scenario,
+        assumptions: body.assumptions,
+        seed: body.seed,
+        customers: body.customers,
+        horizonDays: body.horizonDays,
+        trials: body.trials,
+      });
+      let id: string | null = null;
+      if (body.persist) {
+        const organizationId = await organizationOf(request.user!.id);
+        const [saved] = await db
+          .insert(economicsRuns)
+          .values({
+            organizationId,
+            seed: body.seed,
+            purchases: body.customers,
+            assumptions: bundle.assumptions,
+            results: { version: 'M13_V2', bundle },
+            createdByUserId: request.user!.id,
+          })
+          .returning({ id: economicsRuns.id });
+        id = saved!.id;
+      }
+      return { id, bundle };
+    });
+
+    app.get('/admin/economics/v2/runs', { preHandler: requireRole('SUPER_ADMIN') }, async (request) => {
+      const organizationId = await organizationOf(request.user!.id);
+      const rows = await db
+        .select({ id: economicsRuns.id, seed: economicsRuns.seed, purchases: economicsRuns.purchases, results: economicsRuns.results, createdAt: economicsRuns.createdAt })
+        .from(economicsRuns)
+        .where(eq(economicsRuns.organizationId, organizationId))
+        .orderBy(desc(economicsRuns.createdAt))
+        .limit(50);
+      const v2 = rows.filter((r) => (r.results as { version?: string } | null)?.version === 'M13_V2');
+      return {
+        rows: v2.slice(0, 25).map((r) => {
+          const b = (r.results as { bundle?: { scenario?: string; horizonDays?: number; result?: { contributionMicros?: number } } }).bundle;
+          return {
+            id: r.id, seed: r.seed, customers: r.purchases, createdAt: r.createdAt.toISOString(),
+            scenario: b?.scenario ?? null, horizonDays: b?.horizonDays ?? null,
+            contributionMicros: b?.result?.contributionMicros ?? null,
+          };
+        }),
+      };
+    });
+
+    app.get('/admin/economics/v2/run/:id/export', { preHandler: requireRole('SUPER_ADMIN') }, async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      const query = z.object({ format: z.enum(['summary', 'product', 'timeline', 'assumptions', 'json']).default('json') }).parse(request.query ?? {});
+      const organizationId = await organizationOf(request.user!.id);
+      const [row] = await db
+        .select({ results: economicsRuns.results })
+        .from(economicsRuns)
+        .where(and(eq(economicsRuns.id, params.id), eq(economicsRuns.organizationId, organizationId)))
+        .limit(1);
+      if (!row || (row.results as { version?: string } | null)?.version !== 'M13_V2') {
+        throw new ApiError(404, 'not_found', 'economics run not found');
+      }
+      const bundle = (row.results as { bundle: Parameters<typeof econSerialize.summaryCsv>[0] }).bundle;
+      if (query.format === 'json') {
+        void reply.header('content-type', 'application/json; charset=utf-8');
+        void reply.header('content-disposition', `attachment; filename="economics-${params.id}.json"`);
+        return econSerialize.bundleJson(bundle);
+      }
+      const csv =
+        query.format === 'summary' ? econSerialize.summaryCsv(bundle)
+        : query.format === 'product' ? econSerialize.productCsv(bundle)
+        : query.format === 'timeline' ? econSerialize.timelineCsv(bundle)
+        : econSerialize.assumptionsCsv(bundle);
+      void reply.header('content-type', 'text/csv; charset=utf-8');
+      void reply.header('content-disposition', `attachment; filename="economics-${params.id}-${query.format}.csv"`);
+      return csv;
     });
   };
 }

@@ -35,6 +35,7 @@ import {
   type PayoutModel,
   type PayoutPolicy,
   type PayoutReasonCode,
+  MAX_PAYOUT_CYCLES,
   evaluatePayoutEligibility,
   parsePayoutPolicy,
   resolvePayoutRequest,
@@ -149,8 +150,11 @@ export interface EligibilityContext {
   readonly cycleStartDate: string | null;
 }
 
-/** The universal maximum number of payout cycles an account may be paid. */
-export const MAX_PAYOUT_CYCLES = 5;
+/**
+ * The universal maximum number of payout cycles an account may be paid.
+ * Defined in the pure `payout-core.ts` and re-exported here for existing callers.
+ */
+export { MAX_PAYOUT_CYCLES };
 
 /**
  * The qualifying account balance snapshotted at the approval of this account's

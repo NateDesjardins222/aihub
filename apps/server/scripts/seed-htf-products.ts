@@ -10,6 +10,16 @@
  *
  *   pnpm --filter @atlas/server exec tsx scripts/seed-htf-products.ts
  */
+import {
+  ACTIVATION_FEE_USD,
+  MIN_PAYOUT_REQUEST_USD,
+  PAYOUT_REQUEST_CAP_USD_BY_SIZE,
+  PROFIT_SPLIT_PCT,
+  REQUIRED_WINNING_DAYS,
+  WINNING_DAY_THRESHOLD_USD,
+  family as catalogFamily,
+  type FamilyKey,
+} from '@atlas/contracts';
 import { createDb } from '../src/db/client.js';
 import { defaultOrganizationId } from '../src/platform/provisioning.js';
 import { publishProfileVersion } from '../src/platform/profiles.js';
@@ -17,39 +27,53 @@ import { publishProfileVersion } from '../src/platform/profiles.js';
 const M = 1_000_000;
 const K = 1000;
 
-type Line = 'CORE' | 'SELECT' | 'DAILY';
+type Line = FamilyKey;
 
-const LINES: Record<
-  Line,
-  {
-    evalConsistency: number;
-    payoutConsistency: number | null;
-    buffers: Record<number, number>;
-    sizes: Record<number, number>; // size(k) -> price($)
+// Prices, payout consistency and Daily buffers are read from the authoritative
+// shared catalog (@atlas/contracts) so the DB seed can never diverge from the
+// public site or the economics engine.
+const LINES: Record<Line, { evalConsistency: number; payoutConsistency: number | null; buffers: Record<number, number>; sizes: Record<number, number> }> =
+  buildLines();
+
+function buildLines(): Record<Line, { evalConsistency: number; payoutConsistency: number | null; buffers: Record<number, number>; sizes: Record<number, number> }> {
+  const out = {} as Record<Line, { evalConsistency: number; payoutConsistency: number | null; buffers: Record<number, number>; sizes: Record<number, number> }>;
+  for (const key of ['CORE', 'SELECT', 'DAILY'] as Line[]) {
+    const fam = catalogFamily(key);
+    const buffers: Record<number, number> = {};
+    const sizes: Record<number, number> = {};
+    for (const a of fam.accounts) {
+      sizes[a.sizeUsd / K] = a.priceUsd;
+      if (a.bufferUsd) buffers[a.sizeUsd / K] = a.bufferUsd;
+    }
+    out[key] = {
+      evalConsistency: fam.evalConsistencyPct / 100,
+      payoutConsistency: fam.fundedConsistencyPct === null ? null : fam.fundedConsistencyPct / 100,
+      buffers,
+      sizes,
+    };
   }
-> = {
-  CORE: { evalConsistency: 0.5, payoutConsistency: null, buffers: {}, sizes: { 25: 65, 50: 95, 100: 170, 300: 599 } },
-  SELECT: { evalConsistency: 0.4, payoutConsistency: 0.4, buffers: {}, sizes: { 25: 85, 50: 135, 100: 230 } },
-  DAILY: { evalConsistency: 0.4, payoutConsistency: null, buffers: { 25: 1000, 50: 2000, 100: 4000 }, sizes: { 25: 90, 50: 145, 100: 250 } },
-};
+  return out;
+}
 
-// Launch payout request caps by account size (docs/account-lifecycle-ux-v1 §5):
-// 25K=$1,000, 50K=$2,000, 100K=$3,500, 300K Gold=$5,000. A flat cap per size
-// (one element applies to every ordinal); the request ceiling further composes
-// min(eligible, this cap, 50% of eligible) in the payout engine.
-const REQUEST_CAP_BY_SIZE_K: Record<number, number> = { 25: 1000, 50: 2000, 100: 3500, 300: 5000 };
+// Launch payout request caps by account size come from the shared catalog
+// (docs/account-lifecycle-ux-v1 §5). A flat cap per size (one element applies to
+// every ordinal); the request ceiling further composes min(eligible, this cap,
+// 50% of eligible) in the payout engine.
+const REQUEST_CAP_BY_SIZE_K: Record<number, number> = Object.fromEntries(
+  Object.entries(PAYOUT_REQUEST_CAP_USD_BY_SIZE).map(([sizeUsd, cap]) => [Number(sizeUsd) / K, cap]),
+);
 
 function payoutRules(line: Line, sizeK: number) {
   const capMicros = (REQUEST_CAP_BY_SIZE_K[sizeK] ?? 1000) * M;
   return {
     model: line,
-    profitSplitPercent: 0.9,
-    activationFeeMicros: 0,
-    winningDayThresholdMicros: 150 * M,
-    requiredWinningDays: 5,
+    profitSplitPercent: PROFIT_SPLIT_PCT / 100,
+    activationFeeMicros: ACTIVATION_FEE_USD * M,
+    winningDayThresholdMicros: WINNING_DAY_THRESHOLD_USD * M,
+    requiredWinningDays: REQUIRED_WINNING_DAYS,
     payoutConsistencyThreshold: LINES[line].payoutConsistency,
     fundedBufferMicros: (LINES[line].buffers[sizeK] ?? 0) * M,
-    requestCaps: { minRequestMicros: 250 * M, maxRequestMicrosByOrdinal: [capMicros] },
+    requestCaps: { minRequestMicros: MIN_PAYOUT_REQUEST_USD * M, maxRequestMicrosByOrdinal: [capMicros] },
   };
 }
 
