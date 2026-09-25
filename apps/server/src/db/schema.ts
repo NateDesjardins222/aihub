@@ -80,6 +80,11 @@ export const users = pgTable(
     status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
     organizationId: uuid('organization_id').references(() => organizations.id),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+    /** M10: operator MFA readiness. Enrollment (TOTP) is not yet built; this is
+     * surfaced honestly as NOT_ENROLLED until a real enrollment flow lands. */
+    mfaEnrolled: boolean('mfa_enrolled').notNull().default(false),
+    /** M10: the staff member who invited this user, if onboarded via invitation. */
+    invitedByUserId: uuid('invited_by_user_id'),
     createdAt: now(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3031,4 +3036,407 @@ export const providerReconciliationRuns = pgTable(
     createdAt: now(),
   },
   (t) => [index('provider_reconciliation_runs_idx').on(t.provider, t.createdAt)],
+);
+
+// ===========================================================================
+// Milestone 10 — Owner Operating System / Control Plane
+//
+// Granular RBAC, staff lifecycle, impersonation, operational surfaces
+// (incidents/alerts/tasks/notes/saved views), System Doctor + Data Integrity
+// results, feature flags + kill switches, maker-checker approvals, append-only
+// admin adjustments, and async export jobs. These EXTEND the platform; owner
+// change history reuses `audit_log`, activity reuses `domain_events`, holds
+// reuse `enforcement_holds`, notifications reuse `notification_messages`.
+// ===========================================================================
+
+/** Per-user granular permission overrides layered on top of the role defaults. */
+export const staffPermissions = pgTable(
+  'staff_permissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    permission: varchar('permission', { length: 64 }).notNull(),
+    /** GRANT adds a permission the role lacks; DENY removes one the role has. */
+    effect: varchar('effect', { length: 8 }).notNull().default('GRANT'),
+    grantedByUserId: uuid('granted_by_user_id'),
+    reason: text('reason'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('staff_permissions_user_perm_key').on(t.userId, t.permission),
+    index('staff_permissions_user_idx').on(t.userId),
+  ],
+);
+
+/** Staff onboarding invitations. The activation token is stored hashed only. */
+export const staffInvitations = pgTable(
+  'staff_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    email: varchar('email', { length: 254 }).notNull(),
+    displayName: varchar('display_name', { length: 60 }),
+    role: varchar('role', { length: 16 }).notNull().default('SUPPORT'),
+    /** Optional granular overrides applied when the invitation is accepted. */
+    permissions: jsonb('permissions'),
+    tokenHash: text('token_hash').notNull(),
+    /** INVITED | ACCEPTED | REVOKED | EXPIRED */
+    status: varchar('status', { length: 16 }).notNull().default('INVITED'),
+    invitedByUserId: uuid('invited_by_user_id'),
+    acceptedUserId: uuid('accepted_user_id'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('staff_invitations_token_key').on(t.tokenHash),
+    index('staff_invitations_email_idx').on(t.email),
+    index('staff_invitations_status_idx').on(t.status),
+  ],
+);
+
+/** Safe support impersonation ("View as customer"). Read-only by default. */
+export const impersonationSessions = pgTable(
+  'impersonation_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    operatorUserId: uuid('operator_user_id').notNull().references(() => users.id),
+    targetUserId: uuid('target_user_id').notNull().references(() => users.id),
+    reason: text('reason').notNull(),
+    /** READ_ONLY (default, safe) | SUPPORT (a narrow set of safe writes). */
+    mode: varchar('mode', { length: 16 }).notNull().default('READ_ONLY'),
+    /** ACTIVE | ENDED | EXPIRED */
+    status: varchar('status', { length: 12 }).notNull().default('ACTIVE'),
+    tokenHash: text('token_hash').notNull(),
+    originatingRequestId: varchar('originating_request_id', { length: 64 }),
+    ip: varchar('ip', { length: 64 }),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('impersonation_sessions_token_key').on(t.tokenHash),
+    index('impersonation_sessions_operator_idx').on(t.operatorUserId),
+    index('impersonation_sessions_status_idx').on(t.status),
+  ],
+);
+
+/** Saved filter presets for owner console list surfaces. */
+export const savedViews = pgTable(
+  'saved_views',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    scope: varchar('scope', { length: 40 }).notNull(),
+    name: varchar('name', { length: 80 }).notNull(),
+    filters: jsonb('filters').notNull().default({}),
+    /** PERSONAL | TEAM */
+    visibility: varchar('visibility', { length: 12 }).notNull().default('PERSONAL'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('saved_views_scope_idx').on(t.scope), index('saved_views_owner_idx').on(t.ownerUserId)],
+);
+
+/** Polymorphic internal operational notes on any major object. */
+export const internalNotes = pgTable(
+  'internal_notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    subjectType: varchar('subject_type', { length: 24 }).notNull(),
+    subjectId: varchar('subject_id', { length: 64 }).notNull(),
+    authorUserId: uuid('author_user_id').references(() => users.id),
+    authorLabel: varchar('author_label', { length: 120 }),
+    body: text('body').notNull(),
+    pinned: boolean('pinned').notNull().default(false),
+    /** INTERNAL (default) | CUSTOMER_VISIBLE (only where explicitly supported). */
+    visibility: varchar('visibility', { length: 16 }).notNull().default('INTERNAL'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('internal_notes_subject_idx').on(t.subjectType, t.subjectId)],
+);
+
+/** Lightweight operational tasks (not a project-management product). */
+export const opsTasks = pgTable(
+  'ops_tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    title: varchar('title', { length: 160 }).notNull(),
+    description: text('description'),
+    /** OPEN | IN_PROGRESS | WAITING | RESOLVED */
+    status: varchar('status', { length: 12 }).notNull().default('OPEN'),
+    /** LOW | NORMAL | HIGH | URGENT */
+    priority: varchar('priority', { length: 8 }).notNull().default('NORMAL'),
+    assigneeUserId: uuid('assignee_user_id').references(() => users.id),
+    creatorUserId: uuid('creator_user_id').references(() => users.id),
+    subjectType: varchar('subject_type', { length: 24 }),
+    subjectId: varchar('subject_id', { length: 64 }),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('ops_tasks_status_idx').on(t.status),
+    index('ops_tasks_assignee_idx').on(t.assigneeUserId),
+  ],
+);
+
+/** Operational incidents. One incident groups many alerts/failures. */
+export const incidents = pgTable(
+  'incidents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    publicRef: varchar('public_ref', { length: 20 }).notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    /** INFO | WARNING | CRITICAL | EMERGENCY */
+    severity: varchar('severity', { length: 12 }).notNull().default('WARNING'),
+    /** OPEN | ACKNOWLEDGED | INVESTIGATING | IDENTIFIED | MONITORING | RESOLVED */
+    status: varchar('status', { length: 16 }).notNull().default('OPEN'),
+    source: varchar('source', { length: 40 }),
+    affectedSubsystem: varchar('affected_subsystem', { length: 40 }),
+    /** Groups repeat failures of the same condition into one incident. */
+    dedupeKey: varchar('dedupe_key', { length: 120 }),
+    assigneeUserId: uuid('assignee_user_id').references(() => users.id),
+    acknowledgedByUserId: uuid('acknowledged_by_user_id'),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    detectedAt: timestamp('detected_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolution: text('resolution'),
+    detail: jsonb('detail'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('incidents_public_ref_key').on(t.publicRef),
+    index('incidents_status_idx').on(t.status),
+    index('incidents_dedupe_idx').on(t.dedupeKey),
+  ],
+);
+
+/** Links an incident to the objects/alerts/events it affects. */
+export const incidentLinks = pgTable(
+  'incident_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    incidentId: uuid('incident_id').notNull().references(() => incidents.id, { onDelete: 'cascade' }),
+    linkType: varchar('link_type', { length: 16 }).notNull(),
+    refId: varchar('ref_id', { length: 64 }).notNull(),
+    createdAt: now(),
+  },
+  (t) => [index('incident_links_incident_idx').on(t.incidentId)],
+);
+
+/** Owner alerts with severity, dedup and incident grouping. */
+export const alerts = pgTable(
+  'alerts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    /** INFO | NOTICE | WARNING | CRITICAL | EMERGENCY */
+    severity: varchar('severity', { length: 12 }).notNull().default('INFO'),
+    category: varchar('category', { length: 40 }).notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    body: text('body'),
+    /** Same open dedupe key bumps `count`/`last_seen_at` instead of a new row. */
+    dedupeKey: varchar('dedupe_key', { length: 120 }),
+    /** OPEN | ACKNOWLEDGED | RESOLVED */
+    status: varchar('status', { length: 12 }).notNull().default('OPEN'),
+    incidentId: uuid('incident_id').references(() => incidents.id),
+    source: varchar('source', { length: 40 }),
+    count: integer('count').notNull().default(1),
+    subjectType: varchar('subject_type', { length: 24 }),
+    subjectId: varchar('subject_id', { length: 64 }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    acknowledgedByUserId: uuid('acknowledged_by_user_id'),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    detail: jsonb('detail'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('alerts_status_idx').on(t.status),
+    index('alerts_severity_idx').on(t.severity),
+    index('alerts_dedupe_idx').on(t.dedupeKey),
+  ],
+);
+
+/** Per-recipient operational alert routing. */
+export const alertSubscriptions = pgTable(
+  'alert_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    /** IN_APP | EMAIL | SMS | PUSH */
+    channel: varchar('channel', { length: 8 }).notNull().default('IN_APP'),
+    minSeverity: varchar('min_severity', { length: 12 }).notNull().default('WARNING'),
+    /** Null = all categories. */
+    categories: jsonb('categories'),
+    enabled: boolean('enabled').notNull().default(true),
+    quietHours: jsonb('quiet_hours'),
+    escalationEligible: boolean('escalation_eligible').notNull().default(false),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('alert_subscriptions_user_channel_key').on(t.userId, t.channel)],
+);
+
+/** System Doctor probe results (infrastructure/software liveness). */
+export const systemCheckResults = pgTable(
+  'system_check_results',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    checkKey: varchar('check_key', { length: 60 }).notNull(),
+    /** HEALTHY | WARNING | CRITICAL | SUSPICIOUS | SKIPPED */
+    status: varchar('status', { length: 12 }).notNull(),
+    severity: varchar('severity', { length: 12 }).notNull().default('INFO'),
+    expected: text('expected'),
+    actual: text('actual'),
+    durationMs: integer('duration_ms'),
+    runId: varchar('run_id', { length: 40 }),
+    detail: jsonb('detail'),
+    createdAt: now(),
+  },
+  (t) => [index('system_check_results_key_idx').on(t.checkKey, t.createdAt)],
+);
+
+/** Data Integrity Center invariant-check results (does the data make sense?). */
+export const integrityCheckResults = pgTable(
+  'integrity_check_results',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    checkKey: varchar('check_key', { length: 60 }).notNull(),
+    /** PASS | FAIL | WARN */
+    status: varchar('status', { length: 8 }).notNull(),
+    severity: varchar('severity', { length: 12 }).notNull().default('INFO'),
+    affectedCount: integer('affected_count').notNull().default(0),
+    expected: text('expected'),
+    actual: text('actual'),
+    sampleRefs: jsonb('sample_refs'),
+    runId: varchar('run_id', { length: 40 }),
+    createdAt: now(),
+  },
+  (t) => [index('integrity_check_results_key_idx').on(t.checkKey, t.createdAt)],
+);
+
+/** Generic feature flags (env-scoped). Never carries a secret. */
+export const featureFlags = pgTable(
+  'feature_flags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    key: varchar('key', { length: 60 }).notNull(),
+    environment: varchar('environment', { length: 12 }).notNull().default('ALL'),
+    enabled: boolean('enabled').notNull().default(false),
+    description: text('description'),
+    updatedByUserId: uuid('updated_by_user_id'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('feature_flags_key_env_key').on(t.key, t.environment)],
+);
+
+/** Platform kill switches. Current state; change history lives in audit_log. */
+export const killSwitches = pgTable(
+  'kill_switches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    key: varchar('key', { length: 48 }).notNull(),
+    engaged: boolean('engaged').notNull().default(false),
+    reason: text('reason'),
+    engagedByUserId: uuid('engaged_by_user_id'),
+    engagedAt: timestamp('engaged_at', { withTimezone: true }),
+    releasedByUserId: uuid('released_by_user_id'),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('kill_switches_key_key').on(t.key)],
+);
+
+/** Maker-checker approval requests for separation-of-duties actions. */
+export const adminApprovalRequests = pgTable(
+  'admin_approval_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    action: varchar('action', { length: 60 }).notNull(),
+    payload: jsonb('payload'),
+    reason: text('reason'),
+    /** REQUESTED | APPROVED | DENIED | EXECUTED | FAILED */
+    status: varchar('status', { length: 12 }).notNull().default('REQUESTED'),
+    requestedByUserId: uuid('requested_by_user_id').notNull(),
+    decidedByUserId: uuid('decided_by_user_id'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    executedAt: timestamp('executed_at', { withTimezone: true }),
+    subjectType: varchar('subject_type', { length: 24 }),
+    subjectId: varchar('subject_id', { length: 64 }),
+    linkedIncidentId: uuid('linked_incident_id'),
+    detail: jsonb('detail'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('admin_approval_requests_status_idx').on(t.status)],
+);
+
+/** Append-only financial/metadata corrections. NEVER a raw balance edit. */
+export const adminAdjustments = pgTable(
+  'admin_adjustments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    accountId: uuid('account_id').references(() => accounts.id),
+    userId: uuid('user_id').references(() => users.id),
+    /** CREDIT | DEBIT | METADATA | LIFECYCLE_NOTE */
+    type: varchar('type', { length: 24 }).notNull(),
+    amountMicros: micros('amount_micros'),
+    reasonCode: varchar('reason_code', { length: 40 }).notNull(),
+    explanation: text('explanation').notNull(),
+    beforeSnapshot: jsonb('before_snapshot'),
+    afterSnapshot: jsonb('after_snapshot'),
+    linkedIncidentId: uuid('linked_incident_id'),
+    linkedCaseId: uuid('linked_case_id'),
+    actorUserId: uuid('actor_user_id'),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: now(),
+  },
+  (t) => [index('admin_adjustments_account_idx').on(t.accountId)],
+);
+
+/** Async export jobs. Modeled on the outbox job/DLQ shape. */
+export const exportJobs = pgTable(
+  'export_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    kind: varchar('kind', { length: 40 }).notNull(),
+    filters: jsonb('filters'),
+    /** QUEUED | RUNNING | COMPLETED | FAILED */
+    status: varchar('status', { length: 12 }).notNull().default('QUEUED'),
+    requestedByUserId: uuid('requested_by_user_id').notNull(),
+    rowCount: integer('row_count'),
+    resultRef: text('result_ref'),
+    error: text('error'),
+    attempts: integer('attempts').notNull().default(0),
+    availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('export_jobs_status_idx').on(t.status)],
 );

@@ -23,6 +23,7 @@ import { verifyRoutes } from './routes/verify.js';
 import { portalRoutes } from './routes/portal.js';
 import { enforcementAdminRoutes, enforcementPortalRoutes } from './routes/enforcement.js';
 import { payoutOpsAdminRoutes, payoutOpsPortalRoutes, payoutWebhookRoutes } from './routes/payout-ops.js';
+import { ownerStaffRoutes, staffOnboardingRoutes } from './routes/owner-staff.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -392,6 +393,10 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(payoutOpsAdminRoutes(), { prefix: '/api/v1/admin/payout-ops' });
   await app.register(payoutOpsPortalRoutes(), { prefix: '/api/v1/portal/payout-ops' });
   await app.register(payoutWebhookRoutes(), { prefix: '/api/v1/webhooks' });
+  // Owner Operating System (M10): staff & access, granular RBAC, reauth,
+  // impersonation — plus a public onboarding surface for invited staff.
+  await app.register(ownerStaffRoutes(), { prefix: '/api/v1/admin' });
+  await app.register(staffOnboardingRoutes(), { prefix: '/api/v1/staff-onboarding' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });
