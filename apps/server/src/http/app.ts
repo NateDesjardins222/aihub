@@ -32,6 +32,9 @@ import { ownerAlertRoutes } from './routes/owner-alerts.js';
 import { ownerCustomerRoutes } from './routes/owner-customers2.js';
 import { ownerIoRoutes } from './routes/owner-io.js';
 import { ownerFinanceRoutes } from './routes/owner-finance.js';
+import { ownerAffiliateRoutes } from './routes/owner-affiliates.js';
+import { affiliatePublicRoutes } from './routes/affiliate-public.js';
+import { affiliatePortalRoutes } from './routes/affiliate-portal.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -423,6 +426,10 @@ export async function buildApp(): Promise<BuiltApp> {
   // ops/money-trace/exports/views/notes/tasks/agreements (M10-J).
   await app.register(ownerIoRoutes(), { prefix: '/api/v1/admin/ops' });
   await app.register(ownerFinanceRoutes(), { prefix: '/api/v1/admin/ops' });
+  await app.register(ownerAffiliateRoutes(), { prefix: '/api/v1/admin/ops' });
+  // Affiliate program: public intake/tracking + authenticated self-service portal.
+  await app.register(affiliatePublicRoutes(), { prefix: '/api/v1/affiliates' });
+  await app.register(affiliatePortalRoutes(), { prefix: '/api/v1/affiliates' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });
