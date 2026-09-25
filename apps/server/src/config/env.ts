@@ -82,6 +82,24 @@ const envSchema = z.object({
   RITHMIC_APP_NAME: z.string().optional(),
   RITHMIC_APP_VERSION: z.string().optional(),
 
+  /**
+   * M9 R | Protocol wire integration flags. All ship OFF; the real transport is
+   * only reached when RITHMIC_ENABLED=true AND credentials are present AND the
+   * per-capability gate is on. RITHMIC_ENVIRONMENT is authoritative for which
+   * Rithmic environment this is — only 'TEST' is exercised by M9; 'LIVE' remains
+   * additionally gated by EXTERNAL_LIVE_ENABLED. RITHMIC_ENDPOINT is the R|Protocol
+   * websocket URL (non-secret). RITHMIC_SYSTEM_NAME is the discovered system to log
+   * into (e.g. "Rithmic Test"). RITHMIC_VENDOR_DIR points at the owner's local,
+   * gitignored copy of the official RProtocolAPI package's proto directory.
+   */
+  RITHMIC_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  RITHMIC_ENVIRONMENT: z.enum(['TEST', 'PAPER', 'LIVE']).default('TEST'),
+  RITHMIC_ENDPOINT: z.string().optional(),
+  RITHMIC_SYSTEM_NAME: z.string().optional(),
+  RITHMIC_MARKET_DATA_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  RITHMIC_EXECUTION_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  RITHMIC_VENDOR_DIR: z.string().optional(),
+
   /** Simulation fill model. */
   FILL_MODEL: z.enum(['SIMPLE', 'ADVANCED']).default('ADVANCED'),
   FILL_LATENCY_MS: z.coerce.number().int().default(120),

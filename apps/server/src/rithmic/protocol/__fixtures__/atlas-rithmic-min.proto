@@ -1,0 +1,400 @@
+syntax = "proto2";
+
+// =============================================================================
+// ATLAS TEST-DOUBLE SCHEMA — NOT the official Rithmic package.
+// =============================================================================
+//
+// This file reproduces ONLY the subset of R | Protocol message shapes and field
+// names that Atlas consumes, so the protocol codec, framing, router and the
+// deterministic test suite can be exercised WITHOUT redistributing Rithmic's
+// proprietary RProtocolAPI.0.90.0.0 package (see docs/rithmic/rithmic-local-setup.md
+// and M9 spec §38).
+//
+// THE OFFICIAL RITHMIC PACKAGE IS AUTHORITATIVE. When the owner runs
+// `pnpm --filter @atlas/server rithmic:generate`, the official `.proto` files in
+// vendor/rithmic/proto/ are loaded instead of this file, and the template-id
+// registry is derived from THEM. The `template_id` defaults below mirror the
+// publicly documented R | Protocol template ids so the doubles are realistic; the
+// codec never hardcodes an id — it always derives the id<->message map from the
+// loaded schema, so the official package silently overrides any value here.
+//
+// The template_id field number (154467) is the documented R | Protocol convention;
+// it lives in the schema, not in Atlas code.
+// =============================================================================
+
+package rti;
+
+// ---- discovery --------------------------------------------------------------
+message RequestRithmicSystemInfo {
+  required int32 template_id = 154467 [default = 16];
+  repeated string user_msg = 132760;
+}
+message ResponseRithmicSystemInfo {
+  required int32 template_id = 154467 [default = 17];
+  repeated string rp_code = 132766;
+  repeated string system_name = 153642;
+  repeated bool has_aggregated_quotes = 154769;
+}
+
+// ---- login / auth -----------------------------------------------------------
+message RequestLogin {
+  enum SysInfraType {
+    TICKER_PLANT = 1;
+    ORDER_PLANT = 2;
+    HISTORY_PLANT = 3;
+    PNL_PLANT = 4;
+    REPOSITORY_PLANT = 5;
+  }
+  required int32 template_id = 154467 [default = 10];
+  optional string template_version = 149290;
+  optional string user_msg = 132760;
+  optional string user = 153001;
+  optional string password = 110511;
+  optional string app_name = 153013;
+  optional string app_version = 153014;
+  optional string system_name = 153642;
+  optional SysInfraType infra_type = 150202;
+  repeated string mac_addr = 154014;
+  optional string os_version = 153619;
+  optional string os_platform = 153620;
+  optional string aggregated_quotes = 154766;
+}
+message ResponseLogin {
+  required int32 template_id = 154467 [default = 11];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string country_code = 100025;
+  optional string state_code = 100026;
+  optional string unique_user_id = 154772;
+  optional double heartbeat_interval = 150083;
+}
+message RequestLogout {
+  required int32 template_id = 154467 [default = 12];
+  optional string user_msg = 132760;
+}
+message RequestHeartbeat {
+  required int32 template_id = 154467 [default = 18];
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+message ResponseHeartbeat {
+  required int32 template_id = 154467 [default = 19];
+  repeated string user_msg = 132760;
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+
+// ---- reference data ---------------------------------------------------------
+message RequestReferenceData {
+  required int32 template_id = 154467 [default = 14];
+  optional string user_msg = 132760;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+}
+message ResponseReferenceData {
+  required int32 template_id = 154467 [default = 15];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional string product_code = 100749;
+  optional string instrument_type = 110116;
+  optional double min_qprice_change = 154113;   // tick size
+  optional double single_point_value = 100039;  // point value / multiplier
+  optional string expiration_date = 100067;
+  optional string currency = 100026;
+  optional string trading_symbol = 157095;
+  optional string is_tradable = 154767;
+}
+
+// ---- market data ------------------------------------------------------------
+message RequestMarketDataUpdate {
+  enum Request { SUBSCRIBE = 1; UNSUBSCRIBE = 2; }
+  enum UpdateBits {
+    LAST_TRADE = 1;
+    BBO = 2;
+    ORDER_BOOK = 4;
+    OPEN = 8;
+    OPENING_INDICATOR = 16;
+    HIGH_LOW = 32;
+    HIGH_BID_LOW_ASK = 64;
+    CLOSE = 128;
+    CLOSING_INDICATOR = 256;
+    SETTLEMENT = 512;
+    MARKET_MODE = 1024;
+    OPEN_INTEREST = 2048;
+  }
+  required int32 template_id = 154467 [default = 100];
+  optional string user_msg = 132760;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional Request request = 100000;
+  optional uint32 update_bits = 154021;
+}
+message ResponseMarketDataUpdate {
+  required int32 template_id = 154467 [default = 101];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+}
+message LastTrade {
+  required int32 template_id = 154467 [default = 150];
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional double trade_price = 100006;
+  optional int32 trade_size = 100178;
+  optional int32 aggressor = 112003;
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+message BestBidOffer {
+  required int32 template_id = 154467 [default = 151];
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional double bid_price = 100016;
+  optional int32 bid_size = 100019;
+  optional double ask_price = 100021;
+  optional int32 ask_size = 100024;
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+
+// ---- historical bars --------------------------------------------------------
+message RequestTimeBarReplay {
+  enum BarType { SECOND_BAR = 1; MINUTE_BAR = 2; DAILY_BAR = 3; WEEKLY_BAR = 4; }
+  enum Direction { FIRST = 1; LAST = 2; }
+  required int32 template_id = 154467 [default = 202];
+  optional string user_msg = 132760;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional BarType bar_type = 119200;
+  optional int32 bar_type_period = 119201;
+  optional int32 start_index = 119203;   // epoch seconds
+  optional int32 finish_index = 119204;  // epoch seconds
+  optional Direction direction = 119100;
+}
+message ResponseTimeBarReplay {
+  required int32 template_id = 154467 [default = 203];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional int32 bar_type = 119200;
+  optional int32 bar_type_period = 119201;
+  optional double open_price = 100008;
+  optional double close_price = 100009;
+  optional double high_price = 100010;
+  optional double low_price = 100011;
+  optional int32 volume = 100032;
+  optional int32 num_trades = 100031;
+  optional int32 marker = 119400;   // bar open time, epoch seconds
+}
+
+// ---- accounts / routes ------------------------------------------------------
+message RequestAccountList {
+  required int32 template_id = 154467 [default = 302];
+  optional string user_msg = 132760;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string user_type = 154036;
+}
+message ResponseAccountList {
+  required int32 template_id = 154467 [default = 303];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string account_id = 154008;
+  optional string account_name = 154115;
+  optional string account_currency = 154382;
+}
+message RequestTradeRoutes {
+  required int32 template_id = 154467 [default = 310];
+  optional string user_msg = 132760;
+  optional string subscribe_for_updates = 100002;
+}
+message ResponseTradeRoutes {
+  required int32 template_id = 154467 [default = 311];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string exchange = 110101;
+  optional string trade_route = 154200;
+  optional string status = 131003;
+  optional string is_default = 154201;
+}
+message RequestSubscribeForOrderUpdates {
+  required int32 template_id = 154467 [default = 308];
+  optional string user_msg = 132760;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string account_id = 154008;
+}
+
+// ---- orders -----------------------------------------------------------------
+message RequestNewOrder {
+  enum TransactionType { BUY = 1; SELL = 2; }
+  enum Duration { DAY = 1; GTC = 2; IOC = 3; FOK = 4; }
+  enum PriceType { LIMIT = 1; MARKET = 2; STOP_LIMIT = 3; STOP_MARKET = 4; MARKET_IF_TOUCHED = 5; LIMIT_IF_TOUCHED = 6; }
+  enum OrderPlacement { MANUAL = 1; AUTO = 2; }
+  required int32 template_id = 154467 [default = 312];
+  optional string user_tag = 154119;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string account_id = 154008;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional int32 quantity = 112004;
+  optional double price = 110306;
+  optional double trigger_price = 149247;
+  optional TransactionType transaction_type = 112003;
+  optional Duration duration = 112005;
+  optional PriceType price_type = 112008;
+  optional string trade_route = 154200;
+  optional OrderPlacement manual_or_auto = 154710;
+  optional int32 quantity_64 = 154012001;
+}
+message ResponseNewOrder {
+  required int32 template_id = 154467 [default = 313];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string user_tag = 154119;
+  optional string basket_id = 100747;
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+message RequestModifyOrder {
+  required int32 template_id = 154467 [default = 314];
+  optional string basket_id = 100747;
+  optional string account_id = 154008;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional int32 quantity = 112004;
+  optional double price = 110306;
+  optional double trigger_price = 149247;
+  optional int32 price_type = 112008;
+  optional int32 manual_or_auto = 154710;
+  optional string trade_route = 154200;
+}
+message ResponseModifyOrder {
+  required int32 template_id = 154467 [default = 315];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string basket_id = 100747;
+}
+message RequestCancelOrder {
+  required int32 template_id = 154467 [default = 316];
+  optional string basket_id = 100747;
+  optional string account_id = 154008;
+  optional int32 manual_or_auto = 154710;
+}
+message ResponseCancelOrder {
+  required int32 template_id = 154467 [default = 317];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+  optional string basket_id = 100747;
+}
+
+// ---- order/execution notifications -----------------------------------------
+message RithmicOrderNotification {
+  enum NotifyType {
+    ORDER_RCVD_FROM_CLNT = 1;
+    MODIFY_RCVD_FROM_CLNT = 2;
+    CANCEL_RCVD_FROM_CLNT = 3;
+    OPEN_PENDING = 4;
+    MODIFY_PENDING = 5;
+    CANCEL_PENDING = 6;
+    ORDER_RCVD_BY_EXCH_GTWY = 7;
+    STATUS = 8;
+  }
+  required int32 template_id = 154467 [default = 351];
+  optional NotifyType notify_type = 154155;
+  optional string basket_id = 100747;
+  optional string account_id = 154008;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional int32 transaction_type = 112003;
+  optional int32 quantity = 112004;
+  optional double price = 110306;
+  optional double trigger_price = 149247;
+  optional string status = 131003;
+  optional string completion_reason = 154059;
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+message ExchangeOrderNotification {
+  enum NotifyType {
+    STATUS = 1;
+    MODIFY = 2;
+    CANCEL = 3;
+    TRIGGER = 4;
+    FILL = 5;
+    REJECT = 6;
+    NOT_MODIFIED = 7;
+    NOT_CANCELLED = 8;
+  }
+  required int32 template_id = 154467 [default = 352];
+  optional NotifyType notify_type = 154155;
+  optional string basket_id = 100747;
+  optional string account_id = 154008;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional string exchange_order_id = 149238;
+  optional int32 transaction_type = 112003;
+  optional int32 quantity = 112004;
+  optional double price = 110306;
+  optional double trigger_price = 149247;
+  optional string report_type = 149232;
+  optional string status = 131003;
+  optional double fill_price = 153634;
+  optional int32 fill_size = 153632;
+  optional int32 total_fill_size = 153635;
+  optional int32 total_unfilled_size = 153636;
+  optional string trade_id = 153627;
+  optional string completion_reason = 154059;
+  optional int32 ssboe = 150100;
+  optional int32 usecs = 150101;
+}
+
+// ---- pnl / positions --------------------------------------------------------
+message RequestPnLPositionUpdates {
+  enum Request { SUBSCRIBE = 1; UNSUBSCRIBE = 2; }
+  required int32 template_id = 154467 [default = 400];
+  optional string user_msg = 132760;
+  optional Request request = 100000;
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string account_id = 154008;
+}
+message ResponsePnLPositionUpdates {
+  required int32 template_id = 154467 [default = 401];
+  repeated string user_msg = 132760;
+  repeated string rp_code = 132766;
+}
+message InstrumentPnLPositionUpdate {
+  required int32 template_id = 154467 [default = 450];
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string account_id = 154008;
+  optional string symbol = 110100;
+  optional string exchange = 110101;
+  optional string product_code = 100749;
+  optional int32 net_quantity = 154394;
+  optional double avg_open_fill_price = 154392;
+  optional double open_position_pnl = 154386;
+  optional double day_open_pnl = 154388;
+  optional double day_closed_pnl = 154389;
+  optional int32 ssboe = 150100;
+}
+message AccountPnLPositionUpdate {
+  required int32 template_id = 154467 [default = 451];
+  optional string fcm_id = 154013;
+  optional string ib_id = 154012;
+  optional string account_id = 154008;
+  optional double open_position_pnl = 154386;
+  optional double closed_position_pnl = 154385;
+  optional double day_pnl = 154387;
+  optional int32 ssboe = 150100;
+}

@@ -15,3 +15,9 @@ apps/server/data/
 # Milestone 6 — local certificate artifact object store (dev/tests)
 apps/server/.artifacts/
 .artifacts/
+
+# Rithmic official package (proprietary — never committed; owner drops it here locally)
+vendor/rithmic/
+apps/server/vendor/rithmic/
+# Generated Rithmic runtime registry (bound from the official package)
+apps/server/src/marketdata/rithmic/protocol/generated/
