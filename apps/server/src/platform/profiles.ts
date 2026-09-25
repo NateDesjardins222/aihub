@@ -113,6 +113,18 @@ function parseConfig(raw: unknown): ProfileConfig {
   return { ...parsed.data, rules: normalizeRuleConfig(parsed.data.rules as RuleConfig) };
 }
 
+/**
+ * The canonical, validated form of a product configuration.
+ *
+ * Runs the exact parse + normalisation `publishProfileVersion` applies, so two
+ * configs can be compared for equality regardless of how they were written. Used
+ * by the product reconciliation to publish a new version ONLY when the terms have
+ * actually changed (content idempotency), since publishing always writes N+1.
+ */
+export function normalizeProfileConfig(raw: unknown): ProfileConfig {
+  return parseConfig(raw);
+}
+
 /** The newest version of a product, by its machine key. */
 export async function resolveProfileByKey(
   db: Database,
@@ -124,7 +136,11 @@ export async function resolveProfileByKey(
     .from(accountProfiles)
     .where(and(eq(accountProfiles.organizationId, organizationId), eq(accountProfiles.key, key)));
   if (!profile) throw new ProfileError('PROFILE_NOT_FOUND', `No product named ${key}.`);
-  if (profile.status !== 'ACTIVE') {
+  // RETIRED refuses provisioning; ACTIVE (the 10 commercial products) and INTERNAL
+  // (funded destinations, the practice product) both resolve. Selling an INTERNAL
+  // product is prevented upstream by the EVALUATION-type gate at checkout, never by
+  // resolution here.
+  if (profile.status === 'RETIRED') {
     throw new ProfileError('PROFILE_RETIRED', `${profile.name} is retired and cannot be sold.`);
   }
   const [version] = await db
@@ -296,12 +312,17 @@ export async function listProfileVersions(db: Database, profileId: string) {
  * new accounts from it. It does not, and cannot, touch an account already
  * pinned to one of its versions - that is the whole point of pinning to a
  * version. Reactivating sets it back to ACTIVE.
+ *
+ * INTERNAL is the status of a resolvable-but-not-commercial product: funded
+ * destinations and the practice product. It provisions like ACTIVE but is not a
+ * sellable commercial offering (checkout only sells EVALUATION-type products) and
+ * is excluded from the commercial catalog.
  */
 export async function setProfileStatus(
   db: Database,
   organizationId: string,
   profileId: string,
-  status: 'ACTIVE' | 'RETIRED',
+  status: 'ACTIVE' | 'INTERNAL' | 'RETIRED',
 ): Promise<{ id: string; key: string; name: string; status: string } | null> {
   const [updated] = await db
     .update(accountProfiles)
