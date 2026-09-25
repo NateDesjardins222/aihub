@@ -3822,3 +3822,316 @@ export const affiliateRiskSignals = pgTable(
     index('affiliate_risk_signals_status_idx').on(t.organizationId, t.status),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Customer Support, Disputes & Resolution Operations (Milestone 12)
+//
+// The support layer that connects the whole business: a customer opens a request,
+// staff investigate it against real objects (account, order, payout, purchase,
+// affiliate, incident) with server-authoritative diagnostics, and resolve it —
+// requesting controlled REMEDIATION through canonical domain services rather than
+// mutating money or trades directly. Messages, evidence, and the ticket's own
+// event history are append-only; internal notes are messages with INTERNAL
+// visibility that a customer query never returns.
+// ---------------------------------------------------------------------------
+
+/** Versioned, org-scoped support program configuration (reopen window, limits, teams…). */
+export const supportConfig = pgTable(
+  'support_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    version: integer('version').notNull(),
+    settings: jsonb('settings').notNull(),
+    updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('support_config_org_version_key').on(t.organizationId, t.version)],
+);
+
+/** Configurable categories + subcategories (a subcategory has a parentKey). */
+export const supportCategories = pgTable(
+  'support_categories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    key: varchar('key', { length: 48 }).notNull(),
+    parentKey: varchar('parent_key', { length: 48 }),
+    label: varchar('label', { length: 120 }).notNull(),
+    team: varchar('team', { length: 32 }),
+    defaultPriority: varchar('default_priority', { length: 16 }).notNull().default('NORMAL'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('support_categories_org_key').on(t.organizationId, t.key)],
+);
+
+/** Configurable SLA policies (targets per priority, business hours, pause rules). */
+export const supportSlaPolicies = pgTable(
+  'support_sla_policies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    key: varchar('key', { length: 48 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    firstResponseMinsByPriority: jsonb('first_response_mins_by_priority').notNull(),
+    resolutionMinsByPriority: jsonb('resolution_mins_by_priority').notNull(),
+    pauseOnWaiting: boolean('pause_on_waiting').notNull().default(true),
+    businessHours: jsonb('business_hours'),
+    version: integer('version').notNull().default(1),
+    active: boolean('active').notNull().default(true),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('support_sla_policies_org_key').on(t.organizationId, t.key)],
+);
+
+/** Canned response templates with `{{variable}}` substitution. */
+export const supportTemplates = pgTable(
+  'support_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    key: varchar('key', { length: 48 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    category: varchar('category', { length: 48 }),
+    body: text('body').notNull(),
+    active: boolean('active').notNull().default(true),
+    version: integer('version').notNull().default(1),
+    updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('support_templates_org_key').on(t.organizationId, t.key)],
+);
+
+/** Lightweight customer-facing knowledge-base articles. */
+export const supportKbArticles = pgTable(
+  'support_kb_articles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    slug: varchar('slug', { length: 80 }).notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    category: varchar('category', { length: 48 }),
+    body: text('body').notNull(),
+    published: boolean('published').notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    updatedByUserId: uuid('updated_by_user_id').references(() => users.id),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('support_kb_articles_org_slug').on(t.organizationId, t.slug)],
+);
+
+/** Configurable tag palette for the inbox (definitions; tickets carry tags[]). */
+export const supportTagDefs = pgTable(
+  'support_tag_defs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    tag: varchar('tag', { length: 40 }).notNull(),
+    label: varchar('label', { length: 80 }),
+    active: boolean('active').notNull().default(true),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('support_tag_defs_org_tag').on(t.organizationId, t.tag)],
+);
+
+/** The support ticket — the case that connects a customer to the whole business. */
+export const supportTickets = pgTable(
+  'support_tickets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    /** Human-readable public reference, e.g. HT-48291. Never a sequential DB id. */
+    publicRef: varchar('public_ref', { length: 20 }).notNull(),
+    customerUserId: uuid('customer_user_id').notNull().references(() => users.id),
+    customerIdentityId: uuid('customer_identity_id').references(() => customerIdentities.id),
+    categoryKey: varchar('category_key', { length: 48 }).notNull(),
+    subcategoryKey: varchar('subcategory_key', { length: 48 }),
+    subject: varchar('subject', { length: 200 }).notNull(),
+    status: varchar('status', { length: 24 }).notNull().default('OPEN'),
+    priority: varchar('priority', { length: 16 }).notNull().default('NORMAL'),
+    /** The urgency the customer indicated; authoritative priority is staff-set. */
+    customerUrgency: varchar('customer_urgency', { length: 16 }),
+    suggestedPriority: varchar('suggested_priority', { length: 16 }),
+    assigneeUserId: uuid('assignee_user_id').references(() => users.id),
+    team: varchar('team', { length: 32 }),
+    slaPolicyKey: varchar('sla_policy_key', { length: 48 }),
+    firstResponseDueAt: timestamp('first_response_due_at', { withTimezone: true }),
+    resolutionDueAt: timestamp('resolution_due_at', { withTimezone: true }),
+    slaPausedAt: timestamp('sla_paused_at', { withTimezone: true }),
+    slaFirstRespondedAt: timestamp('sla_first_responded_at', { withTimezone: true }),
+    incidentId: uuid('incident_id'),
+    tags: jsonb('tags').notNull().default([]),
+    resolutionCode: varchar('resolution_code', { length: 40 }),
+    resolutionSummaryCustomer: text('resolution_summary_customer'),
+    resolutionNotesInternal: text('resolution_notes_internal'),
+    rootCauseCategory: varchar('root_cause_category', { length: 40 }),
+    reopenedFromTicketId: uuid('reopened_from_ticket_id'),
+    followUpToTicketId: uuid('follow_up_to_ticket_id'),
+    mergedIntoTicketId: uuid('merged_into_ticket_id'),
+    csatRating: integer('csat_rating'),
+    csatComment: text('csat_comment'),
+    /** Optimistic-concurrency guard against conflicting staff edits. */
+    version: integer('version').notNull().default(1),
+    lastCustomerAt: timestamp('last_customer_at', { withTimezone: true }),
+    lastStaffAt: timestamp('last_staff_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('support_tickets_public_ref_key').on(t.publicRef),
+    index('support_tickets_org_status_idx').on(t.organizationId, t.status),
+    index('support_tickets_customer_idx').on(t.customerUserId),
+    index('support_tickets_assignee_idx').on(t.organizationId, t.assigneeUserId),
+    index('support_tickets_team_idx').on(t.organizationId, t.team),
+    index('support_tickets_priority_idx').on(t.organizationId, t.priority),
+    index('support_tickets_category_idx').on(t.organizationId, t.categoryKey),
+    index('support_tickets_updated_idx').on(t.organizationId, t.updatedAt),
+    index('support_tickets_sla_due_idx').on(t.organizationId, t.resolutionDueAt),
+    index('support_tickets_incident_idx').on(t.incidentId),
+  ],
+);
+
+/** Thread messages: customer replies, staff public replies, and INTERNAL notes. Append-only. */
+export const supportMessages = pgTable(
+  'support_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    ticketId: uuid('ticket_id').notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+    senderUserId: uuid('sender_user_id').references(() => users.id),
+    senderType: varchar('sender_type', { length: 16 }).notNull(), // CUSTOMER | STAFF | SYSTEM
+    /** CUSTOMER: visible to the customer. INTERNAL: staff-only note — never returned to a customer. */
+    visibility: varchar('visibility', { length: 16 }).notNull().default('CUSTOMER'),
+    body: text('body').notNull(),
+    mentions: jsonb('mentions'),
+    deliveryState: varchar('delivery_state', { length: 16 }),
+    /** Per-ticket idempotency key so a client retry never duplicates a message. */
+    idempotencyKey: varchar('idempotency_key', { length: 80 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('support_messages_ticket_idx').on(t.ticketId, t.createdAt),
+    uniqueIndex('support_messages_idem_key').on(t.ticketId, t.idempotencyKey),
+  ],
+);
+
+/** Safe file attachments (screenshots, receipts). Storage is an abstraction seam. */
+export const supportAttachments = pgTable(
+  'support_attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    ticketId: uuid('ticket_id').notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+    messageId: uuid('message_id').references(() => supportMessages.id),
+    uploaderUserId: uuid('uploader_user_id').references(() => users.id),
+    uploaderType: varchar('uploader_type', { length: 16 }).notNull(),
+    filename: varchar('filename', { length: 255 }).notNull(),
+    contentType: varchar('content_type', { length: 100 }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    storageKey: varchar('storage_key', { length: 255 }).notNull(),
+    checksum: varchar('checksum', { length: 64 }),
+    scanStatus: varchar('scan_status', { length: 16 }).notNull().default('PENDING'),
+    visibility: varchar('visibility', { length: 16 }).notNull().default('CUSTOMER'),
+    createdAt: now(),
+  },
+  (t) => [index('support_attachments_ticket_idx').on(t.ticketId)],
+);
+
+/** Curated evidence: an attachment/object/event marked as case evidence. Append-only. */
+export const supportEvidence = pgTable(
+  'support_evidence',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    ticketId: uuid('ticket_id').notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+    sourceType: varchar('source_type', { length: 16 }).notNull(), // ATTACHMENT | OBJECT | EVENT
+    sourceRef: varchar('source_ref', { length: 128 }).notNull(),
+    objectType: varchar('object_type', { length: 40 }),
+    description: text('description'),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [index('support_evidence_ticket_idx').on(t.ticketId)],
+);
+
+/** Typed links from a ticket to real business objects (multiple allowed). */
+export const supportTicketLinks = pgTable(
+  'support_ticket_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    ticketId: uuid('ticket_id').notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+    objectType: varchar('object_type', { length: 40 }).notNull(),
+    objectId: varchar('object_id', { length: 128 }).notNull(),
+    label: varchar('label', { length: 200 }),
+    auto: boolean('auto').notNull().default(false),
+    linkedByUserId: uuid('linked_by_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('support_ticket_links_unique').on(t.ticketId, t.objectType, t.objectId),
+    index('support_ticket_links_object_idx').on(t.objectType, t.objectId),
+  ],
+);
+
+/** The ticket's own lifecycle history (status/assignment/priority/escalation). Append-only. */
+export const supportTicketEvents = pgTable(
+  'support_ticket_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    ticketId: uuid('ticket_id').notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 40 }).notNull(),
+    fromValue: varchar('from_value', { length: 64 }),
+    toValue: varchar('to_value', { length: 64 }),
+    actorUserId: uuid('actor_user_id').references(() => users.id),
+    actorType: varchar('actor_type', { length: 16 }).notNull().default('STAFF'),
+    reason: text('reason'),
+    detail: jsonb('detail'),
+    createdAt: now(),
+  },
+  (t) => [index('support_ticket_events_ticket_idx').on(t.ticketId, t.createdAt)],
+);
+
+/** Controlled remediation: support REQUESTS, an authorized role APPROVES, a domain
+ *  service EXECUTES. Support never mutates money/trades directly. */
+export const supportRemediations = pgTable(
+  'support_remediations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    ticketId: uuid('ticket_id').notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+    publicRef: varchar('public_ref', { length: 24 }).notNull(),
+    type: varchar('type', { length: 40 }).notNull(),
+    status: varchar('status', { length: 16 }).notNull().default('REQUESTED'),
+    requestedByUserId: uuid('requested_by_user_id').notNull().references(() => users.id),
+    reason: text('reason').notNull(),
+    detail: jsonb('detail').notNull().default({}),
+    /** Money amount, when the remediation moves money. Micros; never a float. */
+    amountMicros: micros('amount_micros'),
+    approvedByUserId: uuid('approved_by_user_id').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    deniedReason: text('denied_reason'),
+    executedAt: timestamp('executed_at', { withTimezone: true }),
+    executionRef: varchar('execution_ref', { length: 128 }),
+    failureReason: text('failure_reason'),
+    /** Idempotency for approval/execution races. */
+    idempotencyKey: varchar('idempotency_key', { length: 80 }),
+    version: integer('version').notNull().default(1),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('support_remediations_public_ref_key').on(t.publicRef),
+    uniqueIndex('support_remediations_idem_key').on(t.idempotencyKey),
+    index('support_remediations_ticket_idx').on(t.ticketId),
+    index('support_remediations_status_idx').on(t.organizationId, t.status),
+  ],
+);

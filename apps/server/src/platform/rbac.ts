@@ -51,6 +51,19 @@ const SUPPORT_DEFAULTS: Permission[] = [
   'affiliates.read',
   'affiliates.commissions.read',
   'affiliates.payouts.read',
+  // Support (M12): the front line investigates, responds, and REQUESTS remediation —
+  // but never approves financial remediation/refunds, never manages config/templates,
+  // and never sends mass notifications (those are admin/owner tier below).
+  'support.read',
+  'support.respond',
+  'support.assign',
+  'support.notes.write',
+  'support.escalate',
+  'support.resolve',
+  'support.attachments.read',
+  'support.evidence.manage',
+  'support.remediation.request',
+  'support.refund.request',
 ];
 
 // ADMIN adds operational mutations, but NOT the owner-only tier (staff/roles/
@@ -84,6 +97,13 @@ const ADMIN_ONLY_ADDITIONS: Permission[] = [
   'affiliates.manage',
   'affiliates.payouts.manage',
   'affiliates.risk.manage',
+  // Support (M12): ADMIN approves remediation/refunds, manages config/templates,
+  // and can send mass incident communications.
+  'support.remediation.approve',
+  'support.refund.approve',
+  'support.config.manage',
+  'support.templates.manage',
+  'support.mass_notify',
 ];
 
 const ADMIN_DEFAULTS: Permission[] = [...SUPPORT_DEFAULTS, ...ADMIN_ONLY_ADDITIONS];

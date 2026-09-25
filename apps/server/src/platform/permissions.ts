@@ -81,6 +81,22 @@ export const PERMISSIONS = [
   'affiliates.payouts.manage',
   'affiliates.risk.manage',
   'affiliates.config.manage',
+  // Support (Milestone 12)
+  'support.read',
+  'support.respond',
+  'support.assign',
+  'support.notes.write',
+  'support.escalate',
+  'support.resolve',
+  'support.config.manage',
+  'support.templates.manage',
+  'support.attachments.read',
+  'support.evidence.manage',
+  'support.remediation.request',
+  'support.remediation.approve',
+  'support.refund.request',
+  'support.refund.approve',
+  'support.mass_notify',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -115,6 +131,12 @@ export const PERMISSION_GROUPS: Record<string, Permission[]> = {
     'affiliates.read', 'affiliates.applications.review', 'affiliates.manage', 'affiliates.rates.manage',
     'affiliates.commissions.read', 'affiliates.commissions.adjust', 'affiliates.payouts.read',
     'affiliates.payouts.manage', 'affiliates.risk.manage', 'affiliates.config.manage',
+  ],
+  Support: [
+    'support.read', 'support.respond', 'support.assign', 'support.notes.write', 'support.escalate',
+    'support.resolve', 'support.config.manage', 'support.templates.manage', 'support.attachments.read',
+    'support.evidence.manage', 'support.remediation.request', 'support.remediation.approve',
+    'support.refund.request', 'support.refund.approve', 'support.mass_notify',
   ],
 };
 

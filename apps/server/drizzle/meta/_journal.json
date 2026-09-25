@@ -239,6 +239,13 @@
       "when": 1759300100000,
       "tag": "0033_affiliates",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790348960948,
+      "tag": "0034_support",
+      "breakpoints": true
     }
   ]
 }
