@@ -27,6 +27,7 @@ import { ownerStaffRoutes, staffOnboardingRoutes } from './routes/owner-staff.js
 import { ownerObservabilityRoutes } from './routes/owner-observability.js';
 import { ownerAccountOpsRoutes } from './routes/owner-accounts.js';
 import { ownerConfigRoutes } from './routes/owner-config.js';
+import { ownerSystemRoutes } from './routes/owner-system.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -408,6 +409,8 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(ownerAccountOpsRoutes(), { prefix: '/api/v1/admin/ops' });
   // Owner OS configuration (M10-F): feature flags, kill switches, change history.
   await app.register(ownerConfigRoutes(), { prefix: '/api/v1/admin/ops' });
+  // Owner OS System Doctor / integrity / reconciliation / full-system-test (M10-G).
+  await app.register(ownerSystemRoutes(), { prefix: '/api/v1/admin/ops' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });

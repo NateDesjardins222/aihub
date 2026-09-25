@@ -3299,8 +3299,8 @@ export const systemCheckResults = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     organizationId: uuid('organization_id').references(() => organizations.id),
     checkKey: varchar('check_key', { length: 60 }).notNull(),
-    /** HEALTHY | WARNING | CRITICAL | SUSPICIOUS | SKIPPED */
-    status: varchar('status', { length: 12 }).notNull(),
+    /** HEALTHY | WARNING | CRITICAL | SUSPICIOUS | NOT_CONFIGURED | NOT_VERIFIED | SKIPPED */
+    status: varchar('status', { length: 20 }).notNull(),
     severity: varchar('severity', { length: 12 }).notNull().default('INFO'),
     expected: text('expected'),
     actual: text('actual'),
