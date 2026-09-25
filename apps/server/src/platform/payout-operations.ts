@@ -436,6 +436,15 @@ export async function applyProviderPaid(db: Database, payoutRequestId: string, o
   const clock = opts.clock ?? systemClock;
   const op = (await getOperationByRequest(db, payoutRequestId))!;
   if (op.opState === 'PAID' || op.opState === 'RECONCILED') return op; // idempotent
+  // The economic spine only allows APPROVED → PROCESSING → PAID. An authoritative
+  // PAID can legitimately arrive while we still only know the payout is APPROVED
+  // (a lost acknowledgement, or a break-glass resolution on a payout that never
+  // reached SUBMITTED), so step it through PROCESSING first. This moves no money —
+  // the single debit already happened at APPROVED.
+  const [reqRow] = await db.select().from(payoutRequests).where(eq(payoutRequests.id, payoutRequestId));
+  if (reqRow?.state === 'APPROVED') {
+    await markProcessing(db, { payoutRequestId, actor: SYSTEM_ACTOR }).catch(() => undefined);
+  }
   await markPaid(db, { payoutRequestId, actor: SYSTEM_ACTOR });
   const updated = await patchOp(db, op.id, {
     opState: 'PAID', paidAt: op.paidAt ?? clock.date(), providerPayoutId: opts.providerPayoutId ?? op.providerPayoutId,

@@ -17,13 +17,18 @@ import { payoutOperations } from '../db/schema.js';
 import { getOpsConfig } from './payout-ops-config.js';
 import { markSlaBreachIfNeeded } from './payout-ops-metrics.js';
 
-/** Claim up to `limit` PAYABLE payouts and submit each. Returns the count submitted. */
-export async function submitPayableBatch(db: Database, opts: { limit?: number; clock?: Clock } = {}): Promise<number> {
+/**
+ * Claim up to `limit` PAYABLE payouts and submit each. Returns the count submitted.
+ * The running server claims across all organizations; an optional `organizationId`
+ * scopes the claim to one org (used by tests and any future per-tenant worker).
+ */
+export async function submitPayableBatch(db: Database, opts: { limit?: number; clock?: Clock; organizationId?: string } = {}): Promise<number> {
   const clock = opts.clock ?? systemClock;
   const limit = opts.limit ?? 20;
   const claimed = await db.execute(sql`
     SELECT payout_request_id FROM payout_operations
     WHERE op_state = 'PAYABLE'
+      ${opts.organizationId ? sql`AND organization_id = ${opts.organizationId}` : sql``}
     ORDER BY payable_at ASC NULLS FIRST
     LIMIT ${limit}
     FOR UPDATE SKIP LOCKED

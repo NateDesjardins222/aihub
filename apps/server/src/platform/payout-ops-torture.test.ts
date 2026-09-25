@@ -42,15 +42,24 @@ function cfg(size: number) {
 }
 
 interface F { accountId: string; userId: string; identityId: string }
-async function makeEligible(withDest = true): Promise<F> {
+async function makeEligible(withDest = true, orgId: string = organizationId, profileKey = 'htf-tort-50k'): Promise<F> {
   seq += 1;
-  const [u] = await db.insert(users).values({ email: `tort-${seq}-${Date.now()}@test.local`, passwordHash: await hashPassword('x'), displayName: 'Tort', organizationId }).returning();
-  const ident = await ensureCustomerIdentity(db, { organizationId, userId: u!.id });
-  const { accountId } = await provisionAccount(db, { organizationId, userId: u!.id, profileKey: 'htf-tort-50k' });
+  const [u] = await db.insert(users).values({ email: `tort-${seq}-${Date.now()}@test.local`, passwordHash: await hashPassword('x'), displayName: 'Tort', organizationId: orgId }).returning();
+  const ident = await ensureCustomerIdentity(db, { organizationId: orgId, userId: u!.id });
+  const { accountId } = await provisionAccount(db, { organizationId: orgId, userId: u!.id, profileKey });
   await db.update(accounts).set({ balanceMicros: $(53_000), startingBalanceMicros: $(50_000), dayStartBalanceMicros: $(53_000), dayStartEquityMicros: $(53_000), highWaterMarkMicros: $(53_000), activatedAt: new Date('2026-02-01T00:00:00Z') }).where(eq(accounts.id, accountId));
   for (let i = 0; i < 5; i += 1) await db.insert(dailyAccountStats).values({ accountId, tradeDate: `2026-03-0${i + 1}`, startingBalanceMicros: $(50_000), endingBalanceMicros: $(50_200), highEquityMicros: $(50_200), lowEquityMicros: $(50_000), counted: true });
-  if (withDest) await addDestination(db, { organizationId, customerIdentityId: ident.id, provider: 'MOCK', providerRef: `mock_dest_${seq}` });
+  if (withDest) await addDestination(db, { organizationId: orgId, customerIdentityId: ident.id, provider: 'MOCK', providerRef: `mock_dest_${seq}` });
   return { accountId, userId: u!.id, identityId: ident.id };
+}
+
+/** A fresh, isolated org (own profile + MOCK config) so worker-batch claims are deterministic in the shared pool. */
+async function freshOrg(): Promise<{ id: string; profileKey: string }> {
+  const [org] = await db.insert(organizations).values({ slug: `tort-batch-${seq}-${Date.now()}`, name: 'Batch' }).returning();
+  const profileKey = `htf-tort-batch-${org!.id.slice(0, 8)}`;
+  await publishProfileVersion(db, { organizationId: org!.id, key: profileKey, name: 'Batch 50K', accountType: 'FUNDED_SIM', config: cfg($(50_000)) });
+  await updateOpsConfig(db, org!.id, { provider: 'MOCK', actor: SYSTEM_ACTOR });
+  return { id: org!.id, profileKey };
 }
 async function reqId(f: F, gross = $(1000)): Promise<string> {
   const r = await requestPayout(db, { accountId: f.accountId, userId: f.userId, requestedGrossMicros: gross, idempotencyKey: `req-${f.accountId}-${gross}-${Date.now()}`, actor: SYSTEM_ACTOR });
@@ -93,10 +102,11 @@ describe('concurrency — never a duplicate external payout', () => {
   });
 
   it('two workers picking the same PAYABLE payout submit it once', async () => {
-    const f = await makeEligible();
+    const org = await freshOrg();
+    const f = await makeEligible(true, org.id, org.profileKey);
     const id = await reqId(f);
     await runFastLane(db, id);
-    const [n1, n2] = await Promise.all([submitPayableBatch(db, { limit: 5 }), submitPayableBatch(db, { limit: 5 })]);
+    const [n1, n2] = await Promise.all([submitPayableBatch(db, { limit: 5, organizationId: org.id }), submitPayableBatch(db, { limit: 5, organizationId: org.id })]);
     // Exactly one worker claims and submits it (the other skips via SKIP LOCKED / not-PAYABLE).
     const o = await op(id);
     expect(['SUBMITTED', 'PROCESSING']).toContain(o.opState);
@@ -186,7 +196,8 @@ describe('treasury / circuit breaker preserve liabilities', () => {
 
 describe('provider outage recovery + worker resume', () => {
   it('a payout left PAYABLE by an outage is resumed by the worker when healthy', async () => {
-    const f = await makeEligible();
+    const org = await freshOrg();
+    const f = await makeEligible(true, org.id, org.profileKey);
     const id = await reqId(f);
     await runFastLane(db, id); // PAYABLE
     mockPayoutProvider().setHealth('DOWN');
@@ -196,7 +207,7 @@ describe('provider outage recovery + worker resume', () => {
     expect(blocked.exceptionCategory).toBe('PROVIDER_UNAVAILABLE');
     // Recovery: provider healthy again; the durable worker picks up the PAYABLE row.
     mockPayoutProvider().setHealth('HEALTHY');
-    const submitted = await submitPayableBatch(db, { limit: 10 });
+    const submitted = await submitPayableBatch(db, { limit: 10, organizationId: org.id });
     expect(submitted).toBeGreaterThanOrEqual(1);
     const o = await op(id);
     expect(['SUBMITTED', 'PROCESSING']).toContain(o.opState);
