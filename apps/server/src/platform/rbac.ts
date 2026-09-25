@@ -47,6 +47,10 @@ const SUPPORT_DEFAULTS: Permission[] = [
   'alerts.read',
   'tasks.read',
   'tasks.manage',
+  // Affiliates: SUPPORT gets limited read.
+  'affiliates.read',
+  'affiliates.commissions.read',
+  'affiliates.payouts.read',
 ];
 
 // ADMIN adds operational mutations, but NOT the owner-only tier (staff/roles/
@@ -74,6 +78,12 @@ const ADMIN_ONLY_ADDITIONS: Permission[] = [
   'config.notifications.manage',
   'alerts.manage',
   'staff.read',
+  // Affiliates: ADMIN operates the program (reviews, manages, payouts, risk),
+  // but NOT rate/commission/config which are owner-tier financial controls.
+  'affiliates.applications.review',
+  'affiliates.manage',
+  'affiliates.payouts.manage',
+  'affiliates.risk.manage',
 ];
 
 const ADMIN_DEFAULTS: Permission[] = [...SUPPORT_DEFAULTS, ...ADMIN_ONLY_ADDITIONS];

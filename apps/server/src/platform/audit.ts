@@ -33,7 +33,8 @@ export type AuditSubject =
   | 'COMMERCE'
   | 'NOTIFICATION'
   | 'ENFORCEMENT'
-  | 'APPEAL';
+  | 'APPEAL'
+  | 'AFFILIATE';
 
 export interface AuditEntry {
   readonly organizationId: string | null;

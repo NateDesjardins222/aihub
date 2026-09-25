@@ -3457,3 +3457,368 @@ export const customerTags = pgTable(
     index('customer_tags_tag_idx').on(t.tag),
   ],
 );
+
+// ===========================================================================
+// Milestone 11 — Affiliate / Partner Platform
+//
+// Money is micros (integer); commission rates are basis points (bps, integer:
+// 1500 = 15%, 1750 = 17.5%). Nothing here uses floating-point arithmetic. The
+// ledger and agreement acceptances are append-only (DB trigger, see migration
+// 0033). Commissions snapshot the rate/basis/config so history is never rewritten.
+// ===========================================================================
+
+/** Program configuration, versioned. The highest active version is authoritative;
+ * every commission snapshots the config version that produced it. */
+export const affiliateConfig = pgTable(
+  'affiliate_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    version: integer('version').notNull(),
+    settings: jsonb('settings').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('affiliate_config_org_version_key').on(t.organizationId, t.version),
+    index('affiliate_config_active_idx').on(t.organizationId, t.isActive),
+  ],
+);
+
+/** An affiliate/partner. Lifecycle: SUBMITTED → UNDER_REVIEW →
+ * APPROVED_PENDING_AGREEMENT → ACTIVE → (PAUSED|SUSPENDED|TERMINATED); DECLINED.
+ * A code/link exists only while ACTIVE with an accepted agreement. */
+export const affiliates = pgTable(
+  'affiliates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    publicId: varchar('public_id', { length: 24 }).notNull(),
+    userId: uuid('user_id').references(() => users.id),
+    customerIdentityId: uuid('customer_identity_id').references(() => customerIdentities.id),
+    displayName: varchar('display_name', { length: 120 }).notNull(),
+    email: varchar('email', { length: 200 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull().default('SUBMITTED'),
+    tier: varchar('tier', { length: 16 }).notNull().default('AFFILIATE'),
+    tierRateBps: integer('tier_rate_bps').notNull().default(1500),
+    customRateBps: integer('custom_rate_bps'),
+    customRateReason: text('custom_rate_reason'),
+    customRateEffectiveAt: timestamp('custom_rate_effective_at', { withTimezone: true }),
+    customRateExpiresAt: timestamp('custom_rate_expires_at', { withTimezone: true }),
+    effectiveRateBps: integer('effective_rate_bps').notNull().default(1500),
+    agreementAcceptedVersionId: uuid('agreement_accepted_version_id'),
+    needsAgreementReacceptance: boolean('needs_agreement_reacceptance').notNull().default(false),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('affiliates_public_id_key').on(t.publicId),
+    uniqueIndex('affiliates_org_user_key').on(t.organizationId, t.userId),
+    index('affiliates_org_status_idx').on(t.organizationId, t.status),
+    index('affiliates_email_idx').on(t.email),
+    index('affiliates_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+/** The application form + review record. One current application per affiliate. */
+export const affiliateApplications = pgTable(
+  'affiliate_applications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    status: varchar('status', { length: 32 }).notNull().default('SUBMITTED'),
+    fullName: varchar('full_name', { length: 160 }).notNull(),
+    email: varchar('email', { length: 200 }).notNull(),
+    brandName: varchar('brand_name', { length: 160 }),
+    primaryPlatform: varchar('primary_platform', { length: 60 }),
+    profileUrl: varchar('profile_url', { length: 500 }),
+    audienceSize: varchar('audience_size', { length: 40 }),
+    audienceDescription: text('audience_description'),
+    promotionPlan: text('promotion_plan'),
+    country: varchar('country', { length: 80 }),
+    extraLinks: jsonb('extra_links'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewNotes: text('review_notes'),
+    declineReason: text('decline_reason'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('affiliate_applications_affiliate_idx').on(t.affiliateId),
+    index('affiliate_applications_org_status_idx').on(t.organizationId, t.status),
+  ],
+);
+
+/** Affiliate agreement acceptance evidence (versions live in agreement_versions). */
+export const affiliateAgreementAcceptances = pgTable(
+  'affiliate_agreement_acceptances',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    agreementVersionId: uuid('agreement_version_id').notNull().references(() => agreementVersions.id),
+    contentHash: varchar('content_hash', { length: 64 }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
+    ip: varchar('ip', { length: 64 }),
+    userAgent: varchar('user_agent', { length: 400 }),
+    sessionRef: varchar('session_ref', { length: 80 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('affiliate_agreement_acceptances_affiliate_idx').on(t.affiliateId),
+    uniqueIndex('affiliate_agreement_acceptances_unique').on(t.affiliateId, t.agreementVersionId),
+  ],
+);
+
+/** Referral codes. Attribution and discount are SEPARATE (discountBps is nullable). */
+export const affiliateCodes = pgTable(
+  'affiliate_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    code: varchar('code', { length: 40 }).notNull(),
+    codeCanonical: varchar('code_canonical', { length: 40 }).notNull(),
+    kind: varchar('kind', { length: 16 }).notNull().default('PRIMARY'),
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    discountBps: integer('discount_bps'),
+    campaignLabel: varchar('campaign_label', { length: 120 }),
+    aliasOfCodeId: uuid('alias_of_code_id'),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('affiliate_codes_org_canonical_key').on(t.organizationId, t.codeCanonical),
+    index('affiliate_codes_affiliate_idx').on(t.affiliateId),
+    index('affiliate_codes_status_idx').on(t.organizationId, t.status),
+  ],
+);
+
+/** Raw referral click log (privacy-conscious: ip is hashed by the caller). */
+export const affiliateClicks = pgTable(
+  'affiliate_clicks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    codeId: uuid('code_id').references(() => affiliateCodes.id),
+    referralSlug: varchar('referral_slug', { length: 40 }).notNull(),
+    sessionRef: varchar('session_ref', { length: 80 }).notNull(),
+    landingPath: varchar('landing_path', { length: 400 }),
+    campaign: jsonb('campaign'),
+    ipHash: varchar('ip_hash', { length: 64 }),
+    userAgent: varchar('user_agent', { length: 400 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('affiliate_clicks_affiliate_idx').on(t.affiliateId),
+    index('affiliate_clicks_session_idx').on(t.sessionRef),
+    index('affiliate_clicks_created_idx').on(t.createdAt),
+  ],
+);
+
+/** Per-session attribution touches: first + last touch, with an expiry window. */
+export const affiliateTouches = pgTable(
+  'affiliate_touches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    sessionRef: varchar('session_ref', { length: 80 }).notNull(),
+    firstTouchAffiliateId: uuid('first_touch_affiliate_id').notNull().references(() => affiliates.id),
+    firstTouchCodeId: uuid('first_touch_code_id').references(() => affiliateCodes.id),
+    firstTouchAt: timestamp('first_touch_at', { withTimezone: true }).notNull().defaultNow(),
+    lastTouchAffiliateId: uuid('last_touch_affiliate_id').notNull().references(() => affiliates.id),
+    lastTouchCodeId: uuid('last_touch_code_id').references(() => affiliateCodes.id),
+    lastTouchAt: timestamp('last_touch_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('affiliate_touches_session_key').on(t.organizationId, t.sessionRef),
+    index('affiliate_touches_expires_idx').on(t.expiresAt),
+  ],
+);
+
+/** One conversion per commercial order (exactly-once via the unique index). */
+export const affiliateConversions = pgTable(
+  'affiliate_conversions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id),
+    codeId: uuid('code_id').references(() => affiliateCodes.id),
+    commercialOrderId: uuid('commercial_order_id').notNull().references(() => commercialOrders.id, { onDelete: 'cascade' }),
+    customerUserId: uuid('customer_user_id').notNull().references(() => users.id),
+    customerIdentityId: uuid('customer_identity_id').references(() => customerIdentities.id),
+    source: varchar('source', { length: 16 }).notNull(),
+    firstTouchAffiliateId: uuid('first_touch_affiliate_id').references(() => affiliates.id),
+    lastTouchAffiliateId: uuid('last_touch_affiliate_id').references(() => affiliates.id),
+    finalAttributionReason: varchar('final_attribution_reason', { length: 40 }).notNull(),
+    qualifiedRevenueMicros: micros('qualified_revenue_micros').notNull(),
+    discountMicros: micros('discount_micros'),
+    productVersionId: uuid('product_version_id').references(() => accountProfileVersions.id),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('affiliate_conversions_order_key').on(t.commercialOrderId),
+    index('affiliate_conversions_affiliate_idx').on(t.affiliateId),
+    index('affiliate_conversions_created_idx').on(t.createdAt),
+  ],
+);
+
+/** One commission per conversion (snapshotted rate/basis/config). */
+export const affiliateCommissions = pgTable(
+  'affiliate_commissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id),
+    conversionId: uuid('conversion_id').notNull().references(() => affiliateConversions.id, { onDelete: 'cascade' }),
+    commercialOrderId: uuid('commercial_order_id').notNull().references(() => commercialOrders.id, { onDelete: 'cascade' }),
+    customerUserId: uuid('customer_user_id').notNull().references(() => users.id),
+    qualifiedRevenueMicros: micros('qualified_revenue_micros').notNull(),
+    rateBps: integer('rate_bps').notNull(),
+    rateSource: varchar('rate_source', { length: 24 }).notNull(),
+    tierAtEvent: varchar('tier_at_event', { length: 16 }).notNull(),
+    commissionMicros: micros('commission_micros').notNull(),
+    currency: varchar('currency', { length: 8 }).notNull().default('USD'),
+    productVersionId: uuid('product_version_id').references(() => accountProfileVersions.id),
+    configVersion: integer('config_version').notNull(),
+    status: varchar('status', { length: 16 }).notNull().default('TRACKED'),
+    maturityAt: timestamp('maturity_at', { withTimezone: true }).notNull(),
+    maturedAt: timestamp('matured_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+    reversalReason: varchar('reversal_reason', { length: 200 }),
+    holdReason: varchar('hold_reason', { length: 200 }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('affiliate_commissions_conversion_key').on(t.conversionId),
+    index('affiliate_commissions_affiliate_status_idx').on(t.affiliateId, t.status),
+    index('affiliate_commissions_maturity_idx').on(t.status, t.maturityAt),
+    index('affiliate_commissions_order_idx').on(t.commercialOrderId),
+  ],
+);
+
+/** Append-only affiliate financial ledger (DB trigger refuses UPDATE/DELETE). */
+export const affiliateLedger = pgTable(
+  'affiliate_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id),
+    entryType: varchar('entry_type', { length: 32 }).notNull(),
+    amountMicros: micros('amount_micros').notNull(),
+    currency: varchar('currency', { length: 8 }).notNull().default('USD'),
+    commissionId: uuid('commission_id').references(() => affiliateCommissions.id),
+    payoutId: uuid('payout_id'),
+    commercialOrderId: uuid('commercial_order_id').references(() => commercialOrders.id),
+    reasonCode: varchar('reason_code', { length: 40 }),
+    explanation: text('explanation'),
+    actorUserId: uuid('actor_user_id').references(() => users.id),
+    correlationId: varchar('correlation_id', { length: 80 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('affiliate_ledger_affiliate_idx').on(t.affiliateId),
+    index('affiliate_ledger_type_idx').on(t.entryType),
+    index('affiliate_ledger_created_idx').on(t.createdAt),
+  ],
+);
+
+/** Provider-neutral affiliate payouts. */
+export const affiliatePayouts = pgTable(
+  'affiliate_payouts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id),
+    publicRef: varchar('public_ref', { length: 24 }).notNull(),
+    amountMicros: micros('amount_micros').notNull(),
+    currency: varchar('currency', { length: 8 }).notNull().default('USD'),
+    status: varchar('status', { length: 16 }).notNull().default('REQUESTED'),
+    provider: varchar('provider', { length: 40 }),
+    method: varchar('method', { length: 40 }),
+    externalReference: varchar('external_reference', { length: 200 }),
+    note: text('note'),
+    evidenceRef: varchar('evidence_ref', { length: 200 }),
+    requestedByUserId: uuid('requested_by_user_id').references(() => users.id),
+    approvedByUserId: uuid('approved_by_user_id').references(() => users.id),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    failureReason: varchar('failure_reason', { length: 200 }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('affiliate_payouts_public_ref_key').on(t.publicRef),
+    index('affiliate_payouts_affiliate_status_idx').on(t.affiliateId, t.status),
+  ],
+);
+
+/** Tier transition history (never rewrites earlier commission events). */
+export const affiliateTierHistory = pgTable(
+  'affiliate_tier_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    priorTier: varchar('prior_tier', { length: 16 }),
+    newTier: varchar('new_tier', { length: 16 }).notNull(),
+    qualificationPeriod: varchar('qualification_period', { length: 7 }),
+    qualifiedRevenueMicros: micros('qualified_revenue_micros'),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: varchar('reason', { length: 200 }),
+    automatic: boolean('automatic').notNull().default(true),
+    staffActorUserId: uuid('staff_actor_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [index('affiliate_tier_history_affiliate_idx').on(t.affiliateId)],
+);
+
+/** Rate change history (commissions also snapshot the applied rate). */
+export const affiliateRateHistory = pgTable(
+  'affiliate_rate_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    priorRateBps: integer('prior_rate_bps'),
+    newRateBps: integer('new_rate_bps').notNull(),
+    source: varchar('source', { length: 24 }).notNull(),
+    reason: text('reason'),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    staffActorUserId: uuid('staff_actor_user_id').references(() => users.id),
+    createdAt: now(),
+  },
+  (t) => [index('affiliate_rate_history_affiliate_idx').on(t.affiliateId)],
+);
+
+/** Factual risk/review signals (signal → review → action; never auto-ban). */
+export const affiliateRiskSignals = pgTable(
+  'affiliate_risk_signals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    affiliateId: uuid('affiliate_id').notNull().references(() => affiliates.id, { onDelete: 'cascade' }),
+    signalType: varchar('signal_type', { length: 48 }).notNull(),
+    severity: varchar('severity', { length: 16 }).notNull().default('INFO'),
+    detail: jsonb('detail'),
+    status: varchar('status', { length: 16 }).notNull().default('OPEN'),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('affiliate_risk_signals_affiliate_idx').on(t.affiliateId),
+    index('affiliate_risk_signals_status_idx').on(t.organizationId, t.status),
+  ],
+);

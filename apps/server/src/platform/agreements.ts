@@ -18,9 +18,20 @@ import { recordAudit } from './audit.js';
 import { events } from './events.js';
 import { SYSTEM_ACTOR, type Actor } from './actor.js';
 
-export type AgreementType = 'TERMS_OF_USE' | 'TRADER_PLEDGE' | 'PRIVACY' | 'RISK_DISCLOSURE';
+export type AgreementType = 'TERMS_OF_USE' | 'TRADER_PLEDGE' | 'PRIVACY' | 'RISK_DISCLOSURE' | 'AFFILIATE_AGREEMENT';
 
 export const AGREEMENT_TYPES: readonly AgreementType[] = [
+  'TERMS_OF_USE',
+  'TRADER_PLEDGE',
+  'PRIVACY',
+  'RISK_DISCLOSURE',
+  'AFFILIATE_AGREEMENT',
+];
+
+/** Agreement types required of customers at onboarding (excludes AFFILIATE_AGREEMENT,
+ * which is required of affiliates through the affiliate activation flow, not of
+ * every customer). */
+export const CUSTOMER_AGREEMENT_TYPES: readonly AgreementType[] = [
   'TERMS_OF_USE',
   'TRADER_PLEDGE',
   'PRIVACY',
@@ -225,7 +236,9 @@ export async function outstandingAgreements(
   organizationId: string,
   identityId: string,
 ): Promise<Array<{ agreementType: AgreementType; versionId: string; version: number }>> {
-  const current = (await currentAgreementVersions(db, organizationId)).filter((v) => v.isRequired);
+  const current = (await currentAgreementVersions(db, organizationId)).filter(
+    (v) => v.isRequired && (CUSTOMER_AGREEMENT_TYPES as readonly string[]).includes(v.agreementType),
+  );
   if (current.length === 0) return [];
   const accepted = await db
     .select({ agreementVersionId: agreementAcceptances.agreementVersionId })

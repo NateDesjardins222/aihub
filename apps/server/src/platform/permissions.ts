@@ -70,6 +70,17 @@ export const PERMISSIONS = [
   'roles.manage',
   'audit.read',
   'security.manage',
+  // Affiliates (Milestone 11)
+  'affiliates.read',
+  'affiliates.applications.review',
+  'affiliates.manage',
+  'affiliates.rates.manage',
+  'affiliates.commissions.read',
+  'affiliates.commissions.adjust',
+  'affiliates.payouts.read',
+  'affiliates.payouts.manage',
+  'affiliates.risk.manage',
+  'affiliates.config.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -100,6 +111,11 @@ export const PERMISSION_GROUPS: Record<string, Permission[]> = {
   Configuration: ['config.products.manage', 'config.providers.manage', 'config.notifications.manage'],
   Operations: ['alerts.read', 'alerts.manage', 'tasks.read', 'tasks.manage'],
   Administration: ['staff.read', 'staff.manage', 'roles.manage', 'audit.read', 'security.manage'],
+  Affiliates: [
+    'affiliates.read', 'affiliates.applications.review', 'affiliates.manage', 'affiliates.rates.manage',
+    'affiliates.commissions.read', 'affiliates.commissions.adjust', 'affiliates.payouts.read',
+    'affiliates.payouts.manage', 'affiliates.risk.manage', 'affiliates.config.manage',
+  ],
 };
 
 /**
