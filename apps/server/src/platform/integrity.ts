@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { accounts, affiliateCommissions, affiliateConversions, affiliates, integrityCheckResults, payoutLedger, payoutRequests } from '../db/schema.js';
+import { accounts, affiliateCommissions, affiliateConversions, affiliates, integrityCheckResults, payoutLedger, payoutRequests, supportRemediations, supportTickets } from '../db/schema.js';
 import { verifyAuditChain } from './audit.js';
 
 export type IntegrityStatus = 'PASS' | 'FAIL' | 'WARN';
@@ -168,6 +168,44 @@ async function checkOneCommissionPerOrder(db: Database, organizationId: string):
   };
 }
 
+/**
+ * Every executed remediation went through four-eyes: it has an approver, and the
+ * approver is not the requester. This is the money-safety invariant of support —
+ * support requests, someone else approves, and only then does anything execute.
+ */
+async function checkRemediationFourEyes(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db
+    .select({ id: supportRemediations.id })
+    .from(supportRemediations)
+    .where(and(
+      eq(supportRemediations.organizationId, organizationId),
+      inArray(supportRemediations.status, ['EXECUTED', 'EXECUTING']),
+      sql`(${supportRemediations.approvedByUserId} is null or ${supportRemediations.approvedByUserId} = ${supportRemediations.requestedByUserId})`,
+    ))
+    .limit(50);
+  return {
+    key: 'INV_REMEDIATION_FOUR_EYES', status: rows.length ? 'FAIL' : 'PASS', severity: rows.length ? 'CRITICAL' : 'INFO',
+    affectedCount: rows.length, expected: 'every executed remediation was approved by a different actor', actual: rows.length ? `${rows.length} remediation(s) breach four-eyes` : 'four-eyes upheld', sampleRefs: rows.slice(0, 10).map((r) => r.id),
+  };
+}
+
+/** Every resolved/closed ticket carries a customer-facing resolution summary. */
+async function checkResolvedTicketHasSummary(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db
+    .select({ id: supportTickets.id })
+    .from(supportTickets)
+    .where(and(
+      eq(supportTickets.organizationId, organizationId),
+      inArray(supportTickets.status, ['RESOLVED', 'CLOSED']),
+      sql`(${supportTickets.resolutionSummaryCustomer} is null or length(trim(${supportTickets.resolutionSummaryCustomer})) = 0)`,
+    ))
+    .limit(50);
+  return {
+    key: 'INV_RESOLVED_TICKET_HAS_SUMMARY', status: rows.length ? 'WARN' : 'PASS', severity: rows.length ? 'WARNING' : 'INFO',
+    affectedCount: rows.length, expected: 'every resolved ticket has a customer summary', actual: rows.length ? `${rows.length} resolved ticket(s) without a summary` : 'all resolved tickets summarised', sampleRefs: rows.slice(0, 10).map((r) => r.id),
+  };
+}
+
 export async function runIntegrityChecks(db: Database, organizationId: string, persist = true): Promise<IntegrityReport> {
   const runId = randomUUID();
   const checks: IntegrityCheck[] = [
@@ -179,6 +217,8 @@ export async function runIntegrityChecks(db: Database, organizationId: string, p
     await checkAffiliateCommissionHasConversion(db, organizationId),
     await checkActiveAffiliateHasAgreement(db, organizationId),
     await checkOneCommissionPerOrder(db, organizationId),
+    await checkRemediationFourEyes(db, organizationId),
+    await checkResolvedTicketHasSummary(db, organizationId),
   ];
   void affiliateConversions;
   if (persist) {

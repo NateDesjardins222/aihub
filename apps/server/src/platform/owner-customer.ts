@@ -19,6 +19,7 @@ import {
   entitlements,
   identityVerifications,
   notificationMessages,
+  supportTickets,
   users,
   verifiedContacts,
 } from '../db/schema.js';
@@ -142,6 +143,19 @@ export async function customerDetail(db: Database, organizationId: string, ident
   // reference this customer's accounts); this is not fraud and is never flagged.
   const copyGroups = await customerCopyGroups(db, identity.userId).catch(() => []);
 
+  // Support tickets for this customer — a read-only 360 tab. Never mutated here.
+  const supportTicketsRows = await db
+    .select({
+      id: supportTickets.id, publicRef: supportTickets.publicRef, subject: supportTickets.subject,
+      categoryKey: supportTickets.categoryKey, status: supportTickets.status, priority: supportTickets.priority,
+      createdAt: supportTickets.createdAt, updatedAt: supportTickets.updatedAt, resolvedAt: supportTickets.resolvedAt,
+      csatRating: supportTickets.csatRating,
+    })
+    .from(supportTickets)
+    .where(and(eq(supportTickets.organizationId, organizationId), eq(supportTickets.customerUserId, identity.userId)))
+    .orderBy(desc(supportTickets.updatedAt))
+    .limit(50);
+
   return {
     identity,
     user: user ? { id: user.id, email: user.email, displayName: user.displayName, role: user.role } : null,
@@ -153,6 +167,7 @@ export async function customerDetail(db: Database, organizationId: string, ident
     entitlements: ents,
     accounts: accts,
     copyGroups,
+    supportTickets: supportTicketsRows,
     notifications,
     audit,
     providers: {

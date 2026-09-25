@@ -8,11 +8,12 @@
  */
 import { desc, eq } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { accounts, affiliates, certificates, customerIdentities, users } from '../db/schema.js';
+import { accounts, affiliates, certificates, customerIdentities, supportTickets, users } from '../db/schema.js';
 import { ApiError } from '../http/errors.js';
 import { inspectAccount, inspectPayout } from './inspectors.js';
 import { accountAudit, userAudit } from './audit.js';
 import { staffDetail } from './staff.js';
+import { listLinks } from './support-links.js';
 
 export interface RelatedLink { readonly type: string; readonly id: string; readonly label: string }
 
@@ -30,7 +31,6 @@ async function auditToHistory(rows: Awaited<ReturnType<typeof accountAudit>>) {
 }
 
 export async function explainObject(db: Database, organizationId: string, type: string, id: string): Promise<ObjectView> {
-  void organizationId;
   switch (type) {
     case 'account': {
       const a = await inspectAccount(db, id);
@@ -93,6 +93,23 @@ export async function explainObject(db: Database, organizationId: string, type: 
         state: { status: a.status, tier: a.tier, effectiveRateBps: a.effectiveRateBps, email: a.email, activatedAt: a.activatedAt },
         related: a.userId ? [{ type: 'customer', id: a.userId, label: 'Linked customer' }] : [],
         history: await auditToHistory(await userAudit(db, a.userId ?? id, 25)).catch(() => []),
+      };
+    }
+    case 'support_ticket': {
+      const [t] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+      if (!t || t.organizationId !== organizationId) throw ApiError.notFound('TICKET_NOT_FOUND', 'Support ticket not found.');
+      const links = await listLinks(db, id).catch(() => []);
+      const related: RelatedLink[] = [{ type: 'customer', id: t.customerUserId, label: 'Customer' }];
+      for (const l of links) {
+        const lt = String((l as Record<string, unknown>)['objectType'] ?? '').toLowerCase();
+        const lid = String((l as Record<string, unknown>)['objectId'] ?? '');
+        if (lt && lid) related.push({ type: lt, id: lid, label: `Linked ${lt}` });
+      }
+      return {
+        type, id, title: t.publicRef,
+        state: { subject: t.subject, status: t.status, priority: t.priority, category: t.categoryKey, team: t.team, assigneeUserId: t.assigneeUserId, resolutionCode: t.resolutionCode, csatRating: t.csatRating },
+        related,
+        history: await auditToHistory(await userAudit(db, t.customerUserId, 25)).catch(() => []),
       };
     }
     default:

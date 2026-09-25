@@ -363,6 +363,7 @@ export interface CustomerDetail {
     sync: { status: string; divergedAccountIds: string[] } | null;
     recentIntents: Array<{ intentId: string; kind: string; accepted: number; rejected: number; skipped: number; total: number; rejections: Array<{ accountId: string; publicId: string; code: string | null }> }>;
   }>;
+  supportTickets: Array<{ id: string; publicRef: string; subject: string; categoryKey: string; status: string; priority: string; createdAt: string; updatedAt: string; resolvedAt: string | null; csatRating: number | null }>;
   notifications: Array<{ id: string; type: string; channel: string; status: string; provider: string | null; createdAt: string }>;
   audit: Array<{ id: string; action: string; subjectType: string; createdAt: string; reason: string | null }>;
   providers: { identity: string; commerce: string; email: string; sms: string };

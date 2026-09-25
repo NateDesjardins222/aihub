@@ -12,9 +12,12 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { payoutReconciliationRecords, systemCheckResults } from '../db/schema.js';
+import { payoutReconciliationRecords, supportTickets, systemCheckResults } from '../db/schema.js';
 import { resolveRithmicConnection } from '../infra/rithmic-config.js';
 import { affiliatePayoutProviderStatus } from './affiliate-payouts.js';
+import { supportStorageStatus } from './support-attachments.js';
+import { slaState } from './support-inbox.js';
+import { and, eq } from 'drizzle-orm';
 
 export type CheckStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'SUSPICIOUS' | 'NOT_CONFIGURED' | 'NOT_VERIFIED' | 'SKIPPED';
 
@@ -58,7 +61,7 @@ async function checkDatabase(db: Database): Promise<SystemCheck> {
  * which can drift when migrations are applied out of band.
  */
 async function checkMigrations(db: Database): Promise<SystemCheck> {
-  const sentinels = ['kill_switches', 'incidents', 'alerts', 'staff_invitations', 'admin_adjustments'];
+  const sentinels = ['kill_switches', 'incidents', 'alerts', 'staff_invitations', 'admin_adjustments', 'support_tickets', 'support_remediations'];
   try {
     const [rows, ms] = await timed(async () => db.execute(sql`
       select count(*)::int as n from information_schema.tables
@@ -133,6 +136,36 @@ function checkNotificationProvider(): SystemCheck {
   return { key: 'notifications', status: hasEmail ? 'HEALTHY' : 'NOT_CONFIGURED', severity: 'INFO', expected: 'at least in-app; external optional', actual, durationMs: 0, detail: { hasEmail, hasSms } };
 }
 
+/**
+ * Support API reachability + SLA pressure. Reads the ticket table (proving the
+ * support surface is live) and reports how many open tickets are past SLA. A
+ * breach is a WARNING, never faked green; unreachable is CRITICAL.
+ */
+async function checkSupport(db: Database, organizationId: string): Promise<SystemCheck> {
+  try {
+    const [rows, ms] = await timed(async () => db
+      .select({ status: supportTickets.status, slaPausedAt: supportTickets.slaPausedAt, resolutionDueAt: supportTickets.resolutionDueAt, resolvedAt: supportTickets.resolvedAt })
+      .from(supportTickets)
+      .where(and(eq(supportTickets.organizationId, organizationId), sql`${supportTickets.status} not in ('RESOLVED','CLOSED')`))
+      .limit(5000));
+    const now = new Date();
+    const breached = rows.filter((r) => slaState(r, now) === 'BREACHED').length;
+    const status: CheckStatus = breached > 0 ? 'WARNING' : 'HEALTHY';
+    return { key: 'support', status, severity: breached > 0 ? 'WARNING' : 'INFO', expected: 'reachable, no SLA breaches', actual: `${rows.length} open ticket(s), ${breached} past SLA`, durationMs: ms, detail: { open: rows.length, breached } };
+  } catch (e) {
+    return { key: 'support', status: 'CRITICAL', severity: 'CRITICAL', expected: 'support surface reachable', actual: `unreachable: ${(e as Error).message.slice(0, 80)}`, durationMs: 0 };
+  }
+}
+
+/** Support attachment storage — truthful about the active provider (in-process vs object store). */
+function checkSupportStorage(): SystemCheck {
+  const s = supportStorageStatus();
+  return {
+    key: 'support_storage', status: 'HEALTHY', severity: 'INFO',
+    expected: 'an attachment storage backend', actual: `provider: ${s.provider} (${s.configured ? 'configured' : 'in-process default'})`, durationMs: 0, detail: { provider: s.provider, configured: s.configured },
+  };
+}
+
 const CRITICAL_STATUSES: CheckStatus[] = ['CRITICAL'];
 const WARNING_STATUSES: CheckStatus[] = ['WARNING', 'SUSPICIOUS'];
 
@@ -156,6 +189,8 @@ export async function runSystemDoctor(db: Database, organizationId: string, pers
   checks.push(await checkProvisioning(db));
   checks.push(checkNotificationProvider());
   checks.push(checkAffiliatePayoutProvider());
+  checks.push(await checkSupport(db, organizationId));
+  checks.push(checkSupportStorage());
 
   const overall: SystemDoctorReport['overall'] = checks.some((c) => CRITICAL_STATUSES.includes(c.status))
     ? 'CRITICAL'

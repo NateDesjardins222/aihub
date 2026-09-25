@@ -14,13 +14,14 @@ import { jobsSummary } from './ops-io.js';
 import { runIntegrityChecks } from './integrity.js';
 import { runSystemDoctor } from './system-doctor.js';
 import { provisioningExceptionQueue } from './owner-customer.js';
+import { supportOverview } from './support-inbox.js';
 
 const ACTIVE = ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'];
 
 export interface AttentionItem { readonly severity: 'WARNING' | 'CRITICAL'; readonly label: string; readonly link: string; readonly count?: number }
 
 export async function commandCenter(db: Database, organizationId: string) {
-  const [doctor, integrity, fin, alerts, incidents, jobs, provisioningExceptions] = await Promise.all([
+  const [doctor, integrity, fin, alerts, incidents, jobs, provisioningExceptions, support] = await Promise.all([
     runSystemDoctor(db, organizationId, false),
     runIntegrityChecks(db, organizationId, false),
     financialSummary(db, organizationId),
@@ -28,6 +29,7 @@ export async function commandCenter(db: Database, organizationId: string) {
     incidentSummary(db, organizationId),
     jobsSummary(db),
     provisioningExceptionQueue(db, organizationId, 100).catch(() => []),
+    supportOverview(db, organizationId).catch(() => null),
   ]);
 
   // KPIs
@@ -47,6 +49,11 @@ export async function commandCenter(db: Database, organizationId: string) {
   if (incidents.open > 0) attention.push({ severity: 'WARNING', label: `${incidents.open} open incident(s)`, link: '/admin/ops/incidents' });
   for (const c of integrityFailures) attention.push({ severity: 'CRITICAL', label: `Integrity: ${c.key} (${c.affectedCount})`, link: '/admin/ops/integrity' });
   if (doctor.overall === 'CRITICAL') attention.push({ severity: 'CRITICAL', label: 'System Doctor reports CRITICAL', link: '/admin/ops/doctor' });
+  if (support) {
+    if (support.breached > 0) attention.push({ severity: 'CRITICAL', label: `${support.breached} support ticket(s) past SLA`, link: '/admin/support', count: support.breached });
+    if (support.pendingRemediationApprovals > 0) attention.push({ severity: 'WARNING', label: `${support.pendingRemediationApprovals} remediation(s) awaiting approval`, link: '/admin/support', count: support.pendingRemediationApprovals });
+    if (support.unassigned > 0) attention.push({ severity: 'WARNING', label: `${support.unassigned} unassigned support ticket(s)`, link: '/admin/support?view=UNASSIGNED', count: support.unassigned });
+  }
 
   // Recent high-impact admin actions.
   const recentActions = await db
@@ -76,6 +83,10 @@ export async function commandCenter(db: Database, organizationId: string) {
       deadLetterJobs: jobs.deadLetter,
       integrityFailures: integrityFailures.length,
       provisioningExceptions: provisioningExceptions.length,
+      openSupportTickets: support?.open ?? 0,
+      supportSlaBreached: support?.breached ?? 0,
+      pendingRemediationApprovals: support?.pendingRemediationApprovals ?? 0,
+      supportCsatAverage: support?.csatAverage ?? 0,
     },
     attention,
     recentActions,

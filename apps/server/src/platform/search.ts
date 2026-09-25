@@ -10,7 +10,7 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
   accounts, affiliateCodes, affiliates, certificates, commercialOrders, enforcementCases, incidents, orders,
-  payoutRequests, users,
+  payoutRequests, supportRemediations, supportTickets, users,
 } from '../db/schema.js';
 
 export interface SearchResult {
@@ -117,6 +117,29 @@ export async function globalSearch(db: Database, organizationId: string, raw: st
       .orderBy(desc(incidents.createdAt))
       .limit(perGroup);
     return rows.map((r) => ({ type: 'incident', id: r.id, label: r.publicRef, sublabel: r.title }));
+  }, []));
+
+  // Support tickets by public ref (HT-xxxxxx), subject or uuid.
+  push('support_ticket', await safe(async () => {
+    const rows = await db
+      .select({ id: supportTickets.id, publicRef: supportTickets.publicRef, subject: supportTickets.subject, status: supportTickets.status })
+      .from(supportTickets)
+      .where(and(eq(supportTickets.organizationId, organizationId), isUuid ? eq(supportTickets.id, q) : or(ilike(supportTickets.publicRef, like), ilike(supportTickets.subject, like))!))
+      .orderBy(desc(supportTickets.updatedAt))
+      .limit(perGroup);
+    return rows.map((r) => ({ type: 'support_ticket', id: r.id, label: r.publicRef, sublabel: r.subject }));
+  }, []));
+
+  // Support remediations by public ref (REM-xxxxxx) or uuid.
+  push('support_remediation', await safe(async () => {
+    const rows = await db
+      .select({ id: supportRemediations.id, ticketId: supportRemediations.ticketId, publicRef: supportRemediations.publicRef, type: supportRemediations.type, status: supportRemediations.status })
+      .from(supportRemediations)
+      .where(and(eq(supportRemediations.organizationId, organizationId), isUuid ? eq(supportRemediations.id, q) : ilike(supportRemediations.publicRef, like)))
+      .orderBy(desc(supportRemediations.createdAt))
+      .limit(perGroup);
+    // link target is the parent ticket workspace, where remediation is managed.
+    return rows.map((r) => ({ type: 'support_remediation', id: r.ticketId, label: r.publicRef, sublabel: `${r.type} · ${r.status}` }));
   }, []));
 
   // Affiliates by name / email / public id / uuid.

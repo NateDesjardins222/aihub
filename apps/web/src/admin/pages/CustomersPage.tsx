@@ -362,6 +362,33 @@ function CustomerDetailView({
         )}
       </Panel>
 
+      <Panel title="Support">
+        {d.supportTickets.length === 0 ? (
+          <p className="adm-muted">No support requests.</p>
+        ) : (
+          <table className="adm-table" data-testid="customer-support-tickets">
+            <thead>
+              <tr><th>Ref</th><th>Subject</th><th>Category</th><th>Priority</th><th>Status</th><th>CSAT</th><th>Updated</th></tr>
+            </thead>
+            <tbody>
+              {d.supportTickets.map((t) => (
+                <tr key={t.id}>
+                  <td>
+                    <a className="adm-link" href={`/admin/support/${t.id}`}>{t.publicRef}</a>
+                  </td>
+                  <td>{t.subject}</td>
+                  <td className="adm-muted">{t.categoryKey}</td>
+                  <td>{t.priority}</td>
+                  <td><StatusPill status={t.status} /></td>
+                  <td>{t.csatRating != null ? `${t.csatRating}★` : '—'}</td>
+                  <td className="adm-muted">{when(new Date(t.updatedAt).getTime())}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+
       <Panel title="Notifications">
         <table className="adm-table" data-testid="customer-notifications">
           <thead>
