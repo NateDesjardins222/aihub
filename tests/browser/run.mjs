@@ -64,6 +64,7 @@ const SUITES = [
   'owner-os-acceptance',
   'm10-1-hardening',
   'affiliate-acceptance',
+  'support-acceptance',
   'acceptance',
 ];
 const argv = process.argv.slice(2);
