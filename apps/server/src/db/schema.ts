@@ -2507,7 +2507,7 @@ export const enforcementSignals = pgTable(
     sourceRef: varchar('source_ref', { length: 200 }),
     metadata: jsonb('metadata'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
-    capturedAt: now(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
     /** Idempotency: (org, dedupeKey) unique so a replayed provider event is one signal. */
     dedupeKey: varchar('dedupe_key', { length: 200 }).notNull(),
   },
@@ -2534,7 +2534,7 @@ export const enforcementEvidence = pgTable(
     metadata: jsonb('metadata'),
     integrityHash: varchar('integrity_hash', { length: 64 }),
     occurredAt: timestamp('occurred_at', { withTimezone: true }),
-    capturedAt: now(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
     createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdBySystem: boolean('created_by_system').notNull().default(false),
   },
@@ -2563,7 +2563,7 @@ export const enforcementFindings = pgTable(
     /** ACTIVE | SUPERSEDED (an appeal overturn supersedes; original stays in history). */
     status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
     supersededByFindingId: uuid('superseded_by_finding_id'),
-    decidedAt: now(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('enforcement_findings_case_idx').on(t.caseId),
@@ -2622,7 +2622,7 @@ export const enforcementActions = pgTable(
     performedByUserId: uuid('performed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     performedBySystem: boolean('performed_by_system').notNull().default(false),
     metadata: jsonb('metadata'),
-    performedAt: now(),
+    performedAt: timestamp('performed_at', { withTimezone: true }).notNull().defaultNow(),
     idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
   },
   (t) => [
@@ -2661,7 +2661,7 @@ export const enforcementInformationRequests = pgTable(
     requestType: varchar('request_type', { length: 48 }).notNull(),
     messageSafe: text('message_safe').notNull(),
     requestedByUserId: uuid('requested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
-    requestedAt: now(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
     dueAt: timestamp('due_at', { withTimezone: true }),
     /** PENDING | RESPONDED | CANCELLED */
     responseStatus: varchar('response_status', { length: 12 }).notNull().default('PENDING'),
@@ -2692,7 +2692,7 @@ export const enforcementAppeals = pgTable(
     status: varchar('status', { length: 24 }).notNull().default('SUBMITTED'),
     reviewerUserId: uuid('reviewer_user_id').references(() => users.id, { onDelete: 'set null' }),
     customerSafeExplanation: text('customer_safe_explanation'),
-    submittedAt: now(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
     decisionAt: timestamp('decision_at', { withTimezone: true }),
     version: integer('version').notNull().default(1),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2720,7 +2720,7 @@ export const enforcementAppealDecisions = pgTable(
     /** True when a same-reviewer serious decision was explicitly overridden by higher authority. */
     overrideSameReviewer: boolean('override_same_reviewer').notNull().default(false),
     overrideByUserId: uuid('override_by_user_id').references(() => users.id, { onDelete: 'set null' }),
-    decidedAt: now(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('enforcement_appeal_decisions_appeal_idx').on(t.appealId),
