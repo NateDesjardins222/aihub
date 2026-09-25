@@ -59,6 +59,17 @@ const AffiliatesPublic = lazy(() => import('./affiliates/AffiliatesPublic').then
  */
 const AffiliatePortal = lazy(() => import('./affiliates/AffiliatePortal').then((m) => ({ default: m.AffiliatePortal })));
 
+/*
+ * The public marketing website (the homepage). Its own bundle, rendered before the
+ * sign-in gate for visitors at "/" (or "/home") — the public front door. Signed-in
+ * users at "/" still get the terminal, so the authenticated product is untouched.
+ */
+const MarketingApp = lazy(() => import('./marketing/MarketingApp').then((m) => ({ default: m.MarketingApp })));
+
+function isMarketingRootPath(pathname: string): boolean {
+  return pathname === '/' || pathname === '' || pathname === '/home';
+}
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -118,6 +129,15 @@ export function App(): JSX.Element {
 
   if (phase === 'BOOTING') {
     return <div className="boot-splash">Restoring session…</div>;
+  }
+  // The public marketing homepage is the front door for visitors who are not signed
+  // in. Signed-in users at "/" fall through to the terminal, unchanged.
+  if (phase !== 'SIGNED_IN' && typeof window !== 'undefined' && isMarketingRootPath(window.location.pathname)) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading…</div>}>
+        <MarketingApp />
+      </Suspense>
+    );
   }
   // Signing in is the same door for everyone; what is behind it is not.
   if (phase !== 'SIGNED_IN') return <LoginScreen />;
