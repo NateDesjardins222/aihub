@@ -106,4 +106,5 @@ export const PERMISSION_GROUPS: Record<string, Permission[]> = {
  * Risk classes for step-up reauthentication. A high-risk endpoint declares one;
  * `requireReauth(class)` demands a fresh step-up token scoped to it.
  */
-export type ReauthClass = 'FINANCIAL' | 'STAFF' | 'KILL_SWITCH' | 'PROVIDER' | 'CONFIG' | 'BREAK_GLASS';
+export const REAUTH_CLASSES = ['FINANCIAL', 'STAFF', 'KILL_SWITCH', 'PROVIDER', 'CONFIG', 'BREAK_GLASS'] as const;
+export type ReauthClass = (typeof REAUTH_CLASSES)[number];

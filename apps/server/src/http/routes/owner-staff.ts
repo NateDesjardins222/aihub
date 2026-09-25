@@ -18,9 +18,8 @@ import {
   resendInvitation, revokeInvitation, revokeStaffSessions, setPermissionOverride, setStatus, staffDetail,
 } from '../../platform/staff.js';
 import { mintStepUp } from '../../platform/reauth.js';
+import { REAUTH_CLASSES } from '../../platform/permissions.js';
 import { endImpersonation, listActiveImpersonations, startImpersonation } from '../../platform/impersonation.js';
-
-const REAUTH_CLASSES = ['FINANCIAL', 'STAFF', 'KILL_SWITCH', 'PROVIDER', 'CONFIG', 'BREAK_GLASS'] as const;
 
 // ============================================================================
 // Owner routes — /api/v1/admin
