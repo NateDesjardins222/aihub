@@ -34,6 +34,7 @@ import { AdminCertificateStorePage } from './pages/CertificateStorePage';
 import { AdminEnforcementPage } from './pages/EnforcementPage';
 import { AdminPayoutOperationsPage } from './pages/PayoutOperationsPage';
 import { CommandCenterPage, OwnerSystemPage, StaffPage } from './pages/OwnerOsPages';
+import { AffiliatesPage, Affiliate360Page } from './pages/AffiliatesPages';
 import './Admin.css';
 
 export type AdminRoute =
@@ -58,7 +59,9 @@ export type AdminRoute =
   | { name: 'PAYOUT_OPS' }
   | { name: 'SYSTEM' }
   | { name: 'INFRA' }
-  | { name: 'CERTSTORE' };
+  | { name: 'CERTSTORE' }
+  | { name: 'AFFILIATES' }
+  | { name: 'AFFILIATE'; id: string };
 
 export function parseAdminRoute(pathname: string): AdminRoute {
   const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
@@ -88,6 +91,9 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   if (parts[0] === 'system') return { name: 'SYSTEM' };
   if (parts[0] === 'infrastructure' || parts[0] === 'infra') return { name: 'INFRA' };
   if (parts[0] === 'certificate-store' || parts[0] === 'certstore') return { name: 'CERTSTORE' };
+  if (parts[0] === 'affiliates') {
+    return parts[1] ? { name: 'AFFILIATE', id: parts[1] } : { name: 'AFFILIATES' };
+  }
   return { name: 'OVERVIEW' };
 }
 
@@ -135,6 +141,10 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/infrastructure';
     case 'CERTSTORE':
       return '/admin/certificate-store';
+    case 'AFFILIATES':
+      return '/admin/affiliates';
+    case 'AFFILIATE':
+      return `/admin/affiliates/${route.id}`;
     default:
       return '/admin';
   }
@@ -150,6 +160,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'RISK' }, label: 'Risk' },
   { route: { name: 'FUNDING' }, label: 'Funding' },
   { route: { name: 'PAYOUTS' }, label: 'Payouts' },
+  { route: { name: 'AFFILIATES' }, label: 'Affiliates' },
   { route: { name: 'ENFORCEMENT' }, label: 'Enforcement' },
   { route: { name: 'PAYOUT_OPS' }, label: 'Payout Ops' },
   { route: { name: 'ECONOMICS' }, label: 'Economics' },
@@ -259,6 +270,8 @@ export function AdminApp(): JSX.Element {
         {route.name === 'SYSTEM' ? <AdminSystemPage /> : null}
         {route.name === 'INFRA' ? <AdminInfraPage /> : null}
         {route.name === 'CERTSTORE' ? <AdminCertificateStorePage mayMutate={mayMutate} /> : null}
+        {route.name === 'AFFILIATES' ? <AffiliatesPage go={go} /> : null}
+        {route.name === 'AFFILIATE' ? <Affiliate360Page id={route.id} go={go} /> : null}
       </main>
     </div>
   );

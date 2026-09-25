@@ -46,6 +46,19 @@ const PortalApp = lazy(() => import('./portal/PortalApp').then((m) => ({ default
  */
 const VerifyPage = lazy(() => import('./portal/VerifyPage').then((m) => ({ default: m.VerifyPage })));
 
+/*
+ * The public affiliate/partner program (/affiliates, /affiliates/apply,
+ * /affiliates/agreement). Unauthenticated and its own bundle — rendered before the
+ * sign-in gate so a shared referral link and the application form work for anyone.
+ */
+const AffiliatesPublic = lazy(() => import('./affiliates/AffiliatesPublic').then((m) => ({ default: m.AffiliatesPublic })));
+
+/*
+ * The affiliate self-service portal (/affiliates/portal). Behind sign-in and its
+ * own bundle — a trader who is not a partner never downloads it.
+ */
+const AffiliatePortal = lazy(() => import('./affiliates/AffiliatePortal').then((m) => ({ default: m.AffiliatePortal })));
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -64,6 +77,7 @@ export function App(): JSX.Element {
   const checkout = typeof window !== 'undefined' && window.location.pathname.startsWith('/checkout');
   const onboarding = typeof window !== 'undefined' && window.location.pathname.startsWith('/onboarding');
   const portal = typeof window !== 'undefined' && window.location.pathname.startsWith('/portal');
+  const affiliatePortal = typeof window !== 'undefined' && window.location.pathname.startsWith('/affiliates/portal');
 
   useEffect(() => {
     void boot();
@@ -74,6 +88,21 @@ export function App(): JSX.Element {
     return (
       <Suspense fallback={<div className="boot-splash">Verifying…</div>}>
         <VerifyPage />
+      </Suspense>
+    );
+  }
+
+  // Public affiliate program: no session required, before the sign-in gate — so a
+  // shared referral link and the application form work for anyone. The affiliate
+  // portal (/affiliates/portal) is behind sign-in and handled after the gate.
+  if (
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/affiliates') &&
+    !window.location.pathname.startsWith('/affiliates/portal')
+  ) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading…</div>}>
+        <AffiliatesPublic />
       </Suspense>
     );
   }
@@ -103,6 +132,13 @@ export function App(): JSX.Element {
     return (
       <Suspense fallback={<div className="boot-splash">Loading…</div>}>
         <OnboardingApp />
+      </Suspense>
+    );
+  }
+  if (affiliatePortal) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading partner dashboard…</div>}>
+        <AffiliatePortal />
       </Suspense>
     );
   }

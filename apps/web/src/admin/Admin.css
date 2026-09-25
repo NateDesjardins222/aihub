@@ -889,3 +889,16 @@
   border-color: var(--border-strong);
   color: var(--text-muted);
 }
+
+/* Affiliates (M11): sub-panels inside the Actions card of Affiliate 360. */
+.adm-subpanel {
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.02));
+}
+.adm-subpanel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
