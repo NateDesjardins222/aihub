@@ -21,6 +21,7 @@ import { AchievementsPage } from './pages/AchievementsPage';
 import { BillingPage } from './pages/BillingPage';
 import { SupportPage } from './pages/SupportPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { ReviewPage } from './pages/ReviewPage';
 import './Portal.css';
 
 export type Route =
@@ -35,7 +36,8 @@ export type Route =
   | { name: 'profile' }
   | { name: 'verification' }
   | { name: 'security' }
-  | { name: 'notifications' };
+  | { name: 'notifications' }
+  | { name: 'review' };
 
 const ACCOUNT_TABS = ['overview', 'performance', 'controls', 'rules', 'activity'];
 
@@ -46,7 +48,7 @@ export function parseRoute(pathname: string, hash: string): Route {
     return { name: 'account', id: parts[1], tab };
   }
   if (parts[0] === 'accounts') return { name: 'accounts' };
-  const simple = ['payouts', 'certificates', 'achievements', 'billing', 'support', 'profile', 'verification', 'security', 'notifications'] as const;
+  const simple = ['payouts', 'certificates', 'achievements', 'billing', 'support', 'profile', 'verification', 'security', 'notifications', 'review'] as const;
   if (simple.includes(parts[0] as (typeof simple)[number])) return { name: parts[0] } as Route;
   return { name: 'dashboard' };
 }
@@ -158,6 +160,7 @@ export function PortalApp(): JSX.Element {
         {route.name === 'achievements' && <AchievementsPage onToast={showToast} />}
         {route.name === 'billing' && <BillingPage accounts={accounts} />}
         {route.name === 'support' && <SupportPage />}
+        {route.name === 'review' && <ReviewPage onToast={showToast} />}
         {(route.name === 'profile' || route.name === 'verification' || route.name === 'security' || route.name === 'notifications') && (
           <ProfilePage section={route.name} onToast={showToast} />
         )}
@@ -230,7 +233,7 @@ function ProfileMenu({ email, onGo, onSignOut }: { email: string; onGo: (r: Rout
   }, [open]);
   const initial = (email[0] ?? '?').toUpperCase();
   const items: Array<[Route['name'], string]> = [
-    ['profile', 'Profile'], ['verification', 'Verification'], ['security', 'Security'], ['notifications', 'Notifications'],
+    ['profile', 'Profile'], ['verification', 'Verification'], ['security', 'Security'], ['notifications', 'Notifications'], ['review', 'Account review'],
   ];
   return (
     <div className="pt-switcher" onClick={(e) => e.stopPropagation()}>

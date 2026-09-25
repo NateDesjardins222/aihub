@@ -29,6 +29,8 @@ import { requireUser } from '../auth-plugin.js';
 import { defaultOrganizationId } from '../../platform/provisioning.js';
 import { resolveProfileByKey, ProfileError } from '../../platform/profiles.js';
 import { CommerceError, createPendingOrder, markOrderCompleted } from '../../platform/commerce.js';
+import { holdBlocking } from '../../platform/enforcement-holds.js';
+import { identityIdForUser } from '../../platform/enforcement.js';
 import { WhopApiError, whopClientFromEnv, type WhopClient } from '../../platform/whop-client.js';
 import {
   MockCommerceProvider,
@@ -79,6 +81,14 @@ export function checkoutRoutes(deps: { whopClient?: () => WhopClient | null } = 
         // account is earned, not bought.
         if (product.accountType !== 'EVALUATION') {
           throw ApiError.badRequest('PRODUCT_NOT_PURCHASABLE', 'That product is not sold through checkout.');
+        }
+
+        // Firm enforcement hold (M7): block a purchase pre-checkout when the
+        // customer is under a PURCHASE hold, so we never take payment we would
+        // then have to unwind.
+        const purchaseIdentityId = await identityIdForUser(db, request.user!.id);
+        if (purchaseIdentityId && (await holdBlocking(db, { customerIdentityId: purchaseIdentityId }, 'PURCHASE'))) {
+          throw ApiError.badRequest('ENFORCEMENT_HOLD', 'Purchasing is temporarily unavailable on your account while a review is in progress.');
         }
 
         const order = await createPendingOrder(db, {

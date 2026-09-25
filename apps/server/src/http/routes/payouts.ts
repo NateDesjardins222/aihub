@@ -241,10 +241,17 @@ export function payoutRoutes() {
 
 function presentEligibility(ctx: Awaited<ReturnType<typeof getPayoutEligibility>>) {
   const e = ctx.eligibility;
+  const held = ctx.enforcementHold === true;
+  // A firm enforcement hold is surfaced as a distinct reason so the UI can show
+  // "Eligible, temporarily under review" rather than economic ineligibility.
+  const reasonCodes = held ? [...e.reasonCodes.filter((c) => c !== 'ELIGIBLE'), 'ENFORCEMENT_HOLD'] : e.reasonCodes;
   return {
     accountId: ctx.account.id,
-    state: e.state,
-    reasonCodes: e.reasonCodes,
+    state: held ? 'NOT_ELIGIBLE' : e.state,
+    enforcementHold: held,
+    /** The economic decision, ignoring any enforcement hold (for the UI wording). */
+    economicallyEligible: e.state === 'ELIGIBLE',
+    reasonCodes,
     grossWithdrawableMicros: e.grossWithdrawableMicros,
     qualifyingWinningDays: e.qualifyingWinningDays,
     requiredWinningDays: ctx.policy.requiredWinningDays,

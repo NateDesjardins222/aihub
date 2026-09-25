@@ -75,7 +75,11 @@ export type PayoutReasonCode =
   // approved Daily payout. See docs/daily-payout-balance-progression.md.
   | 'DAILY_BALANCE_PROGRESSION_NOT_MET'
   // The account has already been paid its maximum number of payout cycles.
-  | 'MAX_CYCLES_REACHED';
+  | 'MAX_CYCLES_REACHED'
+  // A firm enforcement hold is active (Milestone 7). This is SEPARATE from
+  // economic eligibility — the account may be economically eligible but a payout
+  // is "temporarily under review". No final determination is implied.
+  | 'ENFORCEMENT_HOLD';
 
 /** One finalized trading day for an account. `netMicros = ending - starting`. */
 export interface DayStat {

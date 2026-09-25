@@ -29,6 +29,12 @@ import type {
   EconomicsRun,
   ProductConfig,
   TraderNote,
+  EnfCase,
+  EnfCaseDetail,
+  EnfHold,
+  EnfSignal,
+  EnfFinding,
+  EnfSummary,
 } from './types';
 
 const BASE = '/api/v1/admin';
@@ -230,6 +236,46 @@ export const adminApi = {
     api.post<{ ok: boolean }>(`${BASE}/customers/${id}/hold`, { status, reason }),
   customerResendNotification: (id: string, reason: string) =>
     api.post<{ requeued: boolean }>(`${BASE}/customers/notifications/${id}/resend`, { reason }),
+
+  // -- enforcement (M7) -----------------------------------------------------
+  // Everything is a server read; the console recommends nothing and decides
+  // nothing. RBAC lives on the routes (SUPPORT reads; ADMIN acts; SUPER_ADMIN
+  // confirms serious violations / terminates / overrides appeal independence).
+  enfSummary: () => api.get<EnfSummary>(`${BASE}/enforcement/summary`),
+  enfCases: (q: { status?: string; severity?: string; category?: string } = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) params.set(k, v);
+    return api.get<{ cases: EnfCase[] }>(`${BASE}/enforcement/cases?${params.toString()}`);
+  },
+  enfCase: (id: string) => api.get<EnfCaseDetail>(`${BASE}/enforcement/cases/${id}`),
+  enfSignals: () => api.get<{ signals: EnfSignal[] }>(`${BASE}/enforcement/signals`),
+  enfHolds: (q: { status?: string; capability?: string } = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) params.set(k, v);
+    return api.get<{ holds: EnfHold[] }>(`${BASE}/enforcement/holds?${params.toString()}`);
+  },
+  enfOpenCase: (body: { customerIdentityId: string; category: string; accountId?: string; reasonCode?: string; severity?: string }) =>
+    api.post<{ case: EnfCase }>(`${BASE}/enforcement/cases`, body),
+  enfAssign: (id: string, assigneeUserId: string | null) =>
+    api.post<{ case: EnfCase }>(`${BASE}/enforcement/cases/${id}/assign`, { assigneeUserId }),
+  enfTransition: (id: string, to: string, reason?: string, expectedVersion?: number) =>
+    api.post<{ case: EnfCase }>(`${BASE}/enforcement/cases/${id}/transition`, { to, reason, expectedVersion }),
+  enfNote: (id: string, body: string, visibility?: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/enforcement/cases/${id}/note`, { body, visibility }),
+  enfEvidence: (id: string, body: { type: string; source: string; sourceRef?: string; visibility?: string }) =>
+    api.post<{ evidenceId: string }>(`${BASE}/enforcement/cases/${id}/evidence`, body),
+  enfPlaceHold: (id: string, body: { scope: string; scopeId: string; capability: string; reasonCode: string; customerSafeCategory?: string; expiresAt?: string }) =>
+    api.post<{ hold: EnfHold }>(`${BASE}/enforcement/cases/${id}/holds`, body),
+  enfReleaseHold: (holdId: string, reason?: string) =>
+    api.post<{ hold: EnfHold }>(`${BASE}/enforcement/holds/${holdId}/release`, { reason }),
+  enfFinding: (id: string, body: { reasonCode: string; summarySafe?: string; rationaleInternal?: string; appealable?: boolean }) =>
+    api.post<{ finding: EnfFinding }>(`${BASE}/enforcement/cases/${id}/finding`, body),
+  enfAction: (id: string, body: { actionType: string; reasonCode?: string }) =>
+    api.post<{ actionId: string; deduped: boolean }>(`${BASE}/enforcement/cases/${id}/action`, body),
+  enfInfoRequest: (id: string, body: { requestType: string; messageSafe: string; dueAt?: string }) =>
+    api.post<{ requestId: string }>(`${BASE}/enforcement/cases/${id}/info-request`, body),
+  enfDecideAppeal: (appealId: string, body: { decision: string; rationaleInternal?: string; customerSafeExplanation?: string; overrideSameReviewer?: boolean }) =>
+    api.post<{ ok: boolean }>(`${BASE}/enforcement/appeals/${appealId}/decide`, body),
 };
 
 export interface CustomerSearchRow {

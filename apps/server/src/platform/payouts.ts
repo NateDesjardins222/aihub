@@ -22,6 +22,8 @@ import {
   payoutRequests,
 } from '../db/schema.js';
 import { accountAdvisoryLockSql } from '../trading/account-lock.js';
+import { holdBlocking, resolveAccountOwnerIdentity } from './enforcement-holds.js';
+import type { HoldCapability } from './enforcement-core.js';
 import type { Actor } from './actor.js';
 import { recordAudit } from './audit.js';
 import { events, type DomainEventType } from './events.js';
@@ -137,6 +139,8 @@ export interface EligibilityContext {
   readonly account: AccountRow;
   readonly policy: PayoutPolicy;
   readonly eligibility: PayoutEligibility;
+  /** A firm enforcement hold blocks a payout request (M7); separate from economic eligibility. */
+  readonly enforcementHold?: boolean;
   readonly nextOrdinal: number;
   readonly cycleStartDate: string | null;
 }
@@ -226,9 +230,22 @@ async function loadAccount(db: Database, accountId: string): Promise<AccountRow>
 // -- read-only eligibility ---------------------------------------------------
 
 /** Compute the account's current payout eligibility (trader UI + admin case). */
+/**
+ * Is a firm enforcement hold (M7) blocking this payout capability? Checks the
+ * account-scoped and customer-scoped holds. SEPARATE from economic eligibility —
+ * a held payout is "temporarily under review", not "ineligible".
+ */
+async function payoutHoldActive(db: Database, account: AccountRow, capability: HoldCapability, payoutRequestId?: string): Promise<boolean> {
+  const owner = await resolveAccountOwnerIdentity(db, account.id);
+  const subject = { accountId: account.id, customerIdentityId: owner?.customerIdentityId ?? null, payoutRequestId: payoutRequestId ?? null };
+  return (await holdBlocking(db, subject, capability)) != null;
+}
+
 export async function getPayoutEligibility(db: Database, accountId: string): Promise<EligibilityContext> {
   const account = await loadAccount(db, accountId);
-  return buildContext(db, account);
+  const ctx = await buildContext(db, account);
+  const enforcementHold = await payoutHoldActive(db, account, 'PAYOUT_REQUEST');
+  return { ...ctx, enforcementHold };
 }
 
 // -- request -----------------------------------------------------------------
@@ -268,6 +285,12 @@ export async function requestPayout(db: Database, input: RequestPayoutInput): Pr
     const [account] = await tx.select().from(accounts).where(eq(accounts.id, input.accountId)).for('update');
     if (!account) throw new PayoutError('ACCOUNT_NOT_FOUND', 'No such account.');
     const ctx = await buildContext(scoped, account);
+
+    // Firm enforcement hold (M7): a payout REQUEST is blocked while under review.
+    // This is separate from economic eligibility and moves no money.
+    if (await payoutHoldActive(scoped, account, 'PAYOUT_REQUEST')) {
+      throw new PayoutError('NOT_ELIGIBLE', 'Your payout is temporarily under review.', 'ENFORCEMENT_HOLD');
+    }
 
     const resolution = resolvePayoutRequest(
       ctx.eligibility,
@@ -375,6 +398,15 @@ export async function approvePayout(db: Database, input: DecideInput): Promise<P
     await tx.execute(accountAdvisoryLockSql(request.accountId));
     const [account] = await tx.select().from(accounts).where(eq(accounts.id, request.accountId)).for('update');
     if (!account) throw new PayoutError('ACCOUNT_NOT_FOUND', 'No such account.');
+
+    // Firm enforcement hold (M7): a hold placed AFTER the request still blocks the
+    // approval/debit. Checks PAYOUT_APPROVAL and PAYOUT_REQUEST holds, incl. a hold
+    // scoped to this specific payout request. No balance is debited while held.
+    const owner = await resolveAccountOwnerIdentity(scoped, account.id);
+    const subject = { accountId: account.id, customerIdentityId: owner?.customerIdentityId ?? null, payoutRequestId: request.id };
+    if ((await holdBlocking(scoped, subject, 'PAYOUT_APPROVAL')) || (await holdBlocking(scoped, subject, 'PAYOUT_REQUEST'))) {
+      throw new PayoutError('NOT_ELIGIBLE', 'This payout is temporarily under review and cannot be approved yet.', 'ENFORCEMENT_HOLD');
+    }
 
     // Re-verify against the CURRENT state, never the request-time snapshot.
     const ctx = await buildContext(scoped, account, request);

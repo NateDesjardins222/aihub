@@ -29,6 +29,7 @@ import { AdminAuditPage } from './pages/AuditPage';
 import { AdminSystemPage } from './pages/SystemPage';
 import { AdminInfraPage } from './pages/InfraPage';
 import { AdminCertificateStorePage } from './pages/CertificateStorePage';
+import { AdminEnforcementPage } from './pages/EnforcementPage';
 import './Admin.css';
 
 export type AdminRoute =
@@ -46,6 +47,7 @@ export type AdminRoute =
   | { name: 'AUDIT' }
   | { name: 'PRODUCTS' }
   | { name: 'PRODUCT'; key: string }
+  | { name: 'ENFORCEMENT' }
   | { name: 'SYSTEM' }
   | { name: 'INFRA' }
   | { name: 'CERTSTORE' };
@@ -70,6 +72,7 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   if (parts[0] === 'products') {
     return parts[1] ? { name: 'PRODUCT', key: decodeURIComponent(parts[1]) } : { name: 'PRODUCTS' };
   }
+  if (parts[0] === 'enforcement') return { name: 'ENFORCEMENT' };
   if (parts[0] === 'system') return { name: 'SYSTEM' };
   if (parts[0] === 'infrastructure' || parts[0] === 'infra') return { name: 'INFRA' };
   if (parts[0] === 'certificate-store' || parts[0] === 'certstore') return { name: 'CERTSTORE' };
@@ -104,6 +107,8 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/products';
     case 'PRODUCT':
       return `/admin/products/${encodeURIComponent(route.key)}`;
+    case 'ENFORCEMENT':
+      return '/admin/enforcement';
     case 'SYSTEM':
       return '/admin/system';
     case 'INFRA':
@@ -124,6 +129,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'RISK' }, label: 'Risk' },
   { route: { name: 'FUNDING' }, label: 'Funding' },
   { route: { name: 'PAYOUTS' }, label: 'Payouts' },
+  { route: { name: 'ENFORCEMENT' }, label: 'Enforcement' },
   { route: { name: 'ECONOMICS' }, label: 'Economics' },
   { route: { name: 'AUDIT' }, label: 'Audit' },
   { route: { name: 'PRODUCTS' }, label: 'Products' },
@@ -214,6 +220,9 @@ export function AdminApp(): JSX.Element {
         {route.name === 'PRODUCTS' ? <AdminProductsPage go={go} /> : null}
         {route.name === 'PRODUCT' ? (
           <AdminProductPage productKey={route.key} go={go} maySuper={role === 'SUPER_ADMIN'} />
+        ) : null}
+        {route.name === 'ENFORCEMENT' ? (
+          <AdminEnforcementPage mayMutate={mayMutate} maySuper={role === 'SUPER_ADMIN'} />
         ) : null}
         {route.name === 'SYSTEM' ? <AdminSystemPage /> : null}
         {route.name === 'INFRA' ? <AdminInfraPage /> : null}

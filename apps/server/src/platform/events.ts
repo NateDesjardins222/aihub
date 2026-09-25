@@ -97,7 +97,19 @@ export type DomainEventType =
   | 'copy.child.rejected'
   | 'copy.group.diverged'
   | 'copy.group.resynced'
-  | 'copy.group.flattened';
+  | 'copy.group.flattened'
+  // Prohibited conduct + enforcement + appeals (M7).
+  | 'enforcement.signal_ingested'
+  | 'enforcement.case_opened'
+  | 'enforcement.case_updated'
+  | 'enforcement.hold_placed'
+  | 'enforcement.hold_released'
+  | 'enforcement.finding_recorded'
+  | 'enforcement.action_recorded'
+  | 'enforcement.information_requested'
+  | 'enforcement.information_provided'
+  | 'enforcement.appeal_submitted'
+  | 'enforcement.appeal_decided';
 
 export interface DomainEvent {
   readonly type: DomainEventType;

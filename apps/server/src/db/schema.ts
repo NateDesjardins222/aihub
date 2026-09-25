@@ -2441,3 +2441,289 @@ export const traderRiskDayState = pgTable(
     uniqueIndex('trader_risk_day_state_account_date_key').on(t.accountId, t.tradeDate),
   ],
 );
+
+// ============================================================================
+// Milestone 7 — Prohibited Conduct + Enforcement + Appeals
+//
+// A signal is not a finding; a temporary hold is not a conviction; a rule breach
+// is not misconduct. These tables record investigations, evidence, holds and
+// appeals. They are SEPARATE from account lifecycle status — a case can be open
+// without the account being failed/locked. Policy acceptance reuses the existing
+// agreements tables (TRADER_PLEDGE); there is deliberately no policy_acceptances
+// table here.
+// ============================================================================
+
+/** An investigation. Distinct from account lifecycle status. */
+export const enforcementCases = pgTable(
+  'enforcement_cases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id').notNull().references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** Optional single most-affected account (a case may span accounts via signals/holds). */
+    subjectAccountId: uuid('subject_account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    /** Reason family, e.g. ACCOUNT_OWNERSHIP / IDENTITY / PAYMENT / PAYOUT / SECURITY / PLATFORM / COPY / AUTOMATION / COLLUSION. */
+    category: varchar('category', { length: 32 }).notNull(),
+    /** INFO | LOW | MEDIUM | HIGH | CRITICAL — operational urgency, NOT guilt. */
+    severity: varchar('severity', { length: 12 }).notNull().default('LOW'),
+    /** OPEN|TRIAGED|UNDER_REVIEW|AWAITING_CUSTOMER|ESCALATED|RESOLVED_NO_ACTION|RESOLVED_REMEDIATED|CONFIRMED_VIOLATION|APPEALED|APPEAL_REVIEW|OVERTURNED|FINALIZED */
+    status: varchar('status', { length: 24 }).notNull().default('OPEN'),
+    /** Customer-safe category shown to the trader; never the internal reason. */
+    customerSafeCategory: varchar('customer_safe_category', { length: 40 }).notNull().default('GENERAL_REVIEW'),
+    reasonCode: varchar('reason_code', { length: 48 }),
+    assignedToUserId: uuid('assigned_to_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Deterministic correlation key so repeated signals fold into one open case. */
+    correlationKey: varchar('correlation_key', { length: 120 }),
+    /** A short human reference (HTR-xxxx) shown to the customer. */
+    publicRef: varchar('public_ref', { length: 24 }).notNull(),
+    openedAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [
+    index('enforcement_cases_org_status_idx').on(t.organizationId, t.status),
+    index('enforcement_cases_identity_idx').on(t.customerIdentityId),
+    index('enforcement_cases_assigned_idx').on(t.assignedToUserId),
+    index('enforcement_cases_correlation_idx').on(t.organizationId, t.correlationKey),
+    uniqueIndex('enforcement_cases_public_ref_key').on(t.organizationId, t.publicRef),
+  ],
+);
+
+/** Something that MAY warrant attention. Idempotent, never itself a violation. */
+export const enforcementSignals = pgTable(
+  'enforcement_signals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').references(() => enforcementCases.id, { onDelete: 'set null' }),
+    customerIdentityId: uuid('customer_identity_id').references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    /** AUTH|IDENTITY|COMMERCE|PAYOUT|EXECUTION|PLATFORM|COPY|ADMIN|CUSTOMER_REPORT|PROVIDER */
+    source: varchar('source', { length: 24 }).notNull(),
+    /** Stable signal reason code (see enforcement-reason-codes.md). */
+    kind: varchar('kind', { length: 48 }).notNull(),
+    severity: varchar('severity', { length: 12 }).notNull().default('INFO'),
+    sourceRef: varchar('source_ref', { length: 200 }),
+    metadata: jsonb('metadata'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    capturedAt: now(),
+    /** Idempotency: (org, dedupeKey) unique so a replayed provider event is one signal. */
+    dedupeKey: varchar('dedupe_key', { length: 200 }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('enforcement_signals_dedupe_key').on(t.organizationId, t.dedupeKey),
+    index('enforcement_signals_org_kind_idx').on(t.organizationId, t.kind),
+    index('enforcement_signals_case_idx').on(t.caseId),
+    index('enforcement_signals_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+/** Immutable evidence referenced by a case. Prefer references/hashes over raw data. */
+export const enforcementEvidence = pgTable(
+  'enforcement_evidence',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 40 }).notNull(),
+    source: varchar('source', { length: 24 }).notNull(),
+    sourceRef: varchar('source_ref', { length: 200 }),
+    /** INTERNAL | CUSTOMER_SAFE | LEGAL_RESTRICTED */
+    visibility: varchar('visibility', { length: 16 }).notNull().default('INTERNAL'),
+    metadata: jsonb('metadata'),
+    integrityHash: varchar('integrity_hash', { length: 64 }),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }),
+    capturedAt: now(),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdBySystem: boolean('created_by_system').notNull().default(false),
+  },
+  (t) => [
+    index('enforcement_evidence_case_idx').on(t.caseId),
+    index('enforcement_evidence_org_idx').on(t.organizationId),
+  ],
+);
+
+/** Evidence-supported conclusion. Append-only; corrections supersede, never delete. */
+export const enforcementFindings = pgTable(
+  'enforcement_findings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    /** *_CONFIRMED or NO_VIOLATION (see enforcement-reason-codes.md). */
+    reasonCode: varchar('reason_code', { length: 48 }).notNull(),
+    /** Is this a punitive/adverse finding that supports an appeal? */
+    adverse: boolean('adverse').notNull().default(false),
+    /** Does policy allow an appeal of this finding? */
+    appealable: boolean('appealable').notNull().default(false),
+    summarySafe: text('summary_safe'),
+    rationaleInternal: text('rationale_internal'),
+    decidedByUserId: uuid('decided_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** ACTIVE | SUPERSEDED (an appeal overturn supersedes; original stays in history). */
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    supersededByFindingId: uuid('superseded_by_finding_id'),
+    decidedAt: now(),
+  },
+  (t) => [
+    index('enforcement_findings_case_idx').on(t.caseId),
+  ],
+);
+
+/** A durable, server-authoritative hold on a capability. */
+export const enforcementHolds = pgTable(
+  'enforcement_holds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').references(() => enforcementCases.id, { onDelete: 'set null' }),
+    /** CUSTOMER | ACCOUNT | PAYOUT | COMMERCE */
+    scope: varchar('scope', { length: 12 }).notNull(),
+    /** customerIdentityId | accountId | payoutRequestId | customerIdentityId(COMMERCE). */
+    scopeId: uuid('scope_id').notNull(),
+    /** TRADING | PAYOUT_REQUEST | PAYOUT_APPROVAL | PURCHASE | ACCESS */
+    capability: varchar('capability', { length: 24 }).notNull(),
+    reasonCode: varchar('reason_code', { length: 48 }).notNull(),
+    customerSafeCategory: varchar('customer_safe_category', { length: 40 }).notNull().default('GENERAL_REVIEW'),
+    /** ACTIVE | RELEASED | EXPIRED */
+    status: varchar('status', { length: 12 }).notNull().default('ACTIVE'),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdBySystem: boolean('created_by_system').notNull().default(false),
+    createdAt: now(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    releasedByUserId: uuid('released_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    releaseReason: varchar('release_reason', { length: 200 }),
+    version: integer('version').notNull().default(1),
+    /** Idempotency for placement retries. */
+    idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('enforcement_holds_idem_key').on(t.organizationId, t.idempotencyKey),
+    index('enforcement_holds_scope_idx').on(t.organizationId, t.scope, t.scopeId, t.status),
+    index('enforcement_holds_capability_idx').on(t.capability, t.status),
+    index('enforcement_holds_case_idx').on(t.caseId),
+  ],
+);
+
+/** A safety/enforcement action taken on a case. Separate from findings. */
+export const enforcementActions = pgTable(
+  'enforcement_actions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    /** NO_ACTION|STEP_UP_VERIFICATION|FORCE_SESSION_REAUTH|REVOKE_SESSIONS|TEMPORARY_*_HOLD|REQUEST_INFORMATION|REMEDIATE_TRANSACTION|REMOVE_HOLD|ACCOUNT_TERMINATION|CUSTOMER_TERMINATION */
+    actionType: varchar('action_type', { length: 40 }).notNull(),
+    reasonCode: varchar('reason_code', { length: 48 }),
+    scope: varchar('scope', { length: 12 }),
+    scopeId: uuid('scope_id'),
+    holdId: uuid('hold_id').references(() => enforcementHolds.id, { onDelete: 'set null' }),
+    performedByUserId: uuid('performed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    performedBySystem: boolean('performed_by_system').notNull().default(false),
+    metadata: jsonb('metadata'),
+    performedAt: now(),
+    idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('enforcement_actions_idem_key').on(t.organizationId, t.idempotencyKey),
+    index('enforcement_actions_case_idx').on(t.caseId),
+  ],
+);
+
+/** Internal investigator note (never customer-facing unless visibility=CUSTOMER_SAFE). */
+export const enforcementNotes = pgTable(
+  'enforcement_notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+    body: text('body').notNull(),
+    /** INTERNAL | CUSTOMER_SAFE | LEGAL_RESTRICTED */
+    visibility: varchar('visibility', { length: 16 }).notNull().default('INTERNAL'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('enforcement_notes_case_idx').on(t.caseId),
+  ],
+);
+
+/** A structured request for information from the customer. */
+export const enforcementInformationRequests = pgTable(
+  'enforcement_information_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    customerIdentityId: uuid('customer_identity_id').notNull().references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** Customer-safe request type, e.g. ACCOUNT_OWNERSHIP_VERIFICATION. */
+    requestType: varchar('request_type', { length: 48 }).notNull(),
+    messageSafe: text('message_safe').notNull(),
+    requestedByUserId: uuid('requested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    requestedAt: now(),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    /** PENDING | RESPONDED | CANCELLED */
+    responseStatus: varchar('response_status', { length: 12 }).notNull().default('PENDING'),
+    responseText: text('response_text'),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    version: integer('version').notNull().default(1),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('enforcement_info_requests_case_idx').on(t.caseId),
+    index('enforcement_info_requests_identity_idx').on(t.customerIdentityId),
+  ],
+);
+
+/** A customer appeal of an eligible final adverse decision. One per case (V1). */
+export const enforcementAppeals = pgTable(
+  'enforcement_appeals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    customerIdentityId: uuid('customer_identity_id').notNull().references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    originalFindingId: uuid('original_finding_id').references(() => enforcementFindings.id, { onDelete: 'set null' }),
+    /** The user id who made the original adverse decision (for the independence guard). */
+    originalDeciderUserId: uuid('original_decider_user_id').references(() => users.id, { onDelete: 'set null' }),
+    customerStatement: text('customer_statement'),
+    /** SUBMITTED|UNDER_REVIEW|INFORMATION_REQUESTED|UPHELD|OVERTURNED|PARTIALLY_REMEDIATED|CLOSED */
+    status: varchar('status', { length: 24 }).notNull().default('SUBMITTED'),
+    reviewerUserId: uuid('reviewer_user_id').references(() => users.id, { onDelete: 'set null' }),
+    customerSafeExplanation: text('customer_safe_explanation'),
+    submittedAt: now(),
+    decisionAt: timestamp('decision_at', { withTimezone: true }),
+    version: integer('version').notNull().default(1),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('enforcement_appeals_case_key').on(t.caseId),
+    index('enforcement_appeals_identity_idx').on(t.customerIdentityId),
+    index('enforcement_appeals_status_idx').on(t.organizationId, t.status),
+  ],
+);
+
+/** Append-only appeal decision record. Original decisions are never rewritten. */
+export const enforcementAppealDecisions = pgTable(
+  'enforcement_appeal_decisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    appealId: uuid('appeal_id').notNull().references(() => enforcementAppeals.id, { onDelete: 'cascade' }),
+    caseId: uuid('case_id').notNull().references(() => enforcementCases.id, { onDelete: 'cascade' }),
+    /** UPHELD | OVERTURNED | PARTIALLY_REMEDIATED | INFORMATION_REQUESTED */
+    decision: varchar('decision', { length: 24 }).notNull(),
+    decidedByUserId: uuid('decided_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    rationaleInternal: text('rationale_internal'),
+    customerSafeExplanation: text('customer_safe_explanation'),
+    /** True when a same-reviewer serious decision was explicitly overridden by higher authority. */
+    overrideSameReviewer: boolean('override_same_reviewer').notNull().default(false),
+    overrideByUserId: uuid('override_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: now(),
+  },
+  (t) => [
+    index('enforcement_appeal_decisions_appeal_idx').on(t.appealId),
+    index('enforcement_appeal_decisions_case_idx').on(t.caseId),
+  ],
+);

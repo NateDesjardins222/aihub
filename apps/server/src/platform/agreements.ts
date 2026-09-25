@@ -152,12 +152,19 @@ const DEFAULT_AGREEMENTS: ReadonlyArray<{ type: AgreementType; title: string; bo
   },
   {
     type: 'TRADER_PLEDGE',
-    title: 'Trader Pledge & Trading Standards',
+    title: 'Trader Pledge & Prohibited Conduct Policy (V1)',
     body:
       PLACEHOLDER_HEADER +
-      'You pledge to trade the account yourself, without prohibited automation, ' +
-      'copy-trading across accounts, or coordinated group trading, and to respect ' +
-      "each product's consistency and risk rules.",
+      'You pledge to operate only your own verified account; not to sell, rent, ' +
+      'transfer, or let another person trade or manage it; not to use ' +
+      'reverse-engineered automation or exploit platform defects; and to provide ' +
+      'truthful identity and payment information. Being profitable, using a VPN, ' +
+      'travelling, using several of your own devices, news trading, and copy ' +
+      'trading across your own eligible accounts are all permitted. Reviews may ' +
+      'place temporary holds while facts are checked; a temporary hold is not a ' +
+      'decision, a risk-reducing/closing trade is never blocked, and eligible ' +
+      'final adverse decisions can be appealed. See the full policy: ' +
+      'docs/happy-trader-prohibited-conduct-policy-v1.md.',
   },
   {
     type: 'PRIVACY',

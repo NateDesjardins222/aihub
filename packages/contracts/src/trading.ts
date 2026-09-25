@@ -223,6 +223,13 @@ export type RejectReason =
   | 'PERSONAL_COOLDOWN'
   | 'PERSONAL_TRADING_WINDOW'
   | 'PERSONAL_SESSION_RESTRICTION'
+  /**
+   * A firm enforcement TRADING hold (Milestone 7) is active on this account or its
+   * owner. Like personal controls, it ONLY blocks exposure-INCREASING orders —
+   * reduce / flatten / protective / liquidation orders are never blocked, so a
+   * held account can always close its positions.
+   */
+  | 'ACCOUNT_ENFORCEMENT_HOLD'
   | 'INTERNAL_ERROR';
 
 export interface RiskRejection {

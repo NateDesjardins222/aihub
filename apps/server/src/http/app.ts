@@ -21,6 +21,7 @@ import { customerConsoleRoutes } from './routes/customers.js';
 import { onboardingRoutes } from './routes/onboarding.js';
 import { verifyRoutes } from './routes/verify.js';
 import { portalRoutes } from './routes/portal.js';
+import { enforcementAdminRoutes, enforcementPortalRoutes } from './routes/enforcement.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -384,6 +385,8 @@ export async function buildApp(): Promise<BuiltApp> {
   // The customer portal: a trader's own accounts, analytics, reset, certificates,
   // achievements and profile. Every route is owner-scoped.
   await app.register(portalRoutes, { prefix: '/api/v1/portal' });
+  await app.register(enforcementAdminRoutes(), { prefix: '/api/v1/admin/enforcement' });
+  await app.register(enforcementPortalRoutes(), { prefix: '/api/v1/portal/enforcement' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });

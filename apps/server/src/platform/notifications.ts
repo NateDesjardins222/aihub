@@ -47,7 +47,13 @@ export type NotificationType =
   | 'ACCOUNT_INACTIVITY_CLOSED'
   | 'ACCOUNT_COMPLETED'
   // Milestone 6 — a rendered certificate/reward is ready to view in the vault.
-  | 'CERTIFICATE_READY';
+  | 'CERTIFICATE_READY'
+  // Milestone 7 — enforcement/appeals customer-safe notices (never reveal detail).
+  | 'ENFORCEMENT_REVIEW_OPENED'
+  | 'ENFORCEMENT_INFORMATION_REQUESTED'
+  | 'ENFORCEMENT_DECISION'
+  | 'ENFORCEMENT_HOLD_RELEASED'
+  | 'ENFORCEMENT_APPEAL_UPDATE';
 
 /** Channel policy: SMS is reserved for verification, milestones, payout, security. */
 const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
@@ -74,6 +80,11 @@ const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
   ACCOUNT_INACTIVITY_CLOSED: ['EMAIL'],
   ACCOUNT_COMPLETED: ['EMAIL', 'SMS'],
   CERTIFICATE_READY: ['EMAIL'],
+  ENFORCEMENT_REVIEW_OPENED: ['EMAIL'],
+  ENFORCEMENT_INFORMATION_REQUESTED: ['EMAIL'],
+  ENFORCEMENT_DECISION: ['EMAIL'],
+  ENFORCEMENT_HOLD_RELEASED: ['EMAIL'],
+  ENFORCEMENT_APPEAL_UPDATE: ['EMAIL'],
 };
 
 const TEMPLATE_VERSION = 'v1';
@@ -138,6 +149,31 @@ function render(type: NotificationType, data: Record<string, unknown>): { subjec
       return {
         subject: 'Your Happy Trader certificate is ready',
         body: 'A new certificate has been added to your Certificate Vault. View, download or share it from your dashboard.',
+      };
+    case 'ENFORCEMENT_REVIEW_OPENED':
+      return {
+        subject: 'A review has been opened on your account',
+        body: 'We have opened a review on your account. No final determination has been made. You can see the current status and reference in your account.',
+      };
+    case 'ENFORCEMENT_INFORMATION_REQUESTED':
+      return {
+        subject: 'We need some information',
+        body: 'A review of your account needs some information from you. Please open your account to see what is requested.',
+      };
+    case 'ENFORCEMENT_DECISION':
+      return {
+        subject: 'An update on your account review',
+        body: 'There is an update on a review of your account. Please open your account to see the current status.',
+      };
+    case 'ENFORCEMENT_HOLD_RELEASED':
+      return {
+        subject: 'A temporary hold has been removed',
+        body: 'A temporary hold on your account has been removed and access has been restored.',
+      };
+    case 'ENFORCEMENT_APPEAL_UPDATE':
+      return {
+        subject: 'An update on your appeal',
+        body: 'There is an update on your appeal. Please open your account to see the current status.',
       };
   }
 }
@@ -273,6 +309,21 @@ export function registerNotificationConsumer(db: Database): () => void {
             break;
           case 'payout.paid':
             await enqueue('PAYOUT_PAID', `payoutpaid:${(event.payload as { payoutRequestId?: string })?.payoutRequestId ?? 'p'}`);
+            break;
+          case 'enforcement.case_opened':
+            await enqueue('ENFORCEMENT_REVIEW_OPENED', `enfcase:${(event.payload as { caseId?: string })?.caseId ?? 'c'}`);
+            break;
+          case 'enforcement.information_requested':
+            await enqueue('ENFORCEMENT_INFORMATION_REQUESTED', `enfinfo:${(event.payload as { requestId?: string })?.requestId ?? 'r'}`);
+            break;
+          case 'enforcement.finding_recorded':
+            await enqueue('ENFORCEMENT_DECISION', `enffind:${(event.payload as { findingId?: string })?.findingId ?? 'f'}`);
+            break;
+          case 'enforcement.appeal_submitted':
+            await enqueue('ENFORCEMENT_APPEAL_UPDATE', `enfappealsub:${(event.payload as { appealId?: string })?.appealId ?? 'a'}`);
+            break;
+          case 'enforcement.appeal_decided':
+            await enqueue('ENFORCEMENT_APPEAL_UPDATE', `enfappealdec:${(event.payload as { appealId?: string })?.appealId ?? 'a'}`);
             break;
           default:
             break;

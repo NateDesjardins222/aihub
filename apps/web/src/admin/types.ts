@@ -613,3 +613,151 @@ export interface EconomicsRun {
   caps: { conservative: EconResult; current: EconResult; generous: EconResult };
   reserve: { reserveMicros: number; tailMicros: number; basisMicros: number };
 }
+
+// ---- enforcement (M7) -------------------------------------------------------
+// A case is a review, never a verdict; severity is triage urgency, not guilt.
+export interface EnfCase {
+  id: string;
+  organizationId: string;
+  customerIdentityId: string;
+  subjectAccountId: string | null;
+  category: string;
+  severity: string;
+  status: string;
+  customerSafeCategory: string;
+  reasonCode: string | null;
+  assignedToUserId: string | null;
+  correlationKey: string | null;
+  publicRef: string;
+  openedAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  version: number;
+}
+
+export interface EnfSignal {
+  id: string;
+  caseId: string | null;
+  customerIdentityId: string | null;
+  accountId: string | null;
+  source: string;
+  kind: string;
+  severity: string;
+  sourceRef: string | null;
+  metadata: Record<string, unknown> | null;
+  occurredAt: string;
+  capturedAt: string;
+  dedupeKey: string;
+}
+
+export interface EnfHold {
+  id: string;
+  caseId: string | null;
+  scope: string;
+  scopeId: string;
+  capability: string;
+  reasonCode: string;
+  customerSafeCategory: string | null;
+  status: string;
+  createdBySystem: boolean;
+  createdAt: string;
+  expiresAt: string | null;
+  releasedAt: string | null;
+  releaseReason: string | null;
+  version: number;
+}
+
+export interface EnfFinding {
+  id: string;
+  caseId: string;
+  reasonCode: string;
+  adverse: boolean;
+  appealable: boolean;
+  summarySafe: string | null;
+  rationaleInternal: string | null;
+  status: string;
+  supersededByFindingId: string | null;
+  decidedAt: string;
+}
+
+export interface EnfAction {
+  id: string;
+  caseId: string;
+  actionType: string;
+  reasonCode: string | null;
+  holdId: string | null;
+  performedBySystem: boolean;
+  performedAt: string;
+}
+
+export interface EnfNote {
+  id: string;
+  caseId: string;
+  authorUserId: string | null;
+  body: string;
+  visibility: string;
+  createdAt: string;
+}
+
+export interface EnfEvidence {
+  id: string;
+  caseId: string;
+  type: string;
+  source: string;
+  sourceRef: string | null;
+  visibility: string;
+  integrityHash: string | null;
+  capturedAt: string;
+}
+
+export interface EnfInfoRequest {
+  id: string;
+  caseId: string;
+  requestType: string;
+  messageSafe: string;
+  requestedAt: string;
+  dueAt: string | null;
+  responseStatus: string;
+  responseText: string | null;
+  respondedAt: string | null;
+}
+
+export interface EnfAppeal {
+  id: string;
+  caseId: string;
+  originalFindingId: string | null;
+  originalDeciderUserId: string | null;
+  customerStatement: string | null;
+  status: string;
+  reviewerUserId: string | null;
+  customerSafeExplanation: string | null;
+  submittedAt: string;
+  decisionAt: string | null;
+  version: number;
+}
+
+export interface EnfAppealDecision {
+  id: string;
+  appealId: string;
+  caseId: string;
+  decision: string;
+  rationaleInternal: string | null;
+  customerSafeExplanation: string | null;
+  overrideSameReviewer: boolean;
+  decidedAt: string;
+}
+
+export interface EnfCaseDetail {
+  case: EnfCase;
+  signals: EnfSignal[];
+  evidence: EnfEvidence[];
+  findings: EnfFinding[];
+  actions: EnfAction[];
+  holds: EnfHold[];
+  notes: EnfNote[];
+  informationRequests: EnfInfoRequest[];
+  appeals: EnfAppeal[];
+  appealDecisions: EnfAppealDecision[];
+}
+
+export interface EnfSummary { openCases: number; holds: number; appeals: number }

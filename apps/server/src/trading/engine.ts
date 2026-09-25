@@ -118,6 +118,7 @@ import {
   type RiskRejection,
 } from './risk.js';
 import { evaluatePersonalRisk } from './personal-risk.js';
+import { tradingHoldForAccount } from '../platform/enforcement-holds.js';
 import {
   loadPersonalConfig,
   getDayState,
@@ -1410,6 +1411,15 @@ export class TradingEngine {
       throw new OrderRejectedError(personalRejection.reason, personalRejection.message, personalRejection.detail);
     }
 
+    // Firm enforcement hold (M7): additive, like personal controls. Only ever
+    // blocks the exposure-INCREASING portion — a reduce/flatten/protective or
+    // liquidation order is never blocked, so a held account can always close.
+    const enforcementRejection = await this.checkEnforcementHold(input, position);
+    if (enforcementRejection) {
+      await this.recordRisk(input.accountId, null, enforcementRejection);
+      throw new OrderRejectedError(enforcementRejection.reason, enforcementRejection.message, enforcementRejection.detail);
+    }
+
     const entry = createOrder(
       {
         id: randomUUID(),
@@ -2571,6 +2581,27 @@ export class TradingEngine {
    * account mutex as the firm gate, so the day-state it reads is consistent with
    * the fills that produced it.
    */
+  /**
+   * Firm enforcement TRADING hold (M7). Mirrors the personal-risk gate: it only
+   * rejects an exposure-INCREASING order and never a reduce/flatten/protective or
+   * liquidation order, so an account under a trading hold can always close out.
+   */
+  private async checkEnforcementHold(
+    input: SubmitOrderInput,
+    position: { qty: number },
+  ): Promise<RiskRejection | null> {
+    if (input.liquidation) return null;
+    const signed = input.side === 'BUY' ? input.qty : -input.qty;
+    if (increasingQty(position.qty, signed) <= 0) return null; // never strand / block risk-reduction
+    const hold = await tradingHoldForAccount(this.db, input.accountId);
+    if (!hold) return null;
+    return {
+      reason: 'ACCOUNT_ENFORCEMENT_HOLD',
+      message: 'Trading is temporarily restricted while your account is under review. You can still reduce or close existing positions.',
+      detail: { holdId: hold.id },
+    };
+  }
+
   private async checkPersonalRisk(
     input: SubmitOrderInput,
     spec: InstrumentSpec,

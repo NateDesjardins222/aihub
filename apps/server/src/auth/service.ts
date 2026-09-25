@@ -197,6 +197,22 @@ export async function logout(db: Database, presented: string): Promise<void> {
     .where(and(eq(refreshTokens.tokenHash, hashRefreshToken(presented)), isNull(refreshTokens.revokedAt)));
 }
 
+/**
+ * Revoke EVERY active refresh token for a user (M7 enforcement containment /
+ * "force re-auth"). Login and refresh already reject a non-ACTIVE user; this
+ * additionally invalidates outstanding refresh tokens so the next refresh fails.
+ * A short-lived access token already issued expires on its own TTL. Returns the
+ * number of tokens revoked. Idempotent.
+ */
+export async function revokeAllSessions(db: Database, userId: string): Promise<number> {
+  const revoked = await db
+    .update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)))
+    .returning({ id: refreshTokens.id });
+  return revoked.length;
+}
+
 export async function getUserById(db: Database, id: string): Promise<AuthenticatedUser | null> {
   const [row] = await db.select().from(users).where(eq(users.id, id));
   if (!row) return null;
