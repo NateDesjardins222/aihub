@@ -3440,3 +3440,20 @@ export const exportJobs = pgTable(
   },
   (t) => [index('export_jobs_status_idx').on(t.status)],
 );
+
+/** Internal customer tags / segmentation labels (M10-D). */
+export const customerTags = pgTable(
+  'customer_tags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').references(() => organizations.id),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    tag: varchar('tag', { length: 40 }).notNull(),
+    createdByUserId: uuid('created_by_user_id'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('customer_tags_user_tag_key').on(t.userId, t.tag),
+    index('customer_tags_tag_idx').on(t.tag),
+  ],
+);

@@ -225,6 +225,13 @@
    "when": 1759200000000,
    "tag": "0031_owner_os_status_widen",
    "breakpoints": true
+  },
+  {
+   "idx": 32,
+   "version": "7",
+   "when": 1759300000000,
+   "tag": "0032_customer_tags",
+   "breakpoints": true
   }
  ]
 }
