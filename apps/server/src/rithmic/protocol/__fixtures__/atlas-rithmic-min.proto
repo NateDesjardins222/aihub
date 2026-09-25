@@ -240,6 +240,7 @@ message RequestNewOrder {
   enum PriceType { LIMIT = 1; MARKET = 2; STOP_LIMIT = 3; STOP_MARKET = 4; MARKET_IF_TOUCHED = 5; LIMIT_IF_TOUCHED = 6; }
   enum OrderPlacement { MANUAL = 1; AUTO = 2; }
   required int32 template_id = 154467 [default = 312];
+  repeated string user_msg = 132760;
   optional string user_tag = 154119;
   optional string fcm_id = 154013;
   optional string ib_id = 154012;
@@ -267,6 +268,7 @@ message ResponseNewOrder {
 }
 message RequestModifyOrder {
   required int32 template_id = 154467 [default = 314];
+  repeated string user_msg = 132760;
   optional string basket_id = 100747;
   optional string account_id = 154008;
   optional string symbol = 110100;
@@ -286,6 +288,7 @@ message ResponseModifyOrder {
 }
 message RequestCancelOrder {
   required int32 template_id = 154467 [default = 316];
+  repeated string user_msg = 132760;
   optional string basket_id = 100747;
   optional string account_id = 154008;
   optional int32 manual_or_auto = 154710;
