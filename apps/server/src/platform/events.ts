@@ -58,6 +58,17 @@ export type DomainEventType =
   | 'payout.failed'
   | 'payout.hold_placed'
   | 'payout.hold_removed'
+  // Payout operations (Milestone 8).
+  | 'payout.destination_added'
+  | 'payout.destination_verification_required'
+  | 'payout.fast_lane_entered'
+  | 'payout.exception'
+  | 'payout.submitted'
+  | 'payout.returned'
+  | 'payout.reconciled'
+  | 'payout.sla_breach'
+  | 'payout.circuit_breaker_opened'
+  | 'payout.circuit_breaker_closed'
   // Customer identity + contact + agreements (Customer Identity V1).
   | 'customer_identity.created'
   | 'contact.challenge_started'
