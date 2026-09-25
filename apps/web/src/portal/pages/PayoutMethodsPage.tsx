@@ -9,7 +9,7 @@
  * → Paid. "Processing" is Happy Trader/provider processing time, not a bank-arrival
  * guarantee.
  */
-import { useCallback, useEffect, useState, type JSX } from 'react';
+import { Fragment, useCallback, useEffect, useState, type JSX } from 'react';
 import { api } from '../../api/client';
 import { Card, EmptyState, Money, msg } from '../lib';
 
@@ -94,15 +94,15 @@ export function PayoutMethodsPage({ onToast }: { onToast: (m: string) => void })
                 <thead><tr><th>Requested</th><th className="num">Amount</th><th>Status</th><th /></tr></thead>
                 <tbody>
                   {ops.map((o) => (
-                    <>
-                      <tr key={o.payoutRequestId} data-testid={`pm-op-${o.payoutRequestId}`}>
+                    <Fragment key={o.payoutRequestId}>
+                      <tr data-testid={`pm-op-${o.payoutRequestId}`}>
                         <td className="muted">{new Date(o.requestedAt).toLocaleString()}</td>
                         <td className="num"><Money micros={o.traderShareMicros ?? o.grossMicros} /></td>
                         <td><span className={`pt-badge ${o.status === 'PAID' ? 'ok' : o.status === 'FAILED' ? 'bad' : ''}`}>{STATUS_LABEL[o.status] ?? o.status}</span></td>
                         <td><button className="pt-link" onClick={() => setOpenTimeline(openTimeline === o.payoutRequestId ? null : o.payoutRequestId)}>{openTimeline === o.payoutRequestId ? 'Hide' : 'Timeline'}</button></td>
                       </tr>
-                      {openTimeline === o.payoutRequestId ? <tr key={`${o.payoutRequestId}-t`}><td colSpan={4}><Timeline id={o.payoutRequestId} /></td></tr> : null}
-                    </>
+                      {openTimeline === o.payoutRequestId ? <tr><td colSpan={4}><Timeline id={o.payoutRequestId} /></td></tr> : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

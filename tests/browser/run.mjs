@@ -59,6 +59,7 @@ const SUITES = [
   'layout',
   'admin',
   'enforcement-acceptance',
+  'payout-ops-acceptance',
   'acceptance',
 ];
 const argv = process.argv.slice(2);
