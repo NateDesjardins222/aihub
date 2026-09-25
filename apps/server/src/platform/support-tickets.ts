@@ -334,6 +334,19 @@ export async function setTags(db: Database, input: { ticketId: string; tags: str
   await ticketEvent(db, { organizationId: t.organizationId, ticketId: input.ticketId, type: 'TAGS_CHANGED', to: clean.join(','), actor: input.actor });
 }
 
+/**
+ * Associate (or clear) the incident a ticket belongs to. This is how an operator
+ * groups the tickets an incident caused — the inbox can then filter by incidentId
+ * and mass-communicate truthfully. It never touches money or the incident itself.
+ */
+export async function setTicketIncident(db: Database, input: { ticketId: string; incidentId: string | null; actor: Actor }): Promise<void> {
+  const t = await getTicketRow(db, input.ticketId);
+  if (!t) throw ApiError.notFound('TICKET_NOT_FOUND', 'Support ticket not found.');
+  await db.update(supportTickets).set({ incidentId: input.incidentId, updatedAt: new Date() }).where(eq(supportTickets.id, input.ticketId));
+  await ticketEvent(db, { organizationId: t.organizationId, ticketId: input.ticketId, type: 'INCIDENT_LINKED', from: t.incidentId ?? null, to: input.incidentId, actor: input.actor });
+  await recordAudit(db, { organizationId: t.organizationId, actor: input.actor, subjectType: 'SUPPORT_TICKET', subjectId: input.ticketId, action: input.incidentId ? 'support.ticket.incident_linked' : 'support.ticket.incident_unlinked', prevState: { incidentId: t.incidentId }, newState: { incidentId: input.incidentId } });
+}
+
 // ---------------------------------------------------------------------------
 // Escalate / resolve / reopen / merge / split / csat
 // ---------------------------------------------------------------------------

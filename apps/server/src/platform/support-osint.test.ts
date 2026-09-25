@@ -11,7 +11,8 @@ import { organizations, supportRemediations, supportTickets, users } from '../db
 import { hashPassword } from '../auth/password.js';
 import type { Actor } from './actor.js';
 import { generateRemediationRef, getSupportConfig } from './support-config.js';
-import { setPriority, submitTicket } from './support-tickets.js';
+import { setPriority, setTicketIncident, submitTicket } from './support-tickets.js';
+import { listInbox } from './support-inbox.js';
 import { commandCenter } from './command-center.js';
 import { globalSearch } from './search.js';
 import { explainObject } from './object-explorer.js';
@@ -91,6 +92,13 @@ describe('object explorer', () => {
     expect(view.title).toBe(t.publicRef);
     expect(view.related.some((r) => r.type === 'customer')).toBe(true);
     expect(view.state).toHaveProperty('status');
+  });
+  it('setTicketIncident clears/associates the incident and the inbox filters by it', async () => {
+    const t = await mkTicket();
+    await setTicketIncident(db, { ticketId: t.id, incidentId: null, actor: staff });
+    // filtering by a random incident id returns nothing (no throw, honest empty)
+    const empty = await listInbox(db, org, { incidentId: crypto.randomUUID() });
+    expect(empty.tickets.length).toBe(0);
   });
   it('rejects a ticket from another org', async () => {
     const t = await mkTicket();

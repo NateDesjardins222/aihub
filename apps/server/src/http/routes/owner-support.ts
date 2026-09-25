@@ -14,7 +14,7 @@ import { defaultOrganizationId } from '../../platform/provisioning.js';
 import { supportCategories, supportKbArticles, supportTemplates } from '../../db/schema.js';
 import { getSupportConfig, updateSupportConfig, listCategories, PRIORITIES, TICKET_STATUSES, RESOLUTION_CODES, ROOT_CAUSE_CATEGORIES, REMEDIATION_TYPES, SUPPORT_TEAMS } from '../../platform/support-config.js';
 import {
-  addMessage, assignTicket, escalateTicket, reopenTicket, resolveTicket, setPriority, setTags, splitTicket, mergeTickets, transitionStatus, getTicketRow,
+  addMessage, assignTicket, escalateTicket, reopenTicket, resolveTicket, setPriority, setTags, setTicketIncident, splitTicket, mergeTickets, transitionStatus, getTicketRow,
 } from '../../platform/support-tickets.js';
 import { listInbox, supportOverview, ticketWorkspace } from '../../platform/support-inbox.js';
 import { linkObject, unlinkObject, markEvidence, investigationTimeline } from '../../platform/support-links.js';
@@ -111,6 +111,11 @@ export function ownerSupportRoutes() {
     app.post('/support/tickets/:id/tags', { preHandler: requirePermission('support.respond') }, async (request) => {
       const b = z.object({ tags: z.array(z.string().max(40)).max(20) }).parse(request.body);
       await setTags(db, { ticketId: uuid(request.params), tags: b.tags, actor: actorFromRequest(request) });
+      return { ok: true };
+    });
+    app.post('/support/tickets/:id/incident', { preHandler: requirePermission('support.respond') }, async (request) => {
+      const b = z.object({ incidentId: z.string().uuid().nullable() }).parse(request.body);
+      await setTicketIncident(db, { ticketId: uuid(request.params), incidentId: b.incidentId, actor: actorFromRequest(request) });
       return { ok: true };
     });
     app.post('/support/tickets/:id/escalate', { preHandler: requirePermission('support.escalate') }, async (request) => {
