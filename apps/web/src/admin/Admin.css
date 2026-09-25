@@ -902,3 +902,17 @@
   font-weight: 600;
   margin: 0 0 10px;
 }
+
+/* -- Support (M12) ---------------------------------------------------------- */
+button.adm-chip { cursor: pointer; }
+.adm-chip-on {
+  background: var(--accent-soft, rgba(46, 196, 166, 0.15));
+  border-color: var(--accent, #2ec4a6);
+  color: var(--text-primary);
+}
+.adm-pill.adm-pos { border-color: rgba(46, 196, 166, 0.45); color: var(--pos, #2ec4a6); }
+.adm-pill.adm-neg { border-color: rgba(230, 90, 90, 0.45); color: var(--neg, #e65a5a); }
+.adm-pill.adm-warn { border-color: rgba(217, 178, 90, 0.45); color: var(--warn, #d9b25a); }
+.adm-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.adm-list li { color: var(--text-secondary); font-size: var(--fs-sm); }
+.adm-msg { font-size: var(--fs-sm); }

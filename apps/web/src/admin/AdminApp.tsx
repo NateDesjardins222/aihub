@@ -35,6 +35,7 @@ import { AdminEnforcementPage } from './pages/EnforcementPage';
 import { AdminPayoutOperationsPage } from './pages/PayoutOperationsPage';
 import { CommandCenterPage, OwnerSystemPage, StaffPage } from './pages/OwnerOsPages';
 import { AffiliatesPage, Affiliate360Page } from './pages/AffiliatesPages';
+import { SupportInboxPage, SupportTicketPage } from './pages/SupportPages';
 import './Admin.css';
 
 export type AdminRoute =
@@ -61,7 +62,9 @@ export type AdminRoute =
   | { name: 'INFRA' }
   | { name: 'CERTSTORE' }
   | { name: 'AFFILIATES' }
-  | { name: 'AFFILIATE'; id: string };
+  | { name: 'AFFILIATE'; id: string }
+  | { name: 'SUPPORT' }
+  | { name: 'TICKET'; id: string };
 
 export function parseAdminRoute(pathname: string): AdminRoute {
   const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
@@ -93,6 +96,9 @@ export function parseAdminRoute(pathname: string): AdminRoute {
   if (parts[0] === 'certificate-store' || parts[0] === 'certstore') return { name: 'CERTSTORE' };
   if (parts[0] === 'affiliates') {
     return parts[1] ? { name: 'AFFILIATE', id: parts[1] } : { name: 'AFFILIATES' };
+  }
+  if (parts[0] === 'support') {
+    return parts[1] ? { name: 'TICKET', id: parts[1] } : { name: 'SUPPORT' };
   }
   return { name: 'OVERVIEW' };
 }
@@ -145,6 +151,10 @@ export function adminPath(route: AdminRoute): string {
       return '/admin/affiliates';
     case 'AFFILIATE':
       return `/admin/affiliates/${route.id}`;
+    case 'SUPPORT':
+      return '/admin/support';
+    case 'TICKET':
+      return `/admin/support/${route.id}`;
     default:
       return '/admin';
   }
@@ -161,6 +171,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
   { route: { name: 'FUNDING' }, label: 'Funding' },
   { route: { name: 'PAYOUTS' }, label: 'Payouts' },
   { route: { name: 'AFFILIATES' }, label: 'Affiliates' },
+  { route: { name: 'SUPPORT' }, label: 'Support' },
   { route: { name: 'ENFORCEMENT' }, label: 'Enforcement' },
   { route: { name: 'PAYOUT_OPS' }, label: 'Payout Ops' },
   { route: { name: 'ECONOMICS' }, label: 'Economics' },
@@ -272,6 +283,8 @@ export function AdminApp(): JSX.Element {
         {route.name === 'CERTSTORE' ? <AdminCertificateStorePage mayMutate={mayMutate} /> : null}
         {route.name === 'AFFILIATES' ? <AffiliatesPage go={go} /> : null}
         {route.name === 'AFFILIATE' ? <Affiliate360Page id={route.id} go={go} /> : null}
+        {route.name === 'SUPPORT' ? <SupportInboxPage go={go} /> : null}
+        {route.name === 'TICKET' ? <SupportTicketPage id={route.id} go={go} /> : null}
       </main>
     </div>
   );
@@ -282,6 +295,7 @@ function sameSection(current: AdminRoute, target: AdminRoute): boolean {
   if (target.name === 'USERS' && current.name === 'USER') return true;
   if (target.name === 'ACCOUNTS' && current.name === 'ACCOUNT') return true;
   if (target.name === 'PRODUCTS' && current.name === 'PRODUCT') return true;
+  if (target.name === 'SUPPORT' && current.name === 'TICKET') return true;
   return false;
 }
 
