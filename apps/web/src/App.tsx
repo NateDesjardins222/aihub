@@ -66,6 +66,13 @@ const AffiliatePortal = lazy(() => import('./affiliates/AffiliatePortal').then((
  */
 const MarketingApp = lazy(() => import('./marketing/MarketingApp').then((m) => ({ default: m.MarketingApp })));
 
+/*
+ * The homepage design lab (NON-PRODUCTION), reached at /design-lab. Its own bundle,
+ * rendered before the sign-in gate like other public surfaces. It never affects the
+ * production homepage or any authenticated app.
+ */
+const LabApp = lazy(() => import('./marketing/lab/LabApp').then((m) => ({ default: m.LabApp })));
+
 function isMarketingRootPath(pathname: string): boolean {
   return pathname === '/' || pathname === '' || pathname === '/home';
 }
@@ -114,6 +121,15 @@ export function App(): JSX.Element {
     return (
       <Suspense fallback={<div className="boot-splash">Loading…</div>}>
         <AffiliatesPublic />
+      </Suspense>
+    );
+  }
+
+  // The homepage design lab: non-production, no session, rendered before the gate.
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/design-lab')) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading design lab…</div>}>
+        <LabApp />
       </Suspense>
     );
   }
