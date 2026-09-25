@@ -7,17 +7,17 @@
  */
 .adm {
   /*
-   * The console lives inside a viewport-locked body (`body { height:100%;
-   * overflow:hidden }` in theme.css, which the trading terminal needs). So the
-   * shell is exactly the viewport height and the MAIN content region is the single
-   * scroll container (see `.adm-main`). Using `min-height:100vh` here instead let
-   * tall pages grow the shell past the viewport where the body clipped them with
-   * nowhere to scroll — the reported "cannot scroll the console" bug.
+   * The console is a NORMAL SCROLLING DOCUMENT. AdminApp adds `owner-console` to
+   * <html>, releasing the terminal's viewport lock (theme.css), so the shell grows
+   * with its content (`min-height: 100vh`, never a fixed 100vh with overflow
+   * hidden) and the PAGE ITSELF scrolls. This is the browser's default scrolling
+   * model: the mouse wheel works anywhere on the page, with no fragile inner
+   * scroll container to route the wheel into. The header (`.adm-top`) is sticky so
+   * it stays in view as the document scrolls.
    */
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
   background: var(--bg-base);
   color: var(--text-primary);
 }
@@ -29,12 +29,15 @@
    * items, so ~6 items (Products, Ops System, System, Infrastructure, Staff,
    * Certificate Store) overflowed off the right edge and were unreachable.
    */
-  position: relative;
+  /* Sticky, so the header (brand + nav) stays in view as the document scrolls.
+   * In the previous inner-scroller layout this was position:relative inside a
+   * fixed shell; with native document scrolling it sticks to the viewport top. */
+  position: sticky;
+  top: 0;
   z-index: 20;
   display: flex;
-  /* Never let the header shrink: in the viewport-locked flex column, a very tall
-   * page would otherwise squeeze the header to its min-height and its wrapped nav
-   * rows would overflow on top of the page content. */
+  /* Never let the header shrink under a very tall page's content pressure, which
+   * would squeeze it to its min-height and overflow its wrapped nav rows. */
   flex-shrink: 0;
   flex-wrap: wrap;
   align-items: center;
@@ -133,10 +136,10 @@
 
 .adm-main {
   flex: 1 1 auto;
-  /* min-height:0 lets this flex child shrink below its content so it scrolls
-   * internally instead of pushing the shell taller than the viewport. */
-  min-height: 0;
-  overflow-y: auto;
+  /* The content region grows with its content; the DOCUMENT scrolls (see .adm and
+   * theme.css html.owner-console). It is deliberately NOT an inner scroll
+   * container — overflow-x is clipped only to stop wide tables forcing horizontal
+   * page scroll. */
   overflow-x: hidden;
   padding: 18px;
 }

@@ -202,6 +202,16 @@ export function AdminApp(): JSX.Element {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  // The Owner Console scrolls as a normal document, not through the terminal's
+  // viewport lock. Marking <html> releases `body { overflow: hidden }` (theme.css)
+  // while the console is mounted, so the mouse wheel scrolls the page anywhere on
+  // it; the class is removed on unmount so the terminal keeps its fixed layout.
+  useEffect(() => {
+    const html = document.documentElement;
+    html.classList.add('owner-console');
+    return () => html.classList.remove('owner-console');
+  }, []);
+
   const go = useCallback((next: AdminRoute) => {
     window.history.pushState(null, '', adminPath(next));
     setRoute(next);

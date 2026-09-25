@@ -58,6 +58,7 @@ const SUITES = [
   'replay-brackets',
   'layout',
   'admin',
+  'admin-scroll',
   'enforcement-acceptance',
   'payout-ops-acceptance',
   'rithmic-acceptance',

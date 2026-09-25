@@ -162,6 +162,30 @@ body {
 }
 
 /*
+ * Owner Console — native document scrolling, not the terminal's viewport lock.
+ *
+ * The rules above (`html, body, #root { height: 100% }` + `body { overflow:
+ * hidden }`) exist for the TRADING TERMINAL, which is a fixed, non-scrolling
+ * surface with a chart in the middle. The Owner Console is the opposite: a tall
+ * reading surface of tables and panels. Trapping it inside a viewport-locked body
+ * forced it to scroll through an inner container, which is fragile with a real
+ * mouse wheel. When the console is mounted it adds `owner-console` to <html>,
+ * which releases the lock so the PAGE ITSELF scrolls — the browser's default,
+ * most reliable scrolling model, where the wheel works anywhere on the page.
+ */
+html.owner-console,
+html.owner-console body,
+html.owner-console #root {
+  height: auto;
+  min-height: 100%;
+}
+
+html.owner-console body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/*
  * Numeric data reads in DM Sans with TABULAR figures - proportional-face,
  * even-width digits - so money and prices sit in the same family as everything
  * else the trader reads, and columns still do not jitter. No monospace.
