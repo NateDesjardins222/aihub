@@ -37,7 +37,13 @@ export type NotificationType =
   | 'PAYOUT_ELIGIBLE'
   | 'PAYOUT_REQUESTED'
   | 'PAYOUT_APPROVED'
+  | 'PAYOUT_SUBMITTED'
+  | 'PAYOUT_PROCESSING'
   | 'PAYOUT_PAID'
+  | 'PAYOUT_EXCEPTION'
+  | 'PAYOUT_FAILED'
+  | 'PAYOUT_RETURNED'
+  | 'PAYOUT_DESTINATION_VERIFICATION_REQUIRED'
   | 'REFUND'
   | 'DISPUTE_ACTION'
   | 'SECURITY_LOGIN'
@@ -70,7 +76,13 @@ const TYPE_CHANNELS: Record<NotificationType, NotificationChannel[]> = {
   PAYOUT_ELIGIBLE: ['EMAIL'],
   PAYOUT_REQUESTED: ['EMAIL'],
   PAYOUT_APPROVED: ['EMAIL', 'SMS'],
+  PAYOUT_SUBMITTED: ['EMAIL'],
+  PAYOUT_PROCESSING: ['EMAIL'],
   PAYOUT_PAID: ['EMAIL', 'SMS'],
+  PAYOUT_EXCEPTION: ['EMAIL'],
+  PAYOUT_FAILED: ['EMAIL'],
+  PAYOUT_RETURNED: ['EMAIL'],
+  PAYOUT_DESTINATION_VERIFICATION_REQUIRED: ['EMAIL'],
   REFUND: ['EMAIL'],
   DISPUTE_ACTION: ['EMAIL'],
   SECURITY_LOGIN: ['EMAIL'],
@@ -117,9 +129,21 @@ function render(type: NotificationType, data: Record<string, unknown>): { subjec
     case 'PAYOUT_REQUESTED':
       return { subject: 'Payout requested', body: 'We received your payout request and are reviewing it.' };
     case 'PAYOUT_APPROVED':
-      return { subject: 'Payout approved', body: 'Your payout has been approved.' };
+      return { subject: 'Payout approved', body: 'Your payout has been approved and is being prepared.' };
+    case 'PAYOUT_SUBMITTED':
+      return { subject: 'Payout sent', body: 'Your payout has been submitted to our payment provider for processing.' };
+    case 'PAYOUT_PROCESSING':
+      return { subject: 'Payout processing', body: 'Your payout is being processed by our payment provider.' };
     case 'PAYOUT_PAID':
       return { subject: 'Payout paid', body: 'Your payout has been paid.' };
+    case 'PAYOUT_EXCEPTION':
+      return { subject: 'Payout under review', body: 'Your payout is temporarily under review. It remains approved where applicable and we will update you.' };
+    case 'PAYOUT_FAILED':
+      return { subject: 'Payout could not be completed', body: 'We were unable to complete your payout. Our team is looking into it and will be in touch.' };
+    case 'PAYOUT_RETURNED':
+      return { subject: 'Payout returned', body: 'Your payout was returned by the payment provider. We will help you resolve it.' };
+    case 'PAYOUT_DESTINATION_VERIFICATION_REQUIRED':
+      return { subject: 'Verify your payout method', body: 'Please verify your payout destination so we can process your payout.' };
     case 'REFUND':
       return { subject: 'Your purchase was refunded', body: 'Your purchase has been refunded.' };
     case 'DISPUTE_ACTION':
@@ -309,6 +333,21 @@ export function registerNotificationConsumer(db: Database): () => void {
             break;
           case 'payout.paid':
             await enqueue('PAYOUT_PAID', `payoutpaid:${(event.payload as { payoutRequestId?: string })?.payoutRequestId ?? 'p'}`);
+            break;
+          case 'payout.submitted':
+            await enqueue('PAYOUT_SUBMITTED', `payoutsent:${(event.payload as { payoutRequestId?: string })?.payoutRequestId ?? 'p'}`);
+            break;
+          case 'payout.exception':
+            await enqueue('PAYOUT_EXCEPTION', `payoutexc:${(event.payload as { payoutRequestId?: string })?.payoutRequestId ?? 'p'}`);
+            break;
+          case 'payout.failed':
+            await enqueue('PAYOUT_FAILED', `payoutfail:${(event.payload as { payoutRequestId?: string })?.payoutRequestId ?? 'p'}`);
+            break;
+          case 'payout.returned':
+            await enqueue('PAYOUT_RETURNED', `payoutret:${(event.payload as { payoutRequestId?: string })?.payoutRequestId ?? 'p'}`);
+            break;
+          case 'payout.destination_verification_required':
+            await enqueue('PAYOUT_DESTINATION_VERIFICATION_REQUIRED', `payoutdest:${event.accountId ?? 'a'}`);
             break;
           case 'enforcement.case_opened':
             await enqueue('ENFORCEMENT_REVIEW_OPENED', `enfcase:${(event.payload as { caseId?: string })?.caseId ?? 'c'}`);

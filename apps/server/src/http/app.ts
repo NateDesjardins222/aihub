@@ -22,6 +22,7 @@ import { onboardingRoutes } from './routes/onboarding.js';
 import { verifyRoutes } from './routes/verify.js';
 import { portalRoutes } from './routes/portal.js';
 import { enforcementAdminRoutes, enforcementPortalRoutes } from './routes/enforcement.js';
+import { payoutOpsAdminRoutes, payoutOpsPortalRoutes, payoutWebhookRoutes } from './routes/payout-ops.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -387,6 +388,10 @@ export async function buildApp(): Promise<BuiltApp> {
   await app.register(portalRoutes, { prefix: '/api/v1/portal' });
   await app.register(enforcementAdminRoutes(), { prefix: '/api/v1/admin/enforcement' });
   await app.register(enforcementPortalRoutes(), { prefix: '/api/v1/portal/enforcement' });
+  // Payout Operations (M8): owner console, own-scoped portal, provider webhook.
+  await app.register(payoutOpsAdminRoutes(), { prefix: '/api/v1/admin/payout-ops' });
+  await app.register(payoutOpsPortalRoutes(), { prefix: '/api/v1/portal/payout-ops' });
+  await app.register(payoutWebhookRoutes(), { prefix: '/api/v1/webhooks' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });

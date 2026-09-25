@@ -29,6 +29,7 @@ import {
   requestPayout,
 } from '../../platform/payouts.js';
 import { firmExposure, getPayoutCase, listPayouts } from '../../platform/payout-queries.js';
+import { runFastLane, submitPayable, getOperationByRequest } from '../../platform/payout-operations.js';
 import { economicsRuns } from '../../db/schema.js';
 import { desc } from 'drizzle-orm';
 import {
@@ -113,7 +114,21 @@ export function payoutRoutes() {
             idempotencyKey: body.idempotencyKey ?? null,
             actor: traderActor(request),
           });
-          return reply.code(201).send({ id: row.id, state: row.state, requestedGrossMicros: row.requestedGrossMicros });
+          // Fast lane (M8): clean payouts straight-through process with no human
+          // approval — run the checks, auto-approve, and submit. A failed check
+          // routes to the explicit exception lane. Never blocks the response on a
+          // provider error; the durable worker resumes anything left PAYABLE.
+          let opState: string | null = null;
+          try {
+            const fl = await runFastLane(db, row.id, { actor: traderActor(request) });
+            opState = fl.opState;
+            if (fl.opState === 'PAYABLE') {
+              const op = await submitPayable(db, row.id);
+              opState = op.opState;
+            }
+          } catch { /* the request is created; operations recovers it */ }
+          const op = await getOperationByRequest(db, row.id);
+          return reply.code(201).send({ id: row.id, state: row.state, requestedGrossMicros: row.requestedGrossMicros, opState: opState ?? op?.opState ?? 'RECEIVED', customerSafeCategory: op?.customerSafeCategory ?? 'PREPARING' });
         } catch (err) {
           return mapPayoutError(err);
         }
