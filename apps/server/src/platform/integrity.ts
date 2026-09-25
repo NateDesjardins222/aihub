@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { accounts, integrityCheckResults, payoutLedger, payoutRequests } from '../db/schema.js';
+import { accounts, affiliateCommissions, affiliateConversions, affiliates, integrityCheckResults, payoutLedger, payoutRequests } from '../db/schema.js';
 import { verifyAuditChain } from './audit.js';
 
 export type IntegrityStatus = 'PASS' | 'FAIL' | 'WARN';
@@ -126,6 +126,48 @@ async function checkAuditChain(db: Database, organizationId: string): Promise<In
   };
 }
 
+/** Every affiliate commission is backed by a conversion (no orphan commissions). */
+async function checkAffiliateCommissionHasConversion(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db.execute(sql`
+    select c.id from affiliate_commissions c
+    where c.organization_id = ${organizationId}
+      and not exists (select 1 from affiliate_conversions v where v.id = c.conversion_id)
+    limit 50
+  `);
+  const arr = rows as unknown as Array<{ id: string }>;
+  return {
+    key: 'INV_AFFILIATE_COMMISSION_HAS_CONVERSION', status: arr.length ? 'FAIL' : 'PASS', severity: arr.length ? 'CRITICAL' : 'INFO',
+    affectedCount: arr.length, expected: 'every affiliate commission has a conversion', actual: arr.length ? `${arr.length} orphan commission(s)` : 'all commissions have a conversion', sampleRefs: arr.slice(0, 10).map((r) => r.id),
+  };
+}
+
+/** Every ACTIVE affiliate has accepted the required agreement (§69). */
+async function checkActiveAffiliateHasAgreement(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db
+    .select({ id: affiliates.id })
+    .from(affiliates)
+    .where(and(eq(affiliates.organizationId, organizationId), eq(affiliates.status, 'ACTIVE'), sql`${affiliates.agreementAcceptedVersionId} is null`))
+    .limit(50);
+  return {
+    key: 'INV_ACTIVE_AFFILIATE_HAS_AGREEMENT', status: rows.length ? 'FAIL' : 'PASS', severity: rows.length ? 'CRITICAL' : 'INFO',
+    affectedCount: rows.length, expected: 'every ACTIVE affiliate accepted the agreement', actual: rows.length ? `${rows.length} active affiliate(s) without acceptance` : 'all active affiliates accepted', sampleRefs: rows.slice(0, 10).map((r) => r.id),
+  };
+}
+
+/** At most one commission per commercial order (no double-commission). */
+async function checkOneCommissionPerOrder(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db
+    .select({ orderId: affiliateCommissions.commercialOrderId, n: sql<number>`count(*)::int` })
+    .from(affiliateCommissions)
+    .where(eq(affiliateCommissions.organizationId, organizationId))
+    .groupBy(affiliateCommissions.commercialOrderId)
+    .having(sql`count(*) > 1`);
+  return {
+    key: 'INV_ONE_COMMISSION_PER_ORDER', status: rows.length ? 'FAIL' : 'PASS', severity: rows.length ? 'CRITICAL' : 'INFO',
+    affectedCount: rows.length, expected: 'at most one commission per order', actual: rows.length ? `${rows.length} order(s) double-commissioned` : 'no double commissions', sampleRefs: rows.slice(0, 10).map((r) => String(r.orderId)),
+  };
+}
+
 export async function runIntegrityChecks(db: Database, organizationId: string, persist = true): Promise<IntegrityReport> {
   const runId = randomUUID();
   const checks: IntegrityCheck[] = [
@@ -134,7 +176,11 @@ export async function runIntegrityChecks(db: Database, organizationId: string, p
     await checkPaidPayoutHasDebit(db, organizationId),
     await checkNoDoubleDebit(db),
     await checkAuditChain(db, organizationId),
+    await checkAffiliateCommissionHasConversion(db, organizationId),
+    await checkActiveAffiliateHasAgreement(db, organizationId),
+    await checkOneCommissionPerOrder(db, organizationId),
   ];
+  void affiliateConversions;
   if (persist) {
     for (const c of checks) {
       await db.insert(integrityCheckResults).values({

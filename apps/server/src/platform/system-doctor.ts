@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { payoutReconciliationRecords, systemCheckResults } from '../db/schema.js';
 import { resolveRithmicConnection } from '../infra/rithmic-config.js';
+import { affiliatePayoutProviderStatus } from './affiliate-payouts.js';
 
 export type CheckStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'SUSPICIOUS' | 'NOT_CONFIGURED' | 'NOT_VERIFIED' | 'SKIPPED';
 
@@ -136,6 +137,15 @@ const CRITICAL_STATUSES: CheckStatus[] = ['CRITICAL'];
 const WARNING_STATUSES: CheckStatus[] = ['WARNING', 'SUSPICIOUS'];
 
 /** Run the full System Doctor sweep and persist results. */
+/** Affiliate payout provider — truthful. NOT_CONFIGURED is informational, not critical. */
+function checkAffiliatePayoutProvider(): SystemCheck {
+  const s = affiliatePayoutProviderStatus();
+  return {
+    key: 'affiliate_payouts', status: s.configured ? 'NOT_VERIFIED' : 'NOT_CONFIGURED', severity: 'INFO',
+    expected: 'a payout provider when affiliate payouts go live', actual: s.note, durationMs: 0, detail: { provider: s.provider, verified: s.verified },
+  };
+}
+
 export async function runSystemDoctor(db: Database, organizationId: string, persist = true): Promise<SystemDoctorReport> {
   const runId = randomUUID();
   const checks: SystemCheck[] = [];
@@ -145,6 +155,7 @@ export async function runSystemDoctor(db: Database, organizationId: string, pers
   checks.push(await checkPayoutReconciliation(db, organizationId));
   checks.push(await checkProvisioning(db));
   checks.push(checkNotificationProvider());
+  checks.push(checkAffiliatePayoutProvider());
 
   const overall: SystemDoctorReport['overall'] = checks.some((c) => CRITICAL_STATUSES.includes(c.status))
     ? 'CRITICAL'

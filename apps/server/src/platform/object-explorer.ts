@@ -8,7 +8,7 @@
  */
 import { desc, eq } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { accounts, certificates, customerIdentities, users } from '../db/schema.js';
+import { accounts, affiliates, certificates, customerIdentities, users } from '../db/schema.js';
 import { ApiError } from '../http/errors.js';
 import { inspectAccount, inspectPayout } from './inspectors.js';
 import { accountAudit, userAudit } from './audit.js';
@@ -83,6 +83,16 @@ export async function explainObject(db: Database, organizationId: string, type: 
         state: { certificateType: c.type, publicId: c.certificatePublicId, tokenMasked: `${c.verificationToken.slice(0, 4)}…`, status: (c as Record<string, unknown>)['status'] ?? 'ISSUED' },
         related: c.accountId ? [{ type: 'account', id: c.accountId, label: 'Account' }] : [],
         history: [],
+      };
+    }
+    case 'affiliate': {
+      const [a] = await db.select().from(affiliates).where(eq(affiliates.id, id));
+      if (!a) throw ApiError.notFound('AFFILIATE_NOT_FOUND', 'Affiliate not found.');
+      return {
+        type, id, title: `${a.displayName} (${a.publicId})`,
+        state: { status: a.status, tier: a.tier, effectiveRateBps: a.effectiveRateBps, email: a.email, activatedAt: a.activatedAt },
+        related: a.userId ? [{ type: 'customer', id: a.userId, label: 'Linked customer' }] : [],
+        history: await auditToHistory(await userAudit(db, a.userId ?? id, 25)).catch(() => []),
       };
     }
     default:

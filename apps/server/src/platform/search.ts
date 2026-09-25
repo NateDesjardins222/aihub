@@ -9,7 +9,7 @@
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
-  accounts, certificates, commercialOrders, enforcementCases, incidents, orders,
+  accounts, affiliateCodes, affiliates, certificates, commercialOrders, enforcementCases, incidents, orders,
   payoutRequests, users,
 } from '../db/schema.js';
 
@@ -118,6 +118,28 @@ export async function globalSearch(db: Database, organizationId: string, raw: st
       .limit(perGroup);
     return rows.map((r) => ({ type: 'incident', id: r.id, label: r.publicRef, sublabel: r.title }));
   }, []));
+
+  // Affiliates by name / email / public id / uuid.
+  push('affiliate', await safe(async () => {
+    const rows = await db
+      .select({ id: affiliates.id, publicId: affiliates.publicId, displayName: affiliates.displayName, email: affiliates.email, status: affiliates.status })
+      .from(affiliates)
+      .where(and(eq(affiliates.organizationId, organizationId), isUuid ? eq(affiliates.id, q) : or(ilike(affiliates.displayName, like), ilike(affiliates.email, like), ilike(affiliates.publicId, like))!))
+      .limit(perGroup);
+    return rows.map((r) => ({ type: 'affiliate', id: r.id, label: `${r.displayName} (${r.publicId})`, sublabel: r.status }));
+  }, []));
+
+  // Affiliate by code (canonical).
+  if (!isUuid) {
+    push('affiliate_code', await safe(async () => {
+      const rows = await db
+        .select({ affiliateId: affiliateCodes.affiliateId, code: affiliateCodes.code, status: affiliateCodes.status })
+        .from(affiliateCodes)
+        .where(and(eq(affiliateCodes.organizationId, organizationId), eq(affiliateCodes.codeCanonical, q.toLowerCase())))
+        .limit(perGroup);
+      return rows.map((r) => ({ type: 'affiliate', id: r.affiliateId, label: `code ${r.code}`, sublabel: r.status }));
+    }, []));
+  }
 
   const total = groups.reduce((n, g) => n + g.results.length, 0);
   return { query: q, groups, total };

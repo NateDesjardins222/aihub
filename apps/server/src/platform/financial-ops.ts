@@ -6,8 +6,8 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
-  adminAdjustments, agreementAcceptances, agreementVersions, commercialOrders, payoutLedger,
-  payoutRequests,
+  adminAdjustments, affiliateCommissions, affiliatePayouts, agreementAcceptances, agreementVersions,
+  commercialOrders, payoutLedger, payoutRequests,
 } from '../db/schema.js';
 import { inspectPayout } from './inspectors.js';
 
@@ -19,6 +19,9 @@ export interface FinancialSummary {
   readonly firmShareMicros: number;
   readonly outstandingPayoutLiabilityMicros: number;
   readonly adminAdjustmentNetMicros: number;
+  readonly affiliateCommissionPayableMicros: number;
+  readonly affiliateCommissionPaidMicros: number;
+  readonly affiliatePayoutLiabilityMicros: number;
 }
 
 export async function financialSummary(db: Database, organizationId: string): Promise<FinancialSummary> {
@@ -42,6 +45,17 @@ export async function financialSummary(db: Database, organizationId: string): Pr
     .select({ net: sql<number>`coalesce(sum(case when ${adminAdjustments.type} = 'DEBIT' then -${adminAdjustments.amountMicros} else ${adminAdjustments.amountMicros} end),0)::bigint` })
     .from(adminAdjustments)
     .where(eq(adminAdjustments.organizationId, organizationId));
+  const [affComm] = await db
+    .select({
+      payable: sql<number>`coalesce(sum(${affiliateCommissions.commissionMicros}) filter (where ${affiliateCommissions.status} = 'PAYABLE'),0)::bigint`,
+      paid: sql<number>`coalesce(sum(${affiliateCommissions.commissionMicros}) filter (where ${affiliateCommissions.status} = 'PAID'),0)::bigint`,
+    })
+    .from(affiliateCommissions)
+    .where(eq(affiliateCommissions.organizationId, organizationId));
+  const [affPayout] = await db
+    .select({ liability: sql<number>`coalesce(sum(${affiliatePayouts.amountMicros}) filter (where ${affiliatePayouts.status} in ('REQUESTED','UNDER_REVIEW','APPROVED','PAYABLE','SUBMITTED','PROCESSING')),0)::bigint` })
+    .from(affiliatePayouts)
+    .where(eq(affiliatePayouts.organizationId, organizationId));
   return {
     purchaseRevenueMicros: Number(orders?.purchase ?? 0),
     resetRevenueMicros: Number(orders?.reset ?? 0),
@@ -50,6 +64,9 @@ export async function financialSummary(db: Database, organizationId: string): Pr
     firmShareMicros: Number(payouts?.firm ?? 0),
     outstandingPayoutLiabilityMicros: Number(payouts?.liability ?? 0),
     adminAdjustmentNetMicros: Number(adj?.net ?? 0),
+    affiliateCommissionPayableMicros: Number(affComm?.payable ?? 0),
+    affiliateCommissionPaidMicros: Number(affComm?.paid ?? 0),
+    affiliatePayoutLiabilityMicros: Number(affPayout?.liability ?? 0),
   };
 }
 
