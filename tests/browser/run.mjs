@@ -61,6 +61,7 @@ const SUITES = [
   'enforcement-acceptance',
   'payout-ops-acceptance',
   'rithmic-acceptance',
+  'owner-os-acceptance',
   'acceptance',
 ];
 const argv = process.argv.slice(2);

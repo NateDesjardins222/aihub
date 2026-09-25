@@ -22,7 +22,8 @@ const ops = {
   flags: () => api.get<{ known: string[]; flags: Flag[] }>(`${OPS}/config/flags`),
   killSwitches: () => api.get<{ switches: KillSwitch[] }>(`${OPS}/config/kill-switches`),
   providers: () => api.get<{ providers: Provider[] }>(`${OPS}/providers`),
-  staff: () => api.get<{ staff: Staff[]; invitations: Invite[] }>(`${OPS}/staff`),
+  // Staff/access routes are mounted at /api/v1/admin (not /ops).
+  staff: () => api.get<{ staff: Staff[]; invitations: Invite[] }>(`/api/v1/admin/staff`),
 };
 
 interface CommandCenter {
