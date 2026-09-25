@@ -11,9 +11,9 @@ import { eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../http/app.js';
 import { getDb } from '../db/client.js';
-import { accounts, positions, users } from '../db/schema.js';
+import { accounts, organizations, positions, users } from '../db/schema.js';
 import { hashPassword } from '../auth/password.js';
-import { defaultOrganizationId, provisionAccount } from './provisioning.js';
+import { provisionAccount } from './provisioning.js';
 import { publishProfileVersion } from './profiles.js';
 import { projectAccount } from './projection.js';
 
@@ -65,7 +65,16 @@ beforeAll(async () => {
   app = (await buildApp()).app;
   await app.ready();
   db = getDb().db;
-  organizationId = await defaultOrganizationId(db);
+  // Run in a FRESH, isolated organization — never the shared default org. The
+  // /admin/exposure endpoint aggregates every open position in the requesting
+  // admin's org, so reading the default org made this test depend on positions
+  // left behind by every other suite that provisions there. An own-org scope
+  // makes the absolute-count assertions deterministic and repeatable across runs.
+  const [org] = await db
+    .insert(organizations)
+    .values({ slug: `exposure-${crypto.randomUUID().slice(0, 8)}`, name: 'Exposure Test Org' })
+    .returning();
+  organizationId = org!.id;
   await publishProfileVersion(db, {
     organizationId,
     key: KEY,
