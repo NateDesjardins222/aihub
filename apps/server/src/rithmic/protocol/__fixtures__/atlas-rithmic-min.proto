@@ -47,7 +47,7 @@ message RequestLogin {
   }
   required int32 template_id = 154467 [default = 10];
   optional string template_version = 149290;
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string user = 153001;
   optional string password = 110511;
   optional string app_name = 153013;
@@ -72,7 +72,7 @@ message ResponseLogin {
 }
 message RequestLogout {
   required int32 template_id = 154467 [default = 12];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
 }
 message RequestHeartbeat {
   required int32 template_id = 154467 [default = 18];
@@ -89,7 +89,7 @@ message ResponseHeartbeat {
 // ---- reference data ---------------------------------------------------------
 message RequestReferenceData {
   required int32 template_id = 154467 [default = 14];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string symbol = 110100;
   optional string exchange = 110101;
 }
@@ -127,7 +127,7 @@ message RequestMarketDataUpdate {
     OPEN_INTEREST = 2048;
   }
   required int32 template_id = 154467 [default = 100];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string symbol = 110100;
   optional string exchange = 110101;
   optional Request request = 100000;
@@ -165,7 +165,7 @@ message RequestTimeBarReplay {
   enum BarType { SECOND_BAR = 1; MINUTE_BAR = 2; DAILY_BAR = 3; WEEKLY_BAR = 4; }
   enum Direction { FIRST = 1; LAST = 2; }
   required int32 template_id = 154467 [default = 202];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string symbol = 110100;
   optional string exchange = 110101;
   optional BarType bar_type = 119200;
@@ -194,7 +194,7 @@ message ResponseTimeBarReplay {
 // ---- accounts / routes ------------------------------------------------------
 message RequestAccountList {
   required int32 template_id = 154467 [default = 302];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string fcm_id = 154013;
   optional string ib_id = 154012;
   optional string user_type = 154036;
@@ -211,7 +211,7 @@ message ResponseAccountList {
 }
 message RequestTradeRoutes {
   required int32 template_id = 154467 [default = 310];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string subscribe_for_updates = 100002;
 }
 message ResponseTradeRoutes {
@@ -227,7 +227,7 @@ message ResponseTradeRoutes {
 }
 message RequestSubscribeForOrderUpdates {
   required int32 template_id = 154467 [default = 308];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional string fcm_id = 154013;
   optional string ib_id = 154012;
   optional string account_id = 154008;
@@ -362,7 +362,7 @@ message ExchangeOrderNotification {
 message RequestPnLPositionUpdates {
   enum Request { SUBSCRIBE = 1; UNSUBSCRIBE = 2; }
   required int32 template_id = 154467 [default = 400];
-  optional string user_msg = 132760;
+  repeated string user_msg = 132760;
   optional Request request = 100000;
   optional string fcm_id = 154013;
   optional string ib_id = 154012;

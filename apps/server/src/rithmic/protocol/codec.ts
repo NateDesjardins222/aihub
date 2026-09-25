@@ -62,6 +62,21 @@ export class RithmicCodec {
     return id;
   }
 
+  /** Resolve a nested enum value by name from the loaded schema (never hardcoded). */
+  enumValue(messageName: string, enumName: string, valueName: string): number {
+    const type = this.schema.types.get(messageName);
+    if (!type) throw new CodecError('UNKNOWN_MESSAGE', `no schema type for message "${messageName}"`);
+    let en: protobuf.Enum;
+    try {
+      en = type.lookupEnum(enumName);
+    } catch {
+      throw new CodecError('UNKNOWN_MESSAGE', `no enum ${messageName}.${enumName}`);
+    }
+    const v = en.values[valueName];
+    if (v === undefined) throw new CodecError('UNKNOWN_MESSAGE', `no enum value ${messageName}.${enumName}.${valueName}`);
+    return v;
+  }
+
   nameFor(templateId: number): string | null {
     const full = this.schema.idToName.get(templateId);
     if (!full) return null;
