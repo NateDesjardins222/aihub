@@ -1,0 +1,63 @@
+# LAUNCH GATES
+
+**Phase 2 — System-Wide Reconciliation. Audit-only.**
+
+Baseline HEAD: `55df4c7` · Compiled 2026-09-25.
+
+## Gate states
+
+- **NOT READY** — known blocker(s) open.
+- **PARTIAL** — substantially built, specific gaps remain.
+- **READY FOR TEST** — believed complete enough to test end-to-end; not yet proven in a real
+  environment.
+- **VERIFIED** — proven in the target environment with extraordinary evidence.
+
+**Rule (from the Phase 2 mandate):** legal, payments, and security gates are **never marked
+VERIFIED from code alone.** They stay at most READY FOR TEST until proven in the real
+environment by the responsible owner.
+
+---
+
+| # | Gate | State | Why | Blocking issues |
+|---|------|-------|-----|-----------------|
+| G1 | **Payments in (real charge)** | **NOT READY** | Whop is sandbox-only; commerce provider fails open to a self-signing mock in prod | HTF-1, HTF-3, DR-3, DR-5 |
+| G2 | **Payouts out (real disbursement)** | **NOT READY** | No real payout rail exists (mock/unconfigured) | HTF-3, DR-5 |
+| G3 | **KYC / identity (compliance)** | **NOT READY** | Identity provider fails open to a fabricating mock in prod | HTF-2, DR-5 |
+| G4 | **Authoritative product model** | **NOT READY** | DB≠catalog on 4 properties; default seed produces the wrong catalog | HTF-5, HTF-6, DR-1, DR-2 |
+| G5 | **Legal / agreements / disclosures** | **NOT READY** | Agreements framework exists and is enforced, but content + the drawdown-mismatch (sold vs enforced) is unresolved; cannot be VERIFIED from code | HTF-6, DR-4; owner/legal sign-off |
+| G6 | **Security / trust boundaries** | **PARTIAL** | Strong server-authority design; but fail-open providers + self-serve rule/reset routes + view-only kill switches | HTF-1, HTF-2, HTF-10, HTF-21 |
+| G7 | **Golden Path (simulation)** | **READY FOR TEST** | Fully wired end-to-end in simulation; not yet run as a single live integration test this phase | — (arrows 1–2, 13–14 mocked) |
+| G8 | **Trading terminal + risk engine** | **READY FOR TEST** | Server-authoritative, extensively tested; default feed is delayed/dev | choose real feed (DR-5) |
+| G9 | **Certificates / achievements** | **READY FOR TEST** | Wired, exactly-once, immutable, real render; fulfillment mock | Prodigi if merch launches |
+| G10 | **Owner OS operability** | **PARTIAL** | 22 routes load real data; safety mutations (kill switches) not surfaced | HTF-10, DR-10 |
+| G11 | **Observability / alerting** | **PARTIAL** | Audit chain strong; health is liveness-only; no metrics/tracing; alerts read-only in UI | HTF-10, HTF-19 |
+| G12 | **Infrastructure / deploy / backups** | **NOT READY** | No CI, no backups in-repo, no prod deploy manifests, inactivity cron unbound | HTF-16, HTF-17, HTF-18 |
+| G13 | **Data integrity / idempotency** | **PARTIAL** | Very strong across payouts/commerce/certs; one affiliate-ledger gap needs revalidation | HTF-9 |
+| G14 | **Affiliate program** | **READY FOR TEST** | Built end-to-end; payout provider unconfigured; ledger gap | HTF-9, DR-5 |
+
+---
+
+## Gate summary
+
+- **NOT READY (6):** payments in, payouts out, KYC, product model, legal, infra/deploy.
+- **PARTIAL (4):** security, Owner OS operability, observability, data integrity.
+- **READY FOR TEST (4):** Golden Path (sim), terminal+risk, certificates, affiliates.
+- **VERIFIED (0):** nothing — correct for this stage.
+
+## The critical path to a first real launch
+
+The gates cluster into three sequential bodies of work, none of which Phase 2 performs:
+
+1. **Product truth (G4/G5/DR-1..DR-2, DR-4).** Decide the authoritative product model and
+   reconcile DB/catalog/economics + seed. Everything commercial and legal depends on knowing
+   what the product *is*. Cheapest and most foundational.
+2. **Boundary safety (G1/G2/G3/G6/DR-3, DR-5).** Fail-close the mock providers, then wire real
+   payment, payout, and KYC providers and prove each boundary. This is where "no real money"
+   becomes "real money handled safely."
+3. **Operate it (G10/G11/G12).** Surface the safety controls, stand up CI/backups/deploy, bind
+   the cron, add health/metrics.
+
+## PROVENANCE
+
+Gate states derive from `SYSTEM_STATUS.md`, `KNOWN_ISSUES.md`, and `GOLDEN_PATH.md`. No gate is
+marked VERIFIED; legal/payments/security are held at or below READY FOR TEST per the mandate.
