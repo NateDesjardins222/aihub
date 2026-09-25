@@ -2727,3 +2727,243 @@ export const enforcementAppealDecisions = pgTable(
     index('enforcement_appeal_decisions_case_idx').on(t.caseId),
   ],
 );
+
+// ===========================================================================
+// Payout Operations (Milestone 8) — the operational delivery layer that sits
+// AFTER the eligibility/economics engine. It never changes who qualifies or how
+// much; it moves an eligible, requested payout to the provider fast and safely.
+// The economic spine (payoutRequests.state, payout_ledger) is unchanged: the
+// balance is debited once at APPROVED and settled at PAID. These tables overlay
+// that spine with the operational lifecycle, provider abstraction, idempotent
+// submission, provider events, reconciliation, and treasury/circuit-breaker
+// controls. All money-sensitive rows are append-only.
+// ===========================================================================
+
+/** A provider-tokenized payout destination. NEVER stores raw bank credentials. */
+export const payoutDestinations = pgTable(
+  'payout_destinations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id').notNull().references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** The payout provider this destination belongs to (e.g. MOCK, ACH_UNCONFIGURED). */
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** Opaque provider token / reference — the ONLY sensitive-adjacent identifier we keep. */
+    providerRef: varchar('provider_ref', { length: 200 }),
+    /** BANK_ACCOUNT | DEBIT_CARD | WALLET | OTHER — provider capability decides. */
+    destinationType: varchar('destination_type', { length: 24 }).notNull().default('BANK_ACCOUNT'),
+    /** Safe masked display, e.g. "Bank ****6789". Never the full number. */
+    maskedDisplay: varchar('masked_display', { length: 64 }),
+    /** UNVERIFIED | OWNERSHIP_PENDING | OWNERSHIP_CONFIRMED | OWNERSHIP_MISMATCH */
+    ownershipState: varchar('ownership_state', { length: 24 }).notNull().default('UNVERIFIED'),
+    /** PENDING | VERIFICATION_REQUIRED | VERIFIED | ACTIVE | DISABLED | REJECTED */
+    status: varchar('status', { length: 24 }).notNull().default('PENDING'),
+    /** Provider-declared capability metadata safe for persistence. */
+    capability: jsonb('capability'),
+    metadata: jsonb('metadata'),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [
+    index('payout_destinations_identity_idx').on(t.customerIdentityId, t.status),
+    index('payout_destinations_provider_ref_idx').on(t.provider, t.providerRef),
+  ],
+);
+
+/**
+ * 1:1 operational overlay for a payout request. Holds the operational sub-state,
+ * the exception category (if any), the stable idempotency key, the fast-lane flag
+ * and the full SLA timestamp set. The economic state stays on payoutRequests.
+ */
+export const payoutOperations = pgTable(
+  'payout_operations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    payoutRequestId: uuid('payout_request_id').notNull().references(() => payoutRequests.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    customerIdentityId: uuid('customer_identity_id').references(() => customerIdentities.id, { onDelete: 'set null' }),
+    provider: varchar('provider', { length: 32 }),
+    destinationId: uuid('destination_id').references(() => payoutDestinations.id, { onDelete: 'set null' }),
+    /** RECEIVED|AUTOMATED_CHECKS|PAYABLE|SUBMITTING|SUBMITTED|PROCESSING|PAID|RECONCILED|EXCEPTION|FAILED|RETURNED|CANCELED */
+    opState: varchar('op_state', { length: 24 }).notNull().default('RECEIVED'),
+    /** Internal exception category when opState=EXCEPTION (IDENTITY_REVIEW, …). */
+    exceptionCategory: varchar('exception_category', { length: 32 }),
+    /** Customer-safe bucket for messaging (UNDER_REVIEW, PROCESSING, …). */
+    customerSafeCategory: varchar('customer_safe_category', { length: 32 }),
+    /** Did this payout travel the straight-through fast lane? */
+    fastLane: boolean('fast_lane').notNull().default(false),
+    /** The provider's payout id, once known. */
+    providerPayoutId: varchar('provider_payout_id', { length: 200 }),
+    /** Stable, immutable idempotency identity: payoutRequestId:ordinal:provider. Never regenerated. */
+    idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
+    slaBreached: boolean('sla_breached').notNull().default(false),
+    lastError: varchar('last_error', { length: 300 }),
+    // -- SLA timeline (authoritative timestamps; nothing fabricated) --------
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    checksStartedAt: timestamp('checks_started_at', { withTimezone: true }),
+    checksCompletedAt: timestamp('checks_completed_at', { withTimezone: true }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    payableAt: timestamp('payable_at', { withTimezone: true }),
+    submissionStartedAt: timestamp('submission_started_at', { withTimezone: true }),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    providerProcessingAt: timestamp('provider_processing_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    reconciledAt: timestamp('reconciled_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [
+    uniqueIndex('payout_operations_request_key').on(t.payoutRequestId),
+    uniqueIndex('payout_operations_idem_key').on(t.organizationId, t.idempotencyKey),
+    index('payout_operations_state_idx').on(t.organizationId, t.opState),
+    index('payout_operations_provider_payout_idx').on(t.provider, t.providerPayoutId),
+  ],
+);
+
+/** Append-only result of one operational check on a payout. */
+export const payoutOperationalChecks = pgTable(
+  'payout_operational_checks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    payoutRequestId: uuid('payout_request_id').notNull().references(() => payoutRequests.id, { onDelete: 'cascade' }),
+    /** ELIGIBILITY|OWNERSHIP|IDENTITY|DESTINATION|ENFORCEMENT_HOLD|DUPLICATE|ACCOUNT_STATE|AMOUNT|TREASURY|PROVIDER|IDEMPOTENCY */
+    checkType: varchar('check_type', { length: 32 }).notNull(),
+    /** PASS | FAIL | SKIP */
+    result: varchar('result', { length: 8 }).notNull(),
+    /** The exception category this failure maps to, if it failed. */
+    category: varchar('category', { length: 32 }),
+    detailSafe: varchar('detail_safe', { length: 300 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('payout_op_checks_request_idx').on(t.payoutRequestId, t.createdAt),
+  ],
+);
+
+/** Append-only durable record of one provider submission attempt. */
+export const payoutSubmissionAttempts = pgTable(
+  'payout_submission_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    payoutRequestId: uuid('payout_request_id').notNull().references(() => payoutRequests.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** The SAME stable idempotency key across every attempt for this payout. */
+    idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    providerPayoutId: varchar('provider_payout_id', { length: 200 }),
+    requestHash: varchar('request_hash', { length: 64 }),
+    /** ACCEPTED|PROCESSING|PAID|FAILED|RETURNED|TIMEOUT|LOST_ACK|UNKNOWN */
+    normalizedResult: varchar('normalized_result', { length: 24 }),
+    /** TRANSIENT|HARD|DESTINATION|AMOUNT|OWNERSHIP|COMPLIANCE|TIMEOUT|NONE */
+    errorCategory: varchar('error_category', { length: 24 }),
+    retryable: boolean('retryable').notNull().default(false),
+    correlationId: varchar('correlation_id', { length: 64 }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('payout_attempts_request_idx').on(t.payoutRequestId, t.attemptNumber),
+    uniqueIndex('payout_attempts_request_attempt_key').on(t.payoutRequestId, t.attemptNumber),
+  ],
+);
+
+/** Append-only, idempotent provider event (webhook or reconcile-discovered). */
+export const payoutProviderEvents = pgTable(
+  'payout_provider_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** The raw provider event id — the idempotency key for ingestion. */
+    providerEventId: varchar('provider_event_id', { length: 200 }).notNull(),
+    payoutRequestId: uuid('payout_request_id').references(() => payoutRequests.id, { onDelete: 'set null' }),
+    providerPayoutId: varchar('provider_payout_id', { length: 200 }),
+    /** PAYOUT_ACCEPTED|PAYOUT_PROCESSING|PAYOUT_PAID|PAYOUT_FAILED|PAYOUT_RETURNED|PAYOUT_CANCELED|PAYOUT_UNKNOWN */
+    normalizedType: varchar('normalized_type', { length: 24 }).notNull(),
+    eventTs: timestamp('event_ts', { withTimezone: true }),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    /** PENDING | PROCESSED | FAILED */
+    processingState: varchar('processing_state', { length: 12 }).notNull().default('PENDING'),
+    /** Sanitized payload — never raw bank data or secrets. */
+    payload: jsonb('payload'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('payout_provider_events_key').on(t.provider, t.providerEventId),
+    index('payout_provider_events_request_idx').on(t.payoutRequestId),
+    index('payout_provider_events_payout_idx').on(t.provider, t.providerPayoutId),
+  ],
+);
+
+/** Append-only reconciliation outcome (expected vs. provider-authoritative). */
+export const payoutReconciliationRecords = pgTable(
+  'payout_reconciliation_records',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    payoutRequestId: uuid('payout_request_id').notNull().references(() => payoutRequests.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    expectedState: varchar('expected_state', { length: 24 }),
+    providerState: varchar('provider_state', { length: 24 }),
+    /** NONE|MISSING_PROVIDER_REF|PROVIDER_AHEAD|LOCAL_AHEAD|AMOUNT_MISMATCH|DESTINATION_MISMATCH|CURRENCY_MISMATCH|DUPLICATE_REF|STALE_PROCESSING|UNKNOWN */
+    mismatchType: varchar('mismatch_type', { length: 32 }).notNull().default('NONE'),
+    /** AUTO_RESOLVED | ROUTED_EXCEPTION | NO_ACTION */
+    resolution: varchar('resolution', { length: 24 }).notNull().default('NO_ACTION'),
+    autoResolved: boolean('auto_resolved').notNull().default(false),
+    detail: jsonb('detail'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('payout_recon_request_idx').on(t.payoutRequestId, t.createdAt),
+    index('payout_recon_mismatch_idx').on(t.organizationId, t.mismatchType),
+  ],
+);
+
+/** Per-org operational config: treasury gate + provider selection + breaker. Singleton. */
+export const payoutOperationsConfig = pgTable(
+  'payout_operations_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    /** Real external money movement is disabled until an owner explicitly enables it. */
+    productionEnabled: boolean('production_enabled').notNull().default(false),
+    /** The selected payout provider id, or null = UNCONFIGURED (fails closed in prod). */
+    provider: varchar('provider', { length: 32 }),
+    reserveThresholdMicros: micros('reserve_threshold_micros').notNull().default(0),
+    maxSingleAutoMicros: micros('max_single_auto_micros'),
+    maxAggregateAutoPerDayMicros: micros('max_aggregate_auto_per_day_micros'),
+    circuitBreakerOpen: boolean('circuit_breaker_open').notNull().default(false),
+    reconStaleThresholdSeconds: integer('recon_stale_threshold_seconds').notNull().default(900),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [
+    uniqueIndex('payout_ops_config_org_key').on(t.organizationId),
+  ],
+);
+
+/** Append-only audit of circuit-breaker open/close actions. */
+export const payoutCircuitBreakerEvents = pgTable(
+  'payout_circuit_breaker_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+    /** OPEN | CLOSE */
+    action: varchar('action', { length: 8 }).notNull(),
+    reason: varchar('reason', { length: 300 }),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: now(),
+  },
+  (t) => [
+    index('payout_breaker_events_org_idx').on(t.organizationId, t.createdAt),
+  ],
+);

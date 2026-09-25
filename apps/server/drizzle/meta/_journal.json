@@ -197,6 +197,13 @@
    "when": 1758800000000,
    "tag": "0027_enforcement_appeals",
    "breakpoints": true
+  },
+  {
+   "idx": 28,
+   "version": "7",
+   "when": 1758900000000,
+   "tag": "0028_payout_operations",
+   "breakpoints": true
   }
  ]
 }
