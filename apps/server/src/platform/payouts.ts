@@ -83,6 +83,10 @@ const ALLOWED: Record<PayoutState, PayoutState[]> = {
 
 const NON_TERMINAL: PayoutState[] = ['REQUESTED', 'UNDER_REVIEW', 'APPROVED', 'PROCESSING'];
 
+/** The payout state machine's permitted transitions (read-only view for the
+ * Owner OS state inspector; never invent transitions). */
+export const PAYOUT_TRANSITIONS: Readonly<Record<PayoutState, readonly PayoutState[]>> = ALLOWED;
+
 export type AccountRow = typeof accounts.$inferSelect;
 export type PayoutRow = typeof payoutRequests.$inferSelect;
 

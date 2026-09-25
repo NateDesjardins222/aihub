@@ -24,6 +24,7 @@ import { portalRoutes } from './routes/portal.js';
 import { enforcementAdminRoutes, enforcementPortalRoutes } from './routes/enforcement.js';
 import { payoutOpsAdminRoutes, payoutOpsPortalRoutes, payoutWebhookRoutes } from './routes/payout-ops.js';
 import { ownerStaffRoutes, staffOnboardingRoutes } from './routes/owner-staff.js';
+import { ownerObservabilityRoutes } from './routes/owner-observability.js';
 import { TradingEngine } from '../trading/engine.js';
 import { AtlasSimulationExecutionProvider } from '../execution/provider.js';
 import { ExecutionRegistry } from '../execution/registry.js';
@@ -397,6 +398,9 @@ export async function buildApp(): Promise<BuiltApp> {
   // impersonation — plus a public onboarding surface for invited staff.
   await app.register(ownerStaffRoutes(), { prefix: '/api/v1/admin' });
   await app.register(staffOnboardingRoutes(), { prefix: '/api/v1/staff-onboarding' });
+  // Owner OS observability (M10-C): search, event timeline, correlation trace,
+  // universal object explorer, state/rules inspectors.
+  await app.register(ownerObservabilityRoutes(), { prefix: '/api/v1/admin/ops' });
   // Public and signature-gated: the provider calls this, so it carries no session
   // auth. Provisioning is authorised ONLY here, from a verified server-side event.
   await app.register(whopWebhookRoutes, { prefix: '/api/v1/webhooks' });
