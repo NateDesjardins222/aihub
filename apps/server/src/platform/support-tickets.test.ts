@@ -253,7 +253,7 @@ describe('append-only guards', () => {
   });
   it('the first-message and events exist for a created ticket', async () => {
     const t = await newTicket();
-    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(supportTicketEvents).where(and(eq(supportTicketEvents.ticketId, t.ticketId), eq(supportTicketEvents.type, 'CREATED')));
-    expect(Number(n)).toBe(1);
+    const rows = await db.select({ n: sql<number>`count(*)::int` }).from(supportTicketEvents).where(and(eq(supportTicketEvents.ticketId, t.ticketId), eq(supportTicketEvents.type, 'CREATED')));
+    expect(Number(rows[0]?.n ?? 0)).toBe(1);
   });
 });
