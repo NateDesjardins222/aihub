@@ -6,22 +6,41 @@
  * trading surface with a chart in the middle.
  */
 .adm {
+  /*
+   * The console lives inside a viewport-locked body (`body { height:100%;
+   * overflow:hidden }` in theme.css, which the trading terminal needs). So the
+   * shell is exactly the viewport height and the MAIN content region is the single
+   * scroll container (see `.adm-main`). Using `min-height:100vh` here instead let
+   * tall pages grow the shell past the viewport where the body clipped them with
+   * nowhere to scroll — the reported "cannot scroll the console" bug.
+   */
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--bg-base);
   color: var(--text-primary);
 }
 
 .adm-top {
-  position: sticky;
-  top: 0;
+  /*
+   * Two-row header: brand + account controls on the first row, the full nav on a
+   * wrapping second row. Previously the nav was a single non-wrapping row with 22
+   * items, so ~6 items (Products, Ops System, System, Infrastructure, Staff,
+   * Certificate Store) overflowed off the right edge and were unreachable.
+   */
+  position: relative;
   z-index: 20;
   display: flex;
+  /* Never let the header shrink: in the viewport-locked flex column, a very tall
+   * page would otherwise squeeze the header to its min-height and its wrapped nav
+   * rows would overflow on top of the page content. */
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
-  height: 46px;
-  padding: 0 16px;
+  gap: 10px 18px;
+  min-height: 46px;
+  padding: 8px 16px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
@@ -52,8 +71,12 @@
 }
 
 .adm-nav {
+  /* Full-width second row so every destination is visible and reachable. */
+  order: 3;
+  flex-basis: 100%;
   display: flex;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 2px 4px;
 }
 
 .adm-nav-item {
@@ -110,6 +133,11 @@
 
 .adm-main {
   flex: 1 1 auto;
+  /* min-height:0 lets this flex child shrink below its content so it scrolls
+   * internally instead of pushing the shell taller than the viewport. */
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px;
 }
 
