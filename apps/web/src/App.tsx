@@ -3,6 +3,7 @@ import { useSession } from './state/session';
 import { designLabEnabled } from './lib/runtime';
 import { LoginScreen } from './components/LoginScreen';
 import { TerminalShell } from './components/TerminalShell';
+import { NotFound } from './components/NotFound';
 import type { JSX } from 'react';
 
 /*
@@ -78,6 +79,29 @@ function isMarketingRootPath(pathname: string): boolean {
   return pathname === '/' || pathname === '' || pathname === '/home';
 }
 
+/*
+ * The complete set of top-level routes the app serves. Anything else is a
+ * genuine 404 (HTF-30): before this, an unknown URL silently fell through to the
+ * terminal or the sign-in screen. The terminal itself lives at the root and does
+ * not use sub-paths, so restricting unknown top-level paths is safe.
+ */
+const KNOWN_ROUTE_PREFIXES = [
+  '/home',
+  '/verify',
+  '/affiliates',
+  '/design-lab',
+  '/icons',
+  '/checkout',
+  '/onboarding',
+  '/portal',
+  '/admin',
+];
+
+function isKnownRoute(pathname: string): boolean {
+  if (isMarketingRootPath(pathname)) return true;
+  return KNOWN_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 function useIsAdminPath(): boolean {
   const [isAdmin, setIsAdmin] = useState(() => window.location.pathname.startsWith('/admin'));
   useEffect(() => {
@@ -149,6 +173,12 @@ export function App(): JSX.Element {
         <IconGallery />
       </Suspense>
     );
+  }
+
+  // A genuinely unknown top-level URL gets an honest branded 404 rather than
+  // silently falling through to the terminal or the sign-in screen (HTF-30).
+  if (typeof window !== 'undefined' && !isKnownRoute(window.location.pathname)) {
+    return <NotFound />;
   }
 
   if (phase === 'BOOTING') {

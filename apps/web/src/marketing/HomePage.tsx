@@ -11,6 +11,12 @@ import { Reveal } from './motion';
 import { CandleCanvas } from './CandleCanvas';
 import { AccountSelector } from './AccountSelector';
 import { SITE } from './site';
+import { family } from '@atlas/contracts';
+
+// Numeric facts are read from the canonical product catalog, never hand-typed in
+// prose, so the homepage cannot drift from the product config (HTF-31).
+const CORE_CONSISTENCY = family('CORE').evalConsistencyPct;
+const SELECT_CONSISTENCY = family('SELECT').evalConsistencyPct;
 
 function Band(): JSX.Element {
   return (
@@ -209,7 +215,7 @@ function Rules(): JSX.Element {
   const rules: readonly { n: string; h: string; p: string }[] = [
     { n: '01', h: 'Trailing EOD drawdown', p: 'Your drawdown trails your end-of-day balance up to the profit target, then locks. It is always shown live in Atlas.' },
     { n: '02', h: 'No daily loss limit', p: 'None of the programs impose a daily loss limit. Manage your own risk within the account drawdown.' },
-    { n: '03', h: 'Consistency', p: 'A consistency rule keeps a single outsized day from carrying the account — 50% on Core, 40% on Select and Daily.' },
+    { n: '03', h: 'Consistency', p: `A consistency rule keeps a single outsized day from carrying the account — ${CORE_CONSISTENCY}% on Core, ${SELECT_CONSISTENCY}% on Select and Daily.` },
     { n: '04', h: 'Winning days', p: 'Reach the required winning days before a payout. Core counts winning days of $150 or more.' },
     { n: '05', h: 'One-time fee', p: 'Every account is a single evaluation fee with a $0 activation fee. No monthly subscription.' },
     { n: '06', h: 'Server-enforced', p: 'Every rule is evaluated server-side by the same engine that runs the accounts — not by the honor system.' },
@@ -265,7 +271,7 @@ const FAQ_ITEMS: readonly { q: string; a: string }[] = [
   { q: 'What is Happy Trader Funding?', a: 'A futures proprietary trading firm. You pass a simulated evaluation to earn a simulated-funded performance account, and you keep up to 90% of the profit you generate on it.' },
   { q: 'Is this real money?', a: 'Trading on the platform is simulated. You trade a simulated-funded account under real rules; payouts are based on the performance of that account. Nothing here is a live brokerage account or financial advice.' },
   { q: 'How much do I keep?', a: 'You keep 90% of the profit on every program — Core, Select and Daily.' },
-  { q: 'What is the consistency rule?', a: 'It prevents one enormous day from carrying an otherwise thin account. Core requires 50% consistency; Select and Daily require 40%. On Select, exceeding it delays a payout rather than failing the account.' },
+  { q: 'What is the consistency rule?', a: `It prevents one enormous day from carrying an otherwise thin account. Core requires ${CORE_CONSISTENCY}% consistency; Select and Daily require ${SELECT_CONSISTENCY}%. On Select, exceeding it delays a payout rather than failing the account.` },
   { q: 'How does the Daily program pay out?', a: 'Clear your initial winning days and loss buffer to unlock daily payout eligibility. Each successive payout requires your balance to have grown to a higher threshold first, so payouts scale with account growth.' },
   { q: 'Is there a monthly fee?', a: 'No. Each account is a one-time evaluation fee with a $0 activation fee — no subscription.' },
   { q: 'What do I trade on?', a: 'Atlas, our own chart-first futures platform. Your account rules, drawdown and payout progress are always in view and enforced server-side.' },

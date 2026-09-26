@@ -398,25 +398,39 @@ New/confirmed pre-launch gaps:
 - **HTF-30 (P2, software) — no 404 page / no React error boundary.** `apps/web` routes by manual pathname
   match with no catch-all and no top-level error boundary, so an unknown path falls through and a render
   error blanks the page. **Beta-acceptable** (known invited users); **fix before public launch** (PART 125).
-- **HTF-31 (P3) — marketing rule-bullet drift risk.** Numeric product rules are single-sourced from
-  `product-catalog.ts`, but the family `rules: string[]` prose bullets are hand-authored and not derived
-  from the numeric config; a numeric change won't auto-update the prose. Post-beta polish.
-- **HTF-6a (P2, software+external) — owner MFA + production owner bootstrap absent.** Auth is
-  single-factor; `mfaEnrolled` is a flag with no enrollment/challenge; the only owner is the dev seed
-  (which refuses production) and there is **no production owner bootstrap** path. **Required before any
-  real-infra/real-money mode** (G6; NO-GO for those modes until built).
-- **HTF-18 (carried, beta-relevant) — funded inactivity sweep not wired.** `runInactivitySweep` is
-  implemented + tested but has no scheduler and no on-demand route, so inactivity closure will not happen.
-  If the inactivity policy is disclosed to customers, wire an external cron (or an owner-triggered route)
-  or soften the disclosure before relying on it (PART 92).
+- **HTF-31 (P3) — marketing rule-bullet drift risk.** ✅ **RESOLVED (Phase 12.5).** The family
+  `rules: string[]` bullets are now DERIVED from the numeric config by `familyRuleBullets()` in
+  `product-catalog.ts` (the single source; `FAMILIES` maps the numeric base through it). Only genuinely
+  qualitative notes remain authored (they carry no drifting number). `rule-facts.test.ts` fails if any
+  bullet's number disagrees with the config, and the marketing HomePage consistency figures now read
+  `family(...).evalConsistencyPct` rather than literals. Parity across public/Portal/Atlas/Owner follows
+  from one derivation + the DB profile reconciled from the same catalog.
+- **HTF-6a (P2, software+external) — owner MFA + production owner bootstrap.** ✅ **RESOLVED (software,
+  Phase 12.5).** TOTP MFA is implemented end-to-end: `auth/totp.ts` (RFC 6238, no new dependency),
+  `auth/secret-box.ts` (AES-256-GCM at-rest sealing keyed off JWT_SECRET), `auth/mfa.ts` (two-phase
+  enrollment, single-use recovery codes, disable, regenerate), a two-step login (`/auth/login` →
+  challenge → `/auth/mfa/verify`), and a Portal Security panel. A production owner bootstrap exists
+  (`platform/owner-bootstrap.ts` + `scripts/bootstrap-owner.ts`, `pnpm owner:bootstrap`): creates the
+  FIRST SUPER_ADMIN only, env-gated, never prints the password, refuses if an owner exists. Proven by
+  `auth/mfa.test.ts`, `http/auth-mfa-http.test.ts`, `platform/owner-bootstrap.test.ts`. (External pentest
+  before public launch remains outstanding under G6.)
+- **HTF-18 — funded inactivity sweep.** ✅ **RESOLVED (Phase 12.5).** `runInactivitySweep` is now bound
+  to a durable interval worker (`platform/inactivity-worker.ts`, started/stopped in `app.ts`) AND an
+  on-demand owner route (`POST /api/v1/admin/ops/system/inactivity-sweep`, `system.jobs.manage`). The
+  sweep is idempotent and server-time authoritative; `inactivity-worker.test.ts` proves a second tick
+  closes/warns nothing new. The rule itself was unchanged (not invented).
+- **HTF-30 (P2, software) — no 404 / React error boundary.** ✅ **RESOLVED (Phase 12.5).** `main.tsx`
+  wraps the app in a top-level `ErrorBoundary` (branded "Something went wrong" + reload; the stack goes to
+  the console, never the customer). Unknown top-level routes render a branded `NotFound` (`App.tsx`
+  `isKnownRoute`).
 
 Carried: HTF-27 (cert object storage local-FS only; beta-tolerable, public-launch blocker), HTF-29
-(shared-org audit-verify test artifact; non-deterministic across the full monolithic run — passes in
-isolation; production invariant proven by the isolated-org stress test; systemic per-suite DB isolation
-deferred per PART 45).
+(shared-org audit-verify test artifact) ✅ **RESOLVED (Phase 12.5)** — the two pollution-sensitive tests
+were scoped to the seeded org (schema.test profile lookup) and to a `{since}` segment (admin.test audit
+verify); canonical validation now runs fully green twice from a clean seed.
 
-**Zero unresolved P0.** All open items are P2/P3/beta-relevant or external/human gates — see
-`LAUNCH_GATES.md` for owner + next action per gate.
+**Zero unresolved P0.** All remaining open items are P2/P3 external/human gates (HTF-27 object storage,
+external pentest, provider/legal/infra) — see `LAUNCH_GATES.md` for owner + next action per gate.
 
 ## PROVENANCE
 

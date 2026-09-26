@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { registerDrawingDiagnostics } from './chart/drawings/diagnostics';
 /*
  * The typefaces, self-hosted.
@@ -24,6 +25,8 @@ if (!container) throw new Error('missing #root');
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

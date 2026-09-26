@@ -19,11 +19,11 @@ boundary is open.
 | **G3 Identity / KYC** | PARTIAL (software PASS; real KYC BLOCKED) | Fail-closed seam (Phase 4); versioned identity model; provisioning gate | NATE + PROVIDER | Stripe Identity account + prod keys + webhook | Enable Stripe Identity; wire prod creds (`EXTERNAL_DEPENDENCIES.md` #2) |
 | **G4 Payouts** | PARTIAL (engine PASS; provider BLOCKED) | Phase 9 payout engine; Phase 11 payout-ops worker wired; fail-closed (no mock PAID in prod) | NATE + PROVIDER + CLAUDE | No real payout provider selected/adapter; funding source; recipient verification | Select payout provider; build adapter; verify recipients (`REAL_MONEY_BOUNDARY.md` B) |
 | **G5 Market data** | PARTIAL (deterministic PASS; commercial rights BLOCKED) | Phase 6: Rithmic Test proven deterministically, honest freshness, no fallback masking | NATE + PROVIDER + COUNSEL | Rithmic commercial/production rights; CME/exchange data agreement unknown; dev Yahoo feed is dev-only | Confirm Rithmic commercial + exchange entitlements (display/redistribution) (`EXTERNAL_DEPENDENCIES.md` #4/#5) |
-| **G6 Security** | PARTIAL | Phase 10 (RBAC/IDOR/webhooks/secrets/audit clean; 0 bundle secrets); Phase 11 (fail-safe) | CLAUDE + NATE + REVIEWER | **Owner MFA not implemented** (only a `mfaEnrolled` flag); **no production owner bootstrap** (seed refuses prod, no replacement); external pentest not done | Build prod owner bootstrap + MFA before beta; engage external review before public launch (PART 20-21) |
+| **G6 Security** | PARTIAL (MFA + bootstrap now software-complete) | Phase 10 (RBAC/IDOR/webhooks/secrets/audit clean; 0 bundle secrets); Phase 11 (fail-safe); **Phase 12.5: TOTP MFA end-to-end (enroll/challenge/recovery/disable, sealed secret), two-step login, production owner bootstrap CLI — tested** | CLAUDE + NATE + REVIEWER | Owner MFA + prod bootstrap **DONE (software)**; external pentest not done | Owner enrolls MFA on first login; engage external review before public launch (PART 20-21) |
 | **G7 Trading engine** | PASS (simulation) | Phases 5/6/8/10/11: orders/fills/positions/P&L/risk/brackets/OCO; restart reconstructs from Postgres; provider outage safe; ownership enforced; version-pinned | CLAUDE | — (live feed is G5) | Human acceptance (G-HA) |
 | **G8 Customer Portal** | PARTIAL (software PASS; human acceptance pending) | Phase 5/CP: dashboard, accounts, evaluation/funded, payouts, certs, billing, support, risk controls, Atlas hand-off | CLAUDE + NATE | Nate manual acceptance not done | `HUMAN_ACCEPTANCE_CHECKLIST.md` §C |
 | **G9 Owner OS** | PARTIAL (software PASS; human acceptance pending incl. scroll) | Phase 7: routine ops console-operable; kill switches enforce; reconciliation/audit | CLAUDE + NATE | Manual mouse-wheel scroll + full operate not confirmed by Nate | `HUMAN_ACCEPTANCE_CHECKLIST.md` §E (PART 78) |
-| **G10 Product / rule consistency** | PASS (with minor drift note) | Exactly 10 commercial products, single-sourced from `product-catalog.ts`; marketing reads it directly; runtime reads DB reconciled from same source; no legacy purchasable; public products endpoint returns only the 10 | CLAUDE | Marketing prose rule-bullets are hand-authored (drift risk; numbers are single-sourced) — HTF-31 | Derive/verify prose bullets against numeric config (post-beta polish) |
+| **G10 Product / rule consistency** | PASS (with minor drift note) | Exactly 10 commercial products, single-sourced from `product-catalog.ts`; marketing reads it directly; runtime reads DB reconciled from same source; no legacy purchasable; public products endpoint returns only the 10 | CLAUDE | HTF-31 RESOLVED — rule bullets now derived from the numeric config (`familyRuleBullets`), parity test guards drift | Keep `rule-facts.test.ts` green |
 | **G11 Observability / incidents** | PARTIAL | Phase 11: `/health` `/ready` `/version`, System Doctor, runbooks; alert conditions defined | CLAUDE + INFRASTRUCTURE | No alert-delivery channel wired; metrics/tracing export (HTF-19) | Wire an alert channel before real money (`EXTERNAL_DEPENDENCIES.md` #12) |
 | **G12 Production infrastructure** | BLOCKED — EXTERNAL | Phase 11: DR proven, deploy/rollback/DR runbooks; canonical validation | NATE + INFRASTRUCTURE | No production hosting/DB/backup/PITR/secret-manager/object-storage/domain provisioned | `PRODUCTION_ENVIRONMENT_PLAN.md`; provision infra |
 | **G13 Business / legal** | BLOCKED — HUMAN / EXTERNAL | Agreement mechanism READY (versioned, immutable, audited acceptance); content is DEV placeholder | NATE + COUNSEL | Entity/EIN/bank/signatory absent; legal content not counsel-approved | `LEGAL_COUNSEL_REVIEW_PACKAGE.md`; form entity; engage counsel |
@@ -39,16 +39,17 @@ boundary is open.
 **BLOCKED — HUMAN.** Atlas, Portal, Owner OS, public site, checkout, failure states, and the manual
 Owner-OS scroll require Nate's physical sign-off (`HUMAN_ACCEPTANCE_CHECKLIST.md`). Claude cannot self-certify.
 
-## Software gaps found in Phase 12 (new HTF issues)
-- **HTF-30 (P2, software):** no catch-all 404 page and no React error boundary in `apps/web` — a render
-  error blanks the page. Beta-acceptable (known users); **fix before public launch** (PART 125).
-- **HTF-31 (P3, docs/software):** marketing family rule-bullets are hand-authored prose, not derived from
-  the numeric config; drift risk. Numbers themselves are single-sourced.
-- **HTF-18 (carried, P3→beta-relevant):** funded inactivity sweep implemented + tested but **not wired to
-  any scheduler and no on-demand route** — inactivity closure will not happen. If the policy is disclosed
-  to customers, it must be wired (external cron) or the disclosure softened before relying on it.
-- **HTF-27 (P2):** certificate object storage local-FS only.
-- **HTF-29 (P4, test-only):** shared-org audit-verify artifact in the full monolithic run.
+## Software gaps found in Phase 12 — status after Phase 12.5 (RC0)
+- **HTF-30 (P2, software):** ✅ RESOLVED — top-level React error boundary + branded 404 in `apps/web`.
+- **HTF-31 (P3, docs/software):** ✅ RESOLVED — family rule bullets DERIVED from the numeric config
+  (`familyRuleBullets`); `rule-facts.test.ts` guards parity. Numbers were already single-sourced.
+- **HTF-18 (beta-relevant):** ✅ RESOLVED — inactivity sweep bound to a durable interval worker + an
+  on-demand owner route (`system.jobs.manage`); idempotent, server-time authoritative.
+- **HTF-6a (P2, software+external):** ✅ RESOLVED (software) — TOTP MFA end-to-end + production owner
+  bootstrap CLI. External pentest still outstanding (G6).
+- **HTF-29 (P4, test-only):** ✅ RESOLVED — pollution-sensitive tests org-/segment-scoped; canonical
+  validation green twice from a clean seed.
+- **HTF-27 (P2):** OPEN — certificate object storage local-FS only; beta-tolerable, public-launch blocker.
 
 ## Gate summary
 - **PASS (internal/software):** G2, G7, G10, G15(sw), G18, G19(sw), G20(sw) — the internal product core.

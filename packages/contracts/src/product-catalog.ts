@@ -67,7 +67,62 @@ export interface Family {
   readonly accounts: readonly AccountConfig[];
 }
 
-export const FAMILIES: readonly Family[] = [
+/** Trader profit split, as a percentage (the trader keeps 90%). */
+export const PROFIT_SPLIT_PCT = 90;
+/** One-time activation fee in whole dollars ($0 across the board today). */
+export const ACTIVATION_FEE_USD = 0;
+/** Winning days required before a first payout. */
+export const REQUIRED_WINNING_DAYS = 5;
+/** A day counts as "winning" at or above this net, in whole dollars. */
+export const WINNING_DAY_THRESHOLD_USD = 150;
+/** Minimum payout request, in whole dollars. */
+export const MIN_PAYOUT_REQUEST_USD = 250;
+
+/**
+ * The numeric family config, WITHOUT the display rule bullets. The bullets are
+ * derived from these numbers (see `familyRuleBullets` and HTF-31) so a change to,
+ * say, `evalConsistencyPct` cannot leave a stale hand-typed "50%" behind. This is
+ * the one source; there is no second config.
+ */
+type FamilyBase = Omit<Family, 'rules'>;
+
+/**
+ * Family-specific QUALITATIVE notes — statements that carry no drifting number,
+ * so they are safe as authored copy. Every numeric fact (consistency %, split %,
+ * winning days + threshold, activation fee, daily-loss-limit) is derived instead.
+ */
+const FAMILY_NOTES: Record<FamilyKey, readonly string[]> = {
+  CORE: [],
+  SELECT: ['Exceeding consistency delays a payout — it does not fail the account'],
+  DAILY: [
+    'Daily payout eligibility once the loss buffer is cleared',
+    'Each successive payout requires a higher balance threshold first',
+  ],
+};
+
+/**
+ * Derive the display rule bullets for a family from its numeric config plus the
+ * shared payout constants. Every number here comes from a structured field — the
+ * single source of truth (HTF-31). Parity across the public site, Portal, Atlas
+ * and Owner follows because they all render from this same derivation (or from
+ * the DB profile reconciled from the same catalog).
+ */
+export function familyRuleBullets(f: FamilyBase): string[] {
+  const bullets = [
+    `${f.evalConsistencyPct}% evaluation consistency`,
+    'No daily loss limit',
+    f.fundedConsistencyPct === null
+      ? 'No funded consistency rule'
+      : `${f.fundedConsistencyPct}% funded / payout consistency`,
+    `${REQUIRED_WINNING_DAYS} winning days of $${WINNING_DAY_THRESHOLD_USD} or more`,
+    ...FAMILY_NOTES[f.key],
+    `${f.splitPct}% trader profit split`,
+    `$${f.activationFeeUsd} activation fee`,
+  ];
+  return bullets;
+}
+
+const FAMILY_BASE: readonly FamilyBase[] = [
   {
     key: 'CORE',
     name: 'Core',
@@ -78,14 +133,6 @@ export const FAMILIES: readonly Family[] = [
     fundedConsistencyPct: null,
     splitPct: 90,
     activationFeeUsd: 0,
-    rules: [
-      '50% evaluation consistency',
-      'No daily loss limit',
-      'No funded consistency rule',
-      'Five winning days of $150 or more',
-      '90% trader profit split',
-      '$0 activation fee',
-    ],
     accounts: [
       { size: '25K', sizeUsd: 25_000, priceUsd: 65, targetUsd: 1_500, eodDrawdownUsd: 1_000, minis: 2, micros: 20 },
       { size: '50K', sizeUsd: 50_000, priceUsd: 95, targetUsd: 3_000, eodDrawdownUsd: 2_000, minis: 5, micros: 50 },
@@ -103,15 +150,6 @@ export const FAMILIES: readonly Family[] = [
     fundedConsistencyPct: 40,
     splitPct: 90,
     activationFeeUsd: 0,
-    rules: [
-      '40% evaluation consistency',
-      'No daily loss limit',
-      '40% funded / payout consistency',
-      'Exceeding consistency delays a payout — it does not fail the account',
-      'Five winning days',
-      '90% trader profit split',
-      '$0 activation fee',
-    ],
     accounts: [
       { size: '25K', sizeUsd: 25_000, priceUsd: 85, targetUsd: 1_500, eodDrawdownUsd: 1_250, minis: 3, micros: 30 },
       { size: '50K', sizeUsd: 50_000, priceUsd: 135, targetUsd: 3_000, eodDrawdownUsd: 2_500, minis: 7, micros: 70 },
@@ -128,16 +166,6 @@ export const FAMILIES: readonly Family[] = [
     fundedConsistencyPct: null,
     splitPct: 90,
     activationFeeUsd: 0,
-    rules: [
-      '40% evaluation consistency',
-      'No daily loss limit',
-      'No funded consistency rule',
-      'Five initial winning days',
-      'Daily payout eligibility once the buffer is cleared',
-      'Each successive payout requires a higher balance threshold first',
-      '90% trader profit split',
-      '$0 activation fee',
-    ],
     accounts: [
       { size: '25K', sizeUsd: 25_000, priceUsd: 90, targetUsd: 1_500, eodDrawdownUsd: 1_000, minis: 2, micros: 20, bufferUsd: 1_000 },
       { size: '50K', sizeUsd: 50_000, priceUsd: 145, targetUsd: 3_000, eodDrawdownUsd: 2_000, minis: 5, micros: 50, bufferUsd: 2_000 },
@@ -145,6 +173,15 @@ export const FAMILIES: readonly Family[] = [
     ],
   },
 ];
+
+/**
+ * The families, with their display rule bullets derived from the numeric config.
+ * `familyRuleBullets` is the single derivation; nothing hand-types a rule number.
+ */
+export const FAMILIES: readonly Family[] = FAMILY_BASE.map((f) => ({
+  ...f,
+  rules: familyRuleBullets(f),
+}));
 
 export function family(key: FamilyKey): Family {
   const f = FAMILIES.find((x) => x.key === key);
@@ -162,17 +199,6 @@ export const ALL_ACCOUNTS: readonly (AccountConfig & { family: FamilyKey; family
 // engine's per-product `payoutRules` (apps/server/src/platform/payout-core.ts)
 // and the launch caps documented in docs/account-lifecycle-ux-v1 §5.
 // ---------------------------------------------------------------------------
-
-/** Trader profit split, as a percentage (the trader keeps 90%). */
-export const PROFIT_SPLIT_PCT = 90;
-/** One-time activation fee in whole dollars ($0 across the board today). */
-export const ACTIVATION_FEE_USD = 0;
-/** Winning days required before a first payout. */
-export const REQUIRED_WINNING_DAYS = 5;
-/** A day counts as "winning" at or above this net, in whole dollars. */
-export const WINNING_DAY_THRESHOLD_USD = 150;
-/** Minimum payout request, in whole dollars. */
-export const MIN_PAYOUT_REQUEST_USD = 250;
 
 /**
  * Launch payout request caps by account size, in whole dollars

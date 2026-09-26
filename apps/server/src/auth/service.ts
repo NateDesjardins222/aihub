@@ -8,7 +8,10 @@ import {
   hashRefreshToken,
   refreshExpiry,
   signAccessToken,
+  signMfaChallenge,
+  verifyMfaChallenge,
 } from './tokens.js';
+import { verifyFactor } from './mfa.js';
 import { env } from '../config/env.js';
 import { defaultOrganizationId, ensurePracticeAccount } from '../platform/provisioning.js';
 import { recordAudit } from '../platform/audit.js';
@@ -40,12 +43,25 @@ export interface AuthResult {
   readonly expiresIn: number;
 }
 
+/**
+ * The result of a first-factor login when the account has MFA enabled: no tokens
+ * are issued yet. The caller presents `challengeToken` plus a second factor to
+ * `completeMfaLogin`. This is the only shape that carries `mfaRequired`.
+ */
+export interface MfaChallenge {
+  readonly mfaRequired: true;
+  readonly challengeToken: string;
+  readonly expiresIn: number;
+}
+
 export class AuthError extends Error {
   constructor(
     readonly code:
       | 'EMAIL_TAKEN'
       | 'INVALID_CREDENTIALS'
       | 'INVALID_REFRESH'
+      | 'INVALID_MFA'
+      | 'MFA_CHALLENGE_INVALID'
       | 'USER_NOT_FOUND'
       | 'USER_DISABLED',
     message: string,
@@ -135,7 +151,7 @@ export async function login(
   db: Database,
   input: { email: string; password: string },
   userAgent: string | null = null,
-): Promise<AuthResult> {
+): Promise<AuthResult | MfaChallenge> {
   const email = normalizeEmail(input.email);
   const [row] = await db.select().from(users).where(eq(users.email, email));
 
@@ -148,8 +164,44 @@ export async function login(
     throw new AuthError('USER_DISABLED', 'This account has been disabled.');
   }
 
+  // Second factor: the password step succeeded but is not sufficient on its own.
+  // No session is issued and lastLoginAt is not touched until the factor passes.
+  if (row.mfaEnrolled) {
+    const { token, expiresIn } = signMfaChallenge(row.id);
+    return { mfaRequired: true, challengeToken: token, expiresIn };
+  }
+
   await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, row.id));
 
+  return issue(db, present(row), userAgent);
+}
+
+/**
+ * Complete an MFA login: exchange a valid challenge + second factor for a real
+ * session. The challenge is a short-lived token minted only after the password
+ * step, so this cannot be reached without it.
+ */
+export async function completeMfaLogin(
+  db: Database,
+  challengeToken: string,
+  code: string,
+  userAgent: string | null = null,
+): Promise<AuthResult> {
+  const userId = verifyMfaChallenge(challengeToken);
+  if (!userId) throw new AuthError('MFA_CHALLENGE_INVALID', 'Your login session expired. Sign in again.');
+
+  const [row] = await db.select().from(users).where(eq(users.id, userId));
+  if (!row) throw new AuthError('USER_NOT_FOUND', 'User no longer exists.');
+  if (row.status !== 'ACTIVE') throw new AuthError('USER_DISABLED', 'This account has been disabled.');
+  if (!row.mfaEnrolled) {
+    // MFA was disabled between the two steps; the challenge no longer applies.
+    throw new AuthError('MFA_CHALLENGE_INVALID', 'Your login session expired. Sign in again.');
+  }
+
+  const method = await verifyFactor(db, userId, code);
+  if (!method) throw new AuthError('INVALID_MFA', 'That verification code is not valid.');
+
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, row.id));
   return issue(db, present(row), userAgent);
 }
 

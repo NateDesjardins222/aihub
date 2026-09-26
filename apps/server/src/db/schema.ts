@@ -80,9 +80,17 @@ export const users = pgTable(
     status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
     organizationId: uuid('organization_id').references(() => organizations.id),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-    /** M10: operator MFA readiness. Enrollment (TOTP) is not yet built; this is
-     * surfaced honestly as NOT_ENROLLED until a real enrollment flow lands. */
+    /**
+     * Operator/owner MFA (Phase 12.5). `mfaEnrolled` is the authoritative flag
+     * that login consults to decide whether a TOTP challenge is required.
+     * `mfaSecret` holds the TOTP shared secret ENCRYPTED at rest (AES-256-GCM,
+     * key derived from JWT_SECRET — a DB dump alone cannot verify codes), and is
+     * cleared to null when MFA is disabled. `mfaEnrolledAt` records when the
+     * second factor was activated. Recovery codes live in `mfa_recovery_codes`.
+     */
     mfaEnrolled: boolean('mfa_enrolled').notNull().default(false),
+    mfaSecret: text('mfa_secret'),
+    mfaEnrolledAt: timestamp('mfa_enrolled_at', { withTimezone: true }),
     /** M10: the staff member who invited this user, if onboarded via invitation. */
     invitedByUserId: uuid('invited_by_user_id'),
     createdAt: now(),
@@ -113,6 +121,33 @@ export const refreshTokens = pgTable(
   (t) => [
     uniqueIndex('refresh_tokens_hash_key').on(t.tokenHash),
     index('refresh_tokens_user_idx').on(t.userId),
+  ],
+);
+
+/**
+ * Single-use MFA recovery codes (Phase 12.5).
+ *
+ * Generated once at enrollment and shown to the operator exactly once; only the
+ * SHA-256 hash is stored, never the code itself. A code is consumed by setting
+ * `usedAt` in the same UPDATE that matches it, so a captured code cannot be
+ * replayed and two concurrent uses cannot both succeed. Rows are deleted when
+ * MFA is disabled or re-enrolled, so a stale code from an old enrollment never
+ * lingers.
+ */
+export const mfaRecoveryCodes = pgTable(
+  'mfa_recovery_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('mfa_recovery_codes_hash_key').on(t.codeHash),
+    index('mfa_recovery_codes_user_idx').on(t.userId),
   ],
 );
 

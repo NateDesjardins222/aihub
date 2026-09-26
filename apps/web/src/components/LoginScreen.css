@@ -105,3 +105,18 @@
   line-height: 1.5;
   color: var(--text-muted);
 }
+
+/* Secondary action on the MFA verification step (Phase 12.5). */
+.login-secondary {
+  margin-top: 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #9aa4b2);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+.login-secondary:hover {
+  color: var(--text, #e6e9ef);
+  text-decoration: underline;
+}

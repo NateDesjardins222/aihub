@@ -22,12 +22,14 @@ human acceptance** — not core software.
 | Backup not restorable | **FALSE** — restore proven (Phase 11) |
 | Production mock provider success | **IMPOSSIBLE** — fail-closed (Phase 4) |
 | Untrusted payment provisioning | **FALSE** — signed server event only |
-| Owner auth critically insecure | **CONDITIONAL** — dev seed can't run in prod, but **no prod owner
-  bootstrap + no MFA exists yet**; this is a NO-GO **for any real-infra/real-money mode** until built |
+| Owner auth critically insecure | **RESOLVED (software, Phase 12.5)** — production owner bootstrap CLI
+  (`owner:bootstrap`, first-operator-only, env-gated) + TOTP MFA end-to-end (enroll/challenge/recovery/
+  disable, sealed secret) now exist and are tested. External pentest still owed before public launch |
 | Unknown order state that can duplicate execution | **NONE** (ack≠fill; lost-ack → SUBMISSION_UNKNOWN) |
 
-**Active hard NO-GO right now:** only for real-infra/real-money modes — production owner bootstrap + MFA
-(G6). Internal-only simulation modes are not blocked by it.
+**Active hard NO-GO right now:** none from the software side for Mode A/B. Production owner bootstrap + MFA
+(G6) — the previous blocker — is RESOLVED in software (Phase 12.5). Remaining hard gates for real money are
+external/human (entity, bank, counsel, providers, prod infra, external pentest), not core software.
 
 ---
 
@@ -35,7 +37,7 @@ human acceptance** — not core software.
 | Mode | Verdict | Why |
 |---|---|---|
 | **A — Internal only** (Nate/team, mock/test money, Rithmic Test) | **READY** | Core software PASS; DR proven; production-like boot safe; needs only Nate's manual acceptance |
-| **B — Invite-only, NO real money** (test users, controlled accounts) | **READY once B-gates met** | Needs: production owner bootstrap + MFA, human acceptance, alert delivery, and (if on real infra) hosting/DB/backups/domain. No provider/legal money gates required because no money moves |
+| **B — Invite-only, NO real money** (test users, controlled accounts) | **READY once B-gates met** | Prod owner bootstrap + MFA now DONE (Phase 12.5). Remaining: human acceptance, alert delivery, and (if on real infra) hosting/DB/backups/domain. No provider/legal money gates required because no money moves |
 | **C — Invite-only, REAL purchases, no real payout** | **NOT READY** | Requires `REAL_MONEY_BOUNDARY.md` Boundary A: entity, bank, counsel docs, Whop prod creds, prod infra, secret manager, monitoring |
 | **D — Controlled real-money closed beta** (purchase + payout) | **NOT READY** | Requires Boundary A + B: production KYC, real payout provider + funding, tax/legal review |
 | **Public launch** | **NOT READY** | Requires all of the above + commercial market-data rights + external pentest + object storage + fully-green validation + accessibility/404 |
@@ -69,10 +71,10 @@ no legal/provider money gates. Do **not** prepare for C/D/public until their ext
 7. Engage a CPA (accounting/tax) and, before public launch, an external security reviewer.
 
 ### CLAUDE (software/docs only, no external commitment) — prioritized
-1. Production owner bootstrap + MFA (G6) — required before Mode B.
+1. ✅ DONE (Phase 12.5): production owner bootstrap + MFA (G6); React error boundary + 404 (HTF-30);
+   marketing rule-bullet derivation (HTF-31); HTF-18 inactivity wiring; HTF-29 test isolation.
 2. Wire an alert-delivery channel to the critical conditions in `OBSERVABILITY.md`.
-3. Small launch-quality fixes: React error boundary + 404 surface (HTF-30); marketing prose-bullet
-   derivation (HTF-31); resolve HTF-29 test isolation.
+3. Object storage adapter for certificates (HTF-27) — before public launch.
 4. Object storage adapter for certificates (HTF-27) — before public launch.
 5. Payout-provider adapter once Nate selects one; Whop/Stripe prod wiring once creds exist.
 6. Bind or expose the inactivity sweep (HTF-18) when an external scheduler exists, or soften the disclosure.

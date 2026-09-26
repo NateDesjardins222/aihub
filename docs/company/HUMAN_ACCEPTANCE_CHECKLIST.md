@@ -1,22 +1,57 @@
 # HUMAN ACCEPTANCE CHECKLIST
 
-**Happy Trader Funding — the things only Nate (a human) can sign off.** Phase 12 (2026-09-26).
+**Happy Trader Funding — the things only Nate (a human) can sign off.** Phase 12.5 (RC0).
 
 > Automated tests and browser automation cannot approve the actual product experience. Nate must
 > physically use each surface and mark **PASS / FAIL / NOT TESTED**. Claude must never mark these PASS.
 > Until Nate completes the relevant sections, human acceptance is **BLOCKED — HUMAN**. Use safe/test
-> provider paths only; no real money.
+> provider paths only; **no real money, no production Rithmic, no real payouts.**
 
-Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL.
+Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL. This runbook is designed
+to be completed in **one sitting** against a freshly-seeded local environment.
 
-## A. PUBLIC SITE
+---
+
+## 0. ONE-TIME STARTUP (do this first, once)
+
+Everything below runs against the local dev database with deterministic seed fixtures. No external
+provider, no real money.
+
+```bash
+# 1. From the repo root, prepare + seed the development database (Postgres 16 must be running).
+pnpm --filter @atlas/server db:migrate
+pnpm --filter @atlas/server db:seed
+
+# 2. Start the API and the web app together.
+pnpm dev
+#    API  → http://localhost:4000   (health at /health, /ready, /version)
+#    Web  → http://localhost:5173    (Vite dev server; the URL is printed on start)
+```
+
+**Deterministic seed credentials** (development only — the seed *refuses* to run in production):
+- **Owner (SUPER_ADMIN):** `owner@atlasfutures.local` / `atlas-owner-2026`
+- **Demo trader:** `demo@atlasfutures.local` / `atlas-demo-2026`
+- The demo trader is provisioned with 3 accounts; all 10 commercial products are ACTIVE.
+
+Health check before starting: open `http://localhost:4000/ready` → should be `200` with `db: ok`.
+
+> **Production owner bootstrap (documented, do NOT run here):** production has no seeded owner. The
+> first operator is created out of band with `ALLOW_OWNER_BOOTSTRAP=true BOOTSTRAP_OWNER_EMAIL=…
+> BOOTSTRAP_OWNER_PASSWORD=… pnpm --filter @atlas/server owner:bootstrap`. It refuses if an owner
+> already exists and never prints the password. Nate runs this once, on the real host, at go-live.
+
+---
+
+## A. PUBLIC SITE  (`http://localhost:5173/`)
 - [ ] Home/landing loads; branding correct; no broken images.
 - [ ] Products/pricing show all 10 with correct rules; no legacy product purchasable.
-- [ ] Rule values match Portal/Atlas/Owner (no contradictions).
+- [ ] Rule values match Portal/Atlas/Owner (no contradictions). *(Rule numeric facts are derived from one
+      config — HTF-31 — so consistency %, split % and fees cannot drift between surfaces.)*
 - [ ] Legal links present (Terms/Privacy/Refund/Risk) — even if draft.
 - [ ] Support/contact path present.
 - [ ] CTA/checkout entry works.
-- [ ] No broken links; 404 shows a real page (not a framework error).
+- [ ] **404:** visit `http://localhost:5173/this-page-does-not-exist` → a branded "404 — Page not found"
+      with a Return-home link (NOT a blank page or a framework stack trace). *(HTF-30)*
 - [ ] Mobile: usable at phone width.
 
 ## B. CHECKOUT
@@ -25,7 +60,7 @@ Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL.
 - [ ] Account appears only after the server-verified event.
 - [ ] Payment-failed and payment-pending states are understandable (no dead end).
 
-## C. CUSTOMER PORTAL
+## C. CUSTOMER PORTAL  (`/portal`, sign in as the demo trader)
 - [ ] Register/login/logout.
 - [ ] Dashboard + account cards + switcher.
 - [ ] Evaluation progress; funded progress.
@@ -38,6 +73,16 @@ Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL.
 - [ ] Atlas hand-off (open the terminal for an account).
 - [ ] Lifecycle: new → evaluation → failed → reset → passed → funded → payout eligible → requested →
       paid → completed all render with clear customer state.
+
+## C2. MULTI-FACTOR AUTHENTICATION  (Portal → **Security**) — *new in 12.5*
+- [ ] Security page shows "Two-factor authentication — not enabled" with an **Enable** button.
+- [ ] **Enable** shows a manual-entry secret + otpauth URI; add it to an authenticator app.
+- [ ] Entering the current 6-digit code activates MFA and shows **10 recovery codes once**.
+- [ ] Sign out, then sign in with the same password → you are **challenged for a code** (no session yet).
+- [ ] A wrong code is rejected; the correct code completes the login.
+- [ ] Sign out; sign in; complete the challenge with **a recovery code** → it works exactly once.
+- [ ] Back in Security, **Disable** requires the password AND a live code, then MFA is off.
+- [ ] (Owner) Repeat C2 signed in as the owner — the owner account can enroll and be challenged.
 
 ## D. ATLAS (trading terminal) — physically trade each
 - [ ] Login + account selector.
@@ -52,10 +97,9 @@ Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL.
 - [ ] Account switching.
 - [ ] Reconnect after network blip; browser refresh restores state.
 - [ ] Layout/performance acceptable; no obvious visual launch-blockers.
-- [ ] Mobile: **only** if Atlas mobile trading is intentionally supported (else mark N/A and ensure the
-      product does not imply it).
+- [ ] Mobile: **only** if Atlas mobile trading is intentionally supported (else mark N/A).
 
-## E. OWNER OS — physically operate
+## E. OWNER OS — physically operate  (`/admin`, sign in as owner)
 - [ ] Open `/admin`; **scroll the entire Command Center with a real mouse wheel** (the standing manual
       acceptance — Playwright is not sufficient).
 - [ ] Command Center; Customers + Customer 360; account operations.
@@ -64,6 +108,9 @@ Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL.
 - [ ] Affiliates; certificates; economics.
 - [ ] Provider health; reconciliation center; audit explorer.
 - [ ] Feature flags; kill switches (engage/release with reason); system health.
+- [ ] **Inactivity sweep (HTF-18):** run the on-demand sweep (System → run, or
+      `POST /api/v1/admin/ops/system/inactivity-sweep`) → returns `{closed, warned, at}` without error;
+      running it twice in a row closes/warns nothing new (idempotent).
 - [ ] Everything operable without SQL or Claude.
 
 ## F. SUPPORT
@@ -77,8 +124,32 @@ Mark each row: `[ ] PASS  [ ] FAIL  [ ] NOT TESTED` and add a note on any FAIL.
 - [ ] payment failed / pending; KYC pending / failed; account failed; provider unavailable; market data
       stale; payout pending / rejected / unknown; support escalation; completed account — each shows a
       clear, non-technical explanation.
+- [ ] **Unexpected UI error:** the app never shows a blank white page — a render error surfaces the
+      branded "Something went wrong / Reload" boundary, with no stack trace shown to the customer. *(HTF-30)*
 
 ## I. SIGN-OFF
 - [ ] Nate confirms overall UX is acceptable for the intended beta mode.
 - Human acceptance is **BLOCKED — HUMAN** until the above are completed by Nate. Claude has not and will
   not self-certify any row here.
+
+---
+
+## RESULTS RECORD (fill in on completion)
+
+| Section | PASS | FAIL | NOT TESTED | Notes |
+|---|---|---|---|---|
+| 0. Startup |  |  |  |  |
+| A. Public site |  |  |  |  |
+| B. Checkout |  |  |  |  |
+| C. Portal |  |  |  |  |
+| C2. MFA |  |  |  |  |
+| D. Atlas |  |  |  |  |
+| E. Owner OS (incl. scroll + inactivity) |  |  |  |  |
+| F. Support |  |  |  |  |
+| G. Certificates |  |  |  |  |
+| H. Failure states (incl. error boundary) |  |  |  |  |
+| I. Sign-off |  |  |  |  |
+
+**Overall verdict (Nate):** ____ ACCEPTED for Mode ___ · ____ CHANGES REQUIRED (see FAIL notes)
+
+Date: __________  Signed: __________

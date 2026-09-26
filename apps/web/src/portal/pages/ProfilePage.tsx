@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { api } from '../../api/client';
 import { Card, msg } from '../lib';
+import { MfaPanel } from './MfaPanel';
 
 function firstLastInitial(displayName: string): string {
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
@@ -52,7 +53,8 @@ export function ProfilePage({ section, onToast }: { section: Section; onToast: (
       )}
       {section === 'security' && (
         <>
-          <p className="pt-sub">Sessions and password. Sign-in security is enforced server-side.</p>
+          <p className="pt-sub">Two-factor authentication, sessions and password. Sign-in security is enforced server-side.</p>
+          <MfaPanel onToast={onToast} />
           <Card><p className="muted" style={{ marginTop: 0 }}>Change your password or review recent sign-ins from onboarding &amp; account settings.</p>
             <div className="pt-actions"><button className="pt-btn" onClick={() => { window.location.href = '/onboarding'; }}>Manage security</button></div>
           </Card>

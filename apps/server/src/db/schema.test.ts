@@ -8,7 +8,7 @@
  * trading it. None of that is provable against a mock.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { createDb, type Database } from './client.js';
 import {
   accountLifecycles,
@@ -199,6 +199,14 @@ describe('product versions', () => {
   });
 
   it('carry exactly the terms of the template they were imported from', async () => {
+    // Scope to the seeded 'atlas' organisation. `account_profiles` is multi-tenant
+    // and other suites may create a second organisation carrying the SAME profile
+    // keys (e.g. a fresh-org reconcile), so an unscoped key lookup could return an
+    // arbitrary organisation's profile. Comparing the seeded templates against the
+    // seeded org's profiles is what this invariant means and makes the assertion
+    // insensitive to cross-suite organisations on a shared test database.
+    const [seededOrg] = await db.select().from(organizations).where(eq(organizations.slug, 'atlas'));
+    const seededOrgId = seededOrg!.id;
     const templates = await db.select().from(ruleTemplates);
     expect(templates.length).toBeGreaterThan(0);
     let compared = 0;
@@ -211,7 +219,7 @@ describe('product versions', () => {
       const [profile] = await db
         .select()
         .from(accountProfiles)
-        .where(eq(accountProfiles.key, key));
+        .where(and(eq(accountProfiles.key, key), eq(accountProfiles.organizationId, seededOrgId)));
       // A template created after the import has no product, and should not.
       if (!profile) continue;
       compared += 1;

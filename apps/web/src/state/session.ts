@@ -4,7 +4,8 @@
  */
 import { create } from 'zustand';
 import { api, setAccessToken, setRefreshToken, getRefreshToken } from '../api/client';
-import type { ApiAccount, ApiInstrument, ApiUser, AuthResponse } from '../api/types';
+import type { ApiAccount, ApiInstrument, ApiUser, AuthResponse, LoginResult } from '../api/types';
+import { isMfaChallenge } from '../api/types';
 import { attachPreferences } from './preferences';
 
 export type SessionPhase = 'BOOTING' | 'SIGNED_OUT' | 'SIGNED_IN';
@@ -35,11 +36,19 @@ interface SessionState {
   activeSymbol: string;
   error: string | null;
   busy: boolean;
+  /**
+   * When a first-factor login succeeds but the account has MFA enabled, the
+   * short-lived challenge token sits here and the login screen asks for a code.
+   * Null at every other time. It is never persisted.
+   */
+  mfaChallengeToken: string | null;
   /** The trade the chart is being asked to show, if any. */
   chartFocus: ChartFocus | null;
 
   boot: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  verifyMfa: (code: string) => Promise<void>;
+  cancelMfa: () => void;
   signOut: () => Promise<void>;
   selectAccount: (id: string) => void;
   setActiveSymbol: (symbol: string) => void;
@@ -59,6 +68,7 @@ export const useSession = create<SessionState>((set, get) => ({
   activeSymbol: localStorage.getItem(ACTIVE_SYMBOL_KEY) ?? 'NQ',
   error: null,
   busy: false,
+  mfaChallengeToken: null,
   chartFocus: null,
 
   /** Restore a session from the persisted refresh token, if there is one. */
@@ -82,9 +92,15 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   async signIn(email, password) {
-    set({ busy: true, error: null });
+    set({ busy: true, error: null, mfaChallengeToken: null });
     try {
-      const result = await api.post<AuthResponse>('/api/v1/auth/login', { email, password });
+      const result = await api.post<LoginResult>('/api/v1/auth/login', { email, password });
+      // MFA-enabled account: hold the challenge and let the UI ask for a code.
+      // No session is established until the second factor is verified.
+      if (isMfaChallenge(result)) {
+        set({ mfaChallengeToken: result.challengeToken });
+        return;
+      }
       setAccessToken(result.accessToken);
       setRefreshToken(result.refreshToken);
       void attachPreferences();
@@ -98,12 +114,38 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
+  async verifyMfa(code) {
+    const challengeToken = get().mfaChallengeToken;
+    if (!challengeToken) {
+      set({ error: 'Your login session expired. Sign in again.' });
+      return;
+    }
+    set({ busy: true, error: null });
+    try {
+      const result = await api.post<AuthResponse>('/api/v1/auth/mfa/verify', { challengeToken, code });
+      setAccessToken(result.accessToken);
+      setRefreshToken(result.refreshToken);
+      void attachPreferences();
+      set({ user: result.user, phase: 'SIGNED_IN', mfaChallengeToken: null });
+      await get().refreshAccounts();
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Verification failed.' });
+      throw err;
+    } finally {
+      set({ busy: false });
+    }
+  },
+
+  cancelMfa() {
+    set({ mfaChallengeToken: null, error: null });
+  },
+
   async signOut() {
     const token = getRefreshToken();
     if (token) await api.post('/api/v1/auth/logout', { refreshToken: token }).catch(() => {});
     setAccessToken(null);
     setRefreshToken(null);
-    set({ phase: 'SIGNED_OUT', user: null, accounts: [], selectedAccountId: null });
+    set({ phase: 'SIGNED_OUT', user: null, accounts: [], selectedAccountId: null, mfaChallengeToken: null });
   },
 
   selectAccount(id) {

@@ -19,6 +19,30 @@ export interface AuthResponse {
   expiresIn: number;
 }
 
+/** Returned by /auth/login when the account has MFA enabled: no session yet. */
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  challengeToken: string;
+  expiresIn: number;
+}
+
+export type LoginResult = AuthResponse | MfaChallengeResponse;
+
+export function isMfaChallenge(r: LoginResult): r is MfaChallengeResponse {
+  return (r as MfaChallengeResponse).mfaRequired === true;
+}
+
+export interface MfaStatusResponse {
+  enrolled: boolean;
+  enrolledAt: string | null;
+  recoveryCodesRemaining: number;
+}
+
+export interface MfaEnrollBeginResponse {
+  secret: string;
+  otpauthUri: string;
+}
+
 export interface ApiRuleTemplate {
   id: string;
   name: string;

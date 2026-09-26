@@ -49,6 +49,7 @@ import { getDb, getLockSql } from '../db/client.js';
 import { releaseInfo } from '../config/release.js';
 import { OutboxWorker, notifyAccountChanged } from '../platform/outbox.js';
 import { PayoutOpsWorker } from '../platform/payout-ops-worker.js';
+import { InactivityWorker } from '../platform/inactivity-worker.js';
 import { accountOutboxHandler } from '../platform/projection.js';
 import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
@@ -409,6 +410,15 @@ export async function buildApp(): Promise<BuiltApp> {
   const payoutOpsWorker = new PayoutOpsWorker(db, { name: 'payout-ops' });
   payoutOpsWorker.start();
 
+  /*
+   * Funded-account inactivity enforcement (HTF-18). The monthly-inactivity rule
+   * was implemented and disclosed but never bound to a scheduler, so it would
+   * never fire. This runs the idempotent, server-time-authoritative sweep on a
+   * slow cadence; an on-demand owner route also exists for manual runs.
+   */
+  const inactivityWorker = new InactivityWorker(db);
+  inactivityWorker.start();
+
   app.addHook('onClose', async () => {
     stopRecording();
     stopCertifying();
@@ -420,6 +430,7 @@ export async function buildApp(): Promise<BuiltApp> {
     stopNotificationWorker();
     outboxWorker.stop();
     payoutOpsWorker.stop();
+    inactivityWorker.stop();
     await accountListener?.close().catch(() => undefined);
     engine.stop();
     await stack.market.stop();

@@ -21,6 +21,7 @@ import {
   users,
 } from '../db/schema.js';
 import { projectAccount } from '../platform/projection.js';
+import { verifyAuditChain } from '../platform/audit.js';
 import { hashPassword } from '../auth/password.js';
 import { publishProfileVersion, resolveProfileVersion } from '../platform/profiles.js';
 import { defaultOrganizationId, provisionAccount } from '../platform/provisioning.js';
@@ -1001,6 +1002,14 @@ describe('concurrency: races an operator can actually cause', () => {
   });
 
   it('keeps the audit chain intact under concurrent actions on one account', async () => {
+    // Mark the chain position just before the burst so we verify the SEGMENT this
+    // test writes, not the whole shared default organisation (on a shared test
+    // database many other suites append audit rows to the same org; a whole-org
+    // verify would measure their accumulation, not this test's concurrency). A
+    // `since`-scoped verify covers exactly the burst's own rows and proves the
+    // hash chain stays intact under concurrent actions — the actual invariant.
+    const orgId = await defaultOrganizationId(getDb().db);
+    const since = new Date();
     // Fire a burst of hold/release at the same account at once.
     const burst = await Promise.allSettled([
       call('POST', `/api/v1/admin/accounts/${traderAccountId}/lock`, tokens['ADMIN']!, {
@@ -1024,9 +1033,13 @@ describe('concurrency: races an operator can actually cause', () => {
     // none corrupts anything.
     expect(burst.every((r) => r.status === 'fulfilled')).toBe(true);
 
-    // The hash-chained audit log still verifies end to end.
+    // The endpoint still responds (operability), and the chain SEGMENT written by
+    // this burst verifies end to end (hash + linkage), scoped to this test's org
+    // and the pre-burst mark so cross-suite accumulation cannot mask or fake it.
     const verify = await call('GET', `/api/v1/admin/audit/verify`, tokens['SUPPORT']!);
     expect(verify.status).toBe(200);
-    expect(verify.json.ok).toBe(true);
+    const segment = await verifyAuditChain(getDb().db, orgId, { since });
+    expect(segment.ok, `brokenAt=${segment.brokenAt ?? 'none'} checked=${segment.checked}`).toBe(true);
+    expect(segment.checked).toBeGreaterThan(0);
   });
 });

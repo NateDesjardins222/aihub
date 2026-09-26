@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "owner:bootstrap": "tsx scripts/bootstrap-owner.ts",
     "rithmic:generate": "tsx scripts/rithmic-generate.ts",
     "rithmic:verify": "tsx scripts/rithmic-verify.ts",
     "affiliate:economics": "tsx scripts/affiliate-economics-stress.ts",

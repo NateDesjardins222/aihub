@@ -15,6 +15,8 @@ import { defaultOrganizationId } from '../../platform/provisioning.js';
 import { runSystemDoctor } from '../../platform/system-doctor.js';
 import { runIntegrityChecks } from '../../platform/integrity.js';
 import { reconciliationCenter } from '../../platform/reconciliation-center.js';
+import { runInactivitySweep } from '../../platform/account-inactivity.js';
+import { actorFromRequest } from '../owner-plugin.js';
 
 export function ownerSystemRoutes() {
   return async (app: FastifyInstance): Promise<void> => {
@@ -46,6 +48,17 @@ export function ownerSystemRoutes() {
       ]);
       const overall = doctor.overall === 'CRITICAL' || !integrity.ok ? 'CRITICAL' : doctor.overall === 'WARNING' || reconciliation.openMismatches > 0 ? 'WARNING' : 'HEALTHY';
       return { overall, doctor, integrity, reconciliation, at: new Date().toISOString() };
+    });
+
+    /*
+     * Run the funded-account inactivity sweep on demand (HTF-18). The sweep also
+     * runs on a durable interval worker; this lets an operator trigger it now
+     * (e.g. just after a month boundary) and see exactly what it did. It is
+     * idempotent and server-time authoritative, so an on-demand run is safe.
+     */
+    app.post('/system/inactivity-sweep', { preHandler: requirePermission('system.jobs.manage') }, async (request) => {
+      const result = await runInactivitySweep(db, { actor: actorFromRequest(request) });
+      return { ...result, at: new Date().toISOString() };
     });
 
     app.get('/system/results', { preHandler: requirePermission('system.read') }, async (request) => {

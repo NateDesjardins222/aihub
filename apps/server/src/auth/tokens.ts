@@ -49,6 +49,37 @@ export function verifyAccessToken(token: string): AccessTokenClaims | null {
   }
 }
 
+/**
+ * A short-lived, single-purpose token proving the password step of an MFA login
+ * succeeded. It is NOT an access token: it carries a distinct `typ` and grants
+ * nothing except the right to present a second factor at `/auth/mfa/verify`
+ * before it expires. Kept brief so a captured challenge is useless within a
+ * couple of minutes.
+ */
+const MFA_CHALLENGE_TTL_SECONDS = 300;
+
+export function signMfaChallenge(userId: string): { token: string; expiresIn: number } {
+  const token = jwt.sign({ typ: 'mfa', sub: userId }, env().JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: MFA_CHALLENGE_TTL_SECONDS,
+    issuer: 'atlas-futures',
+  });
+  return { token, expiresIn: MFA_CHALLENGE_TTL_SECONDS };
+}
+
+/** The user id a valid, unexpired MFA challenge is for, or null. */
+export function verifyMfaChallenge(token: string): string | null {
+  try {
+    const decoded = jwt.verify(token, env().JWT_SECRET, { algorithms: ['HS256'], issuer: 'atlas-futures' });
+    if (typeof decoded === 'string') return null;
+    const c = decoded as Record<string, unknown>;
+    if (c['typ'] !== 'mfa' || typeof c['sub'] !== 'string') return null;
+    return c['sub'];
+  } catch {
+    return null;
+  }
+}
+
 export function generateRefreshToken(): { token: string; hash: string } {
   const token = randomBytes(48).toString('base64url');
   return { token, hash: hashRefreshToken(token) };
