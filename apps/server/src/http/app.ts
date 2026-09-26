@@ -44,8 +44,11 @@ import { RithmicExecutionProvider } from '../execution/providers/rithmic-executi
 import type { ExecutionProviderKind } from '@atlas/contracts';
 import type { ExternalExecutionAdapter } from '../execution/external-provider.js';
 import { buildMarketDataStack, type MarketDataStack } from '../marketdata/bootstrap.js';
+import { sql as sqlRaw } from 'drizzle-orm';
 import { getDb, getLockSql } from '../db/client.js';
+import { releaseInfo } from '../config/release.js';
 import { OutboxWorker, notifyAccountChanged } from '../platform/outbox.js';
+import { PayoutOpsWorker } from '../platform/payout-ops-worker.js';
 import { accountOutboxHandler } from '../platform/projection.js';
 import { listenAccountChanged } from '../platform/account-notify.js';
 import { MarketDataGateway } from '../ws/gateway.js';
@@ -230,11 +233,49 @@ export async function buildApp(): Promise<BuiltApp> {
     return payload;
   });
 
+  // Liveness: is the process up? Always 200 while the event loop runs. It must
+  // NOT probe the database or providers — an orchestrator uses this only to
+  // decide whether to restart the process, and a transient DB blip should never
+  // trigger a restart loop. Release identity is included so an incident can be
+  // tied to an exact build.
   app.get('/health', async () => ({
     status: 'ok',
     time: new Date().toISOString(),
     env: env().NODE_ENV,
+    release: releaseInfo(),
   }));
+
+  // Release identity on its own, for quick "which build is deployed?" checks.
+  app.get('/version', async () => releaseInfo());
+
+  // Readiness: is the process able to serve real traffic? This DOES probe the
+  // one hard dependency — PostgreSQL, the sole source of truth — and returns 503
+  // when it is unreachable, so a load balancer stops routing to a server that
+  // cannot read/write business state. No fake green: a DB-down server reports
+  // NOT ready even though the process is alive.
+  app.get('/ready', async (_request, reply) => {
+    const checks: Record<string, 'ok' | 'down'> = {};
+    let ready = true;
+    try {
+      const t0 = performance.now();
+      // Bound the probe: when Postgres is unreachable the driver would otherwise
+      // block on connect, and readiness must answer FAST so a load balancer can
+      // route away. Race the probe against a short timeout → a hung DB reads as
+      // down (503), not as a stuck request.
+      await Promise.race([
+        getDb().db.execute(sqlRaw`select 1`),
+        new Promise((_resolve, reject) =>
+          setTimeout(() => reject(new Error('readiness DB probe timed out')), 2_000),
+        ),
+      ]);
+      checks['database'] = 'ok';
+      (checks as Record<string, unknown>)['database_ms'] = Number((performance.now() - t0).toFixed(1));
+    } catch {
+      checks['database'] = 'down';
+      ready = false;
+    }
+    return reply.code(ready ? 200 : 503).send({ ready, time: new Date().toISOString(), release: releaseInfo(), checks });
+  });
 
   const { db } = getDb();
   const stack = buildMarketDataStack(db);
@@ -356,6 +397,18 @@ export async function buildApp(): Promise<BuiltApp> {
     void gateway.publishAccountState(accountId);
   }).catch((): null => null);
 
+  /*
+   * The durable payout-operations worker resumes work no single request can
+   * guarantee: submitting PAYABLE payouts a treasury/breaker delay left behind and
+   * retrying transient provider failures with the SAME idempotency key. Claims are
+   * disjoint (`FOR UPDATE SKIP LOCKED`) and `submitPayable` re-locks the row and
+   * no-ops unless still PAYABLE, so two instances can never double-submit and a
+   * restart simply picks the durable rows back up. Without this loop a payout left
+   * PAYABLE by a transient error would wait for a manual owner submit (HTF-26).
+   */
+  const payoutOpsWorker = new PayoutOpsWorker(db, { name: 'payout-ops' });
+  payoutOpsWorker.start();
+
   app.addHook('onClose', async () => {
     stopRecording();
     stopCertifying();
@@ -366,6 +419,7 @@ export async function buildApp(): Promise<BuiltApp> {
     stopNotificationConsumer();
     stopNotificationWorker();
     outboxWorker.stop();
+    payoutOpsWorker.stop();
     await accountListener?.close().catch(() => undefined);
     engine.stop();
     await stack.market.stop();

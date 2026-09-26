@@ -11,6 +11,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:prepare": "bash scripts/prepare-test-db.sh",
+    "validate:release": "bash scripts/validate-release.sh",
     "dev": "pnpm --parallel --filter @atlas/server --filter @atlas/web dev",
     "db:generate": "pnpm --filter @atlas/server db:generate",
     "db:migrate": "pnpm --filter @atlas/server db:migrate",

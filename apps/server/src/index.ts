@@ -8,6 +8,23 @@ import { reportEgress } from './marketdata/egress.js';
 import { providerSafetyLogLines, providerSafetySummary } from './config/provider-safety.js';
 
 async function main(): Promise<void> {
+  /*
+   * Survive a transient background failure.
+   *
+   * A long-running server must not die because a background DB consumer (the
+   * LISTEN/NOTIFY listener, a worker tick, the valuation loop) saw the database
+   * go away for a moment — e.g. during a Postgres restart. Node's default is to
+   * crash the process on an unhandled promise rejection; here we log it and stay
+   * up. The connection pool reconnects on its own, `/ready` reports 503 in the
+   * meantime (so a load balancer stops routing), and `/health` (liveness) stays
+   * 200 so an orchestrator does not restart-loop the process. This handler lives
+   * in the server entrypoint only — tests build the app directly and never load
+   * it — so it never masks an async bug in a test run.
+   */
+  process.on('unhandledRejection', (reason) => {
+    console.error('[reliability] unhandledRejection — kept alive:', reason);
+  });
+
   // Before anything tries to reach the vendor, say whether it can.
   reportEgress();
 

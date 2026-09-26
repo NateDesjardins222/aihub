@@ -20,6 +20,15 @@ Baseline HEAD: `55df4c7` · Compiled 2026-09-25 (Phase 2 reconciliation).
 > DEV-ONLY esbuild advisory via drizzle-kit, HTF-25). Security stays PARTIAL, never VERIFIED from code;
 > real payment/KYC/payout boundaries (Phases C/D/E) still gate a *production* launch.
 
+> **⟳ Phase 11 (2026-09-26) — infrastructure / recovery / observability (Phase F/G, simulation).**
+> Disaster recovery **proven** internally (backup→drop→restore, $0 reconciliation delta, audit
+> re-verified); restart/crash/Postgres-outage survival proven (a P1 crash-on-DB-loss found + fixed);
+> DB-probing readiness + release identity added; payout-ops worker wired; canonical
+> `pnpm validate:release`; HTF-22 fixed. Runbooks written (`DISASTER_RECOVERY`, `DEPLOYMENT_RUNBOOK`,
+> `RELEASE_CHECKLIST`, `INCIDENT_RUNBOOK`, `OBSERVABILITY`, `INFRASTRUCTURE`, `RECOVERY_DRILL_REPORT`).
+> Phase F/G exit still needs the **external** infra (hosting, automated backups/PITR, deploy manifests,
+> CI, inactivity cron binding) — G12 remains PARTIAL, not READY.
+
 ## Purpose
 
 This is the single plan of record for getting Happy Trader Funding from *comprehensively

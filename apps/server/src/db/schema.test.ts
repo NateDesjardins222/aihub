@@ -8,7 +8,7 @@
  * trading it. None of that is provable against a mock.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { createDb, type Database } from './client.js';
 import {
   accountLifecycles,
@@ -216,10 +216,18 @@ describe('product versions', () => {
       if (!profile) continue;
       compared += 1;
 
+      // Pin to the ORIGINAL imported version (the lowest version number). The
+      // profile may since carry later authoritative versions (a reconcile, or
+      // another suite's publish onto the shared org); "imported from the template"
+      // means v1, so order ascending and take the first rather than an arbitrary
+      // row — this asserts exactly the import invariant and is insensitive to
+      // later versions accumulating on a shared test organisation.
       const [version] = await db
         .select()
         .from(accountProfileVersions)
-        .where(eq(accountProfileVersions.profileId, profile!.id));
+        .where(eq(accountProfileVersions.profileId, profile!.id))
+        .orderBy(asc(accountProfileVersions.version))
+        .limit(1);
       const rules = (version!.config as { rules: Record<string, unknown> }).rules;
 
       expect(rules['accountSizeMicros'], template.name).toBe(template.accountSizeMicros);

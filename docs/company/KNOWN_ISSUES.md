@@ -253,14 +253,11 @@ to env.
   `apps/server/src/http/routes/self-serve-boundary.test.ts` (6 tests, incl. the "override never
   persisted / $48k floor stands" assertion). *(Was: trader could rewrite own risk / self-reset /
   set sim environment on any owned account — Security subagent trust-boundary risks #1–#3.)*
-- **HTF-22** — Windows dev scripts use a Unix-style env prefix. `apps/server/package.json`
-  `dev`/`start` are `NODE_USE_ENV_PROXY=1 tsx …`, which fails under Windows PowerShell/cmd.
-  Documented (not fixed) in Phase 3: the clean cross-platform fix (`cross-env`) would add a
-  new dependency + install, out of scope for the product-truth phase. **Re-reviewed Phase 3.5
-  and deliberately left OPEN:** the only clean fix still requires a new dependency
-  (`cross-env`), which the Phase 3.5 brief scoped out ("fix only if tiny and dependency-free").
-  **Next action (next stabilization pass):** add `cross-env` and wrap both scripts.
-  Unix/macOS/CI unaffected.
+- ~~**HTF-22**~~ ✅ **RESOLVED (Phase 11).** Windows dev scripts used a Unix-style env prefix
+  (`NODE_USE_ENV_PROXY=1 tsx …`), which fails under Windows PowerShell/cmd. Fixed: added
+  `cross-env` (devDependency) and wrapped both `apps/server` `dev` and `start` scripts
+  (`cross-env NODE_USE_ENV_PROXY=1 tsx …`). Verified: `cross-env` sets the variable portably.
+  Unix/macOS/CI behavior unchanged.
 - **HTF-23** — Cosmetic Rithmic cleanups (non-blocking, found in Phase 6 acceptance):
   (a) `rithmic/plants/market-data-service.ts` has a nonsensical `nb.time * 1000 >= 0` guard
   (`nb.time` is already ms); (b) `execution/providers/rithmic-execution.ts`
@@ -278,7 +275,7 @@ to env.
 | P1 | 1 open (2 resolved) | HTF-4 open; ~~HTF-5~~, ~~HTF-6~~ ✅ resolved Phase 3 |
 | P2 | 4 | HTF-7, HTF-8, HTF-9, HTF-10 (enforcement half resolved via ~~HTF-24~~) |
 | P3 | 5 | HTF-11..HTF-15 |
-| P4 | 7 open (1 resolved) | HTF-16..HTF-20, HTF-22, HTF-23; ~~HTF-21~~ ✅ resolved Phase 7 |
+| P4 | 6 open (2 resolved) | HTF-16..HTF-20, HTF-23; ~~HTF-21~~ ✅ Phase 7; ~~HTF-22~~ ✅ Phase 11 |
 
 The three P0s share one root theme: **the boundaries with the outside financial world
 (payment in, KYC, payout out) are the least-connected and, for two of them, fail open rather
@@ -333,6 +330,49 @@ Phase 10 attacked the platform adversarially and documented the enforced trust b
   known vulnerabilities**.
 - **Next action:** not force-overridden (would destabilize drizzle-kit's deprecated `@esbuild-kit`
   chain); revisit when drizzle-kit updates its loader, and add a CI dependency-audit gate in Phase 11.
+
+## Infrastructure / reliability verified + added (Phase 11, 2026-09-26)
+
+Phase 11 proved the platform survives restart/crash/outage without losing or duplicating financial or
+account truth, and executed a real backup→drop→restore drill. Details: `INFRASTRUCTURE.md`,
+`DISASTER_RECOVERY.md`, `RECOVERY_DRILL_REPORT.md`, `OBSERVABILITY.md`, `DEPLOYMENT_RUNBOOK.md`,
+`INCIDENT_RUNBOOK.md`.
+
+- **Disaster recovery — PROVEN (internal).** `pg_dump -Fc` backup (checksummed) → corrupt archive
+  rejected → isolated DB **dropped** → restored → snapshot **byte-identical** (counts + content
+  checksums) → audit chain re-verifies → financial reconciliation **$0 unexplained delta**. RTO local
+  ~1.3s (tiny dataset); RPO documented honestly (daily-dump window until WAL/PITR).
+- **Restart/crash safety — PROVEN.** No process-memory-only authoritative state; the engine reconstructs
+  positions/orders/brackets from Postgres on `start()`; kill switches are a durable table (survive
+  restart); graceful SIGTERM/SIGINT drains workers + pools.
+- **Redis — confirmed UNUSED.** No `ioredis` import in `apps/server/src`; all locks are PostgreSQL
+  advisory locks; fan-out is LISTEN/NOTIFY. Redis outage has zero effect on business truth.
+- **Production-like boot — PROVEN.** `NODE_ENV=production` with no real provider creds boots with all
+  providers fail-closed (no mock-in-prod warning); `/health`+`/ready`+`/version` carry release identity;
+  dev routes (`/commerce/mock`, `/dev/simulate-payment`) return **404**.
+- **Canonical release validation added.** `pnpm validate:release` (prepare seeded isolated DB → typecheck
+  → root `pnpm test` (dist excluded, files serialized) → build). Fixes the Phase-10 "run from wrong cwd
+  → dist collected → 105 misleading failures" trap. See `scripts/prepare-test-db.sh`,
+  `scripts/validate-release.sh`.
+
+### HTF-26 — payout-ops worker was defined but never started
+- **System:** payouts (durability). **Severity: P1 (launch-relevant).**
+- ~~Open~~ ✅ **RESOLVED (Phase 11):** `PayoutOpsWorker` is now instantiated and started in `app.ts`
+  (stopped on shutdown), so a PAYABLE payout left behind by a treasury/breaker delay or transient
+  provider error is durably resubmitted with the same idempotency key (`FOR UPDATE SKIP LOCKED`;
+  `submitPayable` no-ops unless still PAYABLE — no double-submit). **Residual:** the periodic
+  stale-reconcile of SUBMITTED/PROCESSING (`reconcileStaleBatch`, per-org) still relies on the provider
+  webhook / cron; wire a scheduled reconcile before a real payout rail.
+
+### HTF-27 — certificate/object storage is local-filesystem only
+- **System:** certificates / object storage. **Severity: P2 (contained; no real fulfillment yet).**
+- **Description:** rendered certificate PNG/PDF artifacts are written to a local `.artifacts` dir; the S3
+  seam throws NOT_CONFIGURED. Artifact **bytes** are not covered by the DB backup and are lost across a
+  container redeploy or not shared across instances.
+- **Containment:** certificate **metadata** is durable in Postgres; the deterministic renderer + pinned
+  template version can re-render the artifact. No financial event depends on the artifact bytes.
+- **Next action:** wire a provider-backed object store (S3 or equivalent) + artifact backup before
+  multi-instance / real merch fulfillment.
 
 ## PROVENANCE
 

@@ -4,6 +4,14 @@
 
 Baseline HEAD: `55df4c7` · Branch: `claude/futures-trading-simulator-v8qefu` · Compiled 2026-09-25.
 
+> **⟳ Phase 11 (2026-09-26).** The authoritative runtime/infrastructure map — components, durability
+> class per tier (DURABLE / RECONSTRUCTABLE / EPHEMERAL / EXTERNAL-AUTHORITY), source of truth per
+> domain, background jobs, connection pools, and clock authority — is now maintained in
+> `INFRASTRUCTURE.md`. Key facts: PostgreSQL is the sole source of truth; the trading engine holds no
+> process-memory-only authoritative state (it reconstructs from Postgres on restart); **Redis is
+> reserved but unused** (locks = PG advisory locks, fan-out = LISTEN/NOTIFY); certificate artifact bytes
+> are local-FS only (HTF-27).
+
 ## What this product actually is (as the code self-identifies)
 
 A **futures trading simulator + prop-firm ("funded trader") commerce platform**. Package

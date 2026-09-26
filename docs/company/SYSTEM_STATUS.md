@@ -41,6 +41,19 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > PRODUCTION-VERIFIED**; security stays at PARTIAL (never VERIFIED from code, per the mandate) and no
 > third-party pentest is claimed. Real payment/KYC/payout/live-feed boundaries remain unwired.
 
+> **⟳ Phase 11 (2026-09-26) — infrastructure, recovery & observability (simulation).** Proved the
+> business system survives the real world without losing/duplicating truth: a real
+> backup→drop→**restore** drill reproduced the source byte-identical with **$0** reconciliation delta and
+> a re-verified audit chain (`RECOVERY_DRILL_REPORT.md`); the API now **survives a Postgres outage** (a
+> P1 crash on DB loss was found and fixed — `unhandledRejection` no longer kills the process) with
+> liveness up, readiness fail-closed (`/ready` 503 in <1s), and automatic reconnect; the engine
+> reconstructs all order/position/bracket state from Postgres on restart; kill switches are durable;
+> Redis confirmed unused. Added: DB-probing `/ready`, release identity (`/version`, `/health.release`),
+> the payout-ops worker wired, canonical `pnpm validate:release` (fixing the Phase-10 wrong-cwd
+> test-harness trap), HTF-22 fixed (`cross-env`). New docs: `INFRASTRUCTURE`, `DISASTER_RECOVERY`,
+> `RECOVERY_DRILL_REPORT`, `OBSERVABILITY`, `DEPLOYMENT_RUNBOOK`, `RELEASE_CHECKLIST`, `INCIDENT_RUNBOOK`.
+> **Still no system is PRODUCTION-VERIFIED**; production hosting/backups/deploy remain external gates (G12).
+
 > **⟳ Phase 4 (2026-09-26) — production provider safety boundaries.** The fail-OPEN P0/P1s are
 > closed. A central provider-safety boundary (`apps/server/src/config/provider-safety.ts`) makes
 > the rule **production never silently selects a mock**: commerce, identity and notification

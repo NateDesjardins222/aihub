@@ -55,6 +55,15 @@ READY / PARTIAL / NOT READY / N/A.
 > money/KYC/payout/deploy/backup/CI PRODUCTION cell is upgraded.** Security stays PARTIAL — never
 > VERIFIED from code, no third-party pentest.
 
+> **⟳ Phase 11 (2026-09-26) — infrastructure, recovery & observability.** Disaster recovery is **proven
+> internally** (backup→drop→restore with $0 reconciliation delta + audit re-verify) and the platform
+> survives restart/crash/Postgres-outage (a P1 crash-on-DB-loss was found and fixed; `/ready` fail-closed
+> 503, liveness up, auto-reconnect). This upgrades operational **confidence**, not the PRODUCTION
+> column: **no money/deploy cell is marked READY.** "Backups / DR" and "Infrastructure / deploy" remain
+> **PARTIAL** — the *procedure* is proven and documented, but automated scheduled backups + WAL/PITR,
+> production hosting, deploy manifests, and CI are **external gates** not yet provisioned (G12). Object
+> storage for certificates is still local-FS only (HTF-27). Redis is confirmed unused (no dependency).
+
 ---
 
 ## Environment summary
