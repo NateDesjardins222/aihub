@@ -69,6 +69,21 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > Test — is classified **OWNER MANUAL REQUIRED** (checklist in `RITHMIC_ATLAS_ACCEPTANCE.md` §9).
 > Rithmic stays **TEST-only**; nothing wired to production Rithmic; nothing PRODUCTION-VERIFIED.
 
+> **⟳ Phase 7 (2026-09-26) — Owner OS operational control-plane acceptance.** Two real fixes plus an
+> honest classification. **HTF-21 resolved:** the trader self-serve `rules`/`reset`/`environment`
+> mutations (`http/routes/trading.ts`) are now PRACTICE-only (`assertSelfServeMutable`); a
+> commercially-weighted EVALUATION/FUNDED account returns **403 `SELF_SERVE_FORBIDDEN`** — a trader
+> can no longer weaken the rules they are judged by, revive a breach, or turn off their own fees
+> (`self-serve-boundary.test.ts`, 6 tests). **HTF-24 resolved (kill-switch enforcement):** 5 of 7
+> kill switches were engageable but inert; `assertNotEngaged` is now wired at the commerce /
+> provisioning / payout-request / payout-submission chokepoints (423 `KILL_SWITCH_ENGAGED`) and the
+> external safety gate is switch-aware (`kill-switch-enforcement.test.ts`, 6 tests). **Acceptance
+> verdict:** routine ops (accounts, customers, payouts+STP, enforcement, support, affiliates, audit,
+> product config, provider health) are console-operable without SQL/AI; the safety/config/incident
+> plane + financial exports remain **view-only in the console (HTF-10 open)** — operable via API,
+> now with real effect. Golden Path stayed green (17). Nothing PRODUCTION-VERIFIED. See
+> `OWNER_OS_ACCEPTANCE.md`.
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |
@@ -79,7 +94,7 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 | Customer identity | BUILT | onboarding/verify | `customer-identity.ts` | customer_identities | — | yes | partial | — | — |
 | KYC / identity verify | PARTIAL / DEV-ONLY | onboarding step | `identity-verification.ts` | identity records | **mock active; Stripe seam only, fails open** | yes (mock) | partial | **HTF-2 (P0)** | fail-closed in prod; wire Stripe |
 | Customer portal | BUILT (2 dev shims) | `/portal` | portal routes | many | mock payout-method add; dev cert payment | yes | partial | — | — |
-| Atlas terminal | BUILT | `/` trading UI | trading routes + engine | accounts, orders, positions | market-data dev-feed | extensive | yes (prior milestones) | HTF-21 self-serve rule edit | gate rule/reset/env to PRACTICE |
+| Atlas terminal | BUILT | `/` trading UI | trading routes + engine | accounts, orders, positions | market-data dev-feed | extensive | yes (prior milestones) | ~~HTF-21~~ resolved (Phase 7) | — (self-serve rule/reset/env now PRACTICE-only) |
 | Market data | BUILT; default DEV; Rithmic proven-in-sim | terminal feed pill | `marketdata/*`, `rithmic/*` | marketDataMeta, bars | **`yahoo-delayed` ~600s**; Rithmic Test wire path deterministically proven, live=OWNER-MANUAL; Databento gated off | yes (107 Rithmic + 127 md/health/exec/pnl) | partial | HTF-23 (cosmetic) | live Rithmic Test acceptance (owner, creds) |
 | Execution | BUILT (sim); external DISCONNECTED; Rithmic adapter proven-in-sim | order flow | `execution/*`, `rithmic/plants/*`, engine | orders/fills | **simulation only**; Rithmic execution adapter fail-closed (refuses unless enabled), live route=OWNER-MANUAL | extensive | partial | HTF-23 (cosmetic) | live Rithmic Test order round-trip (owner, creds) |
 | Risk engine | BUILT | (server) + portal controls | `trading/risk.ts`, `@atlas/core` | accounts, dailyAccountStats, traderRiskControls | none | extensive | partial | drawdown TYPE per HTF-6 | resolve product rule |
@@ -97,7 +112,7 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 | Enforcement | BUILT & WIRED | console + portal review | `enforcement.ts`, holds engine | cases/holds/appeals | — | extensive | partial | — | — |
 | Economics v1 | STALE-LEGACY (active) | Economics page | `economics-sim.ts` | economics_runs | none (SIMULATION) | yes | yes (P1) | superseded by v2 | decide retirement |
 | Economics v2 (M13) | BUILT (SIMULATION) | Economics (M13) page | `platform/economics/*` | economics_runs | none (SIMULATION) | yes | yes (P1) | derives from catalog not DB | — |
-| Owner OS console | BUILT (exposure gap) | `/admin` (22 routes) | `admin.ts` + `owner-*.ts` | many | — | extensive | **yes (P1)** | **HTF-10 (P2)** + large backend-only set | surface safety mutations |
+| Owner OS console | BUILT; routine ops PROVEN, safety plane view-only | `/admin` (22 routes) | `admin.ts` + `owner-*.ts` | many | — | extensive | **yes (P1)** | HTF-10 (console surfacing) open; ~~HTF-24~~ enforcement resolved (Phase 7) | surface safety mutations in console |
 | Product config | BUILT; **authoritative (Phase 3)** | Products page | `profiles.ts` + `@atlas/contracts/product-model.ts` + `product-reconcile.ts` | account_profiles, versions, drafts | — | product-integrity tests (contracts 149 + server DB 6) | yes (P3 browser: Owner Products + Portal) | ~~HTF-5, HTF-6~~ resolved | — (canonical model; DB=catalog) |
 | Infrastructure / workers | PARTIAL | Infra/System pages | outbox, notify, workers | outbox_events | email/SMS mock; S3 disabled | yes | partial (read-only views) | HTF-18 cron unbound | — |
 | Audit log | BUILT | Audit explorer | `audit.ts` | audit chain | — | yes | yes (P1) | — | — |

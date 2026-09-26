@@ -71,6 +71,31 @@ async function assertOwnership(userId: string, accountId: string): Promise<void>
   if (!row) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
 }
 
+/**
+ * HTF-21 boundary. The self-serve rule / reset / environment mutations are a
+ * PRACTICE-only playground: a trader may retune and restart the free simulator
+ * as often as they like, at whatever size and under whatever fill assumptions
+ * they want to rehearse.
+ *
+ * On a commercially-weighted account — a paid EVALUATION or any FUNDED account —
+ * those same mutations would let the trader weaken the risk rules they are
+ * judged by, revive a breached evaluation for free, or turn off fees / soften
+ * fills on the account they get paid from. That destroys the integrity of the
+ * product, so it is refused here: those are operator decisions, made through the
+ * Owner OS, never self-served. The read paths (`GET .../rules`,
+ * `GET .../environment`) stay open so a trader can always SEE their own terms.
+ */
+function assertSelfServeMutable(accountType: string): void {
+  if (accountType !== 'PRACTICE') {
+    throw new ApiError(
+      403,
+      'SELF_SERVE_FORBIDDEN',
+      'This account is managed by Happy Trader Funding. Its rules, simulation ' +
+        'environment and resets can only be changed by an operator, not self-served.',
+    );
+  }
+}
+
 function mapRejection(err: unknown): never {
   if (err instanceof OrderRejectedError) {
     throw new ApiError(REJECTION_STATUS, err.reason, err.message, err.detail);
@@ -515,6 +540,7 @@ export function tradingRoutes(deps: Deps) {
 
       const loaded = await loadAccountAndTemplate(db, params.id);
       if (!loaded) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+      assertSelfServeMutable(loaded.account.accountType);
 
       const merged = normalizeRuleConfig({
         ...ruleConfigFor(loaded.account, loaded.template),
@@ -559,6 +585,7 @@ export function tradingRoutes(deps: Deps) {
 
       const loaded = await loadAccountAndTemplate(db, params.id);
       if (!loaded) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+      assertSelfServeMutable(loaded.account.accountType);
       const { account } = loaded;
       const config = ruleConfigFor(account, loaded.template);
       const size = body.startingBalanceMicros ?? account.startingBalanceMicros;
@@ -703,6 +730,13 @@ export function tradingRoutes(deps: Deps) {
     app.put('/accounts/:id/environment', async (request, reply) => {
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       await assertOwnership(request.user!.id, params.id);
+
+      const [acct] = await db
+        .select({ accountType: accounts.accountType })
+        .from(accounts)
+        .where(eq(accounts.id, params.id));
+      if (!acct) throw ApiError.notFound('ACCOUNT_NOT_FOUND', 'No such account.');
+      assertSelfServeMutable(acct.accountType);
 
       const patch = z
         .object({

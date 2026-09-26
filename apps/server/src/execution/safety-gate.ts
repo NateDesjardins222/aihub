@@ -36,6 +36,12 @@ export interface SafetyGateInput {
   readonly marketNow: number;
   /** Freshness for the instrument, as computed by the market-data service. */
   readonly freshness: FreshnessLike | null;
+  /**
+   * Owner kill switch `DISABLE_EXTERNAL_EXECUTION`, resolved server-side by the
+   * caller (external execution is DISCONNECTED today, so no production caller yet;
+   * the gate already enforces it so external routing is safe the day it is wired).
+   */
+  readonly killSwitchEngaged?: boolean;
   /** Provider connection is CONNECTED for the mapped provider (execution). */
 }
 
@@ -53,6 +59,12 @@ export function externalExecutionGate(input: SafetyGateInput): SafetyGateResult 
   // SIMULATION: nothing external to guard here. The engine + risk are authority.
   if (mapping.executionMode === 'SIMULATION') {
     return { allow: true, mode: 'SIMULATION' };
+  }
+
+  // Kill switch (HTF-10 enforcement): an owner can halt all external routing.
+  // SIMULATION already returned above, so this only ever blocks EXTERNAL_*.
+  if (input.killSwitchEngaged) {
+    return { allow: false, reason: 'EXECUTION_PROVIDER_UNAVAILABLE', message: 'External execution is disabled by an operator kill switch.' };
   }
 
   // A suspended mapping never routes externally.

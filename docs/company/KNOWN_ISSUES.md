@@ -182,7 +182,26 @@ containment noted.
 - **Customer/business impact:** in an incident, an operator cannot use the primary safety
   control from the console — must call the API by hand.
 - **Next action:** surface the mutations (esp. kill switches) with the existing step-up flow.
-- **Status:** OPEN.
+- **Status:** OPEN (console surfacing). **Phase 7 note:** the more dangerous half — that engaging
+  a kill switch had *no effect* for 5 of 7 switches — is fixed under HTF-24. The remaining HTF-10
+  work is purely the web-console engage/release/ack/toggle controls; the owner can operate these
+  via the API today.
+
+### HTF-24 — Kill switches were engageable but UNENFORCED (RESOLVED, Phase 7)
+- **System:** Owner OS safety plane / commerce / provisioning / payouts / execution.
+- **Description (was):** Of seven kill switches, only `MAINTENANCE_MODE` and `DISABLE_NEW_ORDERS`
+  actually stopped anything. `DISABLE_NEW_PURCHASES`, `DISABLE_PROVISIONING`,
+  `DISABLE_NEW_PAYOUT_REQUESTS`, `DISABLE_PAYOUT_SUBMISSION`, `DISABLE_EXTERNAL_EXECUTION` had **no
+  enforcement seam** — engaging them wrote an audit event + alert but changed nothing. A safety
+  control that does nothing is worse than none.
+- ✅ **RESOLVED (Phase 7, 2026-09-26):** `assertNotEngaged(db, KEY)` is wired as the first line of
+  each authoritative chokepoint — `commerce.ts createPendingOrder`, `provisioning.ts
+  provisionAccount`, `payouts.ts requestPayout`, `payout-operations.ts submitPayable` — each now
+  throws **423 `KILL_SWITCH_ENGAGED`** when engaged; the external safety gate
+  (`execution/safety-gate.ts`) is switch-aware via `killSwitchEngaged` (external execution is
+  DISCONNECTED today, so this is forward-safe). Proven by
+  `apps/server/src/platform/kill-switch-enforcement.test.ts` (6 tests). See `OWNER_OS_ACCEPTANCE.md`
+  §2. Console engage/release buttons remain HTF-10.
 
 ---
 
@@ -222,12 +241,18 @@ to env.
   stabilization audit).
 - **HTF-20** — Rate limiting is opt-in (`global:false`); sensitive routes are covered but any
   new route must remember to opt in.
-- **HTF-21** — Trader can rewrite their own account risk rules / self-reset / set sim
-  environment via ownership-only routes. Contained today (simulator, no commercial weight on
-  those account types), but the boundary trusts customer-supplied risk parameters; must be
-  gated (PRACTICE only) before those account types certify a paid evaluation. *(Security
-  subagent trust-boundary risks #1–#3 — NEEDS-REVALIDATION for any account with commercial
-  weight.)*
+- ~~**HTF-21**~~ ✅ **RESOLVED (Phase 7, 2026-09-26).** The three trader self-serve mutations —
+  `PUT /api/v1/accounts/:id/rules`, `POST /api/v1/accounts/:id/reset`,
+  `PUT /api/v1/accounts/:id/environment` (`apps/server/src/http/routes/trading.ts`) — are now
+  gated by `assertSelfServeMutable(accountType)`: they succeed only on a `PRACTICE` account and
+  return **403 `SELF_SERVE_FORBIDDEN`** on any commercially-weighted account (`EVALUATION`,
+  `FUNDED`, `FUNDED_SIM`). A trader can no longer weaken the risk rules they are judged by, revive
+  a breached paid evaluation, or turn off fees / soften fills on a funded account; those are
+  operator-only via the Owner OS. Ownership is still checked first (a stranger gets 404, not 403).
+  Read paths (`GET .../rules`, `GET .../environment`) stay open. Proven by
+  `apps/server/src/http/routes/self-serve-boundary.test.ts` (6 tests, incl. the "override never
+  persisted / $48k floor stands" assertion). *(Was: trader could rewrite own risk / self-reset /
+  set sim environment on any owned account — Security subagent trust-boundary risks #1–#3.)*
 - **HTF-22** — Windows dev scripts use a Unix-style env prefix. `apps/server/package.json`
   `dev`/`start` are `NODE_USE_ENV_PROXY=1 tsx …`, which fails under Windows PowerShell/cmd.
   Documented (not fixed) in Phase 3: the clean cross-platform fix (`cross-env`) would add a
@@ -251,9 +276,9 @@ to env.
 |----------|-------|-----|
 | P0 | 3 | HTF-1, HTF-2, HTF-3 |
 | P1 | 1 open (2 resolved) | HTF-4 open; ~~HTF-5~~, ~~HTF-6~~ ✅ resolved Phase 3 |
-| P2 | 4 | HTF-7, HTF-8, HTF-9, HTF-10 |
+| P2 | 4 | HTF-7, HTF-8, HTF-9, HTF-10 (enforcement half resolved via ~~HTF-24~~) |
 | P3 | 5 | HTF-11..HTF-15 |
-| P4 | 8 | HTF-16..HTF-23 |
+| P4 | 7 open (1 resolved) | HTF-16..HTF-20, HTF-22, HTF-23; ~~HTF-21~~ ✅ resolved Phase 7 |
 
 The three P0s share one root theme: **the boundaries with the outside financial world
 (payment in, KYC, payout out) are the least-connected and, for two of them, fail open rather

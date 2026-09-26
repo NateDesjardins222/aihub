@@ -10,6 +10,7 @@
  * not hand a customer two accounts.
  */
 import { createHash, randomUUID } from 'node:crypto';
+import { assertNotEngaged } from './kill-switches.js';
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
@@ -118,6 +119,9 @@ export async function provisionAccount(
   input: ProvisionInput,
 ): Promise<ProvisionResult> {
   const actor = input.actor ?? SYSTEM_ACTOR;
+  // Kill switch (HTF-10 enforcement): an owner can freeze all account
+  // provisioning (both new evaluations and funding provisions).
+  await assertNotEngaged(db, 'DISABLE_PROVISIONING');
 
   const [user] = await db.select().from(users).where(eq(users.id, input.userId));
   if (!user) throw new ProvisioningError('USER_NOT_FOUND', 'No such user.');

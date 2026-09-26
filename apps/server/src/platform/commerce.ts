@@ -15,6 +15,7 @@
  * concurrent caller or a restart produces exactly one of each account.
  */
 import { and, eq } from 'drizzle-orm';
+import { assertNotEngaged } from './kill-switches.js';
 import type { Database } from '../db/client.js';
 import {
   accountLifecycles,
@@ -171,6 +172,8 @@ export async function createPendingOrder(
   db: Database,
   input: CompleteOrderInput,
 ): Promise<CommercialOrderRow> {
+  // Kill switch (HTF-10 enforcement): an owner can halt all new purchases.
+  await assertNotEngaged(db, 'DISABLE_NEW_PURCHASES');
   const actor = input.actor ?? SYSTEM_ACTOR;
   if (input.idempotencyKey) {
     const [existing] = await db

@@ -13,6 +13,7 @@
  * re-run inside the approval lock and never trusted from a stale read.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { assertNotEngaged } from './kill-switches.js';
 import type { Database } from '../db/client.js';
 import {
   accounts,
@@ -272,6 +273,8 @@ export interface RequestPayoutInput {
  * out-of-bounds amount with a machine reason, moving no money.
  */
 export async function requestPayout(db: Database, input: RequestPayoutInput): Promise<PayoutRow> {
+  // Kill switch (HTF-10 enforcement): an owner can halt all new payout requests.
+  await assertNotEngaged(db, 'DISABLE_NEW_PAYOUT_REQUESTS');
   return db.transaction(async (tx) => {
     const scoped = tx as unknown as Database;
     await tx.execute(accountAdvisoryLockSql(input.accountId));

@@ -62,11 +62,12 @@ Phase A is the recommended next mission.
   also fail closed (suppress, never fake SENT).
 - ✅ Gated `/design-lab` (HTF-4) to development builds; the development seed hard-fails in
   production.
-- ⏳ Still to do: gate the self-serve rule/reset/environment routes for commercially-weighted
-  accounts (HTF-21).
+- ✅ **DONE (Phase 7, 2026-09-26):** gated the self-serve rule/reset/environment routes to
+  PRACTICE-only for commercially-weighted accounts (HTF-21) — a trader can no longer weaken the
+  risk rules they are judged by, revive a breach, or turn off their own fees.
 - **Exit (fail-close): met** — a misconfigured production cannot silently mock a purchase or a
-  KYC check, and no fake data (Design Lab) is reachable in a prod build. **Exit (HTF-21): pending.**
-  NOTE: this phase did NOT wire real providers — that is Phases C/D/E.
+  KYC check, and no fake data (Design Lab) is reachable in a prod build. **Exit (HTF-21): met**
+  (Phase 7). NOTE: this phase did NOT wire real providers — that is Phases C/D/E.
 
 ### Phase C — Real payments in (Whop production)
 - Resolve DR-5 (payments portion). Wire Whop production behind the now-fail-closed selector;
@@ -89,9 +90,15 @@ Phase A is the recommended next mission.
 - **Exit:** the system can be deployed, rolled back, restored, and its jobs run on schedule.
 
 ### Phase G — Observability + operability
-- Surface Owner-OS safety mutations (kill switches first, HTF-10). Add `/ready` + metrics +
-  tracing. Make alerts/incidents actionable in the console.
-- **Exit:** an operator can detect, decide, and act during an incident from the console.
+**Status: enforcement half ✅ DONE (Phase 7 — HTF-24); console surfacing (HTF-10) still open.**
+- ✅ **Phase 7:** the money/lifecycle kill switches now ENFORCE at their server chokepoints
+  (`DISABLE_NEW_PURCHASES/PROVISIONING/NEW_PAYOUT_REQUESTS/PAYOUT_SUBMISSION/EXTERNAL_EXECUTION`) —
+  engaging one has real effect, not just an audit event (HTF-24). Owner OS routine ops accepted as
+  console-operable (`OWNER_OS_ACCEPTANCE.md`).
+- ⏳ Still to do: surface the safety/config/incident/export mutations in the console UI (HTF-10 —
+  the controls exist server-side and are operable via API today), add `/ready` + metrics + tracing.
+- **Exit:** an operator can detect, decide, and act during an incident **from the console**. Safety
+  controls now *work* when engaged; the remaining gap is the console buttons + observability.
 
 ### Phase H — Real market data (if live trading is intended)
 **Status: deterministic half ✅ DONE (Phase 6, 2026-09-26); live Rithmic Test acceptance = OWNER MANUAL.**

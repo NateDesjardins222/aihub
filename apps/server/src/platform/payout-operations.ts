@@ -15,6 +15,7 @@
  * delays but never denies eligibility; certificates fire only from PAID.
  */
 import { createHash } from 'node:crypto';
+import { assertNotEngaged } from './kill-switches.js';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
@@ -301,6 +302,9 @@ export async function runFastLane(db: Database, payoutRequestId: string, opts: {
  * reconciled rather than blindly re-submitted. Never pays twice.
  */
 export async function submitPayable(db: Database, payoutRequestId: string, opts: { clock?: Clock } = {}): Promise<OpRow> {
+  // Kill switch (HTF-10 enforcement): an owner can halt all payout submission to
+  // the settlement rail while leaving already-APPROVED payouts owed and PAYABLE.
+  await assertNotEngaged(db, 'DISABLE_PAYOUT_SUBMISSION');
   const clock = opts.clock ?? systemClock;
   return db.transaction(async (tx) => {
     const scoped = tx as unknown as Database;
