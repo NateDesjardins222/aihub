@@ -84,6 +84,19 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > now with real effect. Golden Path stayed green (17). Nothing PRODUCTION-VERIFIED. See
 > `OWNER_OS_ACCEPTANCE.md`.
 
+> **⟳ Phase 8 (2026-09-26) — all 10 products / full matrix + lifecycle acceptance.** The complete
+> Happy Trader lineup (CORE 25/50/100/300K, SELECT 25/50/100K, DAILY 25/50/100K) is proven against
+> **product rule cross-contamination** at both levels. Config level: the authoritative catalog in
+> `@atlas/contracts` matches the locked spec field-for-field, guarded by 153 product-integrity tests
+> (price/target/drawdown/floor/contract-limit/consistency/buffer/cap + family guards). Runtime
+> level: a new suite (`product-matrix.runtime.test.ts`, 4 tests) provisions a real EVALUATION
+> account for **all 10** products and asserts each carries its OWN pinned terms — **no 50K default
+> leak** (four distinct Core floors), Core 50K floor $48k ≠ Select 50K floor $47.5k, only DAILY has
+> a funded buffer, only SELECT a funded consistency. The payout engine reads per-account pinned
+> `payoutRules` (`payout-core.ts`), so a family's buffer/consistency cannot leak at the payout
+> boundary. Seed→reconcile→version-safety green (6). Golden Path regression green (15, with adequate
+> timeout — see `PRODUCT_MATRIX_ACCEPTANCE.md` §6). Nothing PRODUCTION-VERIFIED.
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |

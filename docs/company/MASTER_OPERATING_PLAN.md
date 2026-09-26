@@ -51,8 +51,14 @@ Phase A is the recommended next mission.
   integration harness (`golden-path.core50k.test.ts`, 15 tests) using real domain services + the
   real trading engine, all transitions exactly-once. Proven **in simulation** (settlement/identity
   dev/test, execution simulation).
-- **Exit (product-model): met.** **Exit (Golden Path, simulation): met** (Phase 5). Real money
-  boundaries (Phases B–E) remain the gate to a *production* Golden Path.
+- ✅ **DONE (Phase 8, 2026-09-26):** all 10 commercial products (CORE/SELECT/DAILY × sizes) proven
+  against product-rule cross-contamination — config matrix (153 tests) + a runtime provisioning
+  matrix proving each account provisions with its OWN pinned terms (no 50K default leak; family
+  floors/buffers/consistency stay distinct) + the payout engine reading per-account pinned rules.
+  See `PRODUCT_MATRIX_ACCEPTANCE.md`.
+- **Exit (product-model): met.** **Exit (Golden Path, simulation): met** (Phase 5). **Exit (full
+  10-product matrix, simulation): met** (Phase 8). Real money boundaries (Phases B–E) remain the
+  gate to a *production* Golden Path.
 
 ### Phase B — Boundary Safety: fail-close the mocks
 **Status: fail-close half ✅ DONE (Phase 4, 2026-09-26); self-serve route gating (HTF-21) not yet.**
