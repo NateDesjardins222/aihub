@@ -11,6 +11,7 @@ import {
   payoutProviderEvents, providerConnectionEvents,
 } from '../db/schema.js';
 import { resolveRithmicConnection } from '../infra/rithmic-config.js';
+import { providerSafetySummary, type ProviderMode } from '../config/provider-safety.js';
 import { recordAudit } from './audit.js';
 import type { Actor } from './actor.js';
 import { ApiError } from '../http/errors.js';
@@ -86,20 +87,79 @@ export async function listWebhooks(db: Database, organizationId: string, limit =
 // Provider control (truthful; never fakes connectivity)
 // ---------------------------------------------------------------------------
 
-export async function providerStatuses(db: Database): Promise<Array<{ provider: string; configured: boolean; verified: boolean; note: string }>> {
+export async function providerStatuses(
+  db: Database,
+): Promise<
+  Array<{
+    provider: string;
+    configured: boolean;
+    verified: boolean;
+    note: string;
+    /** Phase 4: REAL / MOCK / UNAVAILABLE / DELIBERATE — never "healthy while silently mocked". */
+    mode: ProviderMode | 'DELIBERATE';
+    /** Phase 4: false only for the one unsafe state — a MOCK selected in production. */
+    safeForProduction: boolean;
+  }>
+> {
   const r = resolveRithmicConnection();
   const recentRithmic = await db.select({ event: providerConnectionEvents.event, createdAt: providerConnectionEvents.createdAt }).from(providerConnectionEvents).where(eq(providerConnectionEvents.provider, 'RITHMIC')).orderBy(desc(providerConnectionEvents.createdAt)).limit(1);
+  // The env-derived safety posture for the mock-capable capabilities. This is the
+  // authoritative source the owner reads: a production server with no commerce or
+  // identity config shows UNAVAILABLE (fail closed), never a "configured" mock.
+  const safety = new Map(providerSafetySummary().map((s) => [s.capability, s]));
+  const commerce = safety.get('COMMERCE')!;
+  const identity = safety.get('IDENTITY')!;
+  const email = safety.get('EMAIL')!;
+  const sms = safety.get('SMS')!;
   return [
     {
       provider: 'RITHMIC',
       configured: r.ok,
       verified: false, // live acceptance (auth/market/route/exec) not confirmed in this environment
       note: r.ok ? `configured (${r.connection.environment}); live acceptance NOT verified${recentRithmic[0] ? `; last event ${recentRithmic[0].event}` : ''}` : `not configured (${r.missing.join(', ')})`,
+      mode: 'DELIBERATE',
+      safeForProduction: true,
     },
-    { provider: 'WHOP', configured: !!(process.env['WHOP_API_KEY'] || process.env['WHOP_WEBHOOK_SECRET']), verified: false, note: 'commerce provider' },
-    { provider: 'PAYOUT', configured: true, verified: false, note: 'payout provider via payout-operations config' },
-    { provider: 'EMAIL', configured: !!(process.env['RESEND_API_KEY'] || process.env['EMAIL_PROVIDER']), verified: false, note: 'notification email' },
-    { provider: 'SMS_PUSH', configured: !!(process.env['TWILIO_AUTH_TOKEN'] || process.env['PUSH_PROVIDER']), verified: false, note: 'external SMS/push' },
+    {
+      provider: 'COMMERCE',
+      configured: commerce.mode === 'REAL',
+      verified: false,
+      note: `Whop commerce — ${commerce.detail}`,
+      mode: commerce.mode,
+      safeForProduction: commerce.safeForProduction,
+    },
+    {
+      provider: 'IDENTITY',
+      configured: identity.mode === 'REAL',
+      verified: false,
+      note: `Stripe Identity / KYC — ${identity.detail}`,
+      mode: identity.mode,
+      safeForProduction: identity.safeForProduction,
+    },
+    {
+      provider: 'PAYOUT',
+      configured: false,
+      verified: false,
+      note: 'no real payout rail; registry + treasury gate fail closed (no PAID via mock in production)',
+      mode: 'UNAVAILABLE',
+      safeForProduction: true,
+    },
+    {
+      provider: 'EMAIL',
+      configured: email.mode === 'REAL',
+      verified: false,
+      note: `Resend email — ${email.detail}`,
+      mode: email.mode,
+      safeForProduction: email.safeForProduction,
+    },
+    {
+      provider: 'SMS_PUSH',
+      configured: sms.mode === 'REAL',
+      verified: false,
+      note: `Twilio SMS — ${sms.detail}`,
+      mode: sms.mode,
+      safeForProduction: sms.safeForProduction,
+    },
   ];
 }
 

@@ -10,6 +10,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { env } from '../config/env.js';
+import { identityMode } from '../config/provider-safety.js';
 import type { IdentityStatus } from './customer-identity.js';
 
 /** A provider's normalised view of one verification. `status` is a domain state. */
@@ -189,12 +190,23 @@ export class StripeIdentityProvider implements IdentityVerificationProvider {
 const mock = new MockIdentityProvider();
 const stripe = new StripeIdentityProvider();
 
-/** The active provider: Stripe when configured, else the deterministic mock. */
+/**
+ * The active provider, chosen by the central provider-safety boundary.
+ *
+ * - REAL (Stripe keys present) → the Stripe seam (which still refuses to fabricate
+ *   a result — no live call is wired in this build).
+ * - MOCK (development/test only) → the deterministic mock.
+ * - UNAVAILABLE (production, no real config) → the Stripe seam, whose methods
+ *   throw `ProviderUnconfiguredError`. The mock is NEVER selected in production,
+ *   so a customer can no longer drive their own identity to VERIFIED through a
+ *   silently-active mock. See config/provider-safety.ts.
+ */
 export function identityProviderFromEnv(): IdentityVerificationProvider {
-  return stripe.isConfigured() ? stripe : mock;
+  return identityMode() === 'MOCK' ? mock : stripe;
 }
 
 /** What the owner console should display as the active provider. */
-export function activeIdentityProviderName(): 'mock' | 'stripe' {
-  return stripe.isConfigured() ? 'stripe' : 'mock';
+export function activeIdentityProviderName(): 'mock' | 'stripe' | 'unavailable' {
+  const mode = identityMode();
+  return mode === 'REAL' ? 'stripe' : mode === 'MOCK' ? 'mock' : 'unavailable';
 }

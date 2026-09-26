@@ -5,6 +5,7 @@ import { closeDb, getDb } from './db/client.js';
 import { reportLedgerAudit } from './platform/ledger-audit.js';
 import { listInstruments } from '@atlas/instruments';
 import { reportEgress } from './marketdata/egress.js';
+import { providerSafetyLogLines, providerSafetySummary } from './config/provider-safety.js';
 
 async function main(): Promise<void> {
   // Before anything tries to reach the vendor, say whether it can.
@@ -54,6 +55,21 @@ async function main(): Promise<void> {
     `market data: provider=${status.providerId} mode=${status.mode} ` +
       `delay=${status.delaySeconds}s state=${status.state}`,
   );
+
+  // Provider safety summary — secret-free. Every environment-dependent capability
+  // and whether it is a real integration, a development mock, or fail-closed. A
+  // production runtime must never print a MOCK here; if it somehow did, the loud
+  // warning below makes it impossible to miss in the boot log.
+  console.log(`provider safety [runtime=${env().NODE_ENV}]:`);
+  for (const line of providerSafetyLogLines()) console.log(line);
+  const unsafe = providerSafetySummary().filter((s) => !s.safeForProduction);
+  if (unsafe.length > 0) {
+    console.warn(
+      `WARNING: ${unsafe.length} capability(ies) are running a MOCK in production: ` +
+        unsafe.map((s) => s.capability).join(', ') +
+        '. This must never happen — a mock must never stand in for a real provider in production.',
+    );
+  }
 }
 
 main().catch((err) => {

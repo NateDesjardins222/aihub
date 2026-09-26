@@ -7,6 +7,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { createDb } from './client.js';
+import { assertDevSeedAllowed } from './seed-guard.js';
 import {
   accountProfileVersions,
   accountProfiles,
@@ -285,12 +286,12 @@ async function main(): Promise<void> {
     // a developer can clone and sign in; seeding them into a real deployment
     // would hand anyone who has read this file a SUPER_ADMIN login. So they are
     // development-only, by refusal, not by convention.
-    const seedDemoAccounts = process.env['NODE_ENV'] !== 'production';
-    if (!seedDemoAccounts) {
-      console.log(
-        'skipping demo and owner accounts: NODE_ENV=production. Create the first operator out of band.',
-      );
-    }
+    // Production must NEVER create known demo/owner credentials. This is a HARD
+    // FAILURE, not a silent skip (see db/seed-guard.ts): the development seed is a
+    // development tool, and running it against production must stop loudly rather
+    // than quietly leave a half-seeded database. Create the first operator out of band.
+    assertDevSeedAllowed();
+    const seedDemoAccounts = true;
     if (seedDemoAccounts) {
     const demoEmail = 'demo@atlasfutures.local';
     let [demo] = await db.select().from(users).where(eq(users.email, demoEmail));

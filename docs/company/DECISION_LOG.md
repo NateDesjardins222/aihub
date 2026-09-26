@@ -37,11 +37,20 @@ HTF + 10 funded + 7 legacy). **Decision needed:** which seed is canonical; wheth
 the 7 legacy templates (`setProfileStatus RETIRED` — non-destructive). **Do not resolve
 silently** (explicit Phase 2 constraint on the product-duplication issue). *HTF-5.*
 
-### DR-3 — Fail-open providers: fail closed in production?
-`commerceProviderFromEnv` and `identityProviderFromEnv` fall back to a mock in production with
-no guard, unlike the payout registry. **Decision needed:** apply the fail-closed pattern in
-production (recommended) — this changes launch/money/compliance behavior, so it is an owner
-decision, not a Phase-2 wiring fix. *HTF-1, HTF-2.*
+### DR-3 — Fail-open providers: fail closed in production? — ✅ RESOLVED (Phase 4)
+`commerceProviderFromEnv` and `identityProviderFromEnv` fell back to a mock in production with
+no guard, unlike the payout registry.
+
+✅ **RESOLVED (Phase 4): fail closed.** A central provider-safety boundary
+(`apps/server/src/config/provider-safety.ts`) resolves every mock-capable capability to
+REAL / MOCK / UNAVAILABLE with one rule — **production never silently selects a mock**. The
+commerce, identity and notification factories now consume it: in production without real config
+they return the real (unconfigured) seam, which fails closed (commerce webhook 503s / mock
+payment simulation throws `MOCK_COMMERCE_FORBIDDEN`; identity seam throws so no fabricated
+`VERIFIED`; notifications mark messages SUPPRESSED, never a faked SENT). Mocks remain the
+development/test default. This removes the fail-open **only**; it does NOT connect real
+providers — commerce (Whop prod), KYC (Stripe Identity) and payouts remain UNCONFIGURED and are
+not production-ready (HTF-3, DR-5). *HTF-1, HTF-2 resolved.*
 
 ### DR-4 — Drawdown-vs-consistency and SELECT differentiator
 ✅ **RESOLVED (Phase 3).** Risk mechanic = EOD_TRAILING for all families; SELECT's wider 5%

@@ -24,6 +24,7 @@ import { CommerceError, fulfillCompletedOrder, markOrderCompleted } from './comm
 import { evaluateProvisioningGate } from './provisioning-gate.js';
 import { AccountLimitError, countActiveAccounts, MAX_ACTIVE_ACCOUNTS } from './account-limit.js';
 import { MockCommerceProvider, signMockCommerceEvent } from './commerce-provider.js';
+import { commerceMode } from '../config/provider-safety.js';
 import { markCommerceEventProcessed, recordCommerceEvent } from './commerce-events.js';
 
 type CommercialOrderRow = typeof commercialOrders.$inferSelect;
@@ -218,6 +219,15 @@ export async function simulateProviderPayment(
   input: { organizationId: string; orderId: string; actor?: Actor },
 ): Promise<FulfillmentResult & { eventStatus: string }> {
   const actor = input.actor ?? SYSTEM_ACTOR;
+  // Defense in depth: the mock commerce path can NEVER run in production, even if
+  // a caller reaches this directly (its dev route is already NODE_ENV-gated). A
+  // mock-signed PAYMENT_SUCCEEDED must never provision a real account.
+  if (commerceMode() !== 'MOCK') {
+    throw new CommerceError(
+      'MOCK_COMMERCE_FORBIDDEN',
+      'Mock commerce payment simulation is not available outside development/test.',
+    );
+  }
   const provider = new MockCommerceProvider();
   const rawBody = JSON.stringify({
     id: `sim_${input.orderId}_${Date.now()}`,

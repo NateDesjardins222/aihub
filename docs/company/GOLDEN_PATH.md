@@ -23,7 +23,7 @@ production-verified (no step on this path is PRODUCTION-VERIFIED).
 
 | # | Arrow | Status | Evidence / caveat |
 |---|-------|--------|-------------------|
-| 1 | Customer → Purchase | **MOCKED** (sandbox/mock) | Checkout resolves an EVALUATION product and opens a Whop **sandbox** session, or the deterministic mock. Real Whop prod is a deliberate later change. `commerceProviderFromEnv` **fails open to mock with no prod guard** (HTF-1). |
+| 1 | Customer → Purchase | **MOCKED** (sandbox/mock) | Checkout resolves an EVALUATION product and opens a Whop **sandbox** session, or the deterministic mock. Real Whop prod is a deliberate later change. **Phase 4:** `commerceProviderFromEnv` now FAILS CLOSED in production (no mock; ~~HTF-1~~) via `config/provider-safety.ts` — a misconfigured prod cannot fake a purchase. Mock is development/test only. |
 | 2 | Purchase → payment confirmed | **MOCKED** | Confirmation arrives only via a **signature-verified server-side webhook** (`commerce_events` dedup); the browser success screen never grants anything. Mock self-signs its own events. |
 | 3 | Payment → Provision eval account | **WORKING (gated)** | `fulfillPurchaseGated` requires identity + contact + agreements OK. Money-success recorded before provisioning → paid-but-unprovisioned parks recoverably. Multi-layer idempotency. **KYC gate depends on identity provider, which fails open to a fabricating mock (HTF-2).** |
 | 4 | Provision → Trade (eval) | **WORKING (simulation, dev feed)** | Terminal is server-authoritative; execution is SIMULATION-only; default market data is `yahoo-delayed` (~600s). Risk gate blocks entry on stale feed. |

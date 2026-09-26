@@ -16,8 +16,8 @@ READY / PARTIAL / NOT READY / N/A.
 | Trading terminal (sim) | READY | READY | READY | PARTIAL — default feed delayed/dev |
 | Market data | READY (yahoo-delayed) | READY (dev feed) | PARTIAL — real feed unconfigured | NOT READY — real feed + creds needed |
 | Execution | READY (simulation) | READY | READY | PARTIAL — sim only; external path disconnected |
-| Payments in | PARTIAL (mock/sandbox) | PARTIAL (sandbox) | NOT READY | **NOT READY** — Whop prod unwired; mock fails open (HTF-1) |
-| KYC | PARTIAL (mock) | PARTIAL (mock) | NOT READY | **NOT READY** — Stripe unwired; mock fails open (HTF-2) |
+| Payments in | PARTIAL (mock/sandbox) | PARTIAL (sandbox) | NOT READY | **NOT READY** — Whop prod unwired. Phase 4: now FAILS CLOSED (no mock in prod; ~~HTF-1~~) but still no real charge path |
+| KYC | PARTIAL (mock) | PARTIAL (mock) | NOT READY | **NOT READY** — Stripe unwired. Phase 4: now FAILS CLOSED (no mock KYC in prod; ~~HTF-2~~) but still no real identity decision |
 | Payouts out | PARTIAL (mock) | PARTIAL (mock) | NOT READY | **NOT READY** — no real rail (HTF-3) |
 | Certificates | READY (LOCAL store) | READY | PARTIAL — S3 disabled | PARTIAL — S3 seam off; render works locally |
 | Notifications (email/SMS) | PARTIAL (mock) | PARTIAL (mock) | NOT READY | NOT READY — Resend/Twilio unwired (suppress, don't fake) |
@@ -29,13 +29,20 @@ READY / PARTIAL / NOT READY / N/A.
 | CI / CD | NOT READY — none (`.github` absent) | NOT READY | NOT READY | NOT READY |
 | Backups / DR | N/A | N/A | NOT READY | NOT READY — nothing in-repo |
 | Deploy manifests | N/A (dev compose = PG only) | NOT READY | NOT READY | NOT READY — no app Dockerfile/k8s/Terraform |
-| `/design-lab` isolation | N/A | PARTIAL | PARTIAL | NOT READY — reachable in prod build (HTF-4) |
+| `/design-lab` isolation | READY (dev-only) | READY | READY | READY — Phase 4 gates it to development builds; inert in prod (~~HTF-4~~) |
 
 > **⟳ Phase 3.5 (2026-09-26).** Product model accepted against real rendered surfaces and its
 > risk/payout semantics locked (see `PRODUCT_SOURCE_OF_TRUTH.md`). This changes nothing in the
 > PRODUCTION column: **no PRODUCTION cell is marked READY or VERIFIED.** The money boundaries
 > (payments in, KYC, payouts out), CI/CD, backups, and deploy manifests remain NOT READY, and
 > production readiness is explicitly **not** claimed by this phase.
+
+> **⟳ Phase 4 (2026-09-26) — production provider safety boundaries.** The fail-OPEN behaviors are
+> closed: in production, commerce/identity/notifications fail CLOSED (never a mock), `/design-lab`
+> is dev-build-only, and the dev seed hard-fails in production. This is a **safety** change, not a
+> readiness change: **no money/KYC/payout PRODUCTION cell is upgraded to READY** — Whop production,
+> Stripe Identity and a real payout rail remain UNCONFIGURED and unverified. "UNCONFIGURED" now
+> reliably means "unavailable / fail closed," never "silent mock success."
 
 ---
 

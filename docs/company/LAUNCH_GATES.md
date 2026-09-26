@@ -20,12 +20,12 @@ environment by the responsible owner.
 
 | # | Gate | State | Why | Blocking issues |
 |---|------|-------|-----|-----------------|
-| G1 | **Payments in (real charge)** | **NOT READY** | Whop is sandbox-only; commerce provider fails open to a self-signing mock in prod | HTF-1, HTF-3, DR-3, DR-5 |
+| G1 | **Payments in (real charge)** | **NOT READY** | Whop is sandbox-only. Phase 4 closed the fail-open (commerce now FAILS CLOSED in prod — no mock, no fake PAYMENT_SUCCEEDED; ~~HTF-1~~, ~~DR-3~~ resolved), but no real Whop production charge path exists yet | HTF-3, DR-5 |
 | G2 | **Payouts out (real disbursement)** | **NOT READY** | No real payout rail exists (mock/unconfigured) | HTF-3, DR-5 |
-| G3 | **KYC / identity (compliance)** | **NOT READY** | Identity provider fails open to a fabricating mock in prod | HTF-2, DR-5 |
+| G3 | **KYC / identity (compliance)** | **NOT READY** | Phase 4 closed the fail-open (identity now FAILS CLOSED in prod — no mock KYC, no customer-driven VERIFIED; ~~HTF-2~~ resolved), but no real Stripe Identity path exists yet | DR-5 |
 | G4 | **Authoritative product model** | **READY FOR TEST** | Phase 3: one authoritative model; DB=catalog on all fields; normal seed produces the 10; legacy retired; fresh+existing DB verified; integrity tests guard divergence. Phase 3.5: risk/payout semantics LOCKED (EOD floor locks at start, `trailingLockAtMicros=0`; breach on equity; CORE/SELECT $0 buffer; post-payout floor safe); accepted against public pricing + Owner Products + Portal; reconcile publishes new immutable versions (v2), pins preserved | ~~HTF-5, HTF-6, DR-1, DR-2~~ resolved; ~~DR-11~~ resolved (Phase 3.5); owner sign-off on values still recommended |
 | G5 | **Legal / agreements / disclosures** | **NOT READY** | Agreements framework exists and is enforced, but content + the drawdown-mismatch (sold vs enforced) is unresolved; cannot be VERIFIED from code | HTF-6, DR-4; owner/legal sign-off |
-| G6 | **Security / trust boundaries** | **PARTIAL** | Strong server-authority design; but fail-open providers + self-serve rule/reset routes + view-only kill switches | HTF-1, HTF-2, HTF-10, HTF-21 |
+| G6 | **Security / trust boundaries** | **PARTIAL** | Strong server-authority design; Phase 4 closed the fail-open providers (~~HTF-1, HTF-2~~) and gated `/design-lab` + dev seed (~~HTF-4~~); remaining: self-serve rule/reset routes + view-only kill switches | HTF-10, HTF-21 |
 | G7 | **Golden Path (simulation)** | **READY FOR TEST** | Fully wired end-to-end in simulation; not yet run as a single live integration test this phase | — (arrows 1–2, 13–14 mocked) |
 | G8 | **Trading terminal + risk engine** | **READY FOR TEST** | Server-authoritative, extensively tested; default feed is delayed/dev | choose real feed (DR-5) |
 | G9 | **Certificates / achievements** | **READY FOR TEST** | Wired, exactly-once, immutable, real render; fulfillment mock | Prodigi if merch launches |

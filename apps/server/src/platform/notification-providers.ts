@@ -10,6 +10,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { env } from '../config/env.js';
+import { emailMode, smsMode } from '../config/provider-safety.js';
 
 export interface OutboundEmail {
   readonly to: string;
@@ -87,15 +88,27 @@ const resendEmail = new ResendEmailProvider();
 const mockSms = new MockSmsProvider();
 const twilioSms = new TwilioSmsProvider();
 
+/**
+ * Provider selection via the central provider-safety boundary.
+ *
+ * - REAL → the real adapter (Resend/Twilio).
+ * - MOCK (development/test only) → the deterministic mock (records a SENT row).
+ * - UNAVAILABLE (production, no real config) → the real adapter's seam, which
+ *   returns a non-retryable failure so the message is marked SUPPRESSED (an
+ *   honest "not delivered"), NEVER a faked SENT. The mock is never selected in
+ *   production. This is "suppress, don't fake." See config/provider-safety.ts.
+ */
 export function emailProviderFromEnv(): EmailProvider {
-  return resendEmail.isConfigured() ? resendEmail : mockEmail;
+  return emailMode() === 'MOCK' ? mockEmail : resendEmail;
 }
 export function smsProviderFromEnv(): SmsProvider {
-  return twilioSms.isConfigured() ? twilioSms : mockSms;
+  return smsMode() === 'MOCK' ? mockSms : twilioSms;
 }
-export function activeEmailProviderName(): 'mock' | 'resend' {
-  return resendEmail.isConfigured() ? 'resend' : 'mock';
+export function activeEmailProviderName(): 'mock' | 'resend' | 'suppressed' {
+  const mode = emailMode();
+  return mode === 'REAL' ? 'resend' : mode === 'MOCK' ? 'mock' : 'suppressed';
 }
-export function activeSmsProviderName(): 'mock' | 'twilio' {
-  return twilioSms.isConfigured() ? 'twilio' : 'mock';
+export function activeSmsProviderName(): 'mock' | 'twilio' | 'suppressed' {
+  const mode = smsMode();
+  return mode === 'REAL' ? 'twilio' : mode === 'MOCK' ? 'mock' : 'suppressed';
 }

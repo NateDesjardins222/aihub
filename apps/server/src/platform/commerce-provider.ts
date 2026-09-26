@@ -16,6 +16,7 @@
  */
 import { createHmac } from 'node:crypto';
 import { env } from '../config/env.js';
+import { commerceMode } from '../config/provider-safety.js';
 import {
   parseWhopEvent,
   verifyStandardWebhook,
@@ -270,14 +271,24 @@ export class WhopCommerceProvider implements CommerceProvider {
 const mock = new MockCommerceProvider();
 const whop = new WhopCommerceProvider();
 
-/** The active provider: Whop when configured, else the deterministic mock. */
+/**
+ * The active provider, chosen by the central provider-safety boundary.
+ *
+ * - REAL (Whop webhook secret present) → the Whop provider.
+ * - MOCK (development/test only) → the deterministic mock.
+ * - UNAVAILABLE (production, no real config) → the Whop seam, which reports
+ *   `isConfigured()===false` and refuses every unsigned event. The mock is NEVER
+ *   selected in production, so a missing commerce config cannot become a fake
+ *   PAYMENT_SUCCEEDED. See config/provider-safety.ts.
+ */
 export function commerceProviderFromEnv(): CommerceProvider {
-  return whop.isConfigured() ? whop : mock;
+  return commerceMode() === 'MOCK' ? mock : whop;
 }
 
 /** What the owner console should display as the active provider. */
-export function activeCommerceProviderName(): 'mock' | 'whop' {
-  return whop.isConfigured() ? 'whop' : 'mock';
+export function activeCommerceProviderName(): 'mock' | 'whop' | 'unavailable' {
+  const mode = commerceMode();
+  return mode === 'REAL' ? 'whop' : mode === 'MOCK' ? 'mock' : 'unavailable';
 }
 
 export { WhopApiError };

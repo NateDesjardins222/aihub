@@ -184,12 +184,16 @@ exposure findings in the final report.
 - **Immutable versioned config** for products (append-only versions) and immutable
   economics runs.
 - **Honest degradation:** unknown/unavailable data propagates as UNKNOWN rather than being
-  fabricated; real providers fail-fast or fail-closed — *except* the two commerce/identity
-  selectors (Area H, B) that fail-open to mock.
+  fabricated; real providers fail-fast or fail-closed. **Phase 4** added a central
+  provider-safety boundary (`config/provider-safety.ts`) so the commerce, identity and
+  notification selectors also fail closed in production (never a mock) — the last fail-open
+  paths are gone.
 
 ## Cross-cutting architectural risks (see `KNOWN_ISSUES.md`)
 
-- Two provider selectors fail-open to mock in production (commerce, identity/KYC).
+- ~~Two provider selectors fail-open to mock in production (commerce, identity/KYC).~~
+  **Resolved (Phase 4):** all mock-capable selectors route through `config/provider-safety.ts`
+  and fail closed in production.
 - Two competing seeds: default `db:seed` produces the legacy Atlas catalog with
   payout-incompatible rule shapes; the 10 HTF products come from a separate manual script.
 - Runtime product authority (DB) diverges from the public site (catalog) on 4 properties.

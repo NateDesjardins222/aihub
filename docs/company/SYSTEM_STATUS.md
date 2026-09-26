@@ -29,6 +29,18 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > **owner-manual-acceptance-pending** (Playwright is not sufficient evidence). See
 > `PRODUCT_SOURCE_OF_TRUTH.md`, `ACCOUNT_STATE_MACHINE.md`, `DECISION_LOG.md` DR-11.
 
+> **⟳ Phase 4 (2026-09-26) — production provider safety boundaries.** The fail-OPEN P0/P1s are
+> closed. A central provider-safety boundary (`apps/server/src/config/provider-safety.ts`) makes
+> the rule **production never silently selects a mock**: commerce, identity and notification
+> factories return the real (unconfigured) seam in production — fail closed — instead of a mock.
+> `/design-lab` is gated to development builds; the development seed HARD-FAILS in production.
+> Owner provider health + a startup safety summary surface the posture so a mock can never read as
+> "healthy" in production. **This did NOT connect any real provider:** commerce (Whop prod), KYC
+> (Stripe Identity) and payouts remain UNCONFIGURED and are **not** production-ready. Market data,
+> execution, object-store and the payout registry were already fail-closed/deliberate and were
+> revalidated. Still no system is PRODUCTION-VERIFIED. See `DECISION_LOG.md` DR-3 and
+> `KNOWN_ISSUES.md` HTF-1/HTF-2/HTF-4 (resolved).
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |

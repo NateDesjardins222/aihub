@@ -51,7 +51,8 @@ export class CommerceError extends Error {
       | 'QUALIFICATION_NOT_FOUND'
       | 'NO_FUNDED_DESTINATION'
       | 'INVALID_FUNDING_STATE'
-      | 'ORGANIZATION_MISMATCH',
+      | 'ORGANIZATION_MISMATCH'
+      | 'MOCK_COMMERCE_FORBIDDEN',
     message: string,
   ) {
     super(message);

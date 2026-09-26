@@ -93,10 +93,19 @@ NEEDS-REVALIDATION — it was not reproduced by a concurrency test in this phase
 
 ---
 
-## The fail-open provider risks (verified personally, see `KNOWN_ISSUES.md`)
+## The fail-open provider risks — ✅ RESOLVED (Phase 4)
 
-Two provider selectors fall back to a **mock with no production guard**, in contrast to the
-payout registry which explicitly refuses the mock in production:
+> **⟳ Phase 4 (2026-09-26).** The two fail-open selectors below now route through the central
+> provider-safety boundary (`config/provider-safety.ts`) and **fail closed in production** — the
+> mock is never selected there. Commerce: production without Whop returns the seam
+> (`isConfigured()===false`, webhook 503s) and a direct mock payment throws
+> `MOCK_COMMERCE_FORBIDDEN`; identity: production without Stripe returns the seam whose
+> `createVerification` throws, so no fabricated `IDENTITY_VERIFIED`. The historical description
+> below is retained as the record of what the risk WAS. It did NOT wire real providers — Whop/
+> Stripe remain UNCONFIGURED and "no real money" is now a property of the code, not the config.
+
+The (former) risk: two provider selectors fell back to a **mock with no production guard**, in
+contrast to the payout registry which explicitly refuses the mock in production:
 
 - `commerceProviderFromEnv()` → `whop.isConfigured() ? whop : mock`
   (`commerce-provider.ts`). In a production deploy without Whop configured, the **mock

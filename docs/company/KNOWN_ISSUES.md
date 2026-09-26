@@ -38,9 +38,14 @@ containment noted.
 - **Repro:** set `NODE_ENV=production`, leave Whop unconfigured, hit `/checkout` → mock
   provider selected (owner console would show "mock").
 - **Next action:** DECISION REQUIRED / then fix — mirror the payout registry's fail-closed
-  guard so production refuses the mock. **Not fixed here** (changes launch/money behavior;
-  outside the minimal wiring-fix policy). See `DECISION_LOG.md`.
-- **Status:** OPEN.
+  guard so production refuses the mock. See `DECISION_LOG.md`.
+- **Status:** ✅ **RESOLVED (Phase 4).** `commerceProviderFromEnv()` now consults the central
+  provider-safety boundary (`config/provider-safety.ts`): production NEVER selects the mock. With
+  no Whop config in production the factory returns the Whop seam (`isConfigured()===false`), the
+  webhook 503s, and `simulateProviderPayment` throws `MOCK_COMMERCE_FORBIDDEN`. Mocks remain the
+  default in development/test only. This does NOT make commerce production-ready — Whop production
+  is still unwired (HTF-3); it only removes the fail-open. Proven by
+  `config/provider-safety*.test.ts`.
 
 ### HTF-2 — Identity/KYC provider fails open to a fabricating mock in production
 - **System:** Identity / provisioning gate (Area B / I).
@@ -53,9 +58,14 @@ containment noted.
 - **Customer impact:** none today. At launch: **compliance failure** (no real KYC).
 - **Business impact:** regulatory/legal exposure; AML/KYC obligations unmet.
 - **Repro:** `NODE_ENV=production`, Stripe unset, run onboarding identity step → mock verifies.
-- **Next action:** DECISION REQUIRED / then fix — fail closed in production. **Not fixed
-  here** (money/compliance behavior). See `DECISION_LOG.md`.
-- **Status:** OPEN.
+- **Next action:** DECISION REQUIRED / then fix — fail closed in production. See `DECISION_LOG.md`.
+- **Status:** ✅ **RESOLVED (Phase 4).** `identityProviderFromEnv()` now consults the central
+  provider-safety boundary: production NEVER selects the mock. With no Stripe config in production
+  the factory returns the Stripe seam, whose `createVerification` throws — so a customer's own
+  `POST /onboarding/identity/resolve` can no longer drive a fabricated `IDENTITY_VERIFIED`, and the
+  provisioning gate's `identityOk` cannot pass on a mock. Mock KYC remains development/test only.
+  This does NOT make KYC production-ready — Stripe Identity is still unwired; it only removes the
+  fail-open. Proven by `config/provider-safety*.test.ts`.
 
 ### HTF-3 — No real payout rail; no verified real charge path (end-to-end money is not connected)
 - **System:** Payouts (Area J) + Commerce (Area H).
@@ -83,11 +93,12 @@ containment noted.
   in `App.tsx`, no env gate; `LabApp.tsx` comment claims non-production but does not enforce it.
 - **Customer/business impact:** a public prod URL showing fabricated trading numbers →
   misleading; undermines the "no fabricated data" marketing stance.
-- **Next action:** gate behind `import.meta.env.DEV`. **Candidate minimal fix** (it is
-  arguably a pure accessibility/wiring defect with obvious intent and no business-rule/money
-  change) — see the minimal-fix evaluation in the final report; deferred here pending owner
-  confirmation because it changes what is served in production.
-- **Status:** OPEN.
+- **Next action:** gate behind the build mode.
+- **Status:** ✅ **RESOLVED (Phase 4).** `/design-lab` is now gated by `designLabEnabled()`
+  (`apps/web/src/lib/runtime.ts`, `import.meta.env.MODE !== 'production'`). In a production build
+  the route is inert — a direct URL falls through to the normal app, never the lab. Development
+  keeps it. Proven by `apps/web/src/lib/runtime.test.ts`. (The `/icons` dev gallery is a similar
+  dev surface but was out of this phase's named scope; noted for a later pass.)
 
 ### HTF-5 — Default `db:seed` produces the wrong (legacy, payout-incompatible) catalog
 - **System:** Product config / seeds (Area H / product model).

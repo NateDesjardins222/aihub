@@ -54,13 +54,18 @@ Phase A is the recommended next mission.
   real browser (Owner Products + Portal). **Exit (Golden Path): pending.**
 
 ### Phase B — Boundary Safety: fail-close the mocks
+**Status: fail-close half ✅ DONE (Phase 4, 2026-09-26); self-serve route gating (HTF-21) not yet.**
 **Goal:** make "no real money" a property of the *code*, not the *config*.
-- Fix HTF-1 and HTF-2: fail closed in production for commerce and identity providers (mirror
-  the payout registry). Resolve DR-3.
-- Gate `/design-lab` (HTF-4) and the self-serve rule/reset/environment routes for
-  commercially-weighted accounts (HTF-21).
-- **Exit:** a misconfigured production cannot silently mock a purchase or a KYC check; no fake
-  data reachable in a prod build.
+- ✅ Fixed HTF-1 and HTF-2: commerce and identity providers fail closed in production via a
+  central provider-safety boundary (`config/provider-safety.ts`). Resolved DR-3. Notifications
+  also fail closed (suppress, never fake SENT).
+- ✅ Gated `/design-lab` (HTF-4) to development builds; the development seed hard-fails in
+  production.
+- ⏳ Still to do: gate the self-serve rule/reset/environment routes for commercially-weighted
+  accounts (HTF-21).
+- **Exit (fail-close): met** — a misconfigured production cannot silently mock a purchase or a
+  KYC check, and no fake data (Design Lab) is reachable in a prod build. **Exit (HTF-21): pending.**
+  NOTE: this phase did NOT wire real providers — that is Phases C/D/E.
 
 ### Phase C — Real payments in (Whop production)
 - Resolve DR-5 (payments portion). Wire Whop production behind the now-fail-closed selector;

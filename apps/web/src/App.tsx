@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useSession } from './state/session';
+import { designLabEnabled } from './lib/runtime';
 import { LoginScreen } from './components/LoginScreen';
 import { TerminalShell } from './components/TerminalShell';
 import type { JSX } from 'react';
@@ -125,8 +126,15 @@ export function App(): JSX.Element {
     );
   }
 
-  // The homepage design lab: non-production, no session, rendered before the gate.
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/design-lab')) {
+  // The homepage design lab: DEVELOPMENT BUILDS ONLY, no session, rendered before
+  // the gate. In a production build `designLabEnabled()` is false, so this block is
+  // skipped and a direct /design-lab URL falls through to the normal app — the lab
+  // (and its fabricated demo values) is never reachable in production.
+  if (
+    designLabEnabled() &&
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/design-lab')
+  ) {
     return (
       <Suspense fallback={<div className="boot-splash">Loading design lab…</div>}>
         <LabApp />
