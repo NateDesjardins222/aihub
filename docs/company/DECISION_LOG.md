@@ -15,6 +15,10 @@ Two kinds of entry:
 ## DECISIONS REQUIRED (owner input needed)
 
 ### DR-1 — Authoritative product model: DB vs catalog (the four divergences)
+✅ **RESOLVED (Phase 3, 2026-09-26).** The owner's Phase 3 brief supplied the locked V1
+values (the decision). Implemented: one authoritative model
+(`packages/contracts/src/product-model.ts`) that DB seed, reconciliation and economics all
+consume; DB reconciled to catalog for every field. Guarded by product-integrity tests.
 The runtime authority (DB) and the public site/catalog disagree on four properties
 (`PRODUCT_SOURCE_OF_TRUTH.md`): drawdown TYPE (STATIC vs EOD_TRAILING, all 10 HTF), CORE 300K
 target ($18,000 vs $15,000), CORE 300K drawdown ($12,000 vs $10,000), SELECT drawdown (4% vs
@@ -24,6 +28,9 @@ property, then reconcile all sources to it. **Do not resolve silently** (explici
 constraint). *Related issues: KNOWN_ISSUES HTF-6.*
 
 ### DR-2 — Canonical seed / the 27-profile duplication
+✅ **RESOLVED (Phase 3).** Canonical seed = the HTF catalog via `reconcileHtfProducts`, run
+by the normal `db:seed`. The 7 legacy templates are RETIRED (not deleted); practice-150k kept
+INTERNAL for the terminal. Fresh + existing-DB paths verified idempotent.
 The default `db:seed` produces the legacy Atlas/Practice catalog (payout-incompatible rule
 shapes); the 10 HTF products come from a separate manual script. The DB holds 27 profiles (10
 HTF + 10 funded + 7 legacy). **Decision needed:** which seed is canonical; whether to retire
@@ -37,6 +44,10 @@ production (recommended) — this changes launch/money/compliance behavior, so i
 decision, not a Phase-2 wiring fix. *HTF-1, HTF-2.*
 
 ### DR-4 — Drawdown-vs-consistency and SELECT differentiator
+✅ **RESOLVED (Phase 3).** Risk mechanic = EOD_TRAILING for all families; SELECT's wider 5%
+drawdown ($1,250/$2,500/$5,000) is the real differentiator and is now in the DB. Note the
+EOD-trailing lock threshold (`trailingLockAtMicros`) is under-specified by the brief; set to
+`null` (trail to high-water mark) as the literal reading and flagged as **DR-11** below.
 D-1 (STATIC vs EOD_TRAILING) and D-4 (SELECT 4% vs marketed 5% "room to breathe") are not
 just numbers — they define the product's risk personality and its marketing claims.
 **Decision needed:** confirm the intended risk mechanic per family and whether SELECT's wider
@@ -48,9 +59,21 @@ needed:** provider choices, contracts, and the order of wiring. Large explicit m
 out of Phase 2 scope. *HTF-3.*
 
 ### DR-6 — Contract-limit representation (minis/micros vs maxContracts)
-DB stores a single `maxContracts`; catalog stores minis + micros. No conversion rule exists.
-**Decision needed:** the canonical representation and the conversion rule, so the two can be
-called consistent.
+✅ **RESOLVED (Phase 3).** Canonical model: `maxContracts` = the **mini** limit, with
+`microsCountAsFraction=true` so 10 micros = 1 mini (existing `@atlas/instruments`
+`contractWeight`). Every catalog account satisfies `micros = 10 × minis`, enforced by an
+invariant + integrity test. The existing risk gate is the single server-authoritative
+enforcer of mixed mini/micro exposure.
+
+### DR-11 — EOD-trailing lock threshold (NEW, unresolved — do not invent)
+The locked V1 brief states an EOD trailing drawdown *amount* but no lock point (where the
+trailing floor stops following the high-water mark). Phase 3 set `trailingLockAtMicros=null`
+(the floor trails to the HWM for the account's life — the literal reading, and fail-safe
+toward firm risk). **Decision needed:** whether a launch product should instead lock the
+floor once the account is up by the drawdown amount (a common industry convention). Not
+invented; flagged for an owner decision. Also unresolved and explicitly NOT invented:
+post-payout drawdown-floor behavior, CORE/SELECT initial funded buffers (set 0), exact
+intraday breach semantics of EOD trailing.
 
 ### DR-7 — Active-account slot policy
 Should LOCKED (day-lock) and GOAL_REACHED accounts count toward the 5-active limit? Today they

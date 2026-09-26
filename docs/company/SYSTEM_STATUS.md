@@ -46,7 +46,7 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 | Economics v1 | STALE-LEGACY (active) | Economics page | `economics-sim.ts` | economics_runs | none (SIMULATION) | yes | yes (P1) | superseded by v2 | decide retirement |
 | Economics v2 (M13) | BUILT (SIMULATION) | Economics (M13) page | `platform/economics/*` | economics_runs | none (SIMULATION) | yes | yes (P1) | derives from catalog not DB | — |
 | Owner OS console | BUILT (exposure gap) | `/admin` (22 routes) | `admin.ts` + `owner-*.ts` | many | — | extensive | **yes (P1)** | **HTF-10 (P2)** + large backend-only set | surface safety mutations |
-| Product config | BUILT; DB≠catalog | Products page | `profiles.ts` | account_profiles, versions, drafts | — | yes | yes (P1) | **HTF-5, HTF-6** | resolve authoritative model |
+| Product config | BUILT; **authoritative (Phase 3)** | Products page | `profiles.ts` + `@atlas/contracts/product-model.ts` + `product-reconcile.ts` | account_profiles, versions, drafts | — | product-integrity tests (contracts 149 + server DB 6) | yes (P3 browser: Owner Products + Portal) | ~~HTF-5, HTF-6~~ resolved | — (canonical model; DB=catalog) |
 | Infrastructure / workers | PARTIAL | Infra/System pages | outbox, notify, workers | outbox_events | email/SMS mock; S3 disabled | yes | partial (read-only views) | HTF-18 cron unbound | — |
 | Audit log | BUILT | Audit explorer | `audit.ts` | audit chain | — | yes | yes (P1) | — | — |
 | CI / deploy / backups | MISSING | — | — | — | none | manual scripts only | n/a | HTF-16, HTF-17 | stand up CI + backups |

@@ -15,6 +15,7 @@
     "db:generate": "pnpm --filter @atlas/server db:generate",
     "db:migrate": "pnpm --filter @atlas/server db:migrate",
     "db:seed": "pnpm --filter @atlas/server db:seed",
+    "db:reconcile": "pnpm --filter @atlas/server exec tsx scripts/reconcile-products.ts",
     "test:browser": "node tests/browser/run.mjs",
     "audit:candles": "node tools/candle-audit.mjs",
     "audit:latency": "node tools/latency-probe.mjs",

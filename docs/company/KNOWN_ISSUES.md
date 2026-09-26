@@ -103,7 +103,11 @@ containment noted.
   payout-incompatible configs; contributes to the 27-profile mix in the Owner Console.
 - **Next action:** DECISION REQUIRED — pick a canonical seed. Do not resolve silently
   (Phase 2 constraint on the product-duplication issue). See `DECISION_LOG.md`.
-- **Status:** OPEN.
+- **Status:** ✅ **RESOLVED (Phase 3, 2026-09-26).** `db:seed` now builds the 10 HTF
+  products from the authoritative model via `reconcileHtfProducts` and publishes them as the
+  only ACTIVE commercial evaluations; funded destinations + practice are INTERNAL; legacy
+  templates are RETIRED. No manual second seed. Fresh-DB acceptance verified. Legacy
+  payout-incompatible configs are no longer produced.
 
 ### HTF-6 — Runtime product rules (DB) diverge from what customers are shown (catalog/site)
 - **System:** Product model.
@@ -117,7 +121,10 @@ containment noted.
   differentiator is absent in the DB).
 - **Next action:** DECISION REQUIRED — owner decides the authoritative value per property.
   **Explicitly not resolved in Phase 2.** See `DECISION_LOG.md`.
-- **Status:** OPEN.
+- **Status:** ✅ **RESOLVED (Phase 3, 2026-09-26).** All four divergences reconciled to the
+  authoritative model (DB now = catalog): D-1 EOD_TRAILING for all 10; D-2 Gold target
+  $15,000; D-3 Gold drawdown $10,000; D-4 SELECT 1250/2500/5000. Verified in DB, Owner
+  Products, and Portal. Guarded by product-integrity tests (contracts + server DB parity).
 
 ---
 
@@ -210,6 +217,11 @@ to env.
   gated (PRACTICE only) before those account types certify a paid evaluation. *(Security
   subagent trust-boundary risks #1–#3 — NEEDS-REVALIDATION for any account with commercial
   weight.)*
+- **HTF-22** — Windows dev scripts use a Unix-style env prefix. `apps/server/package.json`
+  `dev`/`start` are `NODE_USE_ENV_PROXY=1 tsx …`, which fails under Windows PowerShell/cmd.
+  Documented (not fixed) in Phase 3: the clean cross-platform fix (`cross-env`) would add a
+  new dependency + install, out of scope for the product-truth phase. **Next action (next
+  stabilization pass):** add `cross-env` and wrap both scripts. Unix/macOS/CI unaffected.
 
 ---
 
@@ -218,10 +230,10 @@ to env.
 | Severity | Count | IDs |
 |----------|-------|-----|
 | P0 | 3 | HTF-1, HTF-2, HTF-3 |
-| P1 | 3 | HTF-4, HTF-5, HTF-6 |
+| P1 | 1 open (2 resolved) | HTF-4 open; ~~HTF-5~~, ~~HTF-6~~ ✅ resolved Phase 3 |
 | P2 | 4 | HTF-7, HTF-8, HTF-9, HTF-10 |
 | P3 | 5 | HTF-11..HTF-15 |
-| P4 | 6 | HTF-16..HTF-21 |
+| P4 | 7 | HTF-16..HTF-22 |
 
 The three P0s share one root theme: **the boundaries with the outside financial world
 (payment in, KYC, payout out) are the least-connected and, for two of them, fail open rather

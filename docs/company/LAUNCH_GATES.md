@@ -23,7 +23,7 @@ environment by the responsible owner.
 | G1 | **Payments in (real charge)** | **NOT READY** | Whop is sandbox-only; commerce provider fails open to a self-signing mock in prod | HTF-1, HTF-3, DR-3, DR-5 |
 | G2 | **Payouts out (real disbursement)** | **NOT READY** | No real payout rail exists (mock/unconfigured) | HTF-3, DR-5 |
 | G3 | **KYC / identity (compliance)** | **NOT READY** | Identity provider fails open to a fabricating mock in prod | HTF-2, DR-5 |
-| G4 | **Authoritative product model** | **NOT READY** | DB≠catalog on 4 properties; default seed produces the wrong catalog | HTF-5, HTF-6, DR-1, DR-2 |
+| G4 | **Authoritative product model** | **READY FOR TEST** | Phase 3: one authoritative model; DB=catalog on all fields; normal seed produces the 10; legacy retired; fresh+existing DB verified; integrity tests guard divergence | ~~HTF-5, HTF-6, DR-1, DR-2~~ resolved; owner sign-off on values still recommended |
 | G5 | **Legal / agreements / disclosures** | **NOT READY** | Agreements framework exists and is enforced, but content + the drawdown-mismatch (sold vs enforced) is unresolved; cannot be VERIFIED from code | HTF-6, DR-4; owner/legal sign-off |
 | G6 | **Security / trust boundaries** | **PARTIAL** | Strong server-authority design; but fail-open providers + self-serve rule/reset routes + view-only kill switches | HTF-1, HTF-2, HTF-10, HTF-21 |
 | G7 | **Golden Path (simulation)** | **READY FOR TEST** | Fully wired end-to-end in simulation; not yet run as a single live integration test this phase | — (arrows 1–2, 13–14 mocked) |

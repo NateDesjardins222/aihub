@@ -4,6 +4,38 @@
 
 Baseline HEAD: `55df4c7` · Branch: `claude/futures-trading-simulator-v8qefu` · Compiled 2026-09-25.
 
+---
+
+## ⟳ PHASE 3 UPDATE — the divergences below are now RESOLVED (2026-09-26)
+
+Phase 3 (Authoritative Product Model + Seed Reconciliation) established **one**
+authoritative source and reconciled every source to it. The four disagreements this
+document surfaced are closed:
+
+- **One authoritative model:** `packages/contracts/src/product-model.ts` builds every
+  product from the shared catalog (`product-catalog.ts`). The DB seed, the reconciliation,
+  and the economics engine all consume it. There is no second catalog.
+- **D-1 (drawdown type):** all 10 HTF products are now **EOD_TRAILING** in the DB (was
+  STATIC). Resolved to the public-site/catalog value.
+- **D-2 / D-3 (CORE 300K Gold):** target **$15,000**, drawdown **$10,000** (was
+  $18,000 / $12,000). Resolved to the catalog value.
+- **D-4 (SELECT drawdowns):** **$1,250 / $2,500 / $5,000** (5%; was 4%). Resolved to the
+  catalog value.
+- **Contract limits:** represented as **minis** (`maxContracts`) with
+  `microsCountAsFraction=true`, where 10 micros = 1 mini (existing `@atlas/instruments`
+  `contractWeight`). Every catalog account satisfies `micros = 10 × minis`, enforced by an
+  invariant test.
+- **Seed:** the normal `pnpm db:seed` now produces exactly the 10 commercial evaluations
+  (ACTIVE) + 10 funded destinations (INTERNAL) + one practice profile (INTERNAL); the 7
+  legacy Atlas templates are RETIRED, never deleted. No manual second seed step.
+
+Verified against the live DB (fresh + reconciled), the Owner Products console, and the
+Customer Portal. The historical matrix below is retained as the Phase-2 record of what the
+divergence WAS. Runtime authority is now the DB, which equals the catalog for every field.
+See `DECISION_LOG.md` (DR-1, DR-2, DR-4, DR-6 → RESOLVED).
+
+---
+
 ## What this document is
 
 Every place in the system that "knows" what a product is, traced side by side, so

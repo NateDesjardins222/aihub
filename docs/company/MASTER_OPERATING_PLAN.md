@@ -38,16 +38,20 @@ Phases are ordered by dependency, not by appeal. Phase 2 (this reconciliation) i
 Phase A is the recommended next mission.
 
 ### Phase A — Authoritative Product Model + Core 50K Golden Path
+**Status: product-model half ✅ DONE (Phase 3, 2026-09-26); Golden-Path half not yet run.**
 **Goal:** decide the one true product model and prove the Core 50K path end-to-end.
-- Resolve DR-1, DR-2, DR-4, DR-6 (drawdown type + the four divergences + contract-limit
-  representation + canonical seed). Owner decisions, then reconcile DB ↔ catalog ↔ economics
-  ↔ seed to a single source.
-- Make `db:seed` produce the canonical catalog; retire the 7 legacy templates if decided.
-- Run the Core 50K Golden Path (purchase → provision → trade → pass → qualify → fund → trade
-  → winning days → request → approve → PAID → certificate → history) as a single live
-  integration test in simulation.
-- **Exit:** one authoritative product model, all sources agree, Core 50K path green end-to-end
-  in a real browser against the real stack.
+- ✅ Resolved DR-1, DR-2, DR-4, DR-6 (drawdown type + four divergences + contract-limit
+  representation + canonical seed). One authoritative model in `@atlas/contracts`;
+  DB ↔ catalog ↔ economics ↔ seed reconciled to a single source.
+- ✅ `db:seed` produces the canonical catalog; 7 legacy templates RETIRED (not deleted);
+  idempotent reconciliation for existing DBs; fresh + existing DB verified.
+- ⏳ **Still to do (a later, explicitly-authorized phase):** run the Core 50K Golden Path
+  (purchase → provision → trade → pass → qualify → fund → trade → winning days → request →
+  approve → PAID → certificate → history) as a single live integration test. Phase 3 proved
+  the *product values* are consistent across catalog/DB/commerce/provisioning/portal/risk/
+  payouts/economics, but did NOT run the full lifecycle end-to-end.
+- **Exit (product-model): met** — one authoritative model, all sources agree, verified in a
+  real browser (Owner Products + Portal). **Exit (Golden Path): pending.**
 
 ### Phase B — Boundary Safety: fail-close the mocks
 **Goal:** make "no real money" a property of the *code*, not the *config*.

@@ -16,10 +16,47 @@ import {
   users,
 } from './schema.js';
 import { hashPassword } from '../auth/password.js';
+import { INTERNAL_PRACTICE_KEY } from '@atlas/contracts';
 import { publishProfileVersion } from '../platform/profiles.js';
+import { reconcileHtfProducts } from '../platform/product-reconcile.js';
 import { provisionAccount, defaultOrganizationId } from '../platform/provisioning.js';
 
 const M = 1_000_000;
+
+/**
+ * The internal practice product the terminal's default account is provisioned
+ * from (`registerDefaultPractice`). PRACTICE type, permissive so the platform can
+ * be exercised without a rule tripping; status INTERNAL — never a commercial
+ * product. This is the single retained internal fixture; every commercial and
+ * funded product comes from the authoritative model via reconcileHtfProducts.
+ */
+const PRACTICE_CONFIG = {
+  rules: {
+    accountSizeMicros: 150_000 * M,
+    profitTargetMicros: 1_000_000 * M,
+    maxLossMicros: 150_000 * M,
+    drawdownType: 'STATIC' as const,
+    trailingLockAtMicros: null,
+    dailyLossLimitMicros: null,
+    dailyLossPolicy: 'LOCK_DAY' as const,
+    consistencyFormula: 'BEST_DAY_OVER_TOTAL' as const,
+    consistencyThreshold: null,
+    minTradingDays: 0,
+    minWinningDays: 0,
+    maxTradingDays: null,
+    minDailyPnlToCountMicros: 0,
+    minWinningDayPnlMicros: 1,
+    maxContracts: 50,
+    microsCountAsFraction: true,
+    flattenOnBreach: true,
+  },
+  execution: null,
+  instruments: { allowed: null, maxContracts: null, perInstrument: {} },
+  display: { startingBalanceMicros: 150_000 * M },
+  payoutRules: null,
+  fundedDestinationKey: null,
+  whopPlanId: null,
+};
 
 interface TemplateSeed {
   name: string;
@@ -148,14 +185,15 @@ const TEMPLATES: TemplateSeed[] = [
   },
 ];
 
-/** Publish version 1 of a product, unless it already has one. */
-async function publishProductOnce(
+/** Publish version 1 of the internal practice product, unless it already exists. */
+async function publishPracticeOnce(
   db: ReturnType<typeof createDb>['db'],
   organizationId: string,
-  key: string,
-  t: TemplateSeed,
 ): Promise<boolean> {
-  const [profile] = await db.select().from(accountProfiles).where(eq(accountProfiles.key, key));
+  const [profile] = await db
+    .select()
+    .from(accountProfiles)
+    .where(eq(accountProfiles.key, INTERNAL_PRACTICE_KEY));
   if (profile) {
     const [version] = await db
       .select({ id: accountProfileVersions.id })
@@ -164,44 +202,14 @@ async function publishProductOnce(
       .limit(1);
     if (version) return false;
   }
-
   await publishProfileVersion(db, {
     organizationId,
-    key,
-    name: t.name.replace(/^Atlas /, ''),
-    accountType: t.accountType,
-    description: `Seeded product: ${t.name}`,
-    config: {
-      rules: {
-        accountSizeMicros: t.accountSize * M,
-        profitTargetMicros: t.profitTarget * M,
-        maxLossMicros: t.maxLoss * M,
-        drawdownType: t.drawdownType,
-        trailingLockAtMicros: t.trailingLockAt === null ? null : t.trailingLockAt * M,
-        dailyLossLimitMicros: t.dailyLossLimit === null ? null : t.dailyLossLimit * M,
-        dailyLossPolicy: 'LOCK_DAY',
-        consistencyFormula: 'BEST_DAY_OVER_TOTAL',
-        consistencyThreshold: t.consistencyThreshold,
-        minTradingDays: t.minTradingDays,
-        minWinningDays: 0,
-        maxTradingDays: t.maxTradingDays,
-        minDailyPnlToCountMicros: 0,
-        minWinningDayPnlMicros: 1,
-        maxContracts: t.maxContracts,
-        microsCountAsFraction: true,
-        flattenOnBreach: true,
-      },
-      execution: null,
-      instruments: { allowed: null, maxContracts: t.maxContracts, perInstrument: {} },
-      display: { startingBalanceMicros: t.accountSize * M },
-      payoutRules: {
-        minTradingDaysForPayout: 10,
-        maxPayoutPercent: 0.5,
-        profitSplitPercent: 0.9,
-        minPayoutMicros: 100 * M,
-      },
-    },
-    notes: 'Seeded',
+    key: INTERNAL_PRACTICE_KEY,
+    name: 'Practice 150K',
+    accountType: 'PRACTICE',
+    description: 'Internal practice product (the terminal default account).',
+    config: PRACTICE_CONFIG,
+    notes: 'Seeded practice fixture',
   });
   return true;
 }
@@ -254,23 +262,24 @@ async function main(): Promise<void> {
     const organizationId = await defaultOrganizationId(db);
 
     /*
-     * Products.
+     * Products — the authoritative Happy Trader catalog.
      *
-     * The same numbers as the rule templates above, published through the
-     * ordinary product service so a fresh database has exactly what a migrated
-     * one has: a product with a version, which accounts are pinned to. Nothing
-     * here is specific to any firm - a firm decides the values, Atlas enforces
-     * them.
+     * The 10 commercial evaluation products and their 10 funded destinations are
+     * built from the single shared model (@atlas/contracts) and published through
+     * reconcileHtfProducts, so a fresh database has EXACTLY the intended catalog:
+     * 10 ACTIVE evaluations, 10 INTERNAL funded destinations. The only other
+     * profile is the internal practice product the terminal opens on. No legacy
+     * Atlas commercial templates are seeded; reconcile retires any that a migrated
+     * database still carries. There is no secret second product-seed step.
      */
-    let published = 0;
-    for (const t of TEMPLATES) {
-      const key = t.name
-        .replace(/^Atlas /, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-');
-      if (await publishProductOnce(db, organizationId, key, t)) published += 1;
-    }
-    console.log(`products published: ${published} (${TEMPLATES.length} total)`);
+    const practiceCreated = await publishPracticeOnce(db, organizationId);
+    if (practiceCreated) console.log(`practice product published: ${INTERNAL_PRACTICE_KEY}`);
+    const reconciled = await reconcileHtfProducts(db, organizationId);
+    console.log(
+      `HTF products reconciled: ${reconciled.active.length} active, ${reconciled.internal.length} internal, ` +
+        `${reconciled.retired.length} retired (${reconciled.published.length} versions published, ` +
+        `${reconciled.unchanged.length} unchanged)`,
+    );
 
     // Demo and owner accounts carry KNOWN, published credentials. They exist so
     // a developer can clone and sign in; seeding them into a real deployment
@@ -365,15 +374,14 @@ async function main(): Promise<void> {
        * Idempotent by key, so re-seeding never produces a second account.
        */
       let created = 0;
-      for (const name of [
-        'Atlas Practice 150K',
-        'Atlas Evaluation 50K',
-        'Atlas Evaluation 100K',
-        'Atlas Evaluation 150K',
+      // Exercise the real catalog: the terminal practice account plus two live
+      // Happy Trader evaluations (Core 50K / Core 100K).
+      for (const { key, display } of [
+        { key: INTERNAL_PRACTICE_KEY, display: 'Practice 150K' },
+        { key: 'htf-core-50k', display: 'Core 50K' },
+        { key: 'htf-core-100k', display: 'Core 100K' },
       ]) {
-        const display = name.replace('Atlas ', '');
         if (haveAccount.has(display)) continue;
-        const key = display.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         await provisionAccount(db, {
           organizationId,
           userId: demo!.id,
