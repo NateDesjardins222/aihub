@@ -38,20 +38,21 @@ Phases are ordered by dependency, not by appeal. Phase 2 (this reconciliation) i
 Phase A is the recommended next mission.
 
 ### Phase A — Authoritative Product Model + Core 50K Golden Path
-**Status: product-model half ✅ DONE (Phase 3, 2026-09-26); Golden-Path half not yet run.**
+**Status: product-model half ✅ DONE (Phase 3); Golden-Path half ✅ DONE in simulation (Phase 5).**
 **Goal:** decide the one true product model and prove the Core 50K path end-to-end.
 - ✅ Resolved DR-1, DR-2, DR-4, DR-6 (drawdown type + four divergences + contract-limit
   representation + canonical seed). One authoritative model in `@atlas/contracts`;
   DB ↔ catalog ↔ economics ↔ seed reconciled to a single source.
 - ✅ `db:seed` produces the canonical catalog; 7 legacy templates RETIRED (not deleted);
   idempotent reconciliation for existing DBs; fresh + existing DB verified.
-- ⏳ **Still to do (a later, explicitly-authorized phase):** run the Core 50K Golden Path
+- ✅ **DONE (Phase 5, 2026-09-26):** the Core 50K Golden Path
   (purchase → provision → trade → pass → qualify → fund → trade → winning days → request →
-  approve → PAID → certificate → history) as a single live integration test. Phase 3 proved
-  the *product values* are consistent across catalog/DB/commerce/provisioning/portal/risk/
-  payouts/economics, but did NOT run the full lifecycle end-to-end.
-- **Exit (product-model): met** — one authoritative model, all sources agree, verified in a
-  real browser (Owner Products + Portal). **Exit (Golden Path): pending.**
+  approve → dev settlement → PAID → certificate → history) now runs as a durable single
+  integration harness (`golden-path.core50k.test.ts`, 15 tests) using real domain services + the
+  real trading engine, all transitions exactly-once. Proven **in simulation** (settlement/identity
+  dev/test, execution simulation).
+- **Exit (product-model): met.** **Exit (Golden Path, simulation): met** (Phase 5). Real money
+  boundaries (Phases B–E) remain the gate to a *production* Golden Path.
 
 ### Phase B — Boundary Safety: fail-close the mocks
 **Status: fail-close half ✅ DONE (Phase 4, 2026-09-26); self-serve route gating (HTF-21) not yet.**

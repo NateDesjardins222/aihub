@@ -41,6 +41,17 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > revalidated. Still no system is PRODUCTION-VERIFIED. See `DECISION_LOG.md` DR-3 and
 > `KNOWN_ISSUES.md` HTF-1/HTF-2/HTF-4 (resolved).
 
+> **⟳ Phase 5 (2026-09-26) — CORE 50K Golden Path proven end-to-end (simulation).** A durable
+> integration harness (`apps/server/src/platform/golden-path.core50k.test.ts`, 15 tests) +
+> ownership/cap suite (`golden-path.security.test.ts`, 2 tests) drive the whole lifecycle with
+> REAL domain services and the REAL trading engine: identity → $95 purchase → trusted mock payment
+> → one Core 50K eval account → real NQ trade (P&L + commission + balance invariant) → EOD-trailing
+> risk + consistency → evaluation pass → one funded account → funded cert → 5 winning days → payout
+> eligibility → request → approval (exact 90/10 split, single debit, floor unchanged) → dev/test
+> settlement → PAID (meta.mock) → payout cert → reconciliation, all exactly-once. Settlement and
+> identity are DEV/TEST only; execution is SIMULATION. Nothing is PRODUCTION-VERIFIED. See
+> `GOLDEN_PATH.md`.
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |

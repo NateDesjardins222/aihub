@@ -5,6 +5,44 @@ changed.**
 
 Baseline HEAD: `55df4c7` · Compiled 2026-09-25.
 
+## ⟳ PHASE 5 UPDATE — CORE 50K Golden Path PROVEN end-to-end in simulation (2026-09-26)
+
+The full customer lifecycle for **CORE 50K** (`htf-core-50k`) is now proven by a durable
+integration harness (`apps/server/src/platform/golden-path.core50k.test.ts`, 15 tests) that
+drives the REAL domain services (no direct status writes, no fabricated money events) and the
+REAL trading engine, plus an ownership/cap suite (`golden-path.security.test.ts`, 2 tests).
+Evidence from one run (every value below is asserted, not narrated):
+
+- **Customer/identity:** unverified → dev/test mock provider → `IDENTITY_VERIFIED`; provisioning
+  gate satisfied. Production identity stays fail-closed (Phase 4).
+- **Purchase → trusted payment → provisioning:** $95 order → server-signed mock event →
+  exactly **one** EVALUATION account, start $50,000, floor $48,000, pinned version; replay of the
+  same event does not duplicate.
+- **Real trade:** market BUY 1 NQ @ 20000 → SELL @ 20160 through the engine → realized **+$3,200**,
+  commission **$5.38** posted, balance = start + realized − fees ($53,194.62) — invariant holds.
+- **Risk (EOD trailing, rule engine):** intraday unrealized does not ratchet; finalized closes
+  51k→floor 49k, 52k→floor 50k (locked at start), higher HWM stays 50k, losing day never backward;
+  breach enforced intraday on **equity**.
+- **Consistency:** target reached with best-day/total > 50% → GOAL_REACHED (delayed, not failed);
+  ≤ 50% → PASSED.
+- **Evaluation pass → funded:** `certifyEvaluation` (real rules) → PASSED + ELIGIBLE qualification;
+  `approveFunding` → exactly **one** FUNDED_SIM account, lineage to the evaluation; both idempotent.
+- **Certificates:** FUNDED_TRADER + PAYOUT certificates issued once each, publicly verifiable.
+- **Winning days:** counting rules proven (≥$150 counts, <$150 and negative do not); 5 qualifying
+  days recorded via the authoritative day-close writer.
+- **Payout:** eligibility ELIGIBLE (5 winning days, $1,000 withdrawable); request $500 → approve →
+  trader **$450** / firm **$50** / account debit **$500** (exact 90/10); **single** DEBIT ledger row
+  (retry does not double-debit); floor unchanged by payout.
+- **Settlement:** dev/test bookkeeping only — PAID once, SETTLEMENT ledger `meta.mock=true`
+  (never a real external payout); idempotent.
+- **Reconciliation/invariants:** `auditLedgers` clean for the accounts; one order → one eval → one
+  funded → one PAID → one funded cert → one payout cert; 5-active cap enforced (6th refused);
+  cross-customer account reads refused (ACCOUNT_NOT_FOUND).
+
+The arrow table below is retained as the Phase-2 record. Where it says STATIC drawdown (arrow 5),
+that is superseded: the enforced rule is **EOD_TRAILING with lock-at-start** (Phase 3.5). No step is
+PRODUCTION-VERIFIED; settlement/identity remain dev/test only.
+
 ## The path
 
 The single end-to-end journey the business depends on:
