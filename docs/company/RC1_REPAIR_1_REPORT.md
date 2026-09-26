@@ -87,8 +87,10 @@ Screenshots: `rc1-portal-{1920,1440,1366}.png`, `rc1-owner-os.png`, `rc1-trader-
 
 ## Validation
 - Typecheck (5 projects) clean; web build clean.
-- Canonical validation: <recorded on RC1 commit>.
+- Canonical validation (one run, from a clean seed): **202 test files, 2922 tests — ALL PASS (exit 0)**.
+  No regressions, no nondeterminism (a single run was decisive, so the ×2 re-run was not needed).
 
 ## RC1 checkpoint
-- **RC1 — HUMAN ACCEPTANCE CANDIDATE.** Commit: <recorded>. Not human-accepted — the owner must test RC1
-  personally in a normal desktop browser.
+- **RC1 — HUMAN ACCEPTANCE CANDIDATE.** Validated code commit: `3de5403`. Tag:
+  `rc1-human-acceptance-candidate`. Not human-accepted — the owner must test RC1 personally in a normal
+  desktop browser (start with the scroll-first test on `/portal` and `/admin`).
