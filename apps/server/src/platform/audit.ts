@@ -91,7 +91,7 @@ export async function recordAudit(db: Database, entry: AuditEntry): Promise<Audi
     await tx.execute(sql`select pg_advisory_xact_lock(${chainKey(entry.organizationId)})`);
 
     const [previous] = await tx
-      .select({ hash: auditLog.hash })
+      .select({ hash: auditLog.hash, createdAt: auditLog.createdAt })
       .from(auditLog)
       .where(
         entry.organizationId === null
@@ -103,7 +103,20 @@ export async function recordAudit(db: Database, entry: AuditEntry): Promise<Audi
 
     // The timestamp is part of the hash, so it is chosen here rather than by
     // the column default - a hash cannot cover a value it never saw.
-    const createdAt = new Date();
+    //
+    // It is also STRICTLY MONOTONIC per chain: each row's createdAt is at least
+    // one millisecond after its predecessor's. The chain order is defined by
+    // createdAt, and the row id is a random UUID; without this, two appends in
+    // the same millisecond (a concurrent burst, serialized by the advisory lock
+    // above) would tie on createdAt and the id tie-break — random, not insertion
+    // order — could make `verify`'s ascending scan disagree with the true chain
+    // linkage and report a false corruption. A strictly increasing createdAt makes
+    // ordering a total order that matches linkage, so the tie-break never decides.
+    const now = Date.now();
+    const createdAt =
+      previous && previous.createdAt.getTime() >= now
+        ? new Date(previous.createdAt.getTime() + 1)
+        : new Date(now);
     const prevHash = previous?.hash ?? null;
     const payload = {
       organizationId: entry.organizationId,

@@ -97,6 +97,20 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > boundary. Seed→reconcile→version-safety green (6). Golden Path regression green (15, with adequate
 > timeout — see `PRODUCT_MATRIX_ACCEPTANCE.md` §6). Nothing PRODUCTION-VERIFIED.
 
+> **⟳ Phase 9 (2026-09-26) — money / payout / reconciliation hardening.** The dollar-equivalent
+> invariants are documented and mapped to their proving tests in `FINANCIAL_INVARIANTS.md` (24 core
+> invariants + money-conservation/rounding): one payment → one account; payment/refund/payout/
+> settlement idempotency; single full-gross debit; 90/10 split with **round-half-even** and trader+
+> firm==gross (new `financial-invariants.test.ts`, 23 tests); cycle-count-once; 5-PAID completion;
+> caps/50%/family rules from the pinned version; lost-ack → no blind re-pay; representative CORE 50K
+> trace reconciles to **$0.00**. **Both long-standing pre-existing failures are resolved, root-caused,
+> assertions un-weakened:** (a) the audit-chain concurrency false-corruption — chain rows now carry a
+> strictly-monotonic per-chain `createdAt` so the random-UUID tie-break can't desync verify ordering
+> (`audit.ts`); passes 3/3 in isolation on a clean DB; (b) the payout-operations append-only test —
+> it queried a literal event id instead of the interpolated one (a test defect; production idempotency
+> was correct); now DB-independent. Settlement remains dev/test/mock; production payment/KYC/payout
+> stay fail-closed (Phase 4). Nothing PRODUCTION-VERIFIED.
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |

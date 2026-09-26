@@ -32,7 +32,7 @@ environment by the responsible owner.
 | G10 | **Owner OS operability** | **PARTIAL** | Phase 7: routine ops (accounts, customers, payouts+STP, enforcement, support, affiliates, audit, product config, provider health) are console-operable without SQL/AI; the money/lifecycle kill switches now ENFORCE (~~HTF-24~~). Remaining: the safety/config/incident/export mutations are still view-only in the console (operable via API) — HTF-10 | HTF-10, DR-10 |
 | G11 | **Observability / alerting** | **PARTIAL** | Audit chain strong; health is liveness-only; no metrics/tracing; alerts read-only in UI | HTF-10, HTF-19 |
 | G12 | **Infrastructure / deploy / backups** | **NOT READY** | No CI, no backups in-repo, no prod deploy manifests, inactivity cron unbound | HTF-16, HTF-17, HTF-18 |
-| G13 | **Data integrity / idempotency** | **PARTIAL** | Very strong across payouts/commerce/certs; one affiliate-ledger gap needs revalidation | HTF-9 |
+| G13 | **Data integrity / idempotency** | **PARTIAL** | Very strong across payouts/commerce/certs. Phase 9: financial invariants documented + mapped to tests (`FINANCIAL_INVARIANTS.md`); money-conservation/rounding proven (`financial-invariants.test.ts`); both pre-existing failures resolved root-cause (audit-chain concurrency via monotonic `createdAt`; payout-ops test-id mismatch) with un-weakened assertions; CORE 50K trace reconciles to $0.00. Remaining: one affiliate-ledger gap needs revalidation | HTF-9 |
 | G14 | **Affiliate program** | **READY FOR TEST** | Built end-to-end; payout provider unconfigured; ledger gap | HTF-9, DR-5 |
 
 ---

@@ -4,6 +4,14 @@
 
 Baseline HEAD: `55df4c7` · Compiled 2026-09-25 from a full-stack boot + code trace.
 
+> **⟳ Phase 9 (2026-09-26) — financial integrity hardening.** The dollar-equivalent invariants of
+> this flow are now enumerated and each mapped to a proving test in `FINANCIAL_INVARIANTS.md`:
+> purchase→one account, payment/refund/payout/settlement idempotency, single full-gross account
+> debit, 90/10 **round-half-even** split (trader+firm==gross), cycle-count-once, 5-PAID completion,
+> caps/50%/family rules from the pinned version, lost-ack → no blind re-pay, and a representative
+> CORE 50K trace that reconciles to **$0.00**. Settlement remains dev/test/mock (Phase 4 fail-closed
+> in production).
+
 ## The single most important fact
 
 **No real money moves anywhere in this build.** Every "amount" is one of:

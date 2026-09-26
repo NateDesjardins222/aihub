@@ -284,6 +284,23 @@ The three P0s share one root theme: **the boundaries with the outside financial 
 (payment in, KYC, payout out) are the least-connected and, for two of them, fail open rather
 than closed.** Everything internal to the simulation is unusually disciplined.
 
+## Resolved test-integrity / reliability items (Phase 9, 2026-09-26)
+
+Both long-standing pre-existing test failures carried forward since Phase 4 are **resolved**,
+root-caused, with un-weakened assertions (see `FINANCIAL_INVARIANTS.md`):
+
+- ~~**Audit-chain concurrency**~~ ✅ — `admin.test.ts` "audit chain intact under concurrent actions"
+  reported false corruption because the hash chain ordered by `(createdAt, id)` with a **random UUID**
+  `id`; same-millisecond concurrent appends tied on `createdAt` and the tie-break desynced verify
+  ordering from the true linkage. Fixed in `audit.ts`: each chain row's `createdAt` is strictly
+  greater than its predecessor's, so ordering is a total order matching linkage. Passes 3/3 in
+  isolation on a clean DB. (Residual: a single combined run of ~13 DB suites sharing one default-org
+  chain is still sensitive to cross-suite accumulation — a test-isolation limitation, not a defect.)
+- ~~**Payout-operations append-only**~~ ✅ — a **test** defect: it queried the literal
+  `providerEventId='dup_evt_1'` while rows were ingested as `dup_evt_1_${rid}`; it only "passed" on a
+  polluted shared DB via a stale row. Production `ingestProviderEvent` idempotency was correct; the
+  assertion now queries the real id and is DB-independent.
+
 ## PROVENANCE
 
 P0/P1 money-and-trust items (HTF-1, HTF-2, HTF-4, HTF-5) verified personally against source.

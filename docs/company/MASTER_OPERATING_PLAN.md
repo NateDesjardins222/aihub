@@ -4,6 +4,14 @@
 
 Baseline HEAD: `55df4c7` · Compiled 2026-09-25 (Phase 2 reconciliation).
 
+> **⟳ Phase 9 (2026-09-26) — financial integrity hardening (simulation).** The money/payout/
+> reconciliation layer under Phases A/E was hardened and documented: `FINANCIAL_INVARIANTS.md`
+> enumerates 24 invariants + money-conservation/rounding, each mapped to a deterministic test; a new
+> `financial-invariants.test.ts` pins the 90/10 round-half-even split; both long-standing pre-existing
+> test failures (audit-chain concurrency, payout-ops append-only) are resolved root-cause with
+> un-weakened assertions. This does NOT wire real money — payment/KYC/payout rails (Phases C/D/E)
+> remain the gate to a *production* money path.
+
 ## Purpose
 
 This is the single plan of record for getting Happy Trader Funding from *comprehensively

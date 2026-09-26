@@ -434,7 +434,7 @@ describe('provider fail-closed + config', () => {
     const o = await op(rid);
     await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: `dup_evt_1_${rid}`, providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
     await ingestProviderEvent(db, { organizationId, provider: 'MOCK', providerEventId: `dup_evt_1_${rid}`, providerPayoutId: o.providerPayoutId!, normalizedType: 'PAYOUT_PROCESSING' });
-    const rows = await db.select().from(payoutProviderEvents).where(eq(payoutProviderEvents.providerEventId, 'dup_evt_1'));
+    const rows = await db.select().from(payoutProviderEvents).where(eq(payoutProviderEvents.providerEventId, `dup_evt_1_${rid}`));
     expect(rows).toHaveLength(1);
   });
 
