@@ -192,6 +192,7 @@ const NAV: ReadonlyArray<{ route: AdminRoute; label: string }> = [
 
 export function AdminApp(): JSX.Element {
   const user = useSession((s) => s.user);
+  const signOut = useSession((s) => s.signOut);
   const [route, setRoute] = useState<AdminRoute>(() => parseAdminRoute(window.location.pathname));
 
   // The browser's own back and forward buttons work, because an operator
@@ -229,8 +230,27 @@ export function AdminApp(): JSX.Element {
     return (
       <div className="adm-denied">
         <h1>Atlas operations</h1>
-        <p>This area is for operators. Your account does not have access.</p>
-        <a href="/">Back to the terminal</a>
+        <p>
+          This area is for operators. You are signed in as{' '}
+          <strong>{user?.email ?? 'a trader account'}</strong>, which does not have operator access.
+        </p>
+        <p className="adm-denied-hint">
+          To reach the Owner console, sign out and sign back in with an operator (owner/admin) account.
+        </p>
+        <div className="adm-denied-actions">
+          <button
+            type="button"
+            className="adm-denied-primary"
+            onClick={() => {
+              void signOut().finally(() => {
+                window.location.href = '/portal';
+              });
+            }}
+          >
+            Sign out &amp; switch account
+          </button>
+          <a href="/">Back to the terminal</a>
+        </div>
       </div>
     );
   }

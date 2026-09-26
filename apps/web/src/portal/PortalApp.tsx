@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { api } from '../api/client';
 import { useSession } from '../state/session';
 import { usePortalTheme } from './theme';
@@ -76,6 +77,7 @@ const NAV: Array<{ name: Route['name']; label: string }> = [
 const SEL_KEY = 'ht.portal.account';
 
 export function PortalApp(): JSX.Element {
+  useDocumentScroll();
   const signOut = useSession((s) => s.signOut);
   const user = useSession((s) => s.user);
   const { theme, toggle } = usePortalTheme();

@@ -7,9 +7,11 @@
  * product is untouched. CTAs navigate into the existing gated flows.
  */
 import type { JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { HomePage } from './HomePage';
 import './marketing.css';
 
 export function MarketingApp(): JSX.Element {
+  useDocumentScroll();
   return <HomePage />;
 }

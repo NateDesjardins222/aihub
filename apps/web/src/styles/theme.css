@@ -162,25 +162,35 @@ body {
 }
 
 /*
- * Owner Console — native document scrolling, not the terminal's viewport lock.
+ * Document-scrolling surfaces — the normal web scrolling model, NOT the
+ * terminal's viewport lock.
  *
  * The rules above (`html, body, #root { height: 100% }` + `body { overflow:
- * hidden }`) exist for the TRADING TERMINAL, which is a fixed, non-scrolling
- * surface with a chart in the middle. The Owner Console is the opposite: a tall
- * reading surface of tables and panels. Trapping it inside a viewport-locked body
- * forced it to scroll through an inner container, which is fragile with a real
- * mouse wheel. When the console is mounted it adds `owner-console` to <html>,
- * which releases the lock so the PAGE ITSELF scrolls — the browser's default,
- * most reliable scrolling model, where the wheel works anywhere on the page.
+ * hidden }`) exist ONLY for the TRADING TERMINAL, a fixed, non-scrolling surface
+ * with a chart in the middle. Every OTHER top-level surface — the customer
+ * portal, the public marketing site, checkout, onboarding, the affiliate pages,
+ * certificate verification and the Owner Console — is a tall reading surface
+ * (`min-height: 100vh`, content flows down the page). Trapping those inside a
+ * viewport-locked body clips everything below the fold and the mouse wheel does
+ * nothing (RC0 human-acceptance blocker: the customer dashboard could not
+ * scroll). Each such surface adds `doc-scroll` to <html> on mount (the Owner
+ * Console historically used `owner-console`; both are honored) which releases the
+ * lock so the PAGE ITSELF scrolls — the browser's default, most reliable model,
+ * where the wheel works anywhere on the page. The class is removed on unmount so
+ * the terminal keeps its fixed layout.
  */
 html.owner-console,
+html.doc-scroll,
 html.owner-console body,
-html.owner-console #root {
+html.doc-scroll body,
+html.owner-console #root,
+html.doc-scroll #root {
   height: auto;
   min-height: 100%;
 }
 
-html.owner-console body {
+html.owner-console body,
+html.doc-scroll body {
   overflow-x: hidden;
   overflow-y: auto;
 }

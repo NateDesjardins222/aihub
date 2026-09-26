@@ -12,6 +12,7 @@
  * environment: "sandbox", which is what the embed renders against.
  */
 import { Suspense, lazy, useEffect, useState, type JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { api } from '../api/client';
 import './Checkout.css';
 
@@ -42,6 +43,7 @@ function productKeyFromUrl(): string | null {
 }
 
 export function CheckoutApp(): JSX.Element {
+  useDocumentScroll();
   const [phase, setPhase] = useState<Phase>({ name: 'LOADING' });
 
   useEffect(() => {

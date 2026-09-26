@@ -11,6 +11,7 @@
  * and referred customers are never shown beyond a masked label (§35/§84).
  */
 import { useCallback, useEffect, useState, type JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { formatMicros, formatCompactMicros } from '../state/format';
 import {
   affiliatePortal, type MeResponse, type Dashboard, type AgreementDoc,
@@ -27,6 +28,7 @@ const TIER_LABEL: Record<string, string> = { AFFILIATE: 'Affiliate', PARTNER: 'P
 function when(s: string | null): string { return s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' }) : '—'; }
 
 export function AffiliatePortal(): JSX.Element {
+  useDocumentScroll();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);

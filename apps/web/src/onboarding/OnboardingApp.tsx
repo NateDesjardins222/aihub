@@ -10,6 +10,7 @@
  * server-side event.
  */
 import { useCallback, useEffect, useState, type JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { api } from '../api/client';
 import './Onboarding.css';
 
@@ -41,6 +42,7 @@ const money = (micros: number | null): string =>
   micros == null ? '—' : `$${(micros / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 export function OnboardingApp(): JSX.Element {
+  useDocumentScroll();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [err, setErr] = useState<string | null>(null);
 

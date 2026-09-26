@@ -35,6 +35,36 @@ pnpm dev
 
 Health check before starting: open `http://localhost:4000/ready` → should be `200` with `db: ok`.
 
+### Exact routes & logins (RC1 — read this before testing)
+
+There is ONE web app (`http://localhost:5173` in dev) with distinct surfaces by URL, and ONE shared
+sign-in door (sign in with the account whose surface you want; the login form no longer pre-fills anyone).
+
+| Surface | URL | Sign in as | Notes |
+|---|---|---|---|
+| Public marketing site | `/` or `/home` (signed out) | — | The front door for visitors |
+| **Customer login** | `/portal` (signed out shows the sign-in form) | trader | |
+| **Customer Dashboard** | `/portal` (signed in) | `demo@atlasfutures.local` / `atlas-demo-2026` | Its overview panel is titled **"Command center"** — this is the CUSTOMER command center |
+| Atlas trading terminal | `/` (signed in) or the portal's **Trade →** button | trader | Viewport-locked (chart app), intentionally does not page-scroll |
+| **Owner login** | `/admin` (signed out shows the sign-in form) | owner | |
+| **Owner OS / Owner Command Center** | `/admin` (Overview) and `/admin/command` (**Command Center**) | `owner@atlasfutures.local` / `atlas-owner-2026` | Branded **"ATLAS operations"**. This is the OWNER command center — a different route from the customer one |
+
+**Atlas operations = the Owner OS.** The screen that said *"Atlas operations — this area is for operators.
+Your account does not have access"* is the SAME operator console (`/admin`), shown when you are signed in as
+a **trader**. It is not a separate app and not the wrong link — you were signed in as the demo trader. Sign
+in as the owner (above) to enter it. That denial screen now names who you are signed in as and offers a
+**"Sign out & switch account"** button.
+
+**Two "Command center" headings, deliberately different pages:** the CUSTOMER one is the dashboard overview
+at `/portal`; the OWNER one is the operator Command Center at `/admin/command`. Same words, different routes
+and audiences — do not confuse them.
+
+### First test on every page: can you scroll?
+
+Before anything else, on BOTH the Customer Dashboard (`/portal`) and the Owner OS (`/admin`): the page has
+more content than fits the screen — **scroll down with your mouse wheel** and confirm the lower content
+(more account cards / lower panels) comes into view. If the page will not scroll, STOP and mark FAIL.
+
 > **Production owner bootstrap (documented, do NOT run here):** production has no seeded owner. The
 > first operator is created out of band with `ALLOW_OWNER_BOOTSTRAP=true BOOTSTRAP_OWNER_EMAIL=…
 > BOOTSTRAP_OWNER_PASSWORD=… pnpm --filter @atlas/server owner:bootstrap`. It refuses if an owner

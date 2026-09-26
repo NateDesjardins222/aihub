@@ -306,6 +306,14 @@ async function main(): Promise<void> {
         })
         .returning();
       console.log('demo user created: demo@atlasfutures.local / atlas-demo-2026');
+    } else {
+      // Deterministic fixture: the demo account is ALWAYS a plain TRADER, so
+      // "trader is denied Owner OS" is reliably demonstrable in acceptance. A
+      // prior session may have elevated this row; the seed corrects it back.
+      await db
+        .update(users)
+        .set({ role: 'TRADER', isAdmin: false, status: 'ACTIVE' })
+        .where(eq(users.id, demo!.id));
     }
 
     // An initial operator, so the Owner Control Center has someone to sign in
@@ -323,6 +331,12 @@ async function main(): Promise<void> {
         isAdmin: true,
       });
       console.log('owner user created: owner@atlasfutures.local / atlas-owner-2026');
+    } else {
+      // Deterministic fixture: the owner account is ALWAYS an active SUPER_ADMIN.
+      await db
+        .update(users)
+        .set({ role: 'SUPER_ADMIN', isAdmin: true, status: 'ACTIVE' })
+        .where(eq(users.id, existingOwner.id));
     }
 
     // A starting vocabulary for the journal. Every one of these is an ordinary

@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import './Portal.css';
 
 interface PublicCert {
@@ -36,6 +37,7 @@ function money(micros: number | null): string {
 }
 
 export function VerifyPage(): JSX.Element {
+  useDocumentScroll();
   const [cert, setCert] = useState<PublicCert | null>(null);
   const [err, setErr] = useState(false);
   const token = window.location.pathname.replace(/^\/verify\/?/, '').split('/')[0] ?? '';

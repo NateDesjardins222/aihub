@@ -8,6 +8,7 @@
  * shown comes from the server's program config — nothing is hardcoded here.
  */
 import { useEffect, useMemo, useState, type JSX } from 'react';
+import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { formatCompactMicros } from '../state/format';
 import { affiliatePublic, affiliateSessionRef, type ProgramInfo, type AgreementDoc } from './api';
 import './Affiliates.css';
@@ -27,6 +28,7 @@ function nav(path: string): void {
 }
 
 export function AffiliatesPublic(): JSX.Element {
+  useDocumentScroll();
   const [path, setPath] = useState(() => window.location.pathname);
   useEffect(() => {
     const onPop = (): void => setPath(window.location.pathname);

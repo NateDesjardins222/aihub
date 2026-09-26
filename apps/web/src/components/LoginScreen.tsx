@@ -10,7 +10,10 @@ export function LoginScreen(): JSX.Element {
   const mfaChallengeToken = useSession((s) => s.mfaChallengeToken);
   const busy = useSession((s) => s.busy);
   const error = useSession((s) => s.error);
-  const [email, setEmail] = useState('demo@atlasfutures.local');
+  // No pre-filled address: pre-filling the demo trader silently logged the owner
+  // in as a TRADER, who is then denied Owner OS (RC0 repair 1). Each person types
+  // the account they mean to use.
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
 

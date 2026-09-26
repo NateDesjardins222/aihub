@@ -542,6 +542,26 @@
   color: var(--accent);
 }
 
+.adm-denied p { max-width: 34rem; }
+.adm-denied-hint { color: var(--text-tertiary, var(--text-secondary)); font-size: var(--fs-sm); }
+.adm-denied-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+.adm-denied-primary {
+  padding: 9px 18px;
+  border-radius: var(--pt-radius-sm, 8px);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #05070d;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.adm-denied-primary:hover { opacity: 0.9; }
+
 /* --- Owner V1: tabs, two-up grid, and the System health board ------------- */
 
 .adm-grid-2 {
