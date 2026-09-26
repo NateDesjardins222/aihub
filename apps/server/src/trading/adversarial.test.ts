@@ -319,6 +319,20 @@ describe('rules under adverse play', () => {
     await market.quote('NQ', 19_975);
     await settle(80);
 
+    // Wait deterministically for the loss to LOCK the account before asserting
+    // refusals. `settle()` is a bare fixed timeout, so under heavy parallel load
+    // the async fill → P&L → risk chain can outlast a fixed delay; poll the
+    // persisted status instead of trusting the clock. If it never locks, the
+    // assertions below still fail (no false green).
+    for (let i = 0; i < 100; i += 1) {
+      const [a] = await fixture.db
+        .select({ status: accounts.status })
+        .from(accounts)
+        .where(eq(accounts.id, fixture.accountId));
+      if (a?.status === 'LOCKED') break;
+      await settle(20);
+    }
+
     for (const type of ['MARKET', 'LIMIT', 'STOP_MARKET'] as const) {
       await expect(
         submit({
