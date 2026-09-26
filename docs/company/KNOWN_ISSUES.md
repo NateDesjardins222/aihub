@@ -383,6 +383,41 @@ account truth, and executed a real backup→drop→restore drill. Details: `INFR
 - **Next action:** wire a provider-backed object store (S3 or equivalent) + artifact backup before
   multi-instance / real merch fulfillment.
 
+## Pre-launch readiness review (Phase 12, 2026-09-26)
+
+Phase 12 was an audit/readiness-review + documentation pass (no feature work; no code changes). It
+produced the authoritative gate matrix (`LAUNCH_GATES.md`) and go/no-go (`PRE_LAUNCH_REVIEW.md`) plus
+`REAL_MONEY_BOUNDARY`, `PRODUCTION_ENVIRONMENT_PLAN`, `EXTERNAL_DEPENDENCIES`,
+`LEGAL_COUNSEL_REVIEW_PACKAGE`, `HUMAN_ACCEPTANCE_CHECKLIST`, `PRE_LAUNCH_FEATURE_FREEZE`. Regression
+re-run: **2,874/2,875** (typecheck ✓, build ✓, production-like boot fail-closed ✓). Confirmed: exactly 10
+commercial products (single-sourced); financial integrity clean; security clean internally; DR proven;
+PII is references-only (no raw SSN/ID/card); marketing copy carries proper disclaimers (no misleading
+claims); copy-trading cannot bypass risk.
+
+New/confirmed pre-launch gaps:
+- **HTF-30 (P2, software) — no 404 page / no React error boundary.** `apps/web` routes by manual pathname
+  match with no catch-all and no top-level error boundary, so an unknown path falls through and a render
+  error blanks the page. **Beta-acceptable** (known invited users); **fix before public launch** (PART 125).
+- **HTF-31 (P3) — marketing rule-bullet drift risk.** Numeric product rules are single-sourced from
+  `product-catalog.ts`, but the family `rules: string[]` prose bullets are hand-authored and not derived
+  from the numeric config; a numeric change won't auto-update the prose. Post-beta polish.
+- **HTF-6a (P2, software+external) — owner MFA + production owner bootstrap absent.** Auth is
+  single-factor; `mfaEnrolled` is a flag with no enrollment/challenge; the only owner is the dev seed
+  (which refuses production) and there is **no production owner bootstrap** path. **Required before any
+  real-infra/real-money mode** (G6; NO-GO for those modes until built).
+- **HTF-18 (carried, beta-relevant) — funded inactivity sweep not wired.** `runInactivitySweep` is
+  implemented + tested but has no scheduler and no on-demand route, so inactivity closure will not happen.
+  If the inactivity policy is disclosed to customers, wire an external cron (or an owner-triggered route)
+  or soften the disclosure before relying on it (PART 92).
+
+Carried: HTF-27 (cert object storage local-FS only; beta-tolerable, public-launch blocker), HTF-29
+(shared-org audit-verify test artifact; non-deterministic across the full monolithic run — passes in
+isolation; production invariant proven by the isolated-org stress test; systemic per-suite DB isolation
+deferred per PART 45).
+
+**Zero unresolved P0.** All open items are P2/P3/beta-relevant or external/human gates — see
+`LAUNCH_GATES.md` for owner + next action per gate.
+
 ## PROVENANCE
 
 P0/P1 money-and-trust items (HTF-1, HTF-2, HTF-4, HTF-5) verified personally against source.
