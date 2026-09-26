@@ -753,6 +753,11 @@
 
 .adm-subrow td { background: rgba(255,255,255,0.02); font-size: 12px; }
 
+/* Inline mutation form (e.g. kill-switch engage/release step-up) shown in a
+   sub-row under the control it acts on. */
+.adm-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0; }
+.adm-inline-form .adm-input { flex: 1 1 180px; min-width: 140px; }
+
 .adm-lock {
   border: 1px solid rgba(255,196,0,0.35);
   background: rgba(255,196,0,0.08);

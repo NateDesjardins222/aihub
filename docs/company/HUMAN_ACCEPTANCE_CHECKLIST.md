@@ -59,6 +59,24 @@ in as the owner (above) to enter it. That denial screen now names who you are si
 at `/portal`; the OWNER one is the operator Command Center at `/admin/command`. Same words, different routes
 and audiences — do not confuse them.
 
+### Product Recovery Phase 1 changes (read before re-testing)
+
+- **You no longer need to type `/admin`.** Signed in as the owner, an **Owner Console →** entry now appears
+  in the portal profile menu (top-right avatar) **and** in the Atlas terminal's left rail ("Owner"). Click
+  either to enter the Owner OS. A **trader never sees** this entry (verify: sign in as the demo trader — it
+  is absent in both places).
+- **The light/dark theme toggle is removed.** The portal is intentionally dark for now; a single fixed
+  visual system comes with the later redesign. There is nothing to test here — just confirm no theme toggle
+  is present.
+- **Owner OS emergency controls are now operable from the console** (System → *Ops System*): each **kill
+  switch** has an Engage/Release button (asks for a reason + your password step-up), and each **feature
+  flag** has an Enable/Disable toggle. Engaging a kill switch raises a CRITICAL alert and is audited.
+- **Trust test for a risk control (answers "does my max-loss actually work?"):** in the Portal open an
+  account → Controls, set a **personal daily loss limit**, save, **refresh** (it persists), then in **Atlas**
+  trade that account down to the limit — the next exposure-increasing order must be **rejected** with a
+  reason naming the personal control (a reducing/closing order is still allowed). This is the definitive
+  owner check; automated tests already prove the same on the engine's order path.
+
 ### First test on every page: can you scroll?
 
 Before anything else, on BOTH the Customer Dashboard (`/portal`) and the Owner OS (`/admin`): the page has

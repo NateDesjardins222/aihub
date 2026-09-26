@@ -6,9 +6,10 @@
  * Every number comes from the server (/api/v1/admin/ops/*). Nothing is computed
  * or hardcoded here. Statuses render exactly what the server reports (truthful).
  */
-import { useState, type JSX } from 'react';
+import { useState, type JSX, type ReactNode } from 'react';
 import { api } from '../../api/client';
 import { Panel, Stat, Money, StatusPill, useLoad } from '../shared';
+import { mintStepUp, stepUpPost } from '../lib/stepup';
 
 const OPS = '/api/v1/admin/ops';
 const ops = {
@@ -24,6 +25,14 @@ const ops = {
   providers: () => api.get<{ providers: Provider[] }>(`${OPS}/providers`),
   // Staff/access routes are mounted at /api/v1/admin (not /ops).
   staff: () => api.get<{ staff: Staff[]; invitations: Invite[] }>(`/api/v1/admin/staff`),
+  // Mutations. Feature flags need only the permission; kill switches additionally
+  // require a KILL_SWITCH step-up token (collected inline, sent as x-stepup-token).
+  setFlag: (key: string, environment: string, enabled: boolean) =>
+    api.post<Flag>(`${OPS}/config/flags`, { key, environment, enabled }),
+  engageKill: (key: string, reason: string, token: string) =>
+    stepUpPost<{ key: string; engaged: boolean }>(`${OPS}/config/kill-switches/${encodeURIComponent(key)}/engage`, { reason }, token),
+  releaseKill: (key: string, reason: string, token: string) =>
+    stepUpPost<{ key: string; engaged: boolean }>(`${OPS}/config/kill-switches/${encodeURIComponent(key)}/release`, { reason }, token),
 };
 
 interface CommandCenter {
@@ -115,7 +124,7 @@ export function CommandCenterPage(): JSX.Element {
   );
 }
 
-export function OwnerSystemPage(): JSX.Element {
+export function OwnerSystemPage({ mayMutate = false }: { mayMutate?: boolean }): JSX.Element {
   const doctor = useLoad(ops.doctor, []);
   const integrity = useLoad(ops.integrity, []);
   const recon = useLoad(ops.reconciliation, []);
@@ -197,21 +206,148 @@ export function OwnerSystemPage(): JSX.Element {
 
       <Panel title="Feature flags">
         {flags.data ? (
-          <table className="adm-table"><thead><tr><th>Key</th><th>Env</th><th>Enabled</th></tr></thead>
-            <tbody>{flags.data.flags.map((f) => (<tr key={`${f.key}:${f.environment}`}><td>{f.key}</td><td>{f.environment}</td><td>{f.enabled ? 'on' : 'off'}</td></tr>))}</tbody>
-          </table>
+          <FeatureFlagsTable flags={flags.data.flags} mayMutate={mayMutate} onChanged={flags.reload} />
         ) : <p className="adm-muted">Loading…</p>}
       </Panel>
 
       <Panel title="Kill switches">
         {kills.data ? (
-          <table className="adm-table" data-testid="kill-switches"><thead><tr><th>Switch</th><th>State</th><th>Reason</th></tr></thead>
-            <tbody>{kills.data.switches.map((k) => (<tr key={k.key}><td>{k.key}</td><td><StatusPill status={k.engaged ? 'CRITICAL' : 'HEALTHY'} /> {k.engaged ? 'ENGAGED' : 'released'}</td><td className="adm-muted">{k.reason ?? ''}</td></tr>))}</tbody>
-          </table>
+          <KillSwitchesTable switches={kills.data.switches} mayMutate={mayMutate} onChanged={kills.reload} />
         ) : <p className="adm-muted">Loading…</p>}
       </Panel>
     </div>
   );
+}
+
+/**
+ * Feature flags with an inline toggle (M10-F). The write needs only the
+ * `system.feature_flags.manage` permission — no step-up — so a single button
+ * flips the flag and reloads. Read-only when the operator may not mutate.
+ */
+function FeatureFlagsTable({ flags, mayMutate, onChanged }: { flags: Flag[]; mayMutate: boolean; onChanged: () => void }): JSX.Element {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  async function toggle(f: Flag): Promise<void> {
+    setBusy(`${f.key}:${f.environment}`); setErr(null);
+    try {
+      await ops.setFlag(f.key, f.environment, !f.enabled);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not update the flag.');
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <>
+      {err ? <p className="adm-error">{err}</p> : null}
+      <table className="adm-table" data-testid="feature-flags"><thead><tr><th>Key</th><th>Env</th><th>Enabled</th>{mayMutate ? <th /> : null}</tr></thead>
+        <tbody>{flags.map((f) => {
+          const id = `${f.key}:${f.environment}`;
+          return (
+            <tr key={id}>
+              <td>{f.key}</td>
+              <td>{f.environment}</td>
+              <td>{f.enabled ? 'on' : 'off'}</td>
+              {mayMutate ? (
+                <td>
+                  <button className="adm-btn" data-testid={`flag-toggle-${f.key}`} disabled={busy === id} onClick={() => void toggle(f)}>
+                    {busy === id ? '…' : f.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                </td>
+              ) : null}
+            </tr>
+          );
+        })}</tbody>
+      </table>
+    </>
+  );
+}
+
+/**
+ * Kill switches with inline engage/release (M10-F). Engaging or releasing is an
+ * emergency control: it requires `system.kill_switches.manage` AND a KILL_SWITCH
+ * step-up. The operator's password is collected inline, exchanged for a
+ * short-lived token, and sent with the mutation — the same reauth the server
+ * enforces. A reason is required to engage (and recorded in the hash-chained
+ * audit log). Read-only when the operator may not mutate.
+ */
+function KillSwitchesTable({ switches, mayMutate, onChanged }: { switches: KillSwitch[]; mayMutate: boolean; onChanged: () => void }): JSX.Element {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function begin(key: string): void { setOpenKey(key); setReason(''); setPassword(''); setErr(null); }
+  function cancel(): void { setOpenKey(null); setReason(''); setPassword(''); setErr(null); }
+
+  async function submit(k: KillSwitch): Promise<void> {
+    const engaging = !k.engaged;
+    if (engaging && reason.trim().length < 3) { setErr('A reason (3+ characters) is required to engage.'); return; }
+    if (password.length === 0) { setErr('Your password is required for this emergency action.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const token = await mintStepUp(password, 'KILL_SWITCH');
+      if (engaging) await ops.engageKill(k.key, reason.trim(), token);
+      else await ops.releaseKill(k.key, reason.trim() || 'released', token);
+      cancel();
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'The action failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <table className="adm-table" data-testid="kill-switches"><thead><tr><th>Switch</th><th>State</th><th>Reason</th>{mayMutate ? <th /> : null}</tr></thead>
+      <tbody>{switches.map((k) => (
+        <FragmentRow key={k.key}>
+          <tr>
+            <td>{k.key}</td>
+            <td><StatusPill status={k.engaged ? 'CRITICAL' : 'HEALTHY'} /> {k.engaged ? 'ENGAGED' : 'released'}</td>
+            <td className="adm-muted">{k.reason ?? ''}</td>
+            {mayMutate ? (
+              <td>
+                <button
+                  className={k.engaged ? 'adm-btn' : 'adm-btn adm-btn-danger'}
+                  data-testid={`kill-${k.engaged ? 'release' : 'engage'}-${k.key}`}
+                  onClick={() => (openKey === k.key ? cancel() : begin(k.key))}
+                >
+                  {k.engaged ? 'Release' : 'Engage'}
+                </button>
+              </td>
+            ) : null}
+          </tr>
+          {mayMutate && openKey === k.key ? (
+            <tr>
+              <td colSpan={4}>
+                <div className="adm-inline-form" data-testid={`kill-form-${k.key}`}>
+                  {!k.engaged ? (
+                    <input className="adm-input" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
+                  ) : (
+                    <input className="adm-input" placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+                  )}
+                  <input className="adm-input" type="password" placeholder="Your password (step-up)" value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <button className="adm-btn adm-btn-primary" disabled={busy} onClick={() => void submit(k)}>
+                    {busy ? 'Working…' : k.engaged ? 'Confirm release' : 'Confirm engage'}
+                  </button>
+                  <button className="adm-btn" disabled={busy} onClick={cancel}>Cancel</button>
+                  {err ? <span className="adm-error">{err}</span> : null}
+                </div>
+              </td>
+            </tr>
+          ) : null}
+        </FragmentRow>
+      ))}</tbody>
+    </table>
+  );
+}
+
+/** A keyed fragment so a switch row can be followed by its inline form row. */
+function FragmentRow({ children }: { children: ReactNode }): JSX.Element {
+  return <>{children}</>;
 }
 
 export function StaffPage(): JSX.Element {
@@ -236,7 +372,7 @@ export function StaffPage(): JSX.Element {
                 <tbody>{data.invitations.map((i) => (<tr key={i.id}><td>{i.email}</td><td>{i.role}</td><td><StatusPill status={i.status} /></td></tr>))}</tbody>
               </table>
             )}
-            <p className="adm-muted">Inviting staff requires an owner step-up (reauthentication). Use the API or the invite dialog; the invitee sets their own password.</p>
+            <p className="adm-muted">Staff management (invite, role change, suspend/reactivate, revoke sessions) is served by the API under <code>/api/v1/admin/staff</code> and requires an owner step-up (reauthentication); the invitee sets their own password. A console UI for these actions is not yet built — this page is currently read-only.</p>
           </Panel>
         </>
       ) : null}

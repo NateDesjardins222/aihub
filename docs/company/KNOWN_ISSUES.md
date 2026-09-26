@@ -437,3 +437,55 @@ external pentest, provider/legal/infra) — see `LAUNCH_GATES.md` for owner + ne
 P0/P1 money-and-trust items (HTF-1, HTF-2, HTF-4, HTF-5) verified personally against source.
 Remaining items from six parallel read-only subagent audits, cross-checked against schema and
 the live DB. Items marked NEEDS-REVALIDATION were not reproduced by a live test this phase.
+
+---
+
+# PRODUCT RECOVERY PHASE 1 — functional-truth findings (from RC1 `dac5fd1`)
+
+Audit + minimal repair of inaccessible/broken connectivity. Full detail in
+`PRODUCT_FUNCTIONAL_TRUTH.md` / `PRODUCT_RECOVERY_REPORT.md`. **No P0.** Severities below use
+STEP-16's model (inaccessible owner functionality = P1; secondary = P2; cosmetic = P3).
+
+## P1 — repaired this phase
+- **PR1-1 — Owner Console undiscoverable.** Owner OS was reachable only by typing `/admin`; no
+  in-product link. **FIXED:** role-gated `Owner Console →` in the portal profile menu and the
+  Atlas terminal rail (shown iff `role !== 'TRADER'`; trader never sees it). RBAC unchanged.
+  Browser-proven.
+- **PR1-2 — Kill switches unreachable from the console.** Emergency engage/release backend
+  existed (`owner-config.ts`, `KILL_SWITCH` step-up, audited) but the console showed a read-only
+  table. **FIXED:** inline Engage/Release with reason + step-up. Browser-proven (engage→release
+  round-trip on `DISABLE_NEW_PURCHASES`).
+- **PR1-3 — Feature-flag toggle unreachable.** POST existed; flags shown read-only. **FIXED:**
+  inline Enable/Disable toggle (permission-gated). Browser-proven.
+
+## P1 — documented, deferred to Phase 2
+- **PR1-4 — Staff management has no console UI.** `owner-staff.ts` (invite / role change /
+  suspend / reactivate / revoke sessions, STAFF step-up) is complete backend, but StaffPage is
+  read-only. Needs a dialog (a build, not a wiring fix). The misleading "invite dialog" note was
+  corrected to be honest this phase.
+
+## P2 — Owner OS BACKEND-ONLY (route + domain + audit exist; no console control)
+Inactivity-sweep, full-system-test, alert ack/resolve, incident create/transition/assign,
+impersonation, owner-account adjust/pause. Surface with the same step-up pattern in Phase 2.
+
+## P2 — Portal
+- **PR1-5 — Framed-certificate order shows success in production while the order stays pending.**
+  `CertificatesPage` calls a dev-only `dev/simulate-payment` route (gated off in prod); the
+  `.catch()` swallows the 404 and still toasts success. No real merch checkout is wired (server
+  TODO). **Contained:** behind `MERCH_ENABLED` (off) and prod-only. Fix belongs to the commerce
+  phase, not Product Recovery.
+
+## P3
+- Portal billing-history is an informational gap (accounts list only, no receipts route).
+- Portal notifications section is a static placeholder.
+- Per-achievement visibility is BACKEND-ONLY (UI exposes only the bulk toggle).
+- Owner OS customer-directory/360 tags and finance exports/saved-views/notes/tasks are
+  BACKEND-ONLY (P3).
+- Atlas `useFreshness` REST polling duplicates the WS `md.status` heartbeat (minor; dedupe later).
+
+## Removed / corrected
+- Customer light/dark **theme toggle removed** (owner request) + dead `theme.ts` deleted.
+- Misleading StaffPage "invite dialog" note corrected.
+
+**Validation:** typecheck (5 projects) + web build clean; 11/11 repair browser checks; canonical
+202 files / 2922 tests PASS. No P0/P1 money/security/risk defect found anywhere.

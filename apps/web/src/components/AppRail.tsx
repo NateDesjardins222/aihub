@@ -17,6 +17,7 @@ import type { JSX } from 'react';
 import { useWorkspace } from '../state/workspace';
 import { useSession } from '../state/session';
 import { useTraining } from '../state/training';
+import { canAccessOwnerConsole } from '../lib/roles';
 import { Icon, type IconName } from '../ui/Icon';
 import './AppRail.css';
 
@@ -42,6 +43,7 @@ export function AppRail(): JSX.Element {
   const openSurface = useWorkspace((s) => s.openSurface);
   const openSettings = useWorkspace((s) => s.openSettings);
   const signOut = useSession((s) => s.signOut);
+  const ownerConsole = useSession((s) => canAccessOwnerConsole(s.user));
   const journalAllowed = useTraining((s) => s.visibility.journal);
 
   // "Trade" is where you are when no drawer is over the charts.
@@ -77,6 +79,18 @@ export function AppRail(): JSX.Element {
       </div>
 
       <div className="apprail-foot">
+        {ownerConsole && (
+          <a
+            className="apprail-btn"
+            href="/admin"
+            title="Owner Console — operator console"
+            aria-label="Owner Console"
+            data-testid="apprail-owner-console"
+          >
+            <Icon name="gear" size={15} />
+            <span className="apprail-label">Owner</span>
+          </a>
+        )}
         <button
           className="apprail-btn"
           onClick={() => openSettings('SYMBOL')}

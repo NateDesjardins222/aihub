@@ -11,7 +11,7 @@ import type { JSX } from 'react';
 import { useDocumentScroll } from '../lib/useDocumentScroll';
 import { api } from '../api/client';
 import { useSession } from '../state/session';
-import { usePortalTheme } from './theme';
+import { canAccessOwnerConsole } from '../lib/roles';
 import { type AccountsView, type AccountSummary, familyOf, money, msg, tone } from './lib';
 import { DashboardPage } from './pages/DashboardPage';
 import { AccountsPage } from './pages/AccountsPage';
@@ -80,7 +80,7 @@ export function PortalApp(): JSX.Element {
   useDocumentScroll();
   const signOut = useSession((s) => s.signOut);
   const user = useSession((s) => s.user);
-  const { theme, toggle } = usePortalTheme();
+  const ownerConsole = canAccessOwnerConsole(user);
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname, window.location.hash));
   const [accounts, setAccounts] = useState<AccountsView | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -149,10 +149,7 @@ export function PortalApp(): JSX.Element {
         <button className="pt-trade" data-testid="pt-trade" disabled={!tradable} onClick={openAtlas} title={tradable ? 'Open Atlas with this account' : 'This account is not trade-enabled'}>
           Trade →
         </button>
-        <button className="pt-iconbtn" data-testid="pt-theme-toggle" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Toggle theme">
-          {theme === 'dark' ? '☾' : '☀'}
-        </button>
-        <ProfileMenu email={user?.email ?? ''} onGo={go} onSignOut={() => void signOut()} />
+        <ProfileMenu email={user?.email ?? ''} ownerConsole={ownerConsole} onGo={go} onSignOut={() => void signOut()} />
       </header>
 
       <main className="pt-main">
@@ -228,7 +225,7 @@ function AccountSwitcher({
   );
 }
 
-function ProfileMenu({ email, onGo, onSignOut }: { email: string; onGo: (r: Route) => void; onSignOut: () => void }): JSX.Element {
+function ProfileMenu({ email, ownerConsole, onGo, onSignOut }: { email: string; ownerConsole: boolean; onGo: (r: Route) => void; onSignOut: () => void }): JSX.Element {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -252,6 +249,14 @@ function ProfileMenu({ email, onGo, onSignOut }: { email: string; onGo: (r: Rout
               <span className="mi-name">{label}</span>
             </button>
           ))}
+          {ownerConsole && (
+            <>
+              <div className="pt-menu-sep" />
+              <a className="pt-menu-item" href="/admin" data-testid="pt-owner-console" onClick={() => setOpen(false)}>
+                <span className="mi-name">Owner Console →</span>
+              </a>
+            </>
+          )}
           <div className="pt-menu-sep" />
           <button className="pt-menu-item" onClick={onSignOut}><span className="mi-name">Log out</span></button>
         </div>

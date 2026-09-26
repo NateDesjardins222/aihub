@@ -288,7 +288,7 @@ export function AdminApp(): JSX.Element {
 
       <main className="adm-main">
         {route.name === 'COMMAND' ? <CommandCenterPage /> : null}
-        {route.name === 'OWNER_SYSTEM' ? <OwnerSystemPage /> : null}
+        {route.name === 'OWNER_SYSTEM' ? <OwnerSystemPage mayMutate={mayMutate} /> : null}
         {route.name === 'STAFF' ? <StaffPage /> : null}
         {route.name === 'OVERVIEW' ? <AdminOverviewPage go={go} /> : null}
         {route.name === 'USERS' ? <AdminUsersPage go={go} /> : null}
