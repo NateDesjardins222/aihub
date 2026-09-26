@@ -301,6 +301,39 @@ root-caused, with un-weakened assertions (see `FINANCIAL_INVARIANTS.md`):
   polluted shared DB via a stale row. Production `ingestProviderEvent` idempotency was correct; the
   assertion now queries the real id and is DB-independent.
 
+## Security posture verified / added (Phase 10, 2026-09-26)
+
+Phase 10 attacked the platform adversarially and documented the enforced trust boundaries in
+`SECURITY_MODEL.md` + `THREAT_MODEL.md`. Findings:
+
+- **Secret scan — clean.** No `.env`/real-secret file is tracked (only `.env.example` placeholders,
+  `.env` gitignored); **no non-empty `RITHMIC_PASSWORD` was ever committed on any branch/history**;
+  the production web bundle (`apps/web/dist`) contains **0** server-secret patterns
+  (`JWT_SECRET`/`DATABASE_URL`/`RITHMIC_PASSWORD`/`postgres://`/`whsec_`/`sk_live`/`sk_test`); Rithmic
+  config is redacted to `credentials=present` and never returned to the browser. Reported PRESENT/NOT
+  PRESENT only; no secret value printed.
+- **Dev/mock routes gated — verified.** `commerce.ts:/mock`, `onboarding.ts:/dev/simulate-payment`,
+  `portal.ts:/physical-orders/:id/dev/simulate-payment` are all wrapped in
+  `if (env().NODE_ENV !== 'production')` (not registered in prod); `/design-lab` + the icon gallery are
+  inert in a production web build (`runtime.ts` `designLabEnabled()`); dev seed hard-fails in prod.
+- **Adversarial suites green in isolation** on a clean DB — RBAC red-team, tenant isolation/IDOR,
+  enforcement/owner/affiliate authz, WS security, replay controls, self-serve boundary, kill-switch
+  enforcement, provider-safety prod, financial invariants, audit-chain stress.
+- **Audit integrity at scale — proven.** `audit-chain-stress.test.ts` writes 3000 + a 100-wide
+  concurrent burst on a fresh isolated org; whole-chain verify is clean. The Phase 9 "combined ~13-suite
+  run" sensitivity is confirmed a **shared-default-org test-isolation artifact**, not an audit defect.
+
+### HTF-25 — esbuild dev-server advisory via drizzle-kit (DEV-ONLY)
+- **System:** Build/migration tooling (dev only). **Severity: P4 (DEV-ONLY).**
+- **Description:** `pnpm audit` flags one **moderate** advisory (GHSA-67mh-4wv8-2f99): esbuild ≤0.24.2
+  lets any website POST to the esbuild dev server and read the response. It is reachable **only**
+  transitively via `drizzle-kit > @esbuild-kit/esm-loader > @esbuild-kit/core-utils > esbuild`.
+- **Containment:** drizzle-kit is a migration/build-time tool; esbuild's dev server is **never** run in
+  the production runtime and its code is **not** in the shipped bundle. Production dependencies have **no
+  known vulnerabilities**.
+- **Next action:** not force-overridden (would destabilize drizzle-kit's deprecated `@esbuild-kit`
+  chain); revisit when drizzle-kit updates its loader, and add a CI dependency-audit gate in Phase 11.
+
 ## PROVENANCE
 
 P0/P1 money-and-trust items (HTF-1, HTF-2, HTF-4, HTF-5) verified personally against source.

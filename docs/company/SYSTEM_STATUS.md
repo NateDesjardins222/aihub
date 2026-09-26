@@ -29,6 +29,18 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > **owner-manual-acceptance-pending** (Playwright is not sufficient evidence). See
 > `PRODUCT_SOURCE_OF_TRUTH.md`, `ACCOUNT_STATE_MACHINE.md`, `DECISION_LOG.md` DR-11.
 
+> **⟳ Phase 10 (2026-09-26) — security + adversarial hardening (simulation).** The enforced trust
+> boundaries are now documented and re-proven: `SECURITY_MODEL.md` (server authority, RBAC/tenant
+> isolation, self-serve gating, kill-switch enforcement, provider fail-close, financial integrity,
+> audit tamper-evidence, secret handling, dev-route gating, HTTP hardening) + `THREAT_MODEL.md`
+> (adversary-by-adversary). A secret scan is clean (no `.env`/Rithmic password committed on any branch;
+> **0** server secrets in the production web bundle — reported PRESENT/NOT PRESENT only); dev/mock
+> routes are verified prod-gated; audit-chain integrity is proven at scale (3000-event + 100-wide
+> concurrent burst on a fresh org). `pnpm audit` is prod-clean (one moderate DEV-ONLY esbuild advisory
+> via drizzle-kit, HTF-25). Adversarial suites pass in isolation on a clean DB. **Still no system is
+> PRODUCTION-VERIFIED**; security stays at PARTIAL (never VERIFIED from code, per the mandate) and no
+> third-party pentest is claimed. Real payment/KYC/payout/live-feed boundaries remain unwired.
+
 > **⟳ Phase 4 (2026-09-26) — production provider safety boundaries.** The fail-OPEN P0/P1s are
 > closed. A central provider-safety boundary (`apps/server/src/config/provider-safety.ts`) makes
 > the rule **production never silently selects a mock**: commerce, identity and notification

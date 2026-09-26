@@ -12,6 +12,14 @@ Baseline HEAD: `55df4c7` · Compiled 2026-09-25 (Phase 2 reconciliation).
 > un-weakened assertions. This does NOT wire real money — payment/KYC/payout rails (Phases C/D/E)
 > remain the gate to a *production* money path.
 
+> **⟳ Phase 10 (2026-09-26) — security + adversarial hardening (simulation).** The enforced trust
+> boundaries under Phase B/G were documented and re-proven adversarially: `SECURITY_MODEL.md` +
+> `THREAT_MODEL.md`. Secret scan clean (no `.env`/Rithmic password committed; 0 server secrets in the
+> web bundle); dev/mock routes verified prod-gated; audit integrity proven at scale
+> (`audit-chain-stress`); adversarial suites green in isolation; `pnpm audit` prod-clean (one moderate
+> DEV-ONLY esbuild advisory via drizzle-kit, HTF-25). Security stays PARTIAL, never VERIFIED from code;
+> real payment/KYC/payout boundaries (Phases C/D/E) still gate a *production* launch.
+
 ## Purpose
 
 This is the single plan of record for getting Happy Trader Funding from *comprehensively

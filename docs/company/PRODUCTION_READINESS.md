@@ -44,6 +44,17 @@ READY / PARTIAL / NOT READY / N/A.
 > Stripe Identity and a real payout rail remain UNCONFIGURED and unverified. "UNCONFIGURED" now
 > reliably means "unavailable / fail closed," never "silent mock success."
 
+> **⟳ Phase 10 (2026-09-26) — security + adversarial hardening.** The enforced trust boundaries are
+> documented (`SECURITY_MODEL.md`, `THREAT_MODEL.md`) and re-proven adversarially. Secret handling is
+> confirmed clean: no `.env`/Rithmic password committed on any branch, and **0** server secrets in the
+> production web bundle (`apps/web/dist`) — the "Secrets management" row is confirmed READY at the LOCAL
+> level (env + zod boot guard + no leakage to the client), while a dedicated secret manager for
+> PRODUCTION remains PARTIAL. Dev/mock routes are verified prod-gated; audit integrity proven at scale.
+> `pnpm audit`: production deps clean; one moderate **DEV-ONLY** esbuild advisory via drizzle-kit
+> (HTF-25), never in the runtime/bundle. This is a **security** change, not a readiness change: **no
+> money/KYC/payout/deploy/backup/CI PRODUCTION cell is upgraded.** Security stays PARTIAL — never
+> VERIFIED from code, no third-party pentest.
+
 ---
 
 ## Environment summary
