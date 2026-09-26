@@ -73,7 +73,11 @@ composition point (`bootstrap.ts`). **Default provider = `yahoo-delayed`** — r
 exchange-derived but ~600s delayed, OHLCV-only, no depth. Rithmic + Databento are real
 adapters, **gated off** by flags defaulting false; selecting one without credentials
 fails-fast (never silent-fallbacks to the dev feed). Replay + scripted providers are
-recorded/test doubles. Stale-feed detection blocks order entry.
+recorded/test doubles. Stale-feed detection blocks order entry. **Phase 6:** the Rithmic Test
+market-data + execution path (protocol/framing/codec/registry, plants, connection state machine,
+freshness, historical bars, order lifecycle, P&L, reconciliation, metrics) is proven
+**deterministically** without live credentials; live acceptance is OWNER MANUAL — see
+`RITHMIC_ATLAS_ACCEPTANCE.md`.
 
 ### F — Execution
 **BUILT (simulation); external path DISCONNECTED.** The wired hot path is

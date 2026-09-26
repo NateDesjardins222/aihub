@@ -14,7 +14,7 @@ READY / PARTIAL / NOT READY / N/A.
 | Seeds | READY — default `db:seed` = canonical 10 (Phase 3); reconcile is idempotent + version-safe (Phase 3.5) | PARTIAL — manual | NOT READY | NOT READY — canonical seed chosen (DR-2 resolved); prod seed policy still to define |
 | Auth / RBAC | READY | READY | READY | READY — prod boot guard rejects dev secret / `CORS=*` |
 | Trading terminal (sim) | READY | READY | READY | PARTIAL — default feed delayed/dev |
-| Market data | READY (yahoo-delayed) | READY (dev feed) | PARTIAL — real feed unconfigured | NOT READY — real feed + creds needed |
+| Market data | READY (yahoo-delayed) | READY (dev feed) | PARTIAL — real feed unconfigured | NOT READY — real feed + creds needed. Phase 6: Rithmic Test path proven deterministically (no fallback masking; honest `NOT_VERIFIED`); live Rithmic Test acceptance = OWNER MANUAL (`RITHMIC_ATLAS_ACCEPTANCE.md`) |
 | Execution | READY (simulation) | READY | READY | PARTIAL — sim only; external path disconnected |
 | Payments in | PARTIAL (mock/sandbox) | PARTIAL (sandbox) | NOT READY | **NOT READY** — Whop prod unwired. Phase 4: now FAILS CLOSED (no mock in prod; ~~HTF-1~~) but still no real charge path |
 | KYC | PARTIAL (mock) | PARTIAL (mock) | NOT READY | **NOT READY** — Stripe unwired. Phase 4: now FAILS CLOSED (no mock KYC in prod; ~~HTF-2~~) but still no real identity decision |

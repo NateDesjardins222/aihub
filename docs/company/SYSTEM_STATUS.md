@@ -52,6 +52,23 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 > identity are DEV/TEST only; execution is SIMULATION. Nothing is PRODUCTION-VERIFIED. See
 > `GOLDEN_PATH.md`.
 
+> **⟳ Phase 6 (2026-09-26) — Atlas + Rithmic Test market-data & execution-path acceptance.** The
+> Rithmic integration is proven **deterministically without live credentials**: framing, codec,
+> template registry (ids derived not hardcoded), plants, the full connection state machine
+> (`DISCONNECTED→CONNECTING→CONNECTED→AUTHENTICATING→AUTHENTICATED`, `DEGRADED/RECONNECTING/FAILED/
+> STOPPED`), heartbeat, bounded reconnect, discovery (`SYSTEM_ABSENT` when the configured system is
+> missing — never a silent swap), market-data normalization + ms-consistent timestamps + freshness
+> (open socket ≠ fresh), historical bars + no-dup/no-backward merge, order lifecycle (ack ≠ fill,
+> lost-ack → `SUBMISSION_UNKNOWN`), P&L, and reconciliation — **107 Rithmic + 127 market-data/
+> provider-health/execution/P&L + 100 instrument + 23 owner-health tests green**, plus the Phase 5
+> Golden Path still green (17). Provider selection is **fail-fast with NO fallback masking**
+> (`MARKET_DATA_PROVIDER=rithmic` unconfigured → throws; never fabricates `CONNECTED`/quotes/bars/
+> fills). Owner health is truthful: `UNCONFIGURED` / `NOT_VERIFIED` / `verified:false` until a live
+> Rithmic Test session is run. **No Rithmic credentials exist in this environment**, so the live
+> half — official R\|Protocol conformance, live auth, live tick, live order round-trip vs Rithmic
+> Test — is classified **OWNER MANUAL REQUIRED** (checklist in `RITHMIC_ATLAS_ACCEPTANCE.md` §9).
+> Rithmic stays **TEST-only**; nothing wired to production Rithmic; nothing PRODUCTION-VERIFIED.
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |
@@ -63,8 +80,8 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 | KYC / identity verify | PARTIAL / DEV-ONLY | onboarding step | `identity-verification.ts` | identity records | **mock active; Stripe seam only, fails open** | yes (mock) | partial | **HTF-2 (P0)** | fail-closed in prod; wire Stripe |
 | Customer portal | BUILT (2 dev shims) | `/portal` | portal routes | many | mock payout-method add; dev cert payment | yes | partial | — | — |
 | Atlas terminal | BUILT | `/` trading UI | trading routes + engine | accounts, orders, positions | market-data dev-feed | extensive | yes (prior milestones) | HTF-21 self-serve rule edit | gate rule/reset/env to PRACTICE |
-| Market data | BUILT; default DEV | terminal feed pill | `marketdata/*` | marketDataMeta, bars | **`yahoo-delayed` ~600s**; Rithmic/Databento gated off | yes | partial | — | choose real feed for launch |
-| Execution | BUILT (sim); external DISCONNECTED | order flow | `execution/*`, engine | orders/fills | **simulation only**; registry off submit path | extensive | partial | — | — |
+| Market data | BUILT; default DEV; Rithmic proven-in-sim | terminal feed pill | `marketdata/*`, `rithmic/*` | marketDataMeta, bars | **`yahoo-delayed` ~600s**; Rithmic Test wire path deterministically proven, live=OWNER-MANUAL; Databento gated off | yes (107 Rithmic + 127 md/health/exec/pnl) | partial | HTF-23 (cosmetic) | live Rithmic Test acceptance (owner, creds) |
+| Execution | BUILT (sim); external DISCONNECTED; Rithmic adapter proven-in-sim | order flow | `execution/*`, `rithmic/plants/*`, engine | orders/fills | **simulation only**; Rithmic execution adapter fail-closed (refuses unless enabled), live route=OWNER-MANUAL | extensive | partial | HTF-23 (cosmetic) | live Rithmic Test order round-trip (owner, creds) |
 | Risk engine | BUILT | (server) + portal controls | `trading/risk.ts`, `@atlas/core` | accounts, dailyAccountStats, traderRiskControls | none | extensive | partial | drawdown TYPE per HTF-6 | resolve product rule |
 | Commerce / checkout | PARTIAL | `/checkout` | `commerce.ts`, `commerce-provider.ts` | commercial_orders, commerce_events, entitlements | **Whop sandbox; mock fails open** | yes | partial | **HTF-1 (P0)**, HTF-3 | fail-closed; wire Whop prod |
 | Account lifecycle | BUILT (2 flags) | portal/console | `account-service.ts`, `account-rules.ts` | accounts, account_lifecycles, account_qualifications | — | yes | partial | HTF-7, HTF-8, HTF-11, HTF-12, HTF-13 | resolve slot/limit + type staleness |

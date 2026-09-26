@@ -236,6 +236,12 @@ to env.
   (`cross-env`), which the Phase 3.5 brief scoped out ("fix only if tiny and dependency-free").
   **Next action (next stabilization pass):** add `cross-env` and wrap both scripts.
   Unix/macOS/CI unaffected.
+- **HTF-23** — Cosmetic Rithmic cleanups (non-blocking, found in Phase 6 acceptance):
+  (a) `rithmic/plants/market-data-service.ts` has a nonsensical `nb.time * 1000 >= 0` guard
+  (`nb.time` is already ms); (b) `execution/providers/rithmic-execution.ts`
+  `discoverAccounts(c.credentials ? '' : '')` is a dead ternary (both branches `''`). No
+  functional impact; recorded in `RITHMIC_ATLAS_ACCEPTANCE.md` §11. Verify the historical-bar
+  start/finish index units against the official Rithmic proto during the live acceptance pass.
 
 ---
 
@@ -247,7 +253,7 @@ to env.
 | P1 | 1 open (2 resolved) | HTF-4 open; ~~HTF-5~~, ~~HTF-6~~ ✅ resolved Phase 3 |
 | P2 | 4 | HTF-7, HTF-8, HTF-9, HTF-10 |
 | P3 | 5 | HTF-11..HTF-15 |
-| P4 | 7 | HTF-16..HTF-22 |
+| P4 | 8 | HTF-16..HTF-23 |
 
 The three P0s share one root theme: **the boundaries with the outside financial world
 (payment in, KYC, payout out) are the least-connected and, for two of them, fail open rather

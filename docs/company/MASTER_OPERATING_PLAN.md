@@ -94,9 +94,22 @@ Phase A is the recommended next mission.
 - **Exit:** an operator can detect, decide, and act during an incident from the console.
 
 ### Phase H — Real market data (if live trading is intended)
+**Status: deterministic half ✅ DONE (Phase 6, 2026-09-26); live Rithmic Test acceptance = OWNER MANUAL.**
 - Decide feed (Rithmic/Databento) and wire it behind the existing fail-fast selector; prove
   freshness gating with a real feed.
-- **Exit:** the terminal runs on the intended feed with honest staleness handling.
+- ✅ **Phase 6:** the Rithmic Test market-data + execution path is proven **deterministically** —
+  framing/codec/registry (ids derived), connection state machine, heartbeat, bounded reconnect,
+  discovery (`SYSTEM_ABSENT` not silent swap), market-data normalization + ms timestamps +
+  freshness (open socket ≠ fresh), historical bars + no-dup/no-backward merge, order lifecycle
+  (ack ≠ fill, lost-ack → `SUBMISSION_UNKNOWN`), P&L, reconciliation, bounded metrics. Provider
+  selection is fail-fast with **NO fallback masking**; owner health reads truthfully
+  (`UNCONFIGURED`/`NOT_VERIFIED`/`verified:false`). Evidence + the acceptance checklist:
+  `RITHMIC_ATLAS_ACCEPTANCE.md`.
+- ⏳ **OWNER MANUAL REQUIRED:** official R\|Protocol conformance, live auth, a live tick, and a
+  live order round-trip against **Rithmic Test** — cannot run in this container (no credentials,
+  by policy). Run locally with credentials; CI must not require personal credentials.
+- **Exit:** the terminal runs on the intended feed with honest staleness handling. **Deterministic
+  exit: met.** **Live exit: pending the owner-run Rithmic Test acceptance.**
 
 ### Phase I — Legal + disclosures alignment
 - With the product model settled (Phase A), align agreements/disclosures to the enforced rules;
