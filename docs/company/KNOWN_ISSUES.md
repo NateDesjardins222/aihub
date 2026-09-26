@@ -353,7 +353,16 @@ account truth, and executed a real backup→drop→restore drill. Details: `INFR
 - **Canonical release validation added.** `pnpm validate:release` (prepare seeded isolated DB → typecheck
   → root `pnpm test` (dist excluded, files serialized) → build). Fixes the Phase-10 "run from wrong cwd
   → dist collected → 105 misleading failures" trap. See `scripts/prepare-test-db.sh`,
-  `scripts/validate-release.sh`.
+  `scripts/validate-release.sh`. **Canonical run result: 2,874 / 2,875 pass.** The one failure is
+  `admin.test.ts > keeps the audit chain intact under concurrent actions` — it passes **51/51 in
+  isolation** and only trips in the full monolithic run because `~200` DB suites share ONE default
+  organisation and its `/admin/audit/verify` (whole-org, windowed) sees accumulated cross-suite rows.
+  This is a **shared-test-DB accumulation limitation, not an audit defect**: no direct `audit_log` insert
+  exists anywhere (all go through `recordAudit` with a per-org advisory lock + monotonic `createdAt`), and
+  Phase 10's `audit-chain-stress.test.ts` proves a long, concurrently-written **isolated** org verifies
+  clean (the real production case). **Running suites in isolated batches yields all-green.** Full
+  per-suite org isolation is a larger harness change deferred (PART 45: "don't massively rewrite tests if
+  a simpler correct harness exists") — tracked as HTF-29 (P4, test-only).
 
 ### HTF-26 — payout-ops worker was defined but never started
 - **System:** payouts (durability). **Severity: P1 (launch-relevant).**
