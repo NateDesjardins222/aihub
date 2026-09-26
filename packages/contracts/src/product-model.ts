@@ -64,18 +64,19 @@ export const MAX_PAID_PAYOUT_CYCLES = 5;
 
 /**
  * EOD-trailing lock threshold, in micro-dollars above the starting balance, where
- * the trailing floor stops following the high-water mark. null = the floor trails
- * to the high-water mark for the life of the account (the literal reading of the
- * locked spec, which states an EOD trailing drawdown amount and no lock point).
+ * the trailing floor stops following the high-water mark.
  *
- * NOTE (DECISION REQUIRED, see docs/company/DECISION_LOG.md DR-11): whether a
- * launch product should instead lock the trailing floor once the account is up by
- * the drawdown amount (a common industry convention) is NOT established by the
- * locked spec. null is used as the faithful, fail-safe reading (the floor keeps
- * trailing, which is stricter for the firm's risk); it is not invented policy and
- * is flagged for an explicit owner decision.
+ * Phase 3.5 LOCKED this to **0**: the trailing floor rises with each finalized-EOD
+ * high-water mark but is capped at the account's STARTING BALANCE — so once the HWM
+ * has increased by the full drawdown amount, the floor locks at the starting balance
+ * and never moves above it (the standard prop-firm EOD-trailing-to-breakeven rule).
+ * The engine implements exactly this: `floorFor` = `min(hwm − maxLoss, startingBalance
+ * + trailingLockAtMicros)`, and `rollTradingDay` ratchets it on the finalized closing
+ * balance, `max(previousFloor, …)` so it never moves backward
+ * (packages/core rules). Example CORE 50K ($2,000 DD): floor 48k → 49k → 50k, then
+ * locked at 50k. See docs/company/DECISION_LOG.md DR-11 (resolved).
  */
-export const EVAL_TRAILING_LOCK_AT_MICROS: number | null = null;
+export const EVAL_TRAILING_LOCK_AT_MICROS = 0;
 
 // ---------------------------------------------------------------------------
 // Identifiers

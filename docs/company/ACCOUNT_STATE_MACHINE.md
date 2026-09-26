@@ -55,6 +55,30 @@ advisory lock + `FOR UPDATE` + an `allowedFrom` guard + audit + event + outbox.
 
 Persisted by `persistRuleState`; audited via `engine-audit.ts` → `recordRuleOutcome`.
 
+### EOD-trailing drawdown semantics (V1, locked Phase 3.5)
+
+The single risk mechanic for every Happy Trader family is **EOD_TRAILING with lock at the
+starting balance** (`trailingLockAtMicros = 0`; see `DECISION_LOG.md` DR-11). The engine
+(`packages/core/src/rules/rules.ts`) enforces two distinct things that must not be conflated:
+
+- **Floor movement (ratchet) — end of day only.** The drawdown floor advances **only** at the
+  finalized EOD roll (`rollTradingDay`), computed off the finalized closing balance:
+  `floor = max(currentFloor, floorFor(config, max(hwm, closingBalance)))`. `floorFor` caps the
+  anchor at `startingBalance + trailingLockAtMicros`, so with `= 0` the floor rises toward — and
+  **locks at — the starting balance**, then never moves again and never moves backward.
+  Intraday unrealized gains never ratchet the floor (`advanceDrawdown` leaves the floor
+  unchanged for `EOD_TRAILING`). *Worked example (CORE 50K, $2,000 DD): floor 48,000 → close
+  51,000 ⇒ 49,000 → close 52,000 ⇒ 50,000 (locked) → HWM 55,000 ⇒ stays 50,000.*
+- **Breach enforcement — intraday, on equity.** The authoritative breach metric is **equity**
+  (`evaluateRules`: `remainingDrawdown = equityMicros − drawdownFloorMicros`; breach when
+  `≤ 0`). The *current* floor is enforced continuously against equity intraday, but because the
+  floor itself only ratchets at EOD, an unrealized intraday spike cannot tighten the floor
+  against the trader.
+
+**Post-payout:** a payout never resets or loosens `drawdownFloorMicros`; the withdrawable
+amount is realized profit above the protected balance only (`payout-core.ts`
+`grossWithdrawableMicros`), so a payout cannot push the account below its floor.
+
 ### Administrative transitions (`account-service.ts`)
 - `activateAccount`: PENDING/DISABLED → ACTIVE (`account.activated`).
 - `lockAccount`: ACTIVE/GOAL_REACHED/PENDING → LOCKED, adminHold LOCKED (`account.locked`).

@@ -103,6 +103,33 @@ describe('regression guards', () => {
   });
 });
 
+describe('Phase 3.5 locked risk semantics (config carries the rule)', () => {
+  it('every product uses EOD-trailing with lock-at-starting-balance (trailingLockAtMicros = 0)', () => {
+    for (const p of [...evals, ...htfFundedProfiles()]) {
+      expect(p.config.rules.drawdownType, p.key).toBe('EOD_TRAILING');
+      expect(p.config.rules.trailingLockAtMicros, p.key).toBe(0);
+    }
+  });
+
+  it('CORE and SELECT carry NO initial funded buffer ($0)', () => {
+    for (const p of evals.filter((x) => x.family === 'CORE' || x.family === 'SELECT')) {
+      expect(p.config.payoutRules.fundedBufferMicros, p.key).toBe(0);
+    }
+  });
+
+  it('DAILY funded buffers are 1000 / 2000 / 4000', () => {
+    expect(byId.get('htf-daily-25k')!.config.payoutRules.fundedBufferMicros).toBe(1_000 * MICROS);
+    expect(byId.get('htf-daily-50k')!.config.payoutRules.fundedBufferMicros).toBe(2_000 * MICROS);
+    expect(byId.get('htf-daily-100k')!.config.payoutRules.fundedBufferMicros).toBe(4_000 * MICROS);
+  });
+
+  it('SELECT keeps its 40% funded/payout consistency (delay, not a buffer)', () => {
+    for (const p of evals.filter((x) => x.family === 'SELECT')) {
+      expect(p.config.payoutRules.payoutConsistencyThreshold, p.key).toBe(0.4);
+    }
+  });
+});
+
 describe('contract-limit invariant (minis/micros)', () => {
   it('every account has micros === minis × 10', () => {
     for (const a of ALL_ACCOUNTS) expect(a.micros).toBe(a.minis * MICROS_PER_MINI);

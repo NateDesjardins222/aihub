@@ -304,3 +304,71 @@ describe('request bounds + account holds', () => {
     expect(thin.reasonCodes).toContain('INSUFFICIENT_WITHDRAWABLE_PROFIT');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 3.5 — locked funded risk/payout semantics
+// ---------------------------------------------------------------------------
+
+describe('Phase 3.5 — DAILY successive-payout balance progression', () => {
+  it('a higher qualifying balance than the previous approved payout is eligible', () => {
+    const e = evaluatePayoutEligibility(
+      {
+        policy: DAILY_50K,
+        balanceMicros: $(54_500),
+        startingBalanceMicros: $(50_000),
+        days: winningDays(5),
+        cycleStartDate: '2026-03-30',
+        dailyModeUnlocked: true,
+        accountStatus: 'ACTIVE',
+        adminHold: null,
+        hold: null,
+        hasPendingRequest: false,
+        previousDailyQualifyingBalanceMicros: $(54_000),
+      },
+      2,
+    );
+    expect(e.state).toBe('ELIGIBLE');
+  });
+
+  it('the SAME qualifying balance as the previous approved payout is insufficient', () => {
+    const e = evaluatePayoutEligibility(
+      {
+        policy: DAILY_50K,
+        balanceMicros: $(54_000),
+        startingBalanceMicros: $(50_000),
+        days: winningDays(5),
+        cycleStartDate: '2026-03-30',
+        dailyModeUnlocked: true,
+        accountStatus: 'ACTIVE',
+        adminHold: null,
+        hold: null,
+        hasPendingRequest: false,
+        previousDailyQualifyingBalanceMicros: $(54_000),
+      },
+      2,
+    );
+    expect(e.state).toBe('NOT_ELIGIBLE');
+    expect(e.reasonCodes).toContain('DAILY_BALANCE_PROGRESSION_NOT_MET');
+  });
+});
+
+describe('Phase 3.5 — post-payout floor safety (CORE/SELECT buffer = 0)', () => {
+  it('CORE withdrawable is profit above the starting balance (no hidden cushion)', () => {
+    // $2,000 profit, buffer 0 → the whole $2,000 is withdrawable; withdrawing it
+    // leaves balance == starting balance, never below the trailing floor (which
+    // locks at the starting balance).
+    expect(grossWithdrawableMicros($(52_000), $(50_000), CORE_50K.fundedBufferMicros)).toBe($(2000));
+    expect(CORE_50K.fundedBufferMicros).toBe(0);
+    expect(SELECT_50K.fundedBufferMicros).toBe(0);
+  });
+
+  it('a withdrawal cannot exceed profit above starting balance (floor can never be breached by a payout)', () => {
+    const e = evaluatePayoutEligibility(
+      { policy: CORE_50K, balanceMicros: $(52_000), startingBalanceMicros: $(50_000), days: winningDays(5), ...CLEAN },
+      1,
+    );
+    // Requesting more than the withdrawable profit is refused, not approved into the floor.
+    const overdraw = resolvePayoutRequest(e, CORE_50K, $(2_100), $(52_000));
+    expect(overdraw.ok).toBe(false);
+  });
+});

@@ -46,8 +46,9 @@ decision, not a Phase-2 wiring fix. *HTF-1, HTF-2.*
 ### DR-4 — Drawdown-vs-consistency and SELECT differentiator
 ✅ **RESOLVED (Phase 3).** Risk mechanic = EOD_TRAILING for all families; SELECT's wider 5%
 drawdown ($1,250/$2,500/$5,000) is the real differentiator and is now in the DB. Note the
-EOD-trailing lock threshold (`trailingLockAtMicros`) is under-specified by the brief; set to
-`null` (trail to high-water mark) as the literal reading and flagged as **DR-11** below.
+EOD-trailing lock threshold (`trailingLockAtMicros`) was under-specified by the brief; Phase 3
+set it to `null` (trail to high-water mark) as the literal reading — now **resolved in Phase 3.5
+to lock at the starting balance (`0`)**; see **DR-11** below.
 D-1 (STATIC vs EOD_TRAILING) and D-4 (SELECT 4% vs marketed 5% "room to breathe") are not
 just numbers — they define the product's risk personality and its marketing claims.
 **Decision needed:** confirm the intended risk mechanic per family and whether SELECT's wider
@@ -65,15 +66,38 @@ out of Phase 2 scope. *HTF-3.*
 invariant + integrity test. The existing risk gate is the single server-authoritative
 enforcer of mixed mini/micro exposure.
 
-### DR-11 — EOD-trailing lock threshold (NEW, unresolved — do not invent)
+### DR-11 — EOD-trailing lock threshold (RESOLVED, Phase 3.5)
 The locked V1 brief states an EOD trailing drawdown *amount* but no lock point (where the
 trailing floor stops following the high-water mark). Phase 3 set `trailingLockAtMicros=null`
 (the floor trails to the HWM for the account's life — the literal reading, and fail-safe
-toward firm risk). **Decision needed:** whether a launch product should instead lock the
-floor once the account is up by the drawdown amount (a common industry convention). Not
-invented; flagged for an owner decision. Also unresolved and explicitly NOT invented:
-post-payout drawdown-floor behavior, CORE/SELECT initial funded buffers (set 0), exact
-intraday breach semantics of EOD trailing.
+toward firm risk) and flagged the launch decision.
+
+✅ **RESOLVED (Phase 3.5, owner-directed):** launch V1 **locks the floor at the starting
+balance** once the high-water mark has risen by the full drawdown amount —
+`EVAL_TRAILING_LOCK_AT_MICROS = 0` in `@atlas/contracts` (`product-model.ts`), applied to
+every evaluation and funded profile. Worked example (CORE 50K, $2,000 DD): the floor starts at
+$48,000, ratchets **only at the finalized EOD roll** off the closing balance
+($51,000 close → $49,000 floor; $52,000 close → $50,000 floor), then **locks at $50,000**
+(= starting balance) and never rises again nor moves backward. The engine already implemented
+this exactly (`floorFor` caps the anchor at `startingBalance + trailingLockAtMicros`;
+`rollTradingDay` ratchets on the finalized close); Phase 3.5 changed only the product-config
+value (`null` → `0`) and locked it with tests. Reconciliation published this as a **new
+immutable version (v2)** per profile; accounts already pinned to v1 keep their v1 terms.
+
+The sub-questions flagged with DR-11 are also resolved for V1, from existing code — not invented:
+- **Post-payout floor:** a payout must not reset or loosen the drawdown floor, and the
+  withdrawable amount must not breach it. Verified by construction:
+  `grossWithdrawableMicros = max(0, totalNetProfit − protectedMicros)` (`payout-core.ts`)
+  only ever pays *realized profit above the protected balance*; it does not touch
+  `drawdownFloorMicros`. Locked with a Phase 3.5 test.
+- **CORE / SELECT initial funded buffer = $0.** SELECT's protection is its 40% payout
+  consistency threshold, which **delays** a payout rather than failing the account; it is not
+  a balance buffer. DAILY keeps its progressive buffers ($1,000 / $2,000 / $4,000).
+- **Intraday breach semantics (EOD trailing):** the authoritative breach metric is **equity**
+  (`evaluateRules`: `remainingDrawdown = equityMicros − drawdownFloorMicros`). The *current*
+  floor is enforced intraday against equity, but the floor **does not ratchet from intraday
+  unrealized gains** — it only advances at the finalized EOD roll. Floor movement and breach
+  enforcement are kept distinct. See `ACCOUNT_STATE_MACHINE.md`.
 
 ### DR-7 — Active-account slot policy
 Should LOCKED (day-lock) and GOAL_REACHED accounts count toward the 5-active limit? Today they

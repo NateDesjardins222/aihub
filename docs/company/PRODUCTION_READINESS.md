@@ -11,7 +11,7 @@ READY / PARTIAL / NOT READY / N/A.
 |------------|-------|------|---------|------------|
 | Boot the full stack | **READY** — booted this phase (PG/API/web) without Docker | PARTIAL — no CI to boot it | NOT READY — no staging manifest | NOT READY — no prod manifest |
 | Database + migrations | READY — 0000–0034 apply cleanly | PARTIAL — manual | NOT READY | NOT READY — no backups/PITR in-repo |
-| Seeds | PARTIAL — default seed = **wrong catalog**; HTF via manual script | PARTIAL | NOT READY | NOT READY — must pick canonical seed (DR-2) |
+| Seeds | READY — default `db:seed` = canonical 10 (Phase 3); reconcile is idempotent + version-safe (Phase 3.5) | PARTIAL — manual | NOT READY | NOT READY — canonical seed chosen (DR-2 resolved); prod seed policy still to define |
 | Auth / RBAC | READY | READY | READY | READY — prod boot guard rejects dev secret / `CORS=*` |
 | Trading terminal (sim) | READY | READY | READY | PARTIAL — default feed delayed/dev |
 | Market data | READY (yahoo-delayed) | READY (dev feed) | PARTIAL — real feed unconfigured | NOT READY — real feed + creds needed |
@@ -30,6 +30,12 @@ READY / PARTIAL / NOT READY / N/A.
 | Backups / DR | N/A | N/A | NOT READY | NOT READY — nothing in-repo |
 | Deploy manifests | N/A (dev compose = PG only) | NOT READY | NOT READY | NOT READY — no app Dockerfile/k8s/Terraform |
 | `/design-lab` isolation | N/A | PARTIAL | PARTIAL | NOT READY — reachable in prod build (HTF-4) |
+
+> **⟳ Phase 3.5 (2026-09-26).** Product model accepted against real rendered surfaces and its
+> risk/payout semantics locked (see `PRODUCT_SOURCE_OF_TRUTH.md`). This changes nothing in the
+> PRODUCTION column: **no PRODUCTION cell is marked READY or VERIFIED.** The money boundaries
+> (payments in, KYC, payouts out), CI/CD, backups, and deploy manifests remain NOT READY, and
+> production readiness is explicitly **not** claimed by this phase.
 
 ---
 

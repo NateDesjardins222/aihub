@@ -220,8 +220,11 @@ to env.
 - **HTF-22** — Windows dev scripts use a Unix-style env prefix. `apps/server/package.json`
   `dev`/`start` are `NODE_USE_ENV_PROXY=1 tsx …`, which fails under Windows PowerShell/cmd.
   Documented (not fixed) in Phase 3: the clean cross-platform fix (`cross-env`) would add a
-  new dependency + install, out of scope for the product-truth phase. **Next action (next
-  stabilization pass):** add `cross-env` and wrap both scripts. Unix/macOS/CI unaffected.
+  new dependency + install, out of scope for the product-truth phase. **Re-reviewed Phase 3.5
+  and deliberately left OPEN:** the only clean fix still requires a new dependency
+  (`cross-env`), which the Phase 3.5 brief scoped out ("fix only if tiny and dependency-free").
+  **Next action (next stabilization pass):** add `cross-env` and wrap both scripts.
+  Unix/macOS/CI unaffected.
 
 ---
 

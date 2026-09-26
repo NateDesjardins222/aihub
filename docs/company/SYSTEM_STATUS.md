@@ -17,6 +17,18 @@ Baseline / LAST VERIFIED COMMIT for every row: `55df4c7` (branch
 - **PROVIDER** names the external dependency and its reality (mock / sandbox / unconfigured /
   dev-feed / none).
 
+> **⟳ Phase 3.5 (2026-09-26) — product acceptance + risk-semantics lock.** The authoritative
+> product model (Phase 3) was accepted against real rendered surfaces — public pricing, Owner
+> Products, Customer Portal — and the funded-risk + payout semantics were **locked** in
+> `@atlas/contracts` (EOD-trailing floor locks at starting balance,
+> `trailingLockAtMicros = 0`; breach on equity; CORE/SELECT $0 funded buffer; post-payout
+> floor safe). Reconciliation published new immutable versions (v2) per profile; pinned
+> accounts keep v1. Owner auth re-verified: `owner@atlasfutures.local` is SUPER_ADMIN and
+> reaches admin APIs; the demo TRADER is correctly 403 on admin APIs — RBAC unchanged. Still
+> **no system is PRODUCTION-VERIFIED**, and the Owner Console mouse-wheel fix remains
+> **owner-manual-acceptance-pending** (Playwright is not sufficient evidence). See
+> `PRODUCT_SOURCE_OF_TRUTH.md`, `ACCOUNT_STATE_MACHINE.md`, `DECISION_LOG.md` DR-11.
+
 ---
 
 | SYSTEM | STATUS | USER SURFACE | BACKEND | DATABASE | PROVIDER | TESTS | BROWSER VERIFIED | KNOWN ISSUES | NEXT ACTION |

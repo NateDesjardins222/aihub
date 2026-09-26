@@ -36,6 +36,32 @@ See `DECISION_LOG.md` (DR-1, DR-2, DR-4, DR-6 → RESOLVED).
 
 ---
 
+## ⟳ PHASE 3.5 UPDATE — funded-risk + payout semantics LOCKED (2026-09-26)
+
+Phase 3.5 closed the risk-semantics questions Phase 3 had flagged but not decided, changing
+**config values only** — no product was redesigned, no model rebuilt:
+
+- **EOD-trailing lock point:** the trailing drawdown floor now **locks at the starting balance**
+  once the high-water mark has risen by the full drawdown amount
+  (`EVAL_TRAILING_LOCK_AT_MICROS = 0`, applied to every eval + funded profile). It ratchets
+  **only** at the finalized EOD roll (off the closing balance) and never moves backward. The
+  engine already implemented this; only the product-config value changed (`null` → `0`).
+- **Breach metric:** authoritative breach is on **equity** vs the current floor, enforced
+  intraday; the floor itself never ratchets from intraday unrealized gains.
+- **Funded buffers:** CORE and SELECT carry **$0** initial funded buffer; SELECT's protection
+  is its **40% payout consistency** (which *delays* a payout, not fails the account). DAILY
+  keeps its progressive buffers ($1,000 / $2,000 / $4,000).
+- **Post-payout floor:** a payout never resets or loosens the floor; withdrawable is realized
+  profit above the protected balance only, so it cannot breach the floor.
+
+Reconciliation published these as **new immutable versions (v2)** per profile; accounts pinned
+to v1 keep their v1 terms (version-safe). Locked with deterministic tests
+(`packages/core/src/rules/eod-trailing-lock.test.ts`, plus product-integrity and payout-core
+suites). See `DECISION_LOG.md` DR-11 → RESOLVED and `ACCOUNT_STATE_MACHINE.md` for the engine
+detail.
+
+---
+
 ## What this document is
 
 Every place in the system that "knows" what a product is, traced side by side, so
