@@ -79,8 +79,17 @@ Certificates/Failure states, and a PASS/FAIL/NOT TESTED results record. New rows
 - **Build:** `pnpm build` (packages + server) and `pnpm --filter @atlas/web build` — clean.
 - **Migration:** `0035_owner_mfa.sql` applies on a fresh DB; columns + table verified.
 - **Canonical validation:** `bash scripts/prepare-test-db.sh` then `pnpm test` from the repo root —
-  run twice from a clean seed. RUN 1: <recorded at commit>. RUN 2: <recorded at commit>.
-  (See the RC0 checkpoint commit message for the exact pass counts.)
+  run twice from a clean seed on the RC code (commit `7e3df44`):
+  - **RUN 1: 202 test files, 2922 tests — ALL PASS (exit 0).**
+  - **RUN 2: 202 test files, 2922 tests — ALL PASS (exit 0).**
+  Fully green both times, zero failures — no "passes-in-isolation", no "explained red". (The one
+  transient adversarial-lock flake seen earlier was a fixed-`settle()` timing race; it is now hardened
+  with a deterministic wait on the persisted `LOCKED` status, so the two clean-seed runs above are
+  reproducibly green.)
+
+## RC0 checkpoint
+- **RC0 — HUMAN ACCEPTANCE CANDIDATE.** Validated code commit: `7e3df44` (this document's commit adds
+  only this record). Tag: `rc0-human-acceptance-candidate`.
 
 ## Explicitly NOT done in 12.5 (out of scope, by mandate)
 No new products/rules/payout models/certificates; no affiliate expansion; no website/Atlas/Owner
