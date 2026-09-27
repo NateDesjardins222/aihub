@@ -20,6 +20,8 @@ const AdminApp = lazy(() => import('./admin/AdminApp').then((m) => ({ default: m
  * every rail size and state for side-by-side comparison against the references.
  */
 const IconGallery = lazy(() => import('./dev/IconGallery').then((m) => ({ default: m.IconGallery })));
+// Portal V2 design-system harness: DEVELOPMENT BUILDS ONLY (see /portal-v2 below).
+const PortalV2Harness = lazy(() => import('./portal/v2/Harness').then((m) => ({ default: m.PortalV2Harness })));
 
 /*
  * Native checkout is its own path and its own bundle, so the payment component
@@ -162,6 +164,22 @@ export function App(): JSX.Element {
     return (
       <Suspense fallback={<div className="boot-splash">Loading design lab…</div>}>
         <LabApp />
+      </Suspense>
+    );
+  }
+
+  // Portal V2 design-system harness: DEVELOPMENT BUILDS ONLY, no session, rendered
+  // before the gate. In a production build `designLabEnabled()` is false so this is
+  // skipped and /portal-v2 falls through to the 404 — the isolated V2 foundation is
+  // never reachable by customers and never affects the live V1 Portal.
+  if (
+    designLabEnabled() &&
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/portal-v2')
+  ) {
+    return (
+      <Suspense fallback={<div className="boot-splash">Loading Portal V2 harness…</div>}>
+        <PortalV2Harness />
       </Suspense>
     );
   }

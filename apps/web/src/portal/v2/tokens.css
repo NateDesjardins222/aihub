@@ -1,0 +1,95 @@
+/*
+ * HAPPY TRADER — Portal V2 design tokens.
+ *
+ * Product Rebuild Phase 0. AUTHORITATIVE visual foundation for the upcoming
+ * reference-driven Portal V2. Everything is scoped under `.htv2` so importing
+ * this file NEVER touches the live V1 Portal (`--pt-*`) or the Atlas terminal
+ * theme (`--*`): V2 tokens are `--ht-*` and only apply inside a `.htv2` root.
+ *
+ * Direction (see HAPPY_TRADER_DESIGN_SYSTEM_V2.md): luxury financial terminal —
+ * near-black layered surfaces, extremely restrained 1px borders, champagne/ivory
+ * highlights (NOT amber-gold, NOT purple), low-radius geometry, dense pro
+ * spacing, high-quality tabular number typography. No neon, no glass, no glow.
+ *
+ * These are STARTING RANGES. Exact values await Nathan's visual judgment; the
+ * point of Phase 0 is that they live in ONE place, as semantic tokens, so tuning
+ * is a token edit rather than a hunt through components.
+ */
+.htv2 {
+  /* ---- Surfaces (deepest → most raised) ---- */
+  --ht-bg: #09090a;
+  --ht-bg-elevated: #0c0c0e;
+  --ht-surface-1: #0f0f11;
+  --ht-surface-2: #121214;
+  --ht-surface-hover: #161618;
+
+  /* ---- Borders (1px does the structural work) ---- */
+  --ht-border-subtle: #19191c;
+  --ht-border: #222225;
+  --ht-border-strong: #2d2d31;
+  --ht-border-focus: #4a4a52;
+
+  /* ---- Text (warm, not pure grey) ---- */
+  --ht-text-strong: #f5f4f1;  /* warm near-white — headings, hero values */
+  --ht-text: #d7d6d2;         /* soft warm-white — body */
+  --ht-text-muted: #8a8a90;   /* labels, metadata */
+  --ht-text-faint: #56565c;   /* de-emphasised, disabled */
+
+  /* ---- Champagne / metallic (restrained; see STEP 10) ---- */
+  --ht-champagne: #e7dcc4;        /* pale champagne — solid fallback colour */
+  --ht-champagne-muted: #b9ae97;
+  /* The metallic sweep is ivory→champagne→silver, deliberately low-contrast so
+     it only reads as "metal" up close. Applied via background-clip:text with a
+     solid-colour fallback (see .htv2-metal in primitives.css). */
+  --ht-champagne-grad: linear-gradient(100deg, #f3ecd9 0%, #e7dcc4 42%, #cfc7bd 72%, #efe9dc 100%);
+
+  /* ---- Semantic ---- */
+  --ht-positive: #46b98a;
+  --ht-positive-bg: rgba(70, 185, 138, 0.12);
+  --ht-negative: #d96a63;
+  --ht-negative-bg: rgba(217, 106, 99, 0.12);
+  --ht-warning: #cf9f57;
+  --ht-warning-bg: rgba(207, 159, 87, 0.12);
+  /* A single, quiet interactive accent — NOT purple, NOT saturated blue. A cool
+     desaturated steel that recedes; champagne carries brand emphasis instead. */
+  --ht-accent: #8fa6bd;
+
+  /* ---- Spacing scale (4-based; no arbitrary 13/27/37) ---- */
+  --ht-space-1: 4px;
+  --ht-space-2: 8px;
+  --ht-space-3: 12px;
+  --ht-space-4: 16px;
+  --ht-space-5: 20px;
+  --ht-space-6: 24px;
+  --ht-space-8: 32px;
+  --ht-space-10: 40px;
+  --ht-space-12: 48px;
+
+  /* ---- Radii (restrained; ≤8px on application surfaces) ---- */
+  --ht-radius-xs: 2px;
+  --ht-radius-sm: 4px;
+  --ht-radius-md: 6px;
+  --ht-radius-lg: 8px;
+
+  /* ---- Elevation (borders first; shadow is a whisper, never a SaaS drop) ---- */
+  --ht-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --ht-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
+
+  /* ---- Shell dimensions (tunable during human review) ---- */
+  --ht-sidebar-w: 164px;      /* target 150–180px */
+  --ht-topbar-h: 48px;
+  --ht-control-h: 32px;       /* 30–36px control target */
+  --ht-control-h-sm: 28px;
+  --ht-workspace-max: 1440px;
+  --ht-gutter: 24px;
+
+  /* ---- Motion (quiet) ---- */
+  --ht-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ht-fast: 110ms;
+}
+
+/*
+ * Light mode is deferred: the reference direction is a dark luxury terminal.
+ * A light variant will be defined during the visual rebuild with Nathan; this
+ * file intentionally ships dark-only so no half-done light theme can leak.
+ */

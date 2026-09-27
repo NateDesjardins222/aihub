@@ -1,0 +1,82 @@
+/*
+ * V2AppShell / sidebar / topbar (Product Rebuild Phase 0). Scoped under `.htv2`.
+ * Application layout: fixed compact sidebar + compact top bar + scrolling
+ * workspace. Dimensions from tokens so review-time tuning is one edit.
+ */
+.htv2-shell {
+  display: grid;
+  grid-template-columns: var(--ht-sidebar-w) minmax(0, 1fr);
+  min-height: 100%;
+  background: var(--ht-bg);
+  color: var(--ht-text);
+}
+
+/* ---- Sidebar ---- */
+.htv2-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ht-space-4);
+  padding: var(--ht-space-4) var(--ht-space-3);
+  background: var(--ht-bg-elevated);
+  border-right: 1px solid var(--ht-border-subtle);
+  min-width: 0;
+}
+.htv2-side-brand { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px; }
+.htv2-side-mark { width: 16px; height: 16px; border-radius: var(--ht-radius-xs); background: var(--ht-champagne-grad); flex: 0 0 auto; }
+.htv2-side-name { color: var(--ht-text-strong); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.htv2-side-nav { display: flex; flex-direction: column; gap: 1px; }
+.htv2-side-link {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--ht-radius-sm);
+  color: var(--ht-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  /* No underline, ever. Active state is a subtle surface, not a bar or pill. */
+  text-decoration: none;
+  transition: background var(--ht-fast) var(--ht-ease), color var(--ht-fast) var(--ht-ease);
+}
+.htv2-side-link:hover { color: var(--ht-text); background: var(--ht-surface-1); }
+.htv2-side-link.is-active { color: var(--ht-text-strong); background: var(--ht-surface-2); }
+.htv2-side-owner { margin-top: auto; color: var(--ht-champagne-muted); }
+
+/* ---- Top bar ---- */
+.htv2-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ht-space-4);
+  height: var(--ht-topbar-h);
+  padding: 0 var(--ht-gutter);
+  border-bottom: 1px solid var(--ht-border-subtle);
+  background: var(--ht-bg);
+}
+.htv2-top-crumb { color: var(--ht-text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.htv2-top-util { display: flex; align-items: center; gap: var(--ht-space-3); }
+
+/* ---- Workspace ---- */
+.htv2-shell-main { display: flex; flex-direction: column; min-width: 0; }
+.htv2-workspace { flex: 1; overflow-y: auto; }
+.htv2-workspace-inner { max-width: var(--ht-workspace-max); margin: 0 auto; padding: var(--ht-space-6) var(--ht-gutter) var(--ht-space-12); }
+
+/* ---- Responsive (STEP 24): sidebar collapses to a top strip on narrow widths ---- */
+@media (max-width: 900px) {
+  .htv2-shell { grid-template-columns: minmax(0, 1fr); }
+  .htv2-side {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--ht-space-2);
+    border-right: none;
+    border-bottom: 1px solid var(--ht-border-subtle);
+    overflow-x: auto;
+    padding: var(--ht-space-2) var(--ht-space-3);
+  }
+  .htv2-side-nav { flex-direction: row; gap: 2px; }
+  .htv2-side-owner { margin-top: 0; margin-left: auto; }
+  .htv2-workspace-inner { padding-left: 16px; padding-right: 16px; }
+}

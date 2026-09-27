@@ -1,0 +1,97 @@
+/*
+ * HAPPY TRADER — Portal V2 primitive styles. Scoped under `.htv2`; `--ht-*` only.
+ */
+.htv2 {
+  background: var(--ht-bg);
+  color: var(--ht-text);
+}
+
+/* ---- Champagne / metallic (STEP 10): restrained, no animation, no glow ---- */
+.htv2-metal {
+  color: var(--ht-champagne); /* solid fallback for no-clip / high-contrast */
+  background: var(--ht-champagne-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+}
+/* Accessibility / print / forced colors: fall back to a solid warm tone. */
+@media (prefers-contrast: more), print {
+  .htv2-metal { -webkit-text-fill-color: var(--ht-champagne); color: var(--ht-champagne); background: none; }
+}
+@media (forced-colors: active) {
+  .htv2-metal { -webkit-text-fill-color: CanvasText; color: CanvasText; background: none; }
+}
+
+/* ---- Buttons (STEP 19): compact, low radius, warm ---- */
+.htv2-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--ht-control-h);
+  padding: 0 14px;
+  border-radius: var(--ht-radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--ht-fast) var(--ht-ease), border-color var(--ht-fast) var(--ht-ease), color var(--ht-fast) var(--ht-ease);
+  white-space: nowrap;
+}
+.htv2-btn-sm { height: var(--ht-control-h-sm); padding: 0 10px; }
+.htv2-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Primary: warm near-white / champagne surface, dark text. Not a giant CTA. */
+.htv2-btn-primary { background: var(--ht-champagne); color: #16130c; border-color: var(--ht-champagne); }
+.htv2-btn-primary:hover:not(:disabled) { background: #f0e7d3; border-color: #f0e7d3; }
+
+.htv2-btn-secondary { background: var(--ht-surface-2); color: var(--ht-text); border-color: var(--ht-border); }
+.htv2-btn-secondary:hover:not(:disabled) { background: var(--ht-surface-hover); border-color: var(--ht-border-strong); }
+
+.htv2-btn-tertiary { background: transparent; color: var(--ht-text-muted); border-color: transparent; padding: 0 6px; }
+.htv2-btn-tertiary:hover:not(:disabled) { color: var(--ht-text); }
+
+.htv2-btn-danger { background: transparent; color: var(--ht-negative); border-color: color-mix(in srgb, var(--ht-negative) 40%, transparent); }
+.htv2-btn-danger:hover:not(:disabled) { background: var(--ht-negative-bg); }
+
+.htv2 :focus-visible { outline: 2px solid var(--ht-border-focus); outline-offset: 1px; border-radius: var(--ht-radius-xs); }
+
+/* ---- Status (STEP 20): dot + label, restrained surface, never a saturated pill ---- */
+.htv2-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--ht-radius-sm);
+  border: 1px solid var(--ht-border);
+  background: var(--ht-surface-2);
+  color: var(--ht-text-muted);
+  white-space: nowrap;
+}
+.htv2-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.htv2-status-evaluation { color: var(--ht-accent); }
+.htv2-status-funded { color: var(--ht-positive); }
+.htv2-status-payout { color: var(--ht-champagne-muted); }
+.htv2-status-completed { color: var(--ht-text); }
+.htv2-status-failed { color: var(--ht-negative); }
+.htv2-status-hold { color: var(--ht-warning); }
+.htv2-status-neutral { color: var(--ht-text-muted); }
+
+/* ---- Tone helpers ---- */
+.htv2-tone-positive { color: var(--ht-positive); }
+.htv2-tone-negative { color: var(--ht-negative); }
+.htv2-tone-muted { color: var(--ht-text-muted); }
+
+/* ---- Metric ---- */
+.htv2-metric { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.htv2-metric-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.htv2-metric-sub { color: var(--ht-text-muted); }
+
+/* ---- Section / divider / card ---- */
+.htv2-section { display: flex; flex-direction: column; gap: var(--ht-space-3); }
+.htv2-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); }
+.htv2-divider { border: none; border-top: 1px solid var(--ht-border-subtle); margin: 0; height: 0; }
+.htv2-card { background: var(--ht-surface-1); border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-lg); padding: var(--ht-space-5); }
+
+/* ---- Empty state ---- */
+.htv2-empty { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: var(--ht-space-8) var(--ht-space-5); border: 1px dashed var(--ht-border); border-radius: var(--ht-radius-md); }
+.htv2-empty-hint { margin: 0; color: var(--ht-text-muted); max-width: 46ch; }

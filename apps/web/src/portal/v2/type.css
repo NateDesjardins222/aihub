@@ -1,0 +1,56 @@
+/*
+ * HAPPY TRADER — Portal V2 typography.
+ *
+ * Scoped under `.htv2`. Font strategy (see HAPPY_TRADER_DESIGN_SYSTEM_V2.md):
+ * DM Sans Variable is ALREADY bundled and self-hosted (@fontsource-variable/dm-sans)
+ * and is the current UI face; it is production-safe (SIL OFL), has excellent
+ * small-size legibility and real tabular numerals via `tnum`. V2 keeps DM Sans as
+ * the text/number face rather than adding a new dependency, and reserves the
+ * bundled JetBrains Mono for raw code/audit only. Numeral quality — the owner's
+ * "high-quality number typography" — comes from tabular-nums + a tightened
+ * financial scale, not from a new font.
+ *
+ * Type is expressed as ROLE classes, never as ad-hoc font-size in components.
+ */
+.htv2 {
+  --ht-font: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ht-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  font-family: var(--ht-font);
+  color: var(--ht-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Every financial number turns on even-width digits so columns never jitter. */
+.htv2 .ht-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0;
+}
+
+/* ---- Type roles ---- */
+
+/* display-financial — the single hero value on a page (account balance). */
+.htv2 .ht-t-display { font-size: 34px; line-height: 1.05; font-weight: 500; letter-spacing: -0.01em; color: var(--ht-text-strong); }
+
+.htv2 .ht-t-page-title { font-size: 20px; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; color: var(--ht-text-strong); }
+.htv2 .ht-t-section { font-size: 13px; line-height: 1.3; font-weight: 600; letter-spacing: 0.01em; color: var(--ht-text-strong); }
+.htv2 .ht-t-body { font-size: 13px; line-height: 1.5; font-weight: 400; color: var(--ht-text); }
+.htv2 .ht-t-body-sm { font-size: 12px; line-height: 1.45; font-weight: 400; color: var(--ht-text); }
+
+/* label / metadata — muted, uppercase micro-labels above values. */
+.htv2 .ht-t-label { font-size: 10.5px; line-height: 1.2; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ht-text-muted); }
+.htv2 .ht-t-meta { font-size: 11px; line-height: 1.3; font-weight: 400; color: var(--ht-text-muted); }
+
+/* navigation / button / table */
+.htv2 .ht-t-nav { font-size: 12.5px; line-height: 1; font-weight: 500; letter-spacing: 0.005em; }
+.htv2 .ht-t-button { font-size: 12.5px; line-height: 1; font-weight: 600; letter-spacing: 0.01em; }
+.htv2 .ht-t-th { font-size: 10.5px; line-height: 1; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ht-text-muted); }
+.htv2 .ht-t-td { font-size: 12.5px; line-height: 1.3; font-weight: 400; color: var(--ht-text); }
+.htv2 .ht-t-status { font-size: 11px; line-height: 1; font-weight: 600; letter-spacing: 0.02em; }
+
+/* financial value sizes (all tabular) */
+.htv2 .ht-t-fin-lg { font-size: 26px; line-height: 1.1; font-weight: 500; letter-spacing: -0.005em; color: var(--ht-text-strong); font-variant-numeric: tabular-nums; }
+.htv2 .ht-t-fin-md { font-size: 16px; line-height: 1.15; font-weight: 500; color: var(--ht-text-strong); font-variant-numeric: tabular-nums; }
+.htv2 .ht-t-fin-sm { font-size: 13px; line-height: 1.2; font-weight: 500; font-variant-numeric: tabular-nums; }

@@ -1,0 +1,85 @@
+/*
+ * V2Lifecycle — overflow-proof lifecycle path (Product Rebuild Phase 0, STEP 17).
+ *
+ * The whole point: a grid of equal fractions that can shrink below content, so
+ * the component's intrinsic width can never exceed its parent. The layout
+ * regression test (lifecycle-layout.test.ts) asserts this contract structurally,
+ * and scripts/portal-v2-lifecycle-overflow.mjs asserts it in a real browser at
+ * 1920/1440/1280/1024/768/390.
+ */
+.htv2-life {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* N equal columns, each allowed to shrink to zero → never wider than parent. */
+  grid-template-columns: repeat(var(--htv2-life-n, 4), minmax(0, 1fr));
+  align-items: start;
+  width: 100%;
+  max-width: 100%;
+}
+
+.htv2-life-stage {
+  /* minmax(0,1fr) only shrinks a cell if its CONTENT can shrink; min-width:0 +
+     overflow control on the child is what actually lets the label clip instead
+     of forcing the track wider. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--ht-text-faint);
+}
+
+.htv2-life-track {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* line — dot — line, centred in the cell */
+  align-items: center;
+  width: 100%;
+}
+
+.htv2-life-line {
+  height: 1px;
+  background: var(--ht-border);
+  min-width: 0; /* connectors never add intrinsic width */
+}
+
+/* The first cell has no left line and the last no right line, so the path reads
+   as one connected run without escaping either end. */
+.htv2-life-stage:first-child .htv2-life-line-l,
+.htv2-life-stage:last-child .htv2-life-line-r {
+  visibility: hidden;
+}
+
+.htv2-life-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  margin: 0 6px;
+  flex: 0 0 auto;
+}
+
+.htv2-life-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* States */
+.htv2-life-stage.is-done { color: var(--ht-text-muted); }
+.htv2-life-stage.is-done .htv2-life-dot { background: currentColor; }
+.htv2-life-stage.is-done .htv2-life-line-l { background: var(--ht-border-strong); }
+.htv2-life-stage.is-at { color: var(--ht-text-strong); }
+.htv2-life-stage.is-at .htv2-life-label { color: var(--ht-text-strong); font-weight: 600; }
+.htv2-life.is-failed .htv2-life-stage { color: var(--ht-negative); }
+
+/* Compact / narrow: labels shrink; the grid already prevents overflow. Below a
+   very narrow width the label hides and only the connected dots remain. */
+.htv2-life.is-compact .htv2-life-label { font-size: 10px; }
+
+@container (max-width: 320px) {
+  .htv2-life-label { display: none; }
+}
