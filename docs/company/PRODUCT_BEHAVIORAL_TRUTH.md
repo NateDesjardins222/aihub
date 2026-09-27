@@ -103,7 +103,23 @@ available in the headless dev environment). See the Phase-2 report.
 | Copy trading: configuration lives OUTSIDE the order DOM; DOM keeps only a non-configurational status; execution fan-out unchanged | **L4 (code) + L4 (trading regression)** | `CopyPanel`/`copy-store`/`copy-api` own config; OrderTicket shows "Copy · N accounts" only; fan-out via `copyApi.submitIntent` intact; 247-test trading regression green. Final DOM placement PENDING ATLAS V2. |
 | Do-not-break-trading: market/limit/stop, positions, P&L, brackets/OCO, risk, account switching | **L4** | Trading regression **25 files / 247 tests pass** against a fresh migrated+seeded DB after all Phase A edits. |
 
+## Engineering Phase B truth (from `008fb3f`) — interaction integrity
+
+| Behavior | Evidence | Notes |
+|---|---|---|
+| Price↔pixel round-trip invertible within ½ tick through zoom/pan/resize | **L4** | `coordinate-tick-truth.test.ts`; a fixed order price reads back identical from every view. Live lib transform: browser suite. |
+| Tick snapping correct for all 8 launch instruments, no float artifacts | **L4** | `coordinate-tick-truth.test.ts` vs the real registry (0.25/0.10/0.01). |
+| Working-order & SL/TP drag: one version-guarded request, rejection restores authoritative price | **L3/L4** | `PriceMarkers.tsx` + `protection.test.ts` (leg logic) + `brackets.test.ts` (server fill/drag). |
+| OCO safe under interaction: no double-fill, no orphan, flatten/reverse clean, one terminal outcome under race | **L4** | `brackets.test.ts`, `execution-races.test.ts`. |
+| Chart transforms never mutate an authoritative price (markers/drawings reproject) | **L4** | market-coord anchoring + rAF reprojection; `coordinate-tick-truth` + `drawings/model.test.ts`. |
+| Deterministic input ownership (marker vs drawing vs pane; keyboard never stolen from forms) | **L3** | DOM-subtree separation + single capture-phase machine; `ATLAS_INTERACTION_ARCHITECTURE.md`. |
+| Stale-response safety: symbol/TF (loadToken), account/pnl (seq), orders (expectedVersion) | **L4** | `money-state-race.test.ts` + ChartPanel loadToken + order version guard. |
+| Reconnect rebuilds trading truth from server; workspace corruption fails safe | **L4** | `bracket-reconnect-isolation.test.ts` (server) + `chart-store.test.ts` sanitizers + `try/catch` reads. |
+| Multi-chart already shipping (1–4 panes, per-pane isolation) | **L3** | `ChartGrid` + `useLayout` panes; `ATLAS_MULTI_CHART_READINESS.md`. |
+
 ## What only a human can confirm (L5 — PENDING HUMAN, all rows)
 Every row above is at most L4. Nathan must physically run `HUMAN_GOLDEN_PATH.md` to assign L5. Claude
-has not and will not self-certify L5. Phase A additionally leaves **external candle parity** and
-**chart-tool physical feel** explicitly to Nathan's eyes (see `ATLAS_ENGINEERING_PHASE_A_REPORT.md`).
+has not and will not self-certify L5. Phase A leaves **external candle parity** and **chart-tool physical
+feel** to Nathan's eyes; Phase B additionally leaves **live frame-timing under a real feed**, **multi-DPR
+crispness**, and the **per-chart-account product decision** to Nathan (see
+`ATLAS_ENGINEERING_PHASE_B_REPORT.md`).

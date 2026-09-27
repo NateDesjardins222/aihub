@@ -74,3 +74,25 @@ here (no live feed, no visual inspection this phase) — it stays `UNVERIFIED`, 
 **Conclusion:** no rerender storm, no store churn, no unthrottled handler — before or after Phase A.
 Nothing here is a P0/P1 latency defect. Sustained tick-render frame timing under a live feed remains
 `UNVERIFIED` and belongs to a live browser-profiling session (Atlas V2), unchanged from the baseline.
+
+---
+
+## Engineering Phase B addendum (STEP 49-51) — interaction hot paths under load
+
+Re-audited the interaction hot paths that Phase B stresses; all remain GOOD, no new pathology:
+
+- **Order-marker reprojection** (`PriceMarkers` rAF loop): writes nothing unless a change *signature*
+  (two reference `priceToY` conversions + height + each marker's `data-price` + drag/preview price)
+  differs from the last frame — so a still chart with a working order + position does zero layout work per
+  frame. Marker label layout runs only on that change.
+- **Drawing hit-test on move** (`useDrawingInput` rAF `onFrame`): coalesced to ≤1/frame, early-outs when
+  the pointer hasn't moved, and gated by the cached broad-phase `mayHit` box before any real geometry.
+- **Order/SL/TP drag**: pointermove writes one ref field; the server sees exactly one request on release.
+- **Pane resize / DPR**: handled by change-signature-gated repaints (overlay folds `devicePixelRatio`).
+- **Leaks**: every listener/subscription effect returns its teardown; `marketStream` is one multiplexed
+  connection with ref-counted topic subscriptions (STEP 51 — none found).
+
+**Classification:** GOOD across bar apply, incremental update, hit-test, drag, marker reprojection, pane
+resize. The one added per-`applyHistory` guard (Phase A `orderBarsAscendingUnique`) is ~7.6µs and off the
+per-frame path. Live in-browser frame timing under a real feed stays `UNVERIFIED` (Atlas V2 browser
+profiling); no 60/120fps claim is made without browser evidence.

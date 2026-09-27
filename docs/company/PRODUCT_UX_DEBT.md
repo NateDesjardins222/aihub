@@ -84,3 +84,21 @@ These are the *feel/placement* items that require Nathan's eyes and belong to th
   density belongs to the same V2 chart pass.
 
 **Do not act on any of the above before the Atlas V2 visual phase.**
+
+---
+
+## Engineering Phase B additions (interaction feel — human-only)
+
+The interaction *mechanics* are proven objective this phase; what remains for Nathan's eyes is *feel*,
+none of it a functional defect:
+
+- **Pointer/drag smoothness & input-to-paint latency under a real feed (P3).** rAF-coalesced and clean in
+  code; the perceived smoothness needs live browser profiling.
+- **Marker/handle grab affordances & legibility (P3).** SL/TP/position marker grab targets and label
+  legibility while price moves — a V2 tuning pass.
+- **Multi-DPR crispness (P3).** The overlay re-rasterizes on DPR change; on-screen sharpness across the
+  owner's actual monitors is a human check.
+- **Per-chart account UX (P3, product decision).** Multi-chart ships with one terminal account; whether
+  each chart should trade its own account is Nathan's call (`ATLAS_MULTI_CHART_READINESS.md`).
+
+**Do not act on any of the above before the Atlas V2 visual phase.**

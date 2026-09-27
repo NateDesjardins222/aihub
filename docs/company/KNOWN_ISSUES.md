@@ -575,3 +575,35 @@ See `ATLAS_ENGINEERING_PHASE_A_REPORT.md`, `ATLAS_CANDLE_TRUTH_REPORT.md`,
 **Validation:** typecheck (web + 5 server projects) clean; build clean; trading regression
 25 files / 247 tests pass; candle-truth + bar-order + pane-split + bounds regression pass. No P0, no
 HARD-STOP condition triggered. Human acceptance PENDING HUMAN.
+
+---
+
+## Engineering Phase B (from `008fb3f`) — interaction integrity + workspace durability
+
+See `ATLAS_ENGINEERING_PHASE_B_REPORT.md`, `ATLAS_INTERACTION_ARCHITECTURE.md`,
+`ATLAS_MULTI_CHART_READINESS.md`.
+
+**Closed / proven in Phase B:** 0 P0, 0 P1 — the interaction layer already met the invariants; Phase B
+proved them mechanically. New proof: `coordinate-tick-truth.test.ts` (price↔pixel round-trip + tick
+snapping, all 8 instruments). Ownership (marker vs drawing vs pane), version-guarded drags,
+rejection-restore, stale-response guards (loadToken / seq / expectedVersion), reconnect rebuild, and
+workspace-corruption fallback are all covered by existing + new deterministic suites.
+
+**Documented, NOT closed (human-only / product decisions, not defects):**
+- **PB-G1 (P3) — live in-browser frame-timing under a real feed UNVERIFIED.** Hot-path code is clean
+  (Phase A/B audits); sustained "feel" needs browser profiling (Atlas V2).
+- **PB-G2 (P3) — live multi-DPR visual confirmation UNVERIFIED.** Coordinate math is DPR-independent and
+  the overlay re-rasterizes on DPR change; on-screen crispness across the owner's monitors is a human
+  item.
+- **PB-G3 (P3) — no single in-browser end-to-end chaos test.** The chaos sequence is covered in pieces by
+  deterministic suites; a full browser harness is an Atlas V2 / browser-suite item.
+- **PB-G4 (P3, product decision) — per-chart trading account.** Multi-chart ships today with one
+  terminal-global account coupled to the active pane's symbol (a deliberate safety choice). A per-chart
+  account is Nathan's decision; consequences recorded in `ATLAS_MULTI_CHART_READINESS.md`.
+- **PB-G5 (P3, note) — non-representable decimal literals in `snapPrice`.** A hand-typed literal like
+  `72.005` resolves to the nearer representable tick, not "up". Always on-grid/valid; never reached by
+  real drag input. Behaviour documented in `coordinate-tick-truth.test.ts`; no fix needed.
+
+**Validation:** focused web 22 files / 274 tests + server OCO/reconnect/race 6 files / 46 tests pass;
+typecheck + build clean; trading regression green; canonical run once. No P0, no HARD-STOP. Human
+acceptance PENDING HUMAN.

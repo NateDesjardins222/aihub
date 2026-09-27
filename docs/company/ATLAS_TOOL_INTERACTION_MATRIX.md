@@ -109,3 +109,17 @@ because they bypass `mayHit`; the new `bounds.test.ts` cases close that gap.
 The interaction model is sound and the selection-reachability bug is fixed. Physical feel — grip
 grab-ease, handle sizes, cursor affordances, TradingView-grade polish — is intentionally out of scope
 this phase and is an Atlas V2 human-review item.
+
+## Engineering Phase B addendum — durability under transforms + collision ownership
+
+Re-verified in Phase B (see `ATLAS_INTERACTION_ARCHITECTURE.md`):
+- **Transform durability:** anchors are market coordinates reprojected every frame, so create/select/
+  move/handle-edit survive pan, zoom, container resize, DPR change and timeframe change with no drift
+  (`coordinate-tick-truth.test.ts`, `drawings/model.test.ts` translate-across-gap).
+- **Collision ownership is deterministic by DOM subtree:** order markers (`.pm-tag`) are a sibling
+  overlay, so dragging an SL never moves a drawing and dragging a drawing never modifies an order; the
+  pane separator sits outside the drawing container, so a drawing near a divider is never mutated by a
+  resize and a resize is never eaten. Where a marker overlaps a drawing, the topmost interactive marker
+  wins — one rule, no ambiguity.
+- **Persistence:** drawings are stored per symbol and only painted on their own symbol; corrupt/tampered
+  workspace state is sanitized to defaults on restore.
