@@ -90,6 +90,20 @@ Internal correctness **verified** (OHLC invariants, monotonic timestamps, 1m→5
 for NQ/ES/GC/CL). External raw-vs-provider (Yahoo) parity **UNVERIFIED** (no external reference
 available in the headless dev environment). See the Phase-2 report.
 
+## Engineering Phase A truth (from `65ca5ec`)
+
+| Behavior | Evidence | Notes |
+|---|---|---|
+| Candle provider-boundary fidelity (NQ/ES/GC/CL): normalized OHLC/volume/timestamp == vendor | **L4 (mechanical, live feed)** | `scripts/bar-truth.ts` minute-by-minute vs live Yahoo, no sampling: **0** value mismatches, **0** extra bars, **0** timestamp shifts, **0** fabrication. Dropped minutes are all vendor `null`. `apps/server/src/marketdata/candle-truth.test.ts`. |
+| Client never fabricates/reorders bars into the renderer | **L4** | `applyHistory`/`prependHistory` order + de-dup (`bar-order.test.ts`); live bar `update()`s newest point, full redraw only for interior revision / stateful transform. |
+| Candle EXTERNAL reference-platform parity (Atlas vs TradingView/broker, same contract+session) | **UNVERIFIED (L0)** | Not testable headless — needs Nathan or a licensed feed. Stated honestly. |
+| Visible gaps / fewer candles | **Explained, L4** | Dev source (Yahoo free 1m ~3.4–3.8% null minutes RTH, more overnight) + continuous `=F` policy — not a code loss. |
+| Indicator/volume panes resizable by dragging the divider; split persists; multiple panes; double-click reset | **L3 (native lib + unit-tested split math)** | `pane-split.ts`/`pane-split.test.ts`; Volume is a first-class pane (`overlay:false`). Physical grip feel is L5/human. |
+| 27 drawing tools: create/select/move/edit/delete, pan/zoom/resize stability, market-coord anchoring, no event collisions | **L3/L4** | `ATLAS_TOOL_INTERACTION_MATRIX.md`; `model.test.ts`, `bounds.test.ts` (now incl. the `mayHit` superset cases), `registry.test.ts`, `measure.test.ts`. Selection reachability bug fixed. |
+| Copy trading: configuration lives OUTSIDE the order DOM; DOM keeps only a non-configurational status; execution fan-out unchanged | **L4 (code) + L4 (trading regression)** | `CopyPanel`/`copy-store`/`copy-api` own config; OrderTicket shows "Copy · N accounts" only; fan-out via `copyApi.submitIntent` intact; 247-test trading regression green. Final DOM placement PENDING ATLAS V2. |
+| Do-not-break-trading: market/limit/stop, positions, P&L, brackets/OCO, risk, account switching | **L4** | Trading regression **25 files / 247 tests pass** against a fresh migrated+seeded DB after all Phase A edits. |
+
 ## What only a human can confirm (L5 — PENDING HUMAN, all rows)
 Every row above is at most L4. Nathan must physically run `HUMAN_GOLDEN_PATH.md` to assign L5. Claude
-has not and will not self-certify L5.
+has not and will not self-certify L5. Phase A additionally leaves **external candle parity** and
+**chart-tool physical feel** explicitly to Nathan's eyes (see `ATLAS_ENGINEERING_PHASE_A_REPORT.md`).

@@ -528,3 +528,50 @@ Documented, NOT closed (gaps, not defects — for Phase 3):
 
 **Validation:** typecheck (5 projects) clean; 3 new behavioral test files (11 tests) pass; canonical
 recorded in `PRODUCT_RECOVERY_REPORT_PHASE_2.md`. No P0. Human acceptance PENDING HUMAN.
+
+---
+
+## Engineering Phase A (from `65ca5ec`) — market-data truth, chart, copy separation
+
+See `ATLAS_ENGINEERING_PHASE_A_REPORT.md`, `ATLAS_CANDLE_TRUTH_REPORT.md`,
+`ATLAS_TOOL_INTERACTION_MATRIX.md`, `ATLAS_MARKET_DATA_PIPELINE.md`, `ATLAS_CONTRACT_POLICY.md`.
+
+**Closed in Phase A (fixed + regression-tested):**
+- **PA-1 (was P1) — `applyHistory` rendered bars without ordering/de-dup**, which could freeze
+  lightweight-charts (`setData` throws on unordered/duplicate times) or misplace candles when a page
+  arrived out of order. Fixed at the client-normalization layer: `orderBarsAscendingUnique`
+  (`apps/web/src/chart/bar-order.ts` + `bar-order.test.ts`). `prependHistory` already had this.
+- **PA-2 (was P1, objective) — six drawing tools were unselectable across their real hit region.**
+  Broad-phase `mayHit` was not a conservative superset of `hitTest`, so `pick()` rejected real hits
+  before `hitTest` ran: CROSS_LINE arms, HORIZONTAL_RAY body, TEXT/ANCHORED_TEXT box, and the
+  NOTE/ARROW_MARK_* stamps. Fixed in `bounds.ts` `computeBox`; regression cases added to
+  `bounds.test.ts` that exercise the `mayHit` path (the old tests called `hitTest` directly and missed
+  it).
+
+**Documented, NOT closed (source/policy limits or human-only, not code defects):**
+- **PA-G1 (P2) — EXTERNAL reference-platform candle parity UNVERIFIED.** Provider-boundary fidelity is
+  VERIFIED (0 value mismatches / 0 timestamp shifts / 0 fabrication across NQ/ES/GC/CL vs live Yahoo,
+  minute-by-minute, no sampling). Atlas-vs-TradingView/broker on the *same contract + session* is not
+  testable headless — needs Nathan or a licensed feed. (Supersedes PR2-G6.)
+- **PA-G2 (P3) — visible gaps / "fewer candles" are the dev DATA SOURCE, not a bug.** Yahoo free 1m
+  returns ~3.4–3.8% `null` minutes in this RTH window (more overnight); Atlas drops them rather than
+  fabricate. Resolves when a licensed provider is configured. Not "fixed" by mutating data (that would
+  be dishonest).
+- **PA-G3 (P3) — continuous front-month `=F` for all eight symbols; micros share the mini series.** A
+  documented policy (`ATLAS_CONTRACT_POLICY.md`), not a mis-map. A reference on a specific/back-adjusted
+  contract will legitimately differ in O/C and roll jumps.
+- **PA-G4 (P3) — live in-browser tick-render frame timing UNVERIFIED.** Hot-path code audit found no
+  rerender storm / store churn / unthrottled handler (see `ATLAS_PERFORMANCE_BASELINE.md` Phase A
+  addendum); sustained "feel" under a real feed needs live browser profiling (Atlas V2). (Supersedes
+  PR2-G7.)
+- **PA-G5 (P3, human-only) — chart-tool physical FEEL** (grip grab-ease, handle sizes, cursor
+  affordances, TradingView-grade polish) is out of scope this phase; Atlas V2 human-review item. The
+  interaction MODEL and selection reachability are objectively sound/fixed.
+- **PA-G6 (P3) — final placement of the order-DOM copy STATUS indicator is PENDING ATLAS V2.** Copy
+  configuration is fully out of the DOM (in the Copy panel); the DOM keeps only a tiny
+  non-configurational "Copy · N accounts" status line. Where/whether that line lives is a V2 visual
+  decision.
+
+**Validation:** typecheck (web + 5 server projects) clean; build clean; trading regression
+25 files / 247 tests pass; candle-truth + bar-order + pane-split + bounds regression pass. No P0, no
+HARD-STOP condition triggered. Human acceptance PENDING HUMAN.

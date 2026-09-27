@@ -41,3 +41,36 @@
 Do not micro-optimize blindly. The Atlas quality rebuild (a later, dedicated phase) should own:
 code-splitting, input-to-paint instrumentation, tool/DOM interaction redesign, and the polling
 dedupe. Nothing here is a P0/P1 latency bug.
+
+---
+
+## Engineering Phase A addendum (STEP 31) — hot-path audit from `65ca5ec`
+
+**Scope of STEP 31:** re-audit the chart hot paths (bar request/normalization, series update,
+pointer/drag, pane resize) for rerender storms, store churn, and unthrottled handlers, and confirm the
+Phase A edits added no per-frame cost. Live in-browser frame timing under a real feed is **not** run
+here (no live feed, no visual inspection this phase) — it stays `UNVERIFIED`, as in the baseline above.
+
+### Hot paths — code-level findings (all already sound)
+| Path | Mechanism | Verdict |
+|---|---|---|
+| **Live bar → series** (`applyLiveBar`) | Incremental `series.update(newestPoint)`; a full `setData` redraw only when an *interior* bar is revised or the transform is stateful (Heikin-Ashi). Indicators recompute over the full series but hand the renderer **tail-only** the newest point. | PASS — the earlier CPU-profile hot spot (`setSeriesData`/`checkItemsAreOrdered` on every tick) is already designed out. |
+| **History fetch + normalize** | `/marketdata/bars` ~17 ms warm (baseline); normalization is O(n) faithful; client `applyHistory`/`prependHistory` order+de-dup once per page. | PASS |
+| **Pointer / drag** (`useDrawingInput`) | Single capture-phase `pointermove` sets a flag + last point; a self-rescheduling `requestAnimationFrame` loop does the work **at most once per frame** and early-outs when nothing moved. Selection is gated by the broad-phase `mayHit` box before `hitTest`. | PASS — rAF-coalesced, no per-event layout, no rerender storm. |
+| **Pane resize / separator** | Separator wiring is `requestAnimationFrame`-scheduled (coalesced, prior frame cancelled); split persists on release, not per drag frame. | PASS |
+| **Store churn** | Bars live in the adapter, **not** React/Zustand state; `chart-store` is appearance-only. Ticks bypass React entirely (write straight to canvas). | PASS — no bar-driven re-render. |
+
+### Phase A edits: added cost measured
+- **`orderBarsAscendingUnique`** (new; runs once per `applyHistory`/`prependHistory`): measured
+  **0.0076 ms/call** on the normal already-ordered 1200-bar path (a cheap ordered-check no-op),
+  **0.0125 ms** at 5000 bars, and **0.28 ms** in the pathological fully-shuffled 1200-bar case. It is
+  **not** on any per-frame path. Negligible.
+- **`computeBox` broad-phase fix** (`bounds.ts`): pure geometry, same call site and frequency as before
+  (once per drawing per frame, already cached per projection signature). No new cost; it only widens
+  four boxes so `mayHit` stops rejecting real hits.
+- **OrderTicket copy → status line**: *removes* DOM (a mapped per-follower row list becomes one line).
+  Strictly less render work.
+
+**Conclusion:** no rerender storm, no store churn, no unthrottled handler — before or after Phase A.
+Nothing here is a P0/P1 latency defect. Sustained tick-render frame timing under a live feed remains
+`UNVERIFIED` and belongs to a live browser-profiling session (Atlas V2), unchanged from the baseline.

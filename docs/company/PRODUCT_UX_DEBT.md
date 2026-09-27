@@ -61,3 +61,26 @@ architecture and density once operators actually use it.
 - **Interaction quality** — Atlas feel, latency perception, tool polish.
 
 **Do not act on any of the above in Product Recovery Phase 1.**
+
+---
+
+## Engineering Phase A additions (chart interaction + copy placement)
+
+Captured for Atlas V2 human review. **None of these is a functional defect** — the interaction model,
+selection reachability, pane resize, and copy fan-out are all objectively correct/fixed this phase.
+These are the *feel/placement* items that require Nathan's eyes and belong to the visual rebuild.
+
+- **Chart-tool physical feel (P3, human-only).** Grip grab-ease, handle target sizes, cursor
+  affordances, and TradingView-grade polish. The 3px drag threshold, market-coordinate anchoring, and
+  the (now-fixed) broad-phase hit boxes make every tool selectable and stable; how it *feels* to grab
+  and nudge is a V2 tuning pass. See `ATLAS_TOOL_INTERACTION_MATRIX.md`.
+- **Pane separator grab affordance (P3).** Volume and indicator panes are resizable by dragging the
+  divider (native lightweight-charts separators, persisted split, double-click reset); the grip's
+  visual weight / hover cue is a polish item, not a function gap.
+- **Order-DOM copy status placement (P3).** Copy configuration is out of the DOM entirely; the DOM
+  retains only a tiny "Copy · N accounts" status line. Its final placement/treatment (or removal) is a
+  deliberate Atlas V2 decision — do not restyle speculatively.
+- **Indicator/volume pane header density (P3).** Legend rows and pane headers are functional; visual
+  density belongs to the same V2 chart pass.
+
+**Do not act on any of the above before the Atlas V2 visual phase.**
