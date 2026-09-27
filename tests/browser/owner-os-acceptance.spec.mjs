@@ -84,7 +84,20 @@ try {
   await page.waitForTimeout(1_200);
   say(await has('.adm-panel-head:has-text("Staff")'), 'the staff directory panel renders');
   say(await has('.adm-panel-head:has-text("Invitations")'), 'the invitations panel renders');
-  say((await page.locator('[data-testid=staff-page] tbody tr').count()) >= 1, 'at least one staff member is listed');
+  say((await page.locator('[data-testid=staff-table] tbody tr').count()) >= 1, 'at least one staff member is listed');
+  // Product Recovery Phase 3: the owner can OPERATE staff from the console, not
+  // just read it. The invite form and the per-operator actions are present for
+  // the owner (their server endpoints are proven at L4 in owner-staff-http /
+  // staff-rbac-adversarial). No invite is issued here to keep the suite stateless.
+  say(await has('[data-testid=invite-form]'), 'the owner sees an invite form (email/role/step-up)');
+  say(await has('[data-testid=invite-role]'), 'the invite role selector renders');
+  say(await has('[data-testid^=staff-role-]'), 'each operator row has a Change-role action');
+  say(await has('[data-testid^=staff-revoke-]'), 'each operator row has a Revoke-sessions action');
+  say(
+    (await has('[data-testid^=staff-disable-]')) || (await has('[data-testid^=staff-reactivate-]')),
+    'each operator row has a Disable/Reactivate action',
+  );
+  await shot(page, 'owner-os-staff');
 
   // ===================== API: authentication & authorization =====================
   const unauth = await page.evaluate(async (url) => {

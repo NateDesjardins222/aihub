@@ -31,7 +31,11 @@ Logins (dev): owner `owner@atlasfutures.local` / `atlas-owner-2026`; trader
 | 20 | Owner OS: **release** the kill switch | New orders allowed again |
 | 21 | Atlas: place a bracket order (entry + SL + TP); let one side trigger | The opposite protective order **cancels** (OCO); no orphan order remains |
 | 22 | Refresh Atlas and the portal; reconnect | Orders, positions, balance, risk settings, hold state all remain correct |
-| 23 | Overall | The product behaves as **one** coherent business across Portal ↔ Atlas ↔ Owner OS |
+| 23 | Owner OS → **Staff & access** | The roster lists operators; an **Invite an operator** form and per-operator **Change role / Disable / Revoke sessions** actions are visible |
+| 24 | Staff: invite an operator (email + role + your password step-up) | An activation token is shown once; a new **INVITED** row appears |
+| 25 | Staff: try to disable the **only owner** (SUPER_ADMIN) | Refused — "at least one active owner must remain" (last-owner protection) |
+| 26 | Sign in as a non-owner operator (ADMIN) → Staff | Roster is read-only: no invite form, no role/disable buttons (owner-only) |
+| 27 | Overall | The product behaves as **one** coherent business across Portal ↔ Atlas ↔ Owner OS |
 
 **Reproducing the automated golden proof (optional):** the same max-trades=1 behavior (steps 7–12) is
 proven deterministically through the real order path in `apps/server/src/trading/golden-max-trades.test.ts`.
