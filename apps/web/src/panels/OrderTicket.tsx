@@ -292,23 +292,22 @@ export function OrderTicket(): JSX.Element {
         </span>
       </div>
 
+      {/*
+        Copy trading is NOT configured or managed here (owner's locked
+        direction, Engineering Phase A STEP 28-30): the order DOM is about the
+        current account's own order. The ONLY copy element the DOM keeps is a
+        TINY, non-configurational STATUS indicator that this account leads an
+        active group and how many accounts an order will reach — so a trader
+        pressing BUY knows it fans out. The per-follower sizing preview and all
+        group management live in the Copy panel (CopyPanel). The submission
+        still fans out through the copy intent path below; only the DOM's
+        DISPLAY is reduced. Final placement of any copy status in the DOM is
+        PENDING ATLAS V2 HUMAN REVIEW.
+      */}
       {copyGroup && copyPreview ? (
-        <div className="tk-copy" data-testid="ticket-copy" title="This account leads a copy group — orders fan out to its followers">
-          <div className="tk-copy-head">
-            <span className="tk-copy-dot" aria-hidden="true" />
-            COPY ACTIVE · {copyPreview.reach} account{copyPreview.reach === 1 ? '' : 's'}
-          </div>
-          <div className="tk-copy-prev">
-            <span className="tk-copy-leg">
-              <b>{qty}</b> leader
-            </span>
-            {copyPreview.followers.map((f) => (
-              <span key={f.name} className={`tk-copy-leg ${f.qty === 0 ? 'tk-copy-skip' : ''}`}>
-                <b>{f.qty === 0 ? '—' : f.qty}</b> {f.name}
-                {f.qty === 0 ? ' (skip)' : ''}
-              </span>
-            ))}
-          </div>
+        <div className="tk-copy tk-copy-status" data-testid="ticket-copy" title="This account leads an active copy group — orders fan out to its followers. Manage the group in the Copy panel.">
+          <span className="tk-copy-dot" aria-hidden="true" />
+          Copy · {copyPreview.reach} account{copyPreview.reach === 1 ? '' : 's'}
         </div>
       ) : null}
 

@@ -447,6 +447,20 @@
   color: var(--accent);
 }
 
+/*
+ * The reduced, single-line copy STATUS the order DOM keeps (Phase A STEP 30):
+ * a dot + "Copy · N accounts", non-configurational. All group management lives
+ * in the Copy panel. Overrides the column layout to a tidy single row.
+ */
+.tk-copy-status {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
 .tk-copy-dot {
   width: 7px;
   height: 7px;
