@@ -43,6 +43,7 @@ import type {
 } from './ChartAdapter';
 import { isStatefulTransform, transformFor } from './transforms';
 import { orderBarsAscendingUnique } from './bar-order';
+import { adaptSplit } from './pane-split';
 import { CHART_FONT_STACK } from './fonts';
 import {
   DEFAULT_APPEARANCE,
@@ -1086,28 +1087,12 @@ export class LightweightChartsAdapter implements ChartAdapter {
    * the automatic split.
    */
   private fitSplit(count: number): number[] | null {
-    const manual = this.paneSplit;
-    /*
-     * One pane has no split, and saying so would destroy one.
-     *
-     * A chart passes through a single pane twice: at startup, before the
-     * stored workspace has arrived, and whenever the last study is removed.
-     * Adapting a three-pane split to "one pane" produced a one-element array,
-     * which is not a split at all - and because the adaptation was saved, a
-     * trader's arrangement was quietly overwritten by their own reload.
-     */
-    if (!manual || manual.length === 0 || count < 2) return null;
-    if (manual.length === count) return [...manual];
-    const total = manual.reduce((sum, value) => sum + value, 0);
-    if (total <= 0) return null;
-    const price = manual[0] ?? 1;
-    const below = Math.max(0, total - price);
-    const others = count - 1;
-    if (others <= 0) return [price];
-    // A pane that did not exist when the trader dragged gets an equal share of
-    // what was below the price, so the price pane's own share is untouched.
-    const each = below > 0 ? below / others : price / 3;
-    return [price, ...Array.from({ length: others }, () => each)];
+    // Pure math, unit-tested in pane-split.test.ts. A single pane has no split,
+    // and saying so would destroy one: a chart passes through one pane at
+    // startup (before the stored workspace arrives) and whenever the last study
+    // is removed, and adapting a three-pane split to "one pane" then saving it
+    // used to overwrite a trader's arrangement with their own reload.
+    return adaptSplit(this.paneSplit, count);
   }
 
   /** Read the split back out of the renderer, after a drag. */
