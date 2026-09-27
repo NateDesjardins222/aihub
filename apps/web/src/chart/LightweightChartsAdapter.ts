@@ -42,6 +42,7 @@ import type {
   VisibleRange,
 } from './ChartAdapter';
 import { isStatefulTransform, transformFor } from './transforms';
+import { orderBarsAscendingUnique } from './bar-order';
 import { CHART_FONT_STACK } from './fonts';
 import {
   DEFAULT_APPEARANCE,
@@ -840,7 +841,11 @@ export class LightweightChartsAdapter implements ChartAdapter {
   }
 
   applyHistory(bars: readonly NormalizedBar[]): void {
-    this.bars = [...bars];
+    // Ordered + de-duplicated before it reaches the renderer: an unordered or
+    // duplicate-timestamp page must never freeze the chart (see
+    // orderBarsAscendingUnique). This is the initial and most common load path;
+    // prependHistory already applies the same discipline on its own path.
+    this.bars = orderBarsAscendingUnique(bars);
     this.barsRevision += 1;
     this.reindex();
     this.historyRequestPending = false;
