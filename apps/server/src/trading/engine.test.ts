@@ -432,9 +432,15 @@ describe('flatten and reverse', () => {
     await submit({ qty: 2, side: 'BUY' });
     await market.quote('NQ', 20_010);
     await engine.reverse(fixture.accountId, fixture.userId, 'NQ');
-    await settle(20);
 
-    const view = await engine.positionView(fixture.accountId, 'NQ');
+    // Poll for the reversal to settle rather than sleeping a fixed 20ms: under
+    // heavy full-suite CPU contention the async fill chain can outlast a fixed
+    // delay, which reads exactly like a defect ("expected SHORT, got LONG").
+    let view = await engine.positionView(fixture.accountId, 'NQ');
+    for (let i = 0; i < 100 && !(view.side === 'SHORT' && view.qty === 2); i += 1) {
+      await settle(20);
+      view = await engine.positionView(fixture.accountId, 'NQ');
+    }
     expect(view.side).toBe('SHORT');
     expect(view.qty).toBe(2);
   });

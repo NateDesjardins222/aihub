@@ -489,3 +489,42 @@ impersonation, owner-account adjust/pause. Surface with the same step-up pattern
 
 **Validation:** typecheck (5 projects) + web build clean; 11/11 repair browser checks; canonical
 202 files / 2922 tests PASS. No P0/P1 money/security/risk defect found anywhere.
+
+---
+
+# PRODUCT RECOVERY PHASE 2 — behavioral gaps (from `2fe43da`)
+
+Evidence-graded L0–L5 (see `PRODUCT_BEHAVIORAL_TRUTH.md`). **No P0.** No new *broken* defect; the
+items below are **unproven-at-the-real-boundary gaps** (not failures) that Phase 2 either closed or
+documented honestly. Closed this phase:
+
+- **PR2-C1 — wrong-account/cross-customer execution authorization was UNTESTED (was L1).** Now L4:
+  `http/trading-authz-http.test.ts` proves a foreign account is rejected (404) at the real
+  `POST /orders` + flatten boundary with the account untouched. Guard (`assertOwnership`) was already
+  correct; the risk was zero coverage — now closed.
+- **PR2-C2 — 4 personal controls (PROFIT_LOCK / DAILY_DRAWDOWN / TRADING_WINDOW / SESSION_RESTRICTION)
+  proven only by the pure evaluator (L1).** Now L3 on the real order path (`personal-risk-gate-extra`).
+- **PR2-C3 — firm-vs-personal composition on the order path (L2).** Now L3 (personal never loosens the
+  firm cap).
+
+Documented, NOT closed (gaps, not defects — for Phase 3):
+- **PR2-G1 (P2) — EOD_TRAILING floor ratchet through the real engine day-roll is UNVERIFIED (L1 at
+  system level).** The canonical EOD-trailing math is exhaustively proven by pure `@atlas/core` tests
+  and post-payout floor safety is L4, but no test drives a finalized day-roll on an EOD_TRAILING
+  account asserting the persisted `drawdownFloorMicros` ratchets/locks (engine floor persistence is
+  proven only for STATIC/INTRADAY_TRAILING). Core 50K uses EOD_TRAILING → close this in Phase 3.
+- **PR2-G2 (P2) — Core >50% consistency pass-gate proven pure-only (L1).** Not driven through
+  `certifyEvaluation` on a real traded history.
+- **PR2-G3 (P3) — payout fine boundaries ($149.99/$150.00, 4-vs-5 days, exact over-cap) proven pure
+  only (L1)**, not straddling real `dailyAccountStats`.
+- **PR2-G4 (P3) — bracket cleanup on reconnect / account-switch UNVERIFIED** (no test).
+- **PR2-G5 (P2) — Staff-management console UI not built (L0).** Backend mature (invite/role/suspend/
+  revoke, STAFF step-up, audit); needs the step-up dialog applied to a multi-field form. Deferred to
+  the Owner-OS operability sub-phase (STEP 18 decision), not a trading-integrity blocker.
+- **PR2-G6 (P3) — chart external raw-vs-provider (Yahoo) parity UNVERIFIED** headless. Internal OHLC
+  invariants + 1m→5m aggregation parity are verified.
+- **PR2-G7 (P3) — Atlas UX quality / perceived lag** — measured latency is low; the "feel" is
+  interaction quality for the Atlas rebuild phase (see `ATLAS_PERFORMANCE_BASELINE.md`).
+
+**Validation:** typecheck (5 projects) clean; 3 new behavioral test files (11 tests) pass; canonical
+recorded in `PRODUCT_RECOVERY_REPORT_PHASE_2.md`. No P0. Human acceptance PENDING HUMAN.

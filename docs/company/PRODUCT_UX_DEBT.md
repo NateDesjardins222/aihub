@@ -31,6 +31,14 @@ largely E2E (see PRODUCT_FUNCTIONAL_TRUTH.md); it is that the *presentation* is 
   `useFreshness` polls REST every 5s/pane and replay status every 3s, duplicating the WS
   `md.status` heartbeat — low cost, dedupe later.
 
+## Atlas — measured perf baseline (Phase 2, STEP 25)
+Phase 2 **measured** the "laggy feel" instead of guessing (see `ATLAS_PERFORMANCE_BASELINE.md`):
+server/data latency is low (API ~3 ms, bars ~17 ms, chart-ready ~300 ms headless) — there is **no
+gross latency bug**. The complaint is **interaction quality** (chart feel, tools obstructing price,
+DOM/order/bracket interaction), which belongs to the Atlas rebuild. Two concrete debts to fix in that
+rebuild: the **753 KB monolithic JS bundle** (code-split) and **redundant 5s/3s polling** duplicating
+the WS heartbeat. The rebuild should add input-to-paint instrumentation to profile the real "feel".
+
 ## Owner OS — evaluate separately AFTER natural accessibility
 Now that the Owner Console is discoverable (Phase 1), its presentation can be reviewed on its
 own. Not owner-reviewed yet. It is dense and functional; a later pass should judge information

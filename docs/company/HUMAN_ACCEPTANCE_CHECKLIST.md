@@ -77,6 +77,14 @@ and audiences — do not confuse them.
   reason naming the personal control (a reducing/closing order is still allowed). This is the definitive
   owner check; automated tests already prove the same on the engine's order path.
 
+### Fastest end-to-end confidence check: the Human Golden Path
+
+Before the exhaustive sections below, run **`HUMAN_GOLDEN_PATH.md`** (~23 checks): owner-console
+discovery, the max-trades=1 rejection, an owner hold blocking Atlas, a kill switch, a bracket/OCO, and
+cross-surface consistency. It is the shortest path to L5 (human-verified) for the trading-integrity
+core. The behaviors it checks are already proven automatically to L3/L4 (see
+`PRODUCT_BEHAVIORAL_TRUTH.md`); only your physical run assigns L5.
+
 ### First test on every page: can you scroll?
 
 Before anything else, on BOTH the Customer Dashboard (`/portal`) and the Owner OS (`/admin`): the page has

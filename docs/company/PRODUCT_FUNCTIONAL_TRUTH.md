@@ -1,5 +1,15 @@
 # PRODUCT FUNCTIONAL TRUTH
 
+> **PHASE 2 RECLASSIFICATION NOTICE (STEP 28).** This document reports Phase-1 **wiring** truth
+> (does the chain exist in code: L0–L2). It is accurate at that level, but "E2E VERIFIED" here means
+> *wired end-to-end*, NOT behaviorally proven. For the trading-integrity core, the authoritative,
+> evidence-graded (L0–L5) truth is now `PRODUCT_BEHAVIORAL_TRUTH.md`, which downgrades any claim that
+> outran its evidence (e.g. four personal controls and firm-vs-personal composition were only
+> pure-evaluator-proven until Phase 2 raised them to L3; wrong-account authorization was untested
+> until Phase 2 raised it to L4). Read this for the wiring map; read `PRODUCT_BEHAVIORAL_TRUTH.md`
+> for what the system actually *does*. No "COMPLETE / READY / PRODUCTION READY" claim is implied by
+> anything below.
+
 **Happy Trader Funding — Product Recovery Phase 1.** What actually works, traced from source.
 
 Baseline: branch `claude/futures-trading-simulator-v8qefu`, from RC1 `dac5fd1`.
