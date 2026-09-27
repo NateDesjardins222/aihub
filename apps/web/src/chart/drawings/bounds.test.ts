@@ -87,3 +87,46 @@ describe('bounds cache', () => {
     expect(projectionSignature(moved)).not.toBe(projectionSignature(projection));
   });
 });
+
+/**
+ * Engineering Phase A — the broad-phase box must be a conservative SUPERSET of
+ * hitTest, or `pick` rejects a real hit before hitTest runs. These kinds used to
+ * box to the anchor point, so their arms / ray / text / stamp were unclickable.
+ */
+describe('broad-phase box reaches the whole hit region', () => {
+  const make = (kind: Drawing['kind'], anchors: Array<[number, number]>): Drawing => ({
+    ...line(anchors),
+    kind,
+  });
+
+  it('CROSS_LINE is grabbable anywhere along either arm', () => {
+    const cross = make('CROSS_LINE', [[100_000, 50]]); // x=100, y=50
+    const cache = new BoundsCache();
+    cache.sync(projection);
+    expect(cache.mayHit(cross, projection, 360, 50)).toBe(true); // far along the horizontal arm
+    expect(cache.mayHit(cross, projection, 100, 190)).toBe(true); // far along the vertical arm
+  });
+
+  it('HORIZONTAL_RAY is grabbable rightward from its anchor, not left of it', () => {
+    const ray = make('HORIZONTAL_RAY', [[100_000, 50]]); // x=100, y=50
+    const cache = new BoundsCache();
+    cache.sync(projection);
+    expect(cache.mayHit(ray, projection, 360, 50)).toBe(true); // rightward along the ray
+    expect(cache.mayHit(ray, projection, 20, 50)).toBe(false); // left of the anchor: not on the ray
+  });
+
+  it('TEXT is grabbable across its painted (rightward, multi-line) box', () => {
+    const text = make('TEXT', [[100_000, 50]]); // x=100, y=50
+    const cache = new BoundsCache();
+    cache.sync(projection);
+    expect(cache.mayHit(text, projection, 300, 60)).toBe(true);
+  });
+
+  it('a single-anchor stamp is grabbable across its hit radius', () => {
+    const mark = make('ARROW_MARK_UP', [[100_000, 50]]); // x=100, y=50
+    const cache = new BoundsCache();
+    cache.sync(projection);
+    expect(cache.mayHit(mark, projection, 112, 60)).toBe(true); // within the stamp radius
+    expect(cache.mayHit(mark, projection, 200, 50)).toBe(false); // far away: rejected
+  });
+});

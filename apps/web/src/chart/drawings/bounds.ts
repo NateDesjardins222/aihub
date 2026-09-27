@@ -122,14 +122,39 @@ export function computeBox(drawing: Drawing, projection: Projection): Box | null
 
   switch (drawing.kind) {
     case 'HORIZONTAL_LINE':
-      return { left: 0, right: projection.width, top, bottom };
+    case 'HORIZONTAL_RAY':
+      // A horizontal line spans the whole width; a horizontal RAY runs from its
+      // anchor rightward to the plot edge. Both are clickable far from the
+      // anchor, so the broad-phase box must reach there or `pick` rejects the
+      // hit before `hitTest` ever runs (Engineering Phase A: the ray body was
+      // unselectable because the box was the anchor point).
+      return { left: drawing.kind === 'HORIZONTAL_RAY' ? left : 0, right: projection.width, top, bottom };
     case 'VERTICAL_LINE':
       return { left, right, top: 0, bottom: projection.height };
     case 'RAY':
     case 'EXTENDED_LINE':
-      // An unbounded line is clickable anywhere along its path; the plot is
-      // the honest bound.
+    case 'CROSS_LINE':
+      // An unbounded line (or the two full-length arms of a cross line) is
+      // clickable anywhere along its path; the plot is the honest bound.
       return { left: 0, right: projection.width, top: 0, bottom: projection.height };
+    case 'TEXT':
+    case 'ANCHORED_TEXT':
+      // Left-aligned, possibly multi-line: the painted box extends rightward and
+      // downward from the anchor by an amount only the renderer knows. Be
+      // generous in the broad phase (hitTest does the exact textScreenBounds
+      // test) rather than clip the grabbable label to the anchor point.
+      return { left: left - HIT_TOLERANCE, right: projection.width, top: top - 48, bottom: bottom + 48 };
+    case 'NOTE':
+    case 'ARROW_MARK_UP':
+    case 'ARROW_MARK_DOWN':
+    case 'ARROW_MARK_LEFT':
+    case 'ARROW_MARK_RIGHT': {
+      // Single-anchor stamps with a hit RADIUS around the anchor (model MARK_RADIUS).
+      // The tight anchor-point box clipped that ring; pad it so the whole stamp
+      // is grabbable.
+      const pad = 18;
+      return { left: left - pad, right: right + pad, top: top - pad, bottom: bottom + pad };
+    }
     default:
       return { left, right, top, bottom };
   }
