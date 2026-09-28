@@ -1,0 +1,56 @@
+/* V2 Accounts view (Product Rebuild Phase 1). Scoped under `.htv2`. */
+.htv2-acct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--ht-space-4);
+  align-items: start;
+}
+
+/* Loading skeleton: reserves the panel's shape so there is no violent shift when
+   real data arrives. */
+.htv2-acct-skeleton {
+  gap: var(--ht-space-3);
+  min-height: 240px;
+}
+.htv2-acct-skeleton > span {
+  display: block;
+  border-radius: var(--ht-radius-sm);
+  background: linear-gradient(90deg, var(--ht-surface-2), var(--ht-surface-hover), var(--ht-surface-2));
+  background-size: 200% 100%;
+  animation: htv2-shimmer 1.4s ease-in-out infinite;
+}
+.htv2-acct-skeleton > span:nth-child(1) { height: 16px; width: 55%; }
+.htv2-acct-skeleton > span:nth-child(2) { height: 34px; width: 70%; }
+.htv2-acct-skeleton > span:nth-child(3) { height: 12px; width: 100%; }
+.htv2-acct-skeleton > span:nth-child(4) { height: 12px; width: 40%; }
+
+@keyframes htv2-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .htv2-acct-skeleton > span { animation: none; }
+}
+
+.htv2-accounts-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: var(--ht-space-6) var(--ht-space-5);
+  border: 1px solid color-mix(in srgb, var(--ht-negative) 35%, var(--ht-border));
+  background: var(--ht-negative-bg);
+  border-radius: var(--ht-radius-md);
+}
+.htv2-accounts-error .ht-t-body-sm { margin: 0; color: var(--ht-text-muted); max-width: 52ch; }
+
+/* Partial failure — a secondary source is missing but accounts still render. */
+.htv2-accounts-degraded {
+  padding: 8px 12px;
+  margin-bottom: var(--ht-space-3);
+  border: 1px solid color-mix(in srgb, var(--ht-warning) 35%, var(--ht-border));
+  background: var(--ht-warning-bg);
+  border-radius: var(--ht-radius-sm);
+  color: var(--ht-text);
+  font-size: 12px;
+}

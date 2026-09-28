@@ -122,3 +122,20 @@ Lightweight and enforceable — not a new lint system.
 Exact champagne hue and gradient stops; final surface steps; sidebar width; the hero/emphasis placement
 of the metallic treatment; density fine-tuning; and light-mode. The system is built so each is a token or
 prop change, not a rewrite.
+
+## Phase 1 addition — centralized money & the account adapter
+
+Phase 1 added two structural pieces the rest of the portal should reuse:
+
+- **`apps/web/src/portal/v2/format.ts`** — the single money/percent formatter (`formatMoney`, `moneyTone`,
+  `formatPercent`, `clampPercent`, `accountSizeLabel`, `maskAccountId`). It is micro-dollar aware
+  (`MICROS_PER_DOLLAR = 1e6`) and tested against ugly values (float tails, negative, sub-dollar, huge).
+  **No V2 surface should build money strings by hand** — route them through here so tabular alignment
+  (`.ht-num`) and rounding stay consistent.
+- **`apps/web/src/portal/v2/account-view.ts`** (`toAccountView`) — the deterministic adapter from
+  authoritative `AccountSummary` to the presentational `V2AccountView`. It is the template for every future
+  vertical's adapter: pure, typed, tested, and inventing no business truth.
+
+Progress bars in V2 render **authoritative ratios only**. The Accounts vertical shows *drawdown room*
+(cushion remaining) because the summary payload has no profit target; do not fabricate a target to fill a
+bar (see `KNOWN_ISSUES.md` PV2-1).

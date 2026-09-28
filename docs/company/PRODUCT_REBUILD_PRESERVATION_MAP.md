@@ -58,3 +58,12 @@ accidentally rewrites a tested system. From checkpoint `9f74a5f` (Engineering Ph
 **No backend, product-rule, payout-rule, risk-rule, or execution code changes in the visual rebuild.**
 Portal V2 replaces presentation and re-binds to the same authoritative view models. Anything marked DO
 NOT TOUCH stays exactly as verified at `9f74a5f`.
+
+## Phase 1 note (base `a4a2d0f`)
+
+The Accounts vertical was wired to authoritative data **without touching anything marked DO NOT TOUCH**.
+Confirmed by Phase 1: no server file changed, no Atlas file changed, no product-economics file changed;
+the `?account=` Atlas hand-off is preserved (`V2AccountsContainer.trade` → `/?account=publicId`), and the
+V2 layer remains a separate `--ht-*`/`.htv2` presentation over the same authoritative view models. The
+account-card rebuild row above is realized by `V2AccountPanel` + `toAccountView` (adapter), with overflow
+fixed structurally and proven in-browser at 6 widths.

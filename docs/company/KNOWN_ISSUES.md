@@ -607,3 +607,34 @@ workspace-corruption fallback are all covered by existing + new deterministic su
 **Validation:** focused web 22 files / 274 tests + server OCO/reconnect/race 6 files / 46 tests pass;
 typecheck + build clean; trading regression green; canonical run once. No P0, no HARD-STOP. Human
 acceptance PENDING HUMAN.
+
+---
+
+## Product Rebuild Phase 1 — Portal V2 Foundation (base `a4a2d0f`)
+
+Portal V2 is isolated (dev-only `/portal-v2`, `.htv2`/`--ht-*` scope, code-split), reads the
+authoritative account system, and duplicates no business truth. Nothing below is a P0/P1; all are
+deferred-by-design items and one pre-existing flake.
+
+- **PV2-1 (P3, product decision — NOT a defect).** The portal has historically framed per-account
+  progress toward a **profit target**, but the authoritative `PortalAccountSummary` carries no profit
+  target (only start / balance / HWM / drawdown floor). Rather than invent one, V2 renders **drawdown-room
+  progress** (cushion remaining vs. initial cushion), which is fully authoritative. **Decision required
+  (Nathan):** to show profit-target progress, the server summary projection must expose the authoritative
+  target for the account's product version; V2 will then render it. No economics were changed. See
+  `PORTAL_V2_ACCOUNT_STATE_MATRIX.md §4` and `PORTAL_V2_DATA_OWNERSHIP.md §9`.
+- **PV2-2 (P4, hygiene).** The web mirror type `AccountSummary` (`apps/web/src/portal/lib.tsx`) omits
+  `activatedAt`, which the server `PortalAccountSummary` includes. V2's Accounts vertical does not use it,
+  so this is not a Phase 1 defect. Add it to the mirror when a vertical needs it, rather than re-fetching.
+- **PV2-3 (P3, scope).** V2 has no account **detail** page yet; "View details" links to the live V1
+  detail route (`/portal/accounts/:id`). Intended as the first item of the next phase.
+- **PV2-G1 (P3, pre-existing flake — NOT introduced by Phase 1).** `apps/server/src/http/trading-authz-http.test.ts`
+  can hit a `beforeEach` "Hook timed out in 10000ms" under the 216-worker canonical contention (file setup
+  ~7.7s alone). It passes **4/4 in isolation**. Seen in Phase B and the Phase 1 baseline; re-run resolves.
+  A fix (raising this file's hook timeout or reducing per-test setup) is a test-infra nicety, not a
+  product issue.
+
+**Validation:** 31 focused V2 tests pass; two real-browser overflow scripts contained at
+1920/1440/1280/1024/768/390; web typecheck + build clean; canonical run once (only PV2-G1 flake, green in
+isolation). No P0, no P1. Human visual acceptance of the V2 surface PENDING HUMAN (deliberately deferred —
+Phase 1 is structure, not final polish).

@@ -12,12 +12,24 @@ import { useState, type JSX } from 'react';
 import { V2AppShell } from './Shell';
 import { V2AccountPanel, type V2AccountView } from './AccountPanel';
 import { V2Lifecycle, LIFECYCLE_STAGES } from './Lifecycle';
+import { V2AccountsView, type V2AccountsState } from './AccountsView';
+import { toAccountView } from './account-view';
+import { FIXTURE_ACCOUNTS, FIXTURE_VIEW, FIXTURE_VIEW_EMPTY } from './fixtures';
 import {
   V2Root, V2Metal, V2Button, V2Status, V2Metric, V2FinancialValue,
   V2Section, V2Divider, V2EmptyState, V2Card,
 } from './primitives';
 import './tokens.css';
 import './type.css';
+
+const ACCOUNT_STATES: V2AccountsState[] = [
+  { status: 'ready', view: FIXTURE_VIEW },
+  { status: 'loading' },
+  { status: 'ready', view: FIXTURE_VIEW_EMPTY },
+  { status: 'error', message: 'The accounts service is temporarily unavailable (dev fixture).' },
+  { status: 'ready', view: FIXTURE_VIEW, degraded: 'Some performance data is delayed; balances below are current.' },
+];
+const ACCOUNT_STATE_LABELS = ['Ready', 'Loading', 'Empty', 'Error', 'Degraded'];
 
 const DEMO_ACCOUNTS: V2AccountView[] = [
   {
@@ -39,6 +51,7 @@ const DEMO_ACCOUNTS: V2AccountView[] = [
 
 export function PortalV2Harness(): JSX.Element {
   const [active, setActive] = useState('dashboard');
+  const [acctState, setAcctState] = useState(0);
   return (
     <V2Root>
       <V2AppShell
@@ -112,12 +125,31 @@ export function PortalV2Harness(): JSX.Element {
             </V2Card>
           </V2Section>
 
-          <V2Section title="Account panels">
+          <V2Section title="Account panels (per state)">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--ht-space-4)' }}>
               {DEMO_ACCOUNTS.map((a) => (
                 <V2AccountPanel key={a.maskedId} a={a} />
               ))}
+              {/* Every authoritative account state, mapped through the real adapter. */}
+              {Object.entries(FIXTURE_ACCOUNTS).map(([key, summary]) => (
+                <V2AccountPanel key={key} a={toAccountView(summary)} />
+              ))}
             </div>
+          </V2Section>
+
+          <V2Section
+            title="Accounts experience (states)"
+            actions={
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {ACCOUNT_STATE_LABELS.map((label, i) => (
+                  <V2Button key={label} variant={i === acctState ? 'primary' : 'secondary'} size="sm" onClick={() => setAcctState(i)}>
+                    {label}
+                  </V2Button>
+                ))}
+              </div>
+            }
+          >
+            <V2AccountsView state={ACCOUNT_STATES[acctState]!} actions={{}} />
           </V2Section>
 
           <V2Section title="Empty state">

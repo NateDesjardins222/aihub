@@ -123,3 +123,18 @@ has not and will not self-certify L5. Phase A leaves **external candle parity** 
 feel** to Nathan's eyes; Phase B additionally leaves **live frame-timing under a real feed**, **multi-DPR
 crispness**, and the **per-chart-account product decision** to Nathan (see
 `ATLAS_ENGINEERING_PHASE_B_REPORT.md`).
+
+## Portal V2 — Accounts vertical (Product Rebuild Phase 1, base `a4a2d0f`)
+
+| Behaviour | Level | Evidence |
+|---|---|---|
+| Portal account state is server-authoritative; V2 maps `portalState`, never recomputes it | **L4** | `portalState()` (server) + `toAccountView` maps only; `account-view.test.ts` (8 states). |
+| Account ownership enforced server-side on every portal call; forged id → `notFound` | **L4** | `requireUser` preHandler + `assertOwned` + owner-scoped list query (`portal.ts`, `portal-accounts.ts`). |
+| V2 does presentation arithmetic only (net P&L, MLL room, drawdown-room %); invents no rule | **L4** | `account-view.ts` + `PORTAL_V2_DATA_OWNERSHIP.md §5`; `format.test.ts` + `account-view.test.ts` (31 tests). |
+| Account panels / lifecycle contain at 1920→390px incl. long id + $1.28M balance | **L4** | `scripts/portal-v2-accounts-overflow.mjs` + `scripts/portal-v2-lifecycle-overflow.mjs` (real browser). |
+| Loading / empty / error / partial-failure states are distinct; stale response discarded | **L3** | `AccountsView.tsx` states + `AccountsContainer.tsx` monotonic `tokenRef`. |
+| V2 is dev-isolated; no production bundle impact; `/portal-v2` 404s in production | **L4** | `App.tsx` `designLabEnabled()` gate + `lazy()`; build shows a code-split dev-only `Harness` chunk; no non-v2 import of `portal/v2`. |
+
+**L5 (PENDING HUMAN):** Nathan's visual acceptance of the V2 Accounts surface — deliberately deferred;
+Phase 1 is structure, not final polish. Also pending his decision: profit-target vs drawdown-room progress
+framing (PV2-1).

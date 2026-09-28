@@ -67,3 +67,27 @@ column; account panels auto-fill; lifecycle grid stays contained; tables stack; 
 Each migrated page renders inside `.htv2`, imports only `--ht-*`, passes `design-guardrails.test.ts`, and
 adds a layout/overflow check where a component has a known risk (as the lifecycle already does). V1 stays
 live until each page reaches parity and Nathan approves; then the V1 page + its `--pt-*` CSS is deleted.
+
+---
+
+## Phase 1 status update (base `a4a2d0f`)
+
+Phase 1 delivered the **integration seam and the Accounts vertical**, not a page swap. What now exists:
+
+- **The container seam.** `apps/web/src/portal/v2/AccountsContainer.tsx` is production-capable: it fetches
+  the authoritative `/api/v1/portal/accounts`, guards stale responses with a monotonic token, retries, and
+  maps outcomes to a discriminated `V2AccountsState`. Migration of the Accounts surface is now a
+  **mount-behind-a-flag** operation, not a rewrite — no backend change is needed to switch, and not
+  switching is the rollback.
+- **The typed boundary.** `account-view.ts` (`toAccountView`) is the single deterministic adapter between
+  authoritative `AccountSummary` and V2 components. It renders truth and invents none (see
+  `PORTAL_V2_DATA_OWNERSHIP.md`).
+- **Isolation confirmed.** No production file imports `portal/v2`; `AccountsContainer` is not yet mounted;
+  V2 compiles into a code-split **dev-only** `Harness` chunk, so the customer bundle is unchanged.
+
+**Recommended migration order (unchanged, now with the seam ready):** Accounts (container ready) →
+Accounts **detail** (build `V2` detail against `portalAccountDetail`) → Dashboard → Payouts → the rest.
+Each step mounts one V2 surface behind a flag, reaches parity, gets Nathan's approval, then retires the
+V1 page + its `--pt-*` CSS. Clean rollback at every step = flip the flag.
+
+**Deferred/for decision:** profit-target vs drawdown-room progress framing (see `KNOWN_ISSUES.md` PV2-1).
