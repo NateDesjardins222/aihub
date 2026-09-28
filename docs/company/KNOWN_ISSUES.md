@@ -616,13 +616,13 @@ Portal V2 is isolated (dev-only `/portal-v2`, `.htv2`/`--ht-*` scope, code-split
 authoritative account system, and duplicates no business truth. Nothing below is a P0/P1; all are
 deferred-by-design items and one pre-existing flake.
 
-- **PV2-1 (P3, product decision — NOT a defect).** The portal has historically framed per-account
-  progress toward a **profit target**, but the authoritative `PortalAccountSummary` carries no profit
-  target (only start / balance / HWM / drawdown floor). Rather than invent one, V2 renders **drawdown-room
-  progress** (cushion remaining vs. initial cushion), which is fully authoritative. **Decision required
-  (Nathan):** to show profit-target progress, the server summary projection must expose the authoritative
-  target for the account's product version; V2 will then render it. No economics were changed. See
-  `PORTAL_V2_ACCOUNT_STATE_MATRIX.md §4` and `PORTAL_V2_DATA_OWNERSHIP.md §9`.
+- **PV2-1 (RESOLVED in Product Rebuild Phase 2).** V2 evaluation progress now shows profit toward the
+  **authoritative profit target** (`account_profile_versions.config.rules.profitTargetMicros` — the same
+  number the rule engine passes on), surfaced through a minimal, additive portal-contract extension (no
+  schema change, no migration, no economics change). Funded accounts (target 0) show no target bar. The
+  Phase 1 drawdown-room framing was a truthful temporary stand-in and is retired. See
+  `PORTAL_V2_ACCOUNT_DETAIL.md §5`, `PORTAL_V2_DATA_OWNERSHIP.md §Phase 2`, and
+  `PORTAL_V2_PHASE2_REPORT.md`.
 - **PV2-2 (P4, hygiene).** The web mirror type `AccountSummary` (`apps/web/src/portal/lib.tsx`) omits
   `activatedAt`, which the server `PortalAccountSummary` includes. V2's Accounts vertical does not use it,
   so this is not a Phase 1 defect. Add it to the mirror when a vertical needs it, rather than re-fetching.
@@ -638,3 +638,26 @@ deferred-by-design items and one pre-existing flake.
 1920/1440/1280/1024/768/390; web typecheck + build clean; canonical run once (only PV2-G1 flake, green in
 isolation). No P0, no P1. Human visual acceptance of the V2 surface PENDING HUMAN (deliberately deferred —
 Phase 1 is structure, not final polish).
+
+---
+
+## Product Rebuild Phase 2 — Accounts vertical complete (base `85b644d`)
+
+The Accounts vertical is now complete and isolated: authoritative evaluation-target progress (PV2-1 resolved),
+Account Detail V2 (Overview/Performance/Controls/Rules/Activity), Accounts↔Detail↔Trade journey, ownership +
+race + responsive proofs. Nothing below is a P0/P1.
+
+- **PV2-3 (RESOLVED).** V2 now has an isolated Account Detail (`/portal-v2/accounts/:id`); the Accounts list
+  links to it, not to V1 detail.
+- **PV2-2 (P4, hygiene, unchanged).** The web `AccountSummary` mirror still omits `activatedAt` (unused by
+  the Accounts vertical).
+- **PV2-4 (P3, scope note).** V2 Performance renders the equity curve as a line only (no hover tooltip /
+  P&L calendar yet, which V1 has). This is a deliberate Phase-2 scope boundary, not a defect — all metrics
+  shown are real and it degrades truthfully when data is thin. A richer curve is a later-phase item.
+- **PV2-G1 (pre-existing flake, unchanged).** `trading-authz-http.test.ts` beforeEach hook-timeout under
+  full canonical contention; passes in isolation. Not introduced by Phase 2.
+
+**Validation:** V2 focused suite green; portal HTTP + lifecycle tests green (incl. new authoritative-target
+assertions and IDOR on the controls route); two real-browser overflow proofs (accounts + detail) contained
+at 1920/1440/1280/1024/768/390; web typecheck + build clean; canonical run once. No P0, no P1. Human visual
+acceptance of the V2 Accounts vertical PENDING HUMAN (the deliverable of this phase).

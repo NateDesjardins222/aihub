@@ -91,3 +91,17 @@ Each step mounts one V2 surface behind a flag, reaches parity, gets Nathan's app
 V1 page + its `--pt-*` CSS. Clean rollback at every step = flip the flag.
 
 **Deferred/for decision:** profit-target vs drawdown-room progress framing (see `KNOWN_ISSUES.md` PV2-1).
+
+---
+
+## Phase 2 status update (base `85b644d`)
+
+The Accounts vertical is now complete end-to-end in the isolated V2 environment: list → **Account Detail V2**
+(`/portal-v2/accounts/:id`) → back, plus the authoritative Trade hand-off. `V2AccountDetailContainer` is the
+detail migration seam (production-capable, not mounted). Risk controls reuse the existing enforcement system
+(`V2AccountControls` → the same `/controls` endpoints + `expectedVersion` guard). The server contract gained
+authoritative rule fields additively (no migration).
+
+**Migration order (unchanged):** Accounts + Detail (ready) → Dashboard → Payouts → the rest. The Accounts
+vertical is the first candidate to mount behind a flag once Nathan accepts it visually; rollback stays "don't
+switch the route." Nothing in V1 changed.

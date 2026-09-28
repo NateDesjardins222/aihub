@@ -17,7 +17,7 @@ function acct(over: Partial<AccountSummary> = {}): AccountSummary {
     accountType: 'EVALUATION', status: 'ACTIVE', portalState: 'EVALUATION_ACTIVE', consumesSlot: true,
     product: { key: 'core-100k', name: 'CORE 100K', version: 3 },
     startingBalanceMicros: 100_000 * M, balanceMicros: 100_000 * M, highWaterMarkMicros: 100_000 * M,
-    drawdownFloorMicros: 96_000 * M, resetOfAccountId: null, archivedAt: null, createdAt: 0,
+    drawdownFloorMicros: 96_000 * M, profitTargetMicros: 6_000 * M, resetOfAccountId: null, archivedAt: null, createdAt: 0,
     ...over,
   };
 }
@@ -66,16 +66,32 @@ describe('toAccountView — determinism & authority', () => {
     expect(toAccountView(acct({ balanceMicros: 95_000 * M })).mllRoomText).toBe('$0'); // below floor
   });
 
-  it('shows a drawdown-room bar only for live accounts, clamped 0..100', () => {
-    // Full cushion at start.
-    expect(toAccountView(acct()).progressPct).toBe(100);
-    // Half the cushion consumed.
-    expect(toAccountView(acct({ balanceMicros: 98_000 * M })).progressPct).toBe(50);
-    // Below floor → 0, never negative.
-    expect(toAccountView(acct({ balanceMicros: 90_000 * M })).progressPct).toBe(0);
-    // Not live → no bar.
+  it('shows AUTHORITATIVE profit-target progress for a live evaluation, clamped 0..100 (PV2-1)', () => {
+    // Start = 100k, target = 6k. Net profit toward the authoritative target.
+    expect(toAccountView(acct()).progressLabel).toBe('Profit target'); // 0% at start
+    expect(toAccountView(acct()).progressPct).toBe(0);
+    expect(toAccountView(acct({ balanceMicros: 103_000 * M })).progressPct).toBe(50); // +$3k / $6k
+    expect(toAccountView(acct({ balanceMicros: 106_000 * M })).progressPct).toBe(100); // target reached
+    // Over target → bar clamps to 100, but the displayed money is not clamped.
+    const over = toAccountView(acct({ balanceMicros: 108_000 * M }));
+    expect(over.progressPct).toBe(100);
+    expect(over.progressDetail).toBe('$8,000 of $6,000');
+    // Below start → 0, never negative.
+    expect(toAccountView(acct({ balanceMicros: 95_000 * M })).progressPct).toBe(0);
+    expect(toAccountView(acct({ balanceMicros: 95_000 * M })).progressDetail).toBe('$0 of $6,000');
+  });
+
+  it('does NOT show evaluation target progress for funded/terminal/no-target accounts (PV2-1, STEP 4)', () => {
+    // Funded: authoritative target is 0 → no evaluation bar (not "still trying to pass").
+    const funded = toAccountView(acct({ portalState: 'FUNDED_ACTIVE', accountType: 'FUNDED_SIM', profitTargetMicros: 0 }));
+    expect(funded.progressPct).toBeUndefined();
+    expect(funded.progressLabel).toBeUndefined();
+    // Terminal states never show a bar.
     expect(toAccountView(acct({ portalState: 'FAILED', status: 'FAILED' })).progressPct).toBeUndefined();
     expect(toAccountView(acct({ portalState: 'COMPLETED_MAX_PAYOUTS' })).progressPct).toBeUndefined();
+    // No authoritative target (null config) → no bar (never inferred from size/name).
+    expect(toAccountView(acct({ profitTargetMicros: null })).progressPct).toBeUndefined();
+    expect(toAccountView(acct({ profitTargetMicros: 0 })).progressPct).toBeUndefined();
   });
 
   it('builds a product + size label and masked id', () => {

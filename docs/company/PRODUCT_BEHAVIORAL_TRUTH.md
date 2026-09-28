@@ -138,3 +138,17 @@ crispness**, and the **per-chart-account product decision** to Nathan (see
 **L5 (PENDING HUMAN):** Nathan's visual acceptance of the V2 Accounts surface — deliberately deferred;
 Phase 1 is structure, not final polish. Also pending his decision: profit-target vs drawdown-room progress
 framing (PV2-1).
+
+## Portal V2 — Account Detail + authoritative progress (Product Rebuild Phase 2, base `85b644d`)
+
+| Behaviour | Level | Evidence |
+|---|---|---|
+| Evaluation progress = profit toward the AUTHORITATIVE target (same value the engine passes on); funded shows none | **L4** | `config.rules.profitTargetMicros` exposed via `rulesFromVersionConfig`; `evaluationProgress()`; `account-view.test.ts`, `account-detail-view.test.ts`, `portal-account-rules.test.ts`, `portal.routes.test.ts`. |
+| Profit target / max loss / drawdown model / consistency / contracts shown from the pinned version config only | **L4** | `portalAccountDetail.rules`; `ruleRowsFrom`; server + web tests. No client invention. |
+| Account Detail ownership server-enforced; foreign/forged id → 404 (no enumeration) | **L4** | `assertOwned`; `portal.routes.test.ts` IDOR (detail/analytics/controls); `golden-path.security.test.ts`. |
+| Risk controls reuse the real enforcement system; rejection reloads authoritative truth; locked = tighten-only | **L4** | `V2AccountControls` → `/controls` + `expectedVersion`; server owns comparison (personal-risk); Phase-3 rule tests. |
+| Rapid A→B→A navigation and out-of-order responses cannot paint stale state | **L4** | `latestGuard()` + `race.test.ts`; both containers use it. |
+| Account Detail + Accounts contain at 1920→390px incl. long id + $1.28M + long labels; table scrolls internally at 390 | **L4** | `scripts/portal-v2-detail-overflow.mjs` + `scripts/portal-v2-accounts-overflow.mjs` (real browser). |
+| Performance shows real metrics only; no equity curve below 2 closed trades; no fabricated win rate | **L4** | `PerformanceTab` gates on `analytics.equity.points.length`/`totalTrades`; real `Analytics` contract. |
+
+**L5 (PENDING HUMAN):** Nathan's visual acceptance of the complete V2 Accounts vertical — the deliverable of Phase 2.

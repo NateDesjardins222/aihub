@@ -102,3 +102,17 @@ none of it a functional defect:
   each chart should trade its own account is Nathan's call (`ATLAS_MULTI_CHART_READINESS.md`).
 
 **Do not act on any of the above before the Atlas V2 visual phase.**
+
+---
+
+## Portal V2 — Accounts vertical (Product Rebuild Phase 2). Deferred, not defects.
+
+- **Performance equity curve is a line only (P3).** V2 Performance shows the real equity curve as a plain
+  line; V1's hover tooltip and P&L calendar are not yet ported. All shown metrics are real and it degrades
+  truthfully with thin data. A richer, interactive curve is a later Portal-V2 phase.
+- **Champagne hue / gradient / density fine-tuning (P3, visual).** The Detail surface uses the established
+  Phase 0 language; final luxury tuning is Nathan's later call, not this phase.
+- **`activatedAt` mirror gap (P4).** The web `AccountSummary` mirror omits `activatedAt` (unused by the
+  Accounts vertical) — add when a vertical needs it (`KNOWN_ISSUES.md` PV2-2).
+
+**Do not act on the above before the Portal V2 visual-acceptance phase.**

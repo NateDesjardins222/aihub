@@ -13,8 +13,10 @@ import { V2AppShell } from './Shell';
 import { V2AccountPanel, type V2AccountView } from './AccountPanel';
 import { V2Lifecycle, LIFECYCLE_STAGES } from './Lifecycle';
 import { V2AccountsView, type V2AccountsState } from './AccountsView';
+import { V2AccountDetail, type DetailTab } from './AccountDetail';
 import { toAccountView } from './account-view';
-import { FIXTURE_ACCOUNTS, FIXTURE_VIEW, FIXTURE_VIEW_EMPTY } from './fixtures';
+import { FIXTURE_ACCOUNTS, FIXTURE_DETAILS, FIXTURE_VIEW, FIXTURE_VIEW_EMPTY } from './fixtures';
+import type { AccountDetailFull, AccountSummary } from '../lib';
 import {
   V2Root, V2Metal, V2Button, V2Status, V2Metric, V2FinancialValue,
   V2Section, V2Divider, V2EmptyState, V2Card,
@@ -49,9 +51,22 @@ const DEMO_ACCOUNTS: V2AccountView[] = [
   },
 ];
 
+/** Map a fixture summary id → its detail fixture, so the harness journey uses the
+ *  same account the list rendered. Falls back to the evaluation detail. */
+const DETAIL_BY_ID: Record<string, AccountDetailFull> = Object.fromEntries(
+  Object.values(FIXTURE_DETAILS).map((d) => [d.id, d]),
+);
+
 export function PortalV2Harness(): JSX.Element {
   const [active, setActive] = useState('dashboard');
   const [acctState, setAcctState] = useState(0);
+  // The isolated Accounts → Detail → Accounts journey (fixtures; no session).
+  const [journeyDetail, setJourneyDetail] = useState<AccountDetailFull | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const openDetail = (a: AccountSummary): void => {
+    setJourneyDetail(DETAIL_BY_ID[a.id] ?? FIXTURE_DETAILS.evaluationActive!);
+    setDetailTab('overview');
+  };
   return (
     <V2Root>
       <V2AppShell
@@ -150,6 +165,22 @@ export function PortalV2Harness(): JSX.Element {
             }
           >
             <V2AccountsView state={ACCOUNT_STATES[acctState]!} actions={{}} />
+          </V2Section>
+
+          <V2Section title="Accounts → Detail journey (isolated; fixtures)">
+            {journeyDetail ? (
+              <V2AccountDetail
+                state={{ status: 'ready', detail: journeyDetail }}
+                tab={detailTab}
+                onTab={setDetailTab}
+                actions={{ onBack: () => setJourneyDetail(null), onTrade: () => { /* dev fixture: no real hand-off */ } }}
+              />
+            ) : (
+              <V2AccountsView
+                state={{ status: 'ready', view: FIXTURE_VIEW }}
+                actions={{ onOpen: openDetail }}
+              />
+            )}
           </V2Section>
 
           <V2Section title="Empty state">

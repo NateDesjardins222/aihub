@@ -74,7 +74,22 @@ export interface AccountSummary {
   status: string; portalState: string; consumesSlot: boolean;
   product: { key: string; name: string; version: number } | null;
   startingBalanceMicros: number; balanceMicros: number; highWaterMarkMicros: number;
-  drawdownFloorMicros: number; resetOfAccountId: string | null; archivedAt: number | null; createdAt: number;
+  drawdownFloorMicros: number;
+  /** Authoritative evaluation profit target (micro-dollars); 0 for funded, null when no config. */
+  profitTargetMicros: number | null;
+  resetOfAccountId: string | null; archivedAt: number | null; createdAt: number;
+}
+/** Authoritative rule parameters for an account (mirror of server PortalAccountRules). */
+export interface PortalRulesView {
+  profitTargetMicros: number | null;
+  maxLossMicros: number | null;
+  drawdownType: string | null;
+  trailingLockAtMicros: number | null;
+  consistencyFormula: string | null;
+  consistencyThreshold: number | null;
+  minWinningDays: number | null;
+  minWinningDayPnlMicros: number | null;
+  maxContracts: number | null;
 }
 export interface AccountsView { accounts: AccountSummary[]; activeSlotsUsed: number; maxActiveSlots: number }
 export interface Breakdown { key: string; trades: number; netPnlMicros: number; winRate: number | null }
@@ -107,7 +122,7 @@ export interface Cert {
 export interface Achievement { id: string; type: string; isPublic: boolean; meta: Record<string, unknown> | null; earnedAt: number }
 export interface AchievementsView { achievementsPublic: boolean; achievements: Achievement[] }
 export interface LifecycleEntry { seq: number; startedAt: number; endedAt: number | null; endReason: string | null; finalStatus: string | null; startingBalanceMicros: number }
-export type AccountDetailFull = AccountSummary & { realizedPnlMicros?: number; feesMicros?: number; priceMicros?: number | null; lifecycles?: LifecycleEntry[] };
+export type AccountDetailFull = AccountSummary & { realizedPnlMicros?: number; feesMicros?: number; priceMicros?: number | null; rules?: PortalRulesView | null; lifecycles?: LifecycleEntry[] };
 export interface PayoutEligibility {
   accountId: string; state: 'ELIGIBLE' | 'NOT_ELIGIBLE'; reasonCodes: string[];
   grossWithdrawableMicros: number; qualifyingWinningDays: number; requiredWinningDays: number;

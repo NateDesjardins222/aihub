@@ -162,6 +162,27 @@ describe('portal account service', () => {
     expect(d.lifecycles.length).toBeGreaterThanOrEqual(1);
     expect(d.lifecycles[0]!.seq).toBe(1);
   });
+
+  it('exposes the authoritative profit target on summary and full rules on detail', async () => {
+    const userId = await makeUser('target');
+    const id = await activeEval(userId);
+
+    // Summary (the Accounts list) carries the authoritative target from the
+    // pinned version config — the SAME number the rule engine uses to pass.
+    const view = await listPortalAccounts(db, userId);
+    const summary = view.accounts.find((x) => x.id === id);
+    expect(summary?.profitTargetMicros).toBe(1_500 * M);
+
+    // Detail carries the full authoritative rule block.
+    const d = await portalAccountDetail(db, userId, id);
+    expect(d.rules).not.toBeNull();
+    expect(d.rules!.profitTargetMicros).toBe(1_500 * M);
+    expect(d.rules!.maxLossMicros).toBe(1_000 * M);
+    expect(d.rules!.drawdownType).toBe('STATIC');
+    expect(d.rules!.consistencyFormula).toBe('BEST_DAY_OVER_TOTAL');
+    expect(d.rules!.maxContracts).toBe(10);
+    // profitTargetMicros is read from config.rules, never invented client-side.
+  });
 });
 
 describe('account reset', () => {

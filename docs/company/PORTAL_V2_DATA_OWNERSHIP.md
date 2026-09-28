@@ -162,3 +162,25 @@ The web type `AccountSummary` (`apps/web/src/portal/lib.tsx:72`) is a **hand-mai
 - **Profit-target absence** — the summary payload has no profit target, so V2 shows *drawdown room* progress instead of *profit* progress. If the product intends a profit-target progress bar in the portal, the summary projection must expose the authoritative target; V2 will not compute one. Logged as a documented conflict, awaiting decision.
 
 Neither item was resolved by changing product behaviour, per the Phase 1 constraint.
+
+---
+
+## Phase 2 — authoritative rules exposed (PV2-1 resolved)
+
+Phase 2 extended the portal contract **minimally and additively** to carry the authoritative rule parameters the engine already enforces. No schema change, no migration, no economics change — the fields are read from the account's **already-joined** pinned version config (`account_profile_versions.config.rules`) in `apps/server/src/platform/portal-accounts.ts` via `rulesFromVersionConfig()` (a safe extractor that degrades to null, never throws).
+
+| Field | Authoritative origin | Exposed on | Units |
+|---|---|---|---|
+| `profitTargetMicros` | `config.rules.profitTargetMicros` (catalog `targetUsd`; 0 for funded) | **summary** + detail (`rules`) | int micros |
+| `maxLossMicros` | `config.rules.maxLossMicros` (catalog `eodDrawdownUsd`) | detail (`rules`) | int micros |
+| `drawdownType` | `config.rules.drawdownType` | detail (`rules`) | enum |
+| `trailingLockAtMicros` | `config.rules.trailingLockAtMicros` | detail (`rules`) | int micros |
+| `consistencyFormula` / `consistencyThreshold` | `config.rules.*` | detail (`rules`) | enum / ratio 0..1 |
+| `minWinningDays` / `minWinningDayPnlMicros` | `config.rules.*` | detail (`rules`) | int / int micros |
+| `maxContracts` | `config.rules.maxContracts` | detail (`rules`) | int |
+
+**Same truth everywhere.** The `profitTargetMicros` shown to the trader is the exact value `evaluateRules()` reads to decide PASS (`packages/core/src/rules/rules.ts`) — one business truth, rendered, never recomputed. The full chain (catalog → product-model → persisted config → engine → certification) is unchanged; V2 only reads the persisted value.
+
+**Presentation-only progress arithmetic (Phase 2 addition):** `evaluationProgress()` in `account-view.ts` computes profit-toward-target for a live evaluation (achieved = `max(0, balance−start)`, remaining = `max(0, target−netPnl)`, pct clamped 0..100). This replaced Phase 1's temporary drawdown-room framing (PV2-1). Funded accounts (target 0) show no target bar. No pass/fail is decided client-side.
+
+**Web mirror:** `AccountSummary.profitTargetMicros` (required) and `AccountDetailFull.rules: PortalRulesView | null` were added to `apps/web/src/portal/lib.tsx`, mirroring the server. Additive and backward-compatible for V1 (which ignores the new fields).

@@ -92,7 +92,21 @@ describe('portal accounts', () => {
   it('does not leak another trader’s account (no IDOR)', async () => {
     expect((await get(`/api/v1/portal/accounts/${accountId}`, otherToken)).statusCode).toBe(404);
     expect((await get(`/api/v1/portal/accounts/${accountId}/analytics`, otherToken)).statusCode).toBe(404);
+    expect((await get(`/api/v1/portal/accounts/${accountId}/controls`, otherToken)).statusCode).toBe(404);
     expect((await patch(`/api/v1/portal/accounts/${accountId}/nickname`, { nickname: 'x' }, otherToken)).statusCode).toBe(404);
+  });
+
+  it('exposes the authoritative profit target on the summary and the full rule block on the detail (PV2-1)', async () => {
+    const list = JSON.parse((await get('/api/v1/portal/accounts')).body);
+    const summary = list.accounts.find((a: { id: string }) => a.id === accountId);
+    expect(summary.profitTargetMicros).toBe(1_500 * M); // from the pinned version config
+
+    const detail = JSON.parse((await get(`/api/v1/portal/accounts/${accountId}`)).body);
+    expect(detail.rules).toBeTruthy();
+    expect(detail.rules.profitTargetMicros).toBe(1_500 * M);
+    expect(detail.rules.maxLossMicros).toBe(1_000 * M);
+    expect(detail.rules.drawdownType).toBe('STATIC');
+    expect(detail.rules.maxContracts).toBe(10);
   });
 
   it('refuses to archive an active account', async () => {

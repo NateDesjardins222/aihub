@@ -17,22 +17,23 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { api, ApiRequestError } from '../../api/client';
 import type { AccountsView, AccountSummary } from '../lib';
 import { V2AccountsView, type V2AccountsState } from './AccountsView';
+import { latestGuard } from './race';
 
 export function V2AccountsContainer(): JSX.Element {
   const [state, setState] = useState<V2AccountsState>({ status: 'loading' });
-  const tokenRef = useRef(0);
+  const guardRef = useRef(latestGuard());
 
   const load = useCallback(() => {
-    const token = ++tokenRef.current;
+    const token = guardRef.current.issue();
     setState({ status: 'loading' });
     void api
       .get<AccountsView>('/api/v1/portal/accounts?includeArchived=false')
       .then((view) => {
-        if (token !== tokenRef.current) return; // a newer request superseded this one
+        if (!guardRef.current.isLatest(token)) return; // a newer request superseded this one
         setState({ status: 'ready', view, degraded: null });
       })
       .catch((err: unknown) => {
-        if (token !== tokenRef.current) return;
+        if (!guardRef.current.isLatest(token)) return;
         const message =
           err instanceof ApiRequestError
             ? err.message
@@ -44,7 +45,8 @@ export function V2AccountsContainer(): JSX.Element {
   useEffect(() => load(), [load]);
 
   const openAccount = (a: AccountSummary): void => {
-    window.location.href = `/portal/accounts/${a.id}`;
+    // Stay inside the isolated V2 environment — no V1 detail detour (Phase 2 STEP 28).
+    window.location.href = `/portal-v2/accounts/${a.id}`;
   };
   const trade = (a: AccountSummary): void => {
     // Same authoritative hand-off as V1: the server re-checks ownership + status.

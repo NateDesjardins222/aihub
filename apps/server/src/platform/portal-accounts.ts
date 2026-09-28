@@ -159,6 +159,60 @@ export async function unarchiveAccount(
   });
 }
 
+/**
+ * The authoritative rule parameters for an account, read from its pinned product
+ * version config (`account_profile_versions.config.rules`) — the same numbers the
+ * rule engine enforces (see PORTAL_V2_DATA_OWNERSHIP.md). These are surfaced so the
+ * portal can RENDER the account's objective and risk terms; the portal never
+ * decides pass/fail, drawdown, or eligibility. All money is integer micro-dollars.
+ *
+ * `profitTargetMicros` is 0 for a funded account (deliberately, in the product
+ * catalog: a funded account has already passed). A missing/legacy config degrades
+ * every field to null rather than throwing.
+ */
+export interface PortalAccountRules {
+  profitTargetMicros: number | null;
+  maxLossMicros: number | null;
+  drawdownType: string | null;
+  trailingLockAtMicros: number | null;
+  consistencyFormula: string | null;
+  consistencyThreshold: number | null;
+  minWinningDays: number | null;
+  minWinningDayPnlMicros: number | null;
+  maxContracts: number | null;
+}
+
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+function strOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+/**
+ * Read the authoritative rule parameters from a pinned version's `config.rules`.
+ * NEVER throws: a missing/legacy/partial config degrades to nulls, so the portal
+ * shows only what is authoritative. This RENDERS the numbers the rule engine
+ * enforces (`ruleConfigSchema`); it never decides an outcome.
+ */
+export function rulesFromVersionConfig(config: unknown): PortalAccountRules | null {
+  if (!config || typeof config !== 'object') return null;
+  const rules = (config as { rules?: unknown }).rules;
+  if (!rules || typeof rules !== 'object') return null;
+  const r = rules as Record<string, unknown>;
+  return {
+    profitTargetMicros: numOrNull(r.profitTargetMicros),
+    maxLossMicros: numOrNull(r.maxLossMicros),
+    drawdownType: strOrNull(r.drawdownType),
+    trailingLockAtMicros: numOrNull(r.trailingLockAtMicros),
+    consistencyFormula: strOrNull(r.consistencyFormula),
+    consistencyThreshold: numOrNull(r.consistencyThreshold),
+    minWinningDays: numOrNull(r.minWinningDays),
+    minWinningDayPnlMicros: numOrNull(r.minWinningDayPnlMicros),
+    maxContracts: numOrNull(r.maxContracts),
+  };
+}
+
 export interface PortalAccountSummary {
   id: string;
   publicId: string;
@@ -175,6 +229,12 @@ export interface PortalAccountSummary {
   balanceMicros: number;
   highWaterMarkMicros: number;
   drawdownFloorMicros: number;
+  /**
+   * Authoritative evaluation profit target (micro-dollars), from the pinned
+   * version config. 0 for a funded account; null when no config is available.
+   * The portal renders progress toward this; the engine owns pass/fail.
+   */
+  profitTargetMicros: number | null;
   /** The account this one replaced (a reset), if any. */
   resetOfAccountId: string | null;
   archivedAt: number | null;
@@ -185,6 +245,7 @@ export interface PortalAccountSummary {
 function toSummary(
   a: AccountRow,
   product: { key: string; name: string; version: number } | null,
+  rules: PortalAccountRules | null,
 ): PortalAccountSummary {
   return {
     id: a.id,
@@ -200,6 +261,7 @@ function toSummary(
     balanceMicros: a.balanceMicros,
     highWaterMarkMicros: a.highWaterMarkMicros,
     drawdownFloorMicros: a.drawdownFloorMicros,
+    profitTargetMicros: rules?.profitTargetMicros ?? null,
     resetOfAccountId: a.resetOfAccountId ?? null,
     archivedAt: a.archivedAt?.getTime() ?? null,
     activatedAt: a.activatedAt?.getTime() ?? null,
@@ -240,7 +302,11 @@ export async function listPortalAccounts(
     if (consumesSlot(a)) used += 1;
     if (a.archivedAt && !opts.includeArchived) continue;
     summaries.push(
-      toSummary(a, row.profile && row.version ? { key: row.profile.key, name: row.profile.name, version: row.version.version } : null),
+      toSummary(
+        a,
+        row.profile && row.version ? { key: row.profile.key, name: row.profile.name, version: row.version.version } : null,
+        rulesFromVersionConfig(row.version?.config),
+      ),
     );
   }
   return { accounts: summaries, activeSlotsUsed: used, maxActiveSlots: MAX_ACTIVE };
@@ -259,6 +325,12 @@ export interface PortalAccountDetail extends PortalAccountSummary {
   realizedPnlMicros: number;
   feesMicros: number;
   priceMicros: number | null;
+  /**
+   * The full authoritative rule block for THIS account's pinned version, so the
+   * portal Rules tab reflects the exact terms the engine enforces. Null when no
+   * config is available (legacy account with no pinned version).
+   */
+  rules: PortalAccountRules | null;
   lifecycles: LifecycleHistoryEntry[];
 }
 
@@ -288,16 +360,19 @@ export async function portalAccountDetail(
     const cfg = row.version.config as { display?: { priceMicros?: number } } | null;
     priceMicros = cfg?.display?.priceMicros ?? null;
   }
+  const rules = rulesFromVersionConfig(row.version?.config);
 
   const summary = toSummary(
     a,
     row.profile && row.version ? { key: row.profile.key, name: row.profile.name, version: row.version.version } : null,
+    rules,
   );
   return {
     ...summary,
     realizedPnlMicros: a.realizedPnlMicros,
     feesMicros: a.feesMicros,
     priceMicros,
+    rules,
     lifecycles: lifecycles.map((l) => ({
       seq: l.seq,
       startedAt: l.startedAt.getTime(),

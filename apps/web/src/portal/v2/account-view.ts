@@ -84,13 +84,14 @@ export function toAccountView(a: AccountSummary): V2AccountView {
   const netPnl = a.balanceMicros - a.startingBalanceMicros; // display only
   const mllRoom = Math.max(0, a.balanceMicros - a.drawdownFloorMicros); // display only
 
-  // Drawdown cushion as a fraction of the initial cushion (start − floor). Pure
-  // display of authoritative floor/start; NOT a drawdown rule. Only shown while the
-  // account is live and the cushion is meaningful.
-  const initialCushion = a.startingBalanceMicros - a.drawdownFloorMicros;
-  const live = state === 'EVALUATION_ACTIVE' || state === 'FUNDED_ACTIVE';
-  const showProgress = live && initialCushion > 0;
-  const progressPct = showProgress ? clampPercent((mllRoom / initialCushion) * 100) : undefined;
+  // State-aware progress (PV2-1, Phase 2). For a LIVE EVALUATION the primary
+  // progress is profit toward the AUTHORITATIVE profit target (from the pinned
+  // version config; the same number the engine passes on). It is never inferred
+  // from account size or product name. A funded/terminal account shows no target
+  // bar — a funded account has already passed, so there is no evaluation target to
+  // progress toward (its authoritative target is 0). Risk room is shown separately
+  // via mllRoomText.
+  const prog = evaluationProgress(a);
 
   return {
     productLabel: productLabel(a),
@@ -102,11 +103,42 @@ export function toAccountView(a: AccountSummary): V2AccountView {
     netPnlText: formatMoney(netPnl, { sign: true }),
     netPnlTone: moneyTone(netPnl),
     mllRoomText: formatMoney(mllRoom),
-    progressLabel: showProgress ? 'Drawdown room' : undefined,
-    progressPct,
-    progressDetail: showProgress ? `${formatMoney(mllRoom)} of ${formatMoney(initialCushion)}` : undefined,
+    progressLabel: prog ? 'Profit target' : undefined,
+    progressPct: prog?.pct,
+    progressDetail: prog ? `${formatMoney(prog.achievedMicros)} of ${formatMoney(prog.targetMicros)}` : undefined,
     tradable: isTradableForDisplay(a),
   };
+}
+
+/** Authoritative evaluation profit-target progress, or null when not applicable. */
+export interface EvaluationProgress {
+  /** Profit achieved toward the target, floored at 0 (never negative). Micro-dollars. */
+  achievedMicros: number;
+  /** The authoritative profit target. Micro-dollars. */
+  targetMicros: number;
+  /** Amount still needed to reach the target, floored at 0. Micro-dollars. */
+  remainingMicros: number;
+  /** Visual progress percentage, clamped 0..100. The money above is NOT clamped. */
+  pct: number;
+}
+
+/**
+ * Compute profit-target progress for a LIVE evaluation account. Returns null for
+ * any account that should not show a target bar (funded, terminal, or no
+ * authoritative target). Pure display arithmetic over authoritative figures — it
+ * decides no business outcome; PASS remains the server's.
+ */
+export function evaluationProgress(
+  a: Pick<AccountSummary, 'portalState' | 'balanceMicros' | 'startingBalanceMicros' | 'profitTargetMicros'>,
+): EvaluationProgress | null {
+  if (a.portalState !== 'EVALUATION_ACTIVE') return null;
+  const target = a.profitTargetMicros;
+  if (typeof target !== 'number' || target <= 0) return null;
+  const netPnl = a.balanceMicros - a.startingBalanceMicros;
+  const achievedMicros = Math.max(0, netPnl); // progress cannot be negative
+  const remainingMicros = Math.max(0, target - netPnl);
+  const pct = clampPercent((netPnl / target) * 100); // bar clamps; money above does not
+  return { achievedMicros, targetMicros: target, remainingMicros, pct };
 }
 
 /** Highest reached lifecycle stage for an account (re-exported for callers/tests). */
