@@ -661,3 +661,39 @@ race + responsive proofs. Nothing below is a P0/P1.
 assertions and IDOR on the controls route); two real-browser overflow proofs (accounts + detail) contained
 at 1920/1440/1280/1024/768/390; web typecheck + build clean; canonical run once. No P0, no P1. Human visual
 acceptance of the V2 Accounts vertical PENDING HUMAN (the deliverable of this phase).
+
+---
+
+## Engineering Resilience Phase 1 — findings (base `b48ba7e`)
+
+Adversarial backend/failure engineering. No P0/P1 invariant was found false. Detection for all major corruption classes now exists in `apps/server/src/platform/resilience/integrity-checks.ts`. See `BACKEND_INVARIANT_LEDGER.md`, `TRANSACTION_BOUNDARY_MAP.md`, `FAILURE_RECOVERY_MATRIX.md`, `RESILIENCE_PHASE1_REPORT.md`.
+
+- **PV2-G1 (RESOLVED).** The `trading-authz-http.test.ts` `beforeEach` hook-timeout under heavy parallel-worker
+  contention was CPU/memory starvation from memory-hard scrypt (N=2^15 ≈ 32MB/op) run 4× per test in setup.
+  Fixed at root: `apps/server/src/auth/password.ts` uses a low work factor (N=2^10) under the test runner
+  (VITEST / NODE_ENV=test) only; production keeps N=2^15, and N is encoded per hash so verification is
+  unaffected. Measured hash 274ms→11ms in test mode. This also cuts contention for the whole auth-heavy suite.
+- **RES-1 (P2 — PRODUCT DECISION, not changed).** The firm/personal **contract cap** is checked at order
+  submit against the current position weight (`risk.ts checkOrder`, `engine.ts` `openContracts`), not against
+  working/resting orders, and there is no fill-time cap. So stacked resting limit orders can collectively fill
+  to a position beyond `maxContracts`. Bounded, simulated, deliberate; no money duplication, no cross-customer
+  effect, not a stale-state race. Whether "max N contracts" should bound working orders is a **product
+  decision for Nathan** (Part XLIV: stop, do not change account rules). Recommended next-phase work: submit-time
+  reservation of working-order increasing-qty, once the semantics are decided.
+- **RES-2 (P3, by design).** `expectedVersion` is optional on order modify (`engine.ts:1489`) and personal
+  control mutation (`personal-risk.ts`); omitting it opts out of stale-write *detection* (the row lock still
+  serializes). Consider making it required for these mutations in a later phase.
+- **RES-3 (P3, self-healing).** EOD finalization writes the day statistic and the account counters in two
+  awaits, not one transaction (`engine.ts` `recordClosedDay` + `persistRuleState`); a crash between them
+  self-heals on the next revaluation (idempotent roll + absolute-set counters). Recommend wrapping both in one
+  `db.transaction`.
+- **RES-4 (P3, defense-in-depth).** `accounts.resetOfAccountId` has no unique index; the "one successor per
+  failed account" invariant is enforced by the `reset:<id>` idempotency key (proven under 8-way concurrency).
+  Recommend a partial unique index `WHERE reset_of_account_id IS NOT NULL`. Detected today by the integrity
+  check `DUPLICATE_RESET_SUCCESSOR`.
+- **RES-5 (P3).** The personal-control hash-chain audit is best-effort post-commit (`personal-risk.ts` catch
+  swallows a failed `recordAudit`); the durable in-txn `traderRiskControlEvents` row still records the change,
+  so it is not unrecorded, but the tamper-evident chain can miss it.
+
+**Validation:** 11 new focused tests (harness + races + integrity) pass; PV2-G1 file 4/4 in isolation; typecheck
++ build clean; canonical run once. No P0, no P1.

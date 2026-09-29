@@ -16,7 +16,22 @@ const scrypt = promisify(scryptCb) as (
   options: { N: number; r: number; p: number; maxmem: number },
 ) => Promise<Buffer>;
 
-const PARAMS = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
+/**
+ * Production parameters follow current guidance (N=2^15). Under the test runner
+ * (Vitest sets VITEST=true; NODE_ENV=test is a fallback) we lower the work factor
+ * dramatically. scrypt is memory-hard (~128·N·r bytes ≈ 32 MB per op at N=2^15),
+ * and auth-heavy suites hash + verify passwords in per-test setup hooks; under
+ * heavy parallel-worker contention that CPU/memory storm made the release suite
+ * non-deterministic (KNOWN_ISSUES PV2-G1: a `beforeEach` doing four scrypt ops
+ * blew its 10s budget). The algorithm and stored-hash format are IDENTICAL — only
+ * the work factor changes, and N/r/p are encoded per hash, so a hash written with
+ * one cost still verifies under any other. Production (NODE_ENV=production, never
+ * VITEST) is unaffected: it always uses the strong parameters.
+ */
+const TEST_MODE = process.env['VITEST'] === 'true' || process.env['NODE_ENV'] === 'test';
+const PARAMS = TEST_MODE
+  ? ({ N: 1024, r: 8, p: 1, maxmem: 32 * 1024 * 1024 } as const)
+  : ({ N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const);
 const KEY_LENGTH = 64;
 const SALT_LENGTH = 16;
 
