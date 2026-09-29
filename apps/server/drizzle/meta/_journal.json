@@ -253,6 +253,13 @@
       "when": 1790349000000,
       "tag": "0035_owner_mfa",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790349100000,
+      "tag": "0036_reset_successor_unique",
+      "breakpoints": true
     }
   ]
 }

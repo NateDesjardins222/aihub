@@ -150,21 +150,27 @@ describe('Part XXXVI — integrity checks', () => {
     expect(mine).toHaveLength(0);
   });
 
-  it('detects a duplicate reset successor (deliberate corruption)', async () => {
+  it('the DB rejects a second reset successor (RES-4 partial unique index, fail-closed)', async () => {
     const userId = await makeUser('corrupt-reset');
     const failed = await activeEval(userId);
     await db.update(accounts).set({ status: 'FAILED' }).where(eq(accounts.id, failed));
-    // Two successors pointing at the same failed account — the exact corruption the
-    // reset invariant forbids.
     const a = await activeEval(userId);
     const b = await activeEval(userId);
-    await db.update(accounts).set({ resetOfAccountId: failed }).where(inArray(accounts.id, [a, b]));
-
+    // First successor is fine.
+    await db.update(accounts).set({ resetOfAccountId: failed }).where(eq(accounts.id, a));
+    // A SECOND successor for the same failed account is now impossible at the DB
+    // level (Resilience Phase 2 RES-4): the partial unique index fails closed, so
+    // the "duplicate reset successor" corruption can no longer be created even if the
+    // application guard were bypassed. The DUPLICATE_RESET_SUCCESSOR integrity check
+    // remains as defense-in-depth (it detects a violation should the index ever be dropped).
+    await expect(
+      db.update(accounts).set({ resetOfAccountId: failed }).where(eq(accounts.id, b)),
+    ).rejects.toThrow();
+    // Exactly one successor exists; the integrity check is clean for this failed account.
+    const successors = await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.resetOfAccountId, failed));
+    expect(successors).toHaveLength(1);
     const findings = await runIntegrityChecks(db);
-    const dup = findings.find((f) => f.check === 'DUPLICATE_RESET_SUCCESSOR');
-    expect(dup).toBeDefined();
-    expect(dup!.sample).toContain(failed);
-    expect(dup!.severity).toBe('P0');
+    expect(findings.find((f) => f.check === 'DUPLICATE_RESET_SUCCESSOR' && f.sample.includes(failed))).toBeUndefined();
   });
 
   it('detects an over-cap identity and a corrupted drawdown floor', async () => {

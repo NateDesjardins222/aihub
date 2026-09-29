@@ -35,7 +35,8 @@ For each critical workflow: the authoritative transaction boundary, the locks / 
 | **Payout approval (the debit)** | `payouts.ts approvePayout` | one txn; request `FOR UPDATE` + STATE early-return + VERSION CAS + account advisory lock + re-verify eligibility; single balance debit + UNIQUE `payout_ledger(request,DEBIT)`. | ATOMIC + IDEMPOTENT |
 | **Payment / PAID** | `payouts.ts markPaid`, `payout-operations.ts` | `FOR UPDATE` + `if PAID return`; UNIQUE `(request,SETTLEMENT)`; provider events UNIQUE `(provider,eventId)`; stable idem key never regenerated; lost-ACK → reconcile not re-submit. | IDEMPOTENT |
 | **Cycle 5 → COMPLETED** | `payouts.ts markPaid` | approved-count ≥ 5 blocks a 6th at approval (earlier than PAID); COMPLETED set under `status != COMPLETED` guard. | ATOMIC + IDEMPOTENT |
-| **EOD finalization** | `engine.ts rulesLocked` → `recordClosedDay` + `persistRuleState` | date short-circuit makes roll idempotent; day stat upsert UNIQUE `(account,date)`; counters written as absolute recomputed values. **Two awaits, not one txn** (per-process mutex only). | IDEMPOTENT, **PARTIALLY-ATOMIC** (RES-3; self-heals on replay) |
+| **EOD finalization** | `engine.ts rulesLocked` → `recordClosedDay` + `persistRuleState` | date short-circuit makes roll idempotent; day stat upsert UNIQUE `(account,date)`; counters written as absolute recomputed values. **Now ONE `db.transaction`** (RES-3 resolved, Phase 2). | ATOMIC + IDEMPOTENT |
+| **Payout failure reversal** | `payout-operations.ts failPayout` | one txn: balance restore + dayStart anchors + UNIQUE `payout_ledger(request,REVERSAL)` + state→FAILED; only the REVERSAL-insert winner restores balance (idempotent). | ATOMIC + IDEMPOTENT (RES-P2-1, Phase 2) |
 
 ## Risk / enforcement / audit
 
@@ -50,8 +51,7 @@ For each critical workflow: the authoritative transaction boundary, the locks / 
 
 ## Dangerous / noteworthy boundaries
 
-- **EOD `recordClosedDay` + `persistRuleState`** (`engine.ts`) are separate awaits, not a single transaction (RES-3). A crash between them leaves the day stat written but the account counters un-advanced; the next revaluation replays the roll idempotently (absolute-set counters + upsert), so it self-heals — but there is a genuine partial-write window. Recommend wrapping in one `db.transaction` in a later phase. Not a money boundary.
+- **EOD `recordClosedDay` + `persistRuleState`** (`engine.ts`) — **RES-3 RESOLVED (Phase 2)**: now wrapped in one `db.transaction`, so the day stat and the account counters commit or roll back together (no partial-day window). Still idempotent on replay. Not a money boundary.
+- **`resetOfAccountId`** is now DB-unique-indexed (partial, RES-4). `fundedAccountId` remains enforced by idempotency key + row lock (a second successor is prevented by `fund:<qualId>` + FOR UPDATE; a partial unique index there is a possible future defense-in-depth).
 - **Order submit dedup** relies on the `pg_advisory_lock` for cross-process atomicity of the SELECT-then-INSERT; the UNIQUE `orders(accountId,clientOrderId)` is the backstop (a duplicate that raced without the lock throws on the index rather than returning the idempotent result). Production always holds the lock.
-- **`resetOfAccountId` / `fundedAccountId`** are not unique-indexed; their 1:1 invariants are enforced by idempotency keys + row locks, not by a DB constraint (RES-4 recommends a partial unique index for reset as defense-in-depth). The new integrity checks detect a violation if one ever occurs.
-
-No workflow was found NON-IDEMPOTENT where idempotency is required, and no money workflow is PARTIALLY-ATOMIC.
+No workflow was found NON-IDEMPOTENT where idempotency is required, and — after RES-3 — no money or lifecycle workflow is PARTIALLY-ATOMIC.

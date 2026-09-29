@@ -28,10 +28,28 @@ const scrypt = promisify(scryptCb) as (
  * one cost still verifies under any other. Production (NODE_ENV=production, never
  * VITEST) is unaffected: it always uses the strong parameters.
  */
-const TEST_MODE = process.env['VITEST'] === 'true' || process.env['NODE_ENV'] === 'test';
-const PARAMS = TEST_MODE
-  ? ({ N: 1024, r: 8, p: 1, maxmem: 32 * 1024 * 1024 } as const)
-  : ({ N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const);
+export interface ScryptParams { N: number; r: number; p: number; maxmem: number }
+
+/** Production (strong) and test (fast) scrypt parameters. */
+export const PROD_SCRYPT_PARAMS: ScryptParams = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+export const TEST_SCRYPT_PARAMS: ScryptParams = { N: 1024, r: 8, p: 1, maxmem: 32 * 1024 * 1024 };
+
+/**
+ * Select the scrypt work factor from the environment. The test (low) factor is
+ * chosen ONLY when the process is unambiguously a test runner: `VITEST === 'true'`
+ * (strict) OR `NODE_ENV === 'test'`. Every other environment — including production
+ * (`NODE_ENV === 'production'`) AND the default with NO env set — gets the strong
+ * production factor. This is a PURE function of its input so the selection can be
+ * proven mechanically (Resilience Phase 2, Part XLIX): the test factor cannot leak
+ * into a production or default runtime.
+ */
+export function selectScryptParams(env: NodeJS.ProcessEnv = process.env): ScryptParams {
+  const isTest = env['VITEST'] === 'true' || env['NODE_ENV'] === 'test';
+  return isTest ? TEST_SCRYPT_PARAMS : PROD_SCRYPT_PARAMS;
+}
+
+const TEST_MODE = selectScryptParams() === TEST_SCRYPT_PARAMS;
+const PARAMS = selectScryptParams();
 const KEY_LENGTH = 64;
 const SALT_LENGTH = 16;
 

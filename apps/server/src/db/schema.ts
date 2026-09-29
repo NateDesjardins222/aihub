@@ -410,6 +410,12 @@ export const accounts = pgTable(
     index('accounts_org_idx').on(t.organizationId),
     uniqueIndex('accounts_public_id_key').on(t.publicId),
     index('accounts_status_idx').on(t.status),
+    // Resilience Phase 2 (RES-4): at most one reset successor per failed account,
+    // enforced at the DB as defense-in-depth behind the `reset:<id>` idempotency
+    // key. A partial unique index so it applies only to reset successors.
+    uniqueIndex('accounts_reset_of_key')
+      .on(t.resetOfAccountId)
+      .where(sql`${t.resetOfAccountId} is not null`),
   ],
 );
 

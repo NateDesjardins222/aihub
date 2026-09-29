@@ -698,14 +698,25 @@ export class TradingEngine {
 
     const applied = applyRules(config, state, mark, historyFor(account));
 
-    if (applied.rolledDay) {
-      const closed = rollTradingDay(config, state, mark).closed;
-      if (closed) await recordClosedDay(this.db, accountId, closed);
+    // Resilience Phase 2 (RES-3): the end-of-day roll writes a day statistic
+    // (recordClosedDay) AND the account counters/floor (persistRuleState). These
+    // used to be two separate awaits; a crash between them left the day stat
+    // written but the account un-rolled (self-healing on replay, but externally
+    // observable). Wrapping both in ONE transaction removes the partial-write
+    // window entirely: the roll is now all-or-nothing. Both writes remain
+    // idempotent (date short-circuit + absolute-set counters + daily_stats
+    // upsert), so replay is still safe.
+    const closed = applied.rolledDay ? rollTradingDay(config, state, mark).closed : null;
+    if (closed || applied.changed) {
+      await this.db.transaction(async (tx) => {
+        const txDb = tx as unknown as Database;
+        if (closed) await recordClosedDay(txDb, accountId, closed);
+        if (applied.changed) await persistRuleState(txDb, accountId, applied.state);
+      });
     }
     if (applied.changed) {
-      await persistRuleState(this.db, accountId, applied.state);
       // Mark-driven rule state (high-water mark, trailing drawdown floor, day
-      // roll, breach status/lock) is persisted here without an order event, so
+      // roll, breach status/lock) is persisted above without an order event, so
       // the durable projection would otherwise drift until the next fill or a
       // reconcile. Nudge it whenever that state actually changed - guarded by
       // `changed`, so a revaluation that moves nothing enqueues nothing.

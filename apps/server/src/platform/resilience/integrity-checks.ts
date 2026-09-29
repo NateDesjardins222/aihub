@@ -140,6 +140,23 @@ function defs(): CheckDef[] {
             SELECT 1 FROM payout_ledger l
             WHERE l.payout_request_id = r.id AND l.entry_type = 'DEBIT')`,
     },
+    {
+      // Resilience Phase 2 (RES-P2-1): a definitively-failed payout debited the
+      // balance at approval; the debit must be compensated by a REVERSAL. A FAILED
+      // request that still carries a DEBIT with no REVERSAL means a trader's
+      // balance is reduced for money that was never paid — stranded, and (before
+      // the failPayout reversal fix) undetectable. failPayout now writes the
+      // REVERSAL atomically, so this detects only a pre-fix or externally-mutated row.
+      check: 'FAILED_PAYOUT_DEBIT_NOT_REVERSED',
+      severity: 'P0',
+      description: 'A FAILED payout request has a DEBIT with no compensating REVERSAL — the account balance was debited for money that was never paid.',
+      query: sql`
+        SELECT r.id::text AS key, 1 AS n
+        FROM payout_requests r
+        WHERE r.state = 'FAILED'
+          AND EXISTS (SELECT 1 FROM payout_ledger d WHERE d.payout_request_id = r.id AND d.entry_type = 'DEBIT')
+          AND NOT EXISTS (SELECT 1 FROM payout_ledger v WHERE v.payout_request_id = r.id AND v.entry_type = 'REVERSAL')`,
+    },
   ];
 }
 

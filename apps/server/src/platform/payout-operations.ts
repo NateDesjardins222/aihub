@@ -19,7 +19,7 @@ import { assertNotEngaged } from './kill-switches.js';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
-  accounts, customerIdentities, payoutDestinations, payoutOperationalChecks, payoutOperations,
+  accounts, customerIdentities, payoutDestinations, payoutLedger, payoutOperationalChecks, payoutOperations,
   payoutProviderEvents, payoutReconciliationRecords, payoutRequests, payoutSubmissionAttempts,
 } from '../db/schema.js';
 import { type Actor, SYSTEM_ACTOR } from './actor.js';
@@ -558,16 +558,71 @@ export async function ingestProviderEvent(db: Database, input: IngestEventInput)
   return { deduped: false, opState };
 }
 
-/** Mark a payout FAILED at the economic layer (post-submission provider failure). */
-async function failPayout(db: Database, payoutRequestId: string): Promise<void> {
-  const [request] = await db.select().from(payoutRequests).where(eq(payoutRequests.id, payoutRequestId));
-  if (!request) return;
-  if (request.state === 'APPROVED' || request.state === 'PROCESSING') {
-    await db.update(payoutRequests).set({ state: 'FAILED', version: request.version + 1, updatedAt: new Date() }).where(eq(payoutRequests.id, payoutRequestId));
-    const [account] = await db.select().from(accounts).where(eq(accounts.id, request.accountId));
-    await recordAudit(db, { organizationId: request.organizationId, actor: SYSTEM_ACTOR, subjectType: 'ACCOUNT', subjectId: request.accountId, accountId: request.accountId, userId: account?.userId, action: 'payout.failed', prevState: { state: request.state }, newState: { state: 'FAILED' } });
-    await events.publish(db, { type: 'payout.failed', organizationId: request.organizationId, accountId: request.accountId, payload: { payoutRequestId } });
-  }
+/**
+ * Mark a payout FAILED at the economic layer (a DEFINITIVE post-submission
+ * provider failure — the provider states the money did not move).
+ *
+ * Resilience Phase 2 (RES-P2-1): a payout debits the account balance at approval.
+ * Before this fix a definitive provider failure flipped the request to FAILED but
+ * left the balance debited with NO compensating ledger entry — the trader's
+ * authoritative balance stayed reduced for money that was never paid, with no
+ * REVERSAL row and no way for the integrity checks to see it (they only require a
+ * DEBIT in the APPROVED/PROCESSING/PAID states). Because the provider has
+ * confirmed the money did not move and FAILED is a terminal state (no later PAID
+ * can settle it), reversing the debit is the correct, unambiguous compensating
+ * transaction — exactly what the schema's REVERSAL entry type was defined for.
+ *
+ * The reversal is idempotent: the balance restore only happens for the winner of
+ * the unique `payout_ledger(request, REVERSAL)` insert, so a retry / duplicate
+ * PAYOUT_FAILED event never double-credits. All of it commits in one transaction
+ * with the state flip, so a crash leaves either the whole reversal or none of it.
+ */
+export async function failPayout(db: Database, payoutRequestId: string): Promise<void> {
+  await db.transaction(async (txRaw) => {
+    const tx = txRaw as unknown as Database;
+    const [request] = await tx.select().from(payoutRequests).where(eq(payoutRequests.id, payoutRequestId)).for('update');
+    if (!request) return;
+    if (request.state !== 'APPROVED' && request.state !== 'PROCESSING') return; // terminal, or pre-debit — nothing to reverse
+
+    const [account] = await tx.select().from(accounts).where(eq(accounts.id, request.accountId)).for('update');
+    const adj = request.balanceAdjustmentMicros ?? 0;
+
+    // Compensating REVERSAL for the debit, if one was taken. Idempotent on
+    // (request, REVERSAL): only the winner restores the balance.
+    if (account && adj > 0) {
+      const before = account.balanceMicros;
+      const after = before + adj;
+      const inserted = await tx
+        .insert(payoutLedger)
+        .values({
+          organizationId: account.organizationId!, payoutRequestId: request.id, accountId: account.id,
+          entryType: 'REVERSAL', amountMicros: adj, balanceBeforeMicros: before, balanceAfterMicros: after,
+          grossEligibleMicros: request.grossEligibleMicros ?? 0, traderShareMicros: request.traderShareMicros ?? 0,
+          firmShareMicros: request.firmShareMicros ?? 0, productVersionId: request.productVersionId,
+          meta: { payoutOrdinal: request.payoutOrdinal, reason: 'provider_failed_reversal' },
+        })
+        .onConflictDoNothing({ target: [payoutLedger.payoutRequestId, payoutLedger.entryType] })
+        .returning();
+      if (inserted.length > 0) {
+        // Restore the balance and the day-start anchors symmetrically to the
+        // debit taken at approval, so the reversal is invisible to drawdown/day math.
+        await tx
+          .update(accounts)
+          .set({
+            balanceMicros: after,
+            dayStartBalanceMicros: account.dayStartBalanceMicros + adj,
+            dayStartEquityMicros: account.dayStartEquityMicros + adj,
+            seq: sql`${accounts.seq} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(accounts.id, account.id));
+      }
+    }
+
+    await tx.update(payoutRequests).set({ state: 'FAILED', version: request.version + 1, updatedAt: new Date() }).where(eq(payoutRequests.id, payoutRequestId));
+    await recordAudit(tx, { organizationId: request.organizationId, actor: SYSTEM_ACTOR, subjectType: 'ACCOUNT', subjectId: request.accountId, accountId: request.accountId, userId: account?.userId, action: 'payout.failed', prevState: { state: request.state }, newState: { state: 'FAILED', reversedMicros: account && adj > 0 ? adj : 0 } });
+    await events.publish(tx, { type: 'payout.failed', organizationId: request.organizationId, accountId: request.accountId, payload: { payoutRequestId } });
+  });
 }
 
 // -- reconciliation ----------------------------------------------------------

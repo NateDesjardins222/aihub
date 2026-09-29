@@ -697,3 +697,45 @@ Adversarial backend/failure engineering. No P0/P1 invariant was found false. Det
 
 **Validation:** 11 new focused tests (harness + races + integrity) pass; PV2-G1 file 4/4 in isolation; typecheck
 + build clean; canonical run once. No P0, no P1.
+
+---
+
+## Engineering Resilience Phase 2 — findings (base `4c4570d`)
+
+Persistence / crash-recovery / reconciliation / database-disaster proof. Failures were **injected**
+(a connection-layer fault injector, `platform/resilience/failpoints.ts`) to prove every critical
+workflow commits fully, rolls back fully, or recovers deterministically. See
+`RESILIENCE_PHASE2_REPORT.md`, `DURABILITY_MAP.md`, `CRASH_POINT_MATRIX.md`,
+`BACKEND_RECOVERY_RUNBOOK.md`. **0 P0, 0 P1.** Two real data-integrity defects fixed at the root.
+
+- **RES-P2-1 (P2 today; P1 at real-money launch) — RESOLVED.** A payout debits the account balance at
+  approval. Before this phase, a *definitive* provider failure (`PAYOUT_FAILED`) flipped the request to
+  FAILED but left the balance debited with **no REVERSAL ledger row and no restoration** — the trader's
+  authoritative balance was reduced for money that was never paid, and it was invisible to the integrity
+  checks (which only require a DEBIT in APPROVED/PROCESSING/PAID). Contained today because no real payout
+  rail is wired (HTF-3), and the FAILED path is only reachable via a mock provider. **Fix:**
+  `payout-operations.ts failPayout` now reverses the debit atomically (restore balance + dayStart anchors
+  + write a `payout_ledger` REVERSAL, idempotent on the unique `(request,REVERSAL)` index) in one
+  transaction with the state flip. FAILED is terminal, so no later PAID can double-benefit. New integrity
+  detector `FAILED_PAYOUT_DEBIT_NOT_REVERSED`. Proven by `payout-reversal-crash.test.ts` (reversal exact,
+  idempotent, crash-atomic). RETURNED/CANCELED provider outcomes are intentionally left to audited operator
+  reconciliation (money genuinely moved) — see the runbook.
+- **RES-3 (was P3) — RESOLVED.** EOD `recordClosedDay` + `persistRuleState` now run in ONE
+  `db.transaction` (`engine.ts rulesLocked`); a crash writes neither, and replay is idempotent. Proven by
+  `engine-atomicity.test.ts`.
+- **RES-4 (was P3) — RESOLVED.** Partial unique index `accounts_reset_of_key WHERE reset_of_account_id IS
+  NOT NULL` (migration 0036) enforces "one reset successor per failed account" at the DB, behind the
+  application idempotency key. Fresh-DB migrate-from-zero + fail-closed concurrency proof.
+- **RES-5 (P3, unchanged).** Personal-control hash-chain audit remains best-effort post-commit; the
+  authoritative durable record is the atomic in-txn `trader_risk_control_events` row (no mutation is
+  unrecorded). Future: deliver the chain audit through the durable outbox.
+- **RES-1 (P2, PRODUCT DECISION, unchanged).** Whether "max N contracts" bounds working orders remains
+  Nathan's decision; documented only, not changed.
+- **PV2-G1** — the Phase-1 test-mode scrypt reduction is now **mechanically proven isolated** from
+  production/default runtimes (`selectScryptParams`, `test-mode-security.test.ts`).
+
+New infrastructure: fault-injection framework (`failpoints.ts`), independent position/P&L/ledger
+reconciliation oracle (`reconcile.ts`), backup/restore drill (`scripts/resilience-restore-drill.sh`), and
+an added integrity detector. **Validation:** 43 resilience tests (8 files; 32 new across 7 new files),
+typecheck + build clean, migrate-from-zero + restore drill pass, canonical run once. No economics,
+product-rule, contract-limit, Portal V2, Atlas, or provider change.

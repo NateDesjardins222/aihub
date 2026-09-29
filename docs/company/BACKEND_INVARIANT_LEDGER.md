@@ -33,7 +33,8 @@ Legend — **Guard**: ADVISORY-LOCK (`pg_advisory_xact_lock`), FOR-UPDATE (row l
 | MON-1 | No floating-point money corruption (integer micro-dollars everywhere) | `@atlas/instruments math.ts`, position reducer | integer arithmetic; `ticksToMicros` the single P&L path | ✅ `money-oracle.test.ts`, `pnl-reconciliation.test.ts`, `position.test.ts`, `no-fabrication.test.ts` |
 | MON-2 | A payout debits exactly its authoritative ledger effect, once | `payouts.ts approvePayout` | STATE early-return + VERSION + ADVISORY-LOCK + UNIQUE `payout_ledger(request,DEBIT)` | ✅ `payouts.test.ts:199`, `golden-path.core50k.test.ts` |
 | MON-3 | No retry creates money; failed txn changes no financial state partially | payout + provisioning txns | atomic txns; unique ledger index | ✅ `payout-ops-torture.test.ts`, `m10-1-money-safety.test.ts` |
-| MON-4 | Every balance-changing op has traceable provenance | `payoutLedger` (append-only, trigger-enforced), `adminAdjustments` | append-only ledger + audit | ✅ `m10-1-money-safety.test.ts`; **new** integrity checks `PAYOUT_LEDGER_ARITHMETIC`, `APPROVED_PAYOUT_WITHOUT_DEBIT` |
+| MON-4 | Every balance-changing op has traceable provenance | `payoutLedger` (append-only, trigger-enforced), `adminAdjustments` | append-only ledger + audit | ✅ `m10-1-money-safety.test.ts`; integrity checks `PAYOUT_LEDGER_ARITHMETIC`, `APPROVED_PAYOUT_WITHOUT_DEBIT` |
+| MON-5 | A definitively-failed payout returns the debited money (no stranded debit) | `payout-operations.ts failPayout` | one txn: balance restore + UNIQUE `payout_ledger(request,REVERSAL)` + state→FAILED, idempotent | **RES-P2-1 (Phase 2)**: before this phase a provider FAILURE left the balance debited with no REVERSAL — money stranded, undetectable. Now reversed atomically. Proven by `payout-reversal-crash.test.ts`; detected by integrity `FAILED_PAYOUT_DEBIT_NOT_REVERSED`. |
 
 ## ORDERS / POSITIONS
 
@@ -63,7 +64,7 @@ Legend — **Guard**: ADVISORY-LOCK (`pg_advisory_xact_lock`), FOR-UPDATE (row l
 | # | Invariant | Enforced at | Guard | Status / Evidence |
 |---|---|---|---|---|
 | DD-1 | EOD trailing floor ratchets only on a finalized day and never regresses | `packages/core rules.ts advanceDrawdown/rollTradingDay` (`Math.max`) | monotonic by construction | ✅ `eod-trailing-lock.test.ts`, `rules.test.ts`, `eod-trailing-engine.test.ts`; **new** integrity `DRAWDOWN_FLOOR_ABOVE_HWM` |
-| DD-2 | Day finalization is idempotent (no double winning-day / double ratchet) | `rules.ts rollTradingDay` (date short-circuit) + `recordClosedDay` upsert + absolute-set counters | UNIQUE `daily_stats(account,date)` + idempotent recompute | ✅ `golden-path.core50k.test.ts`; ⚠️ `recordClosedDay`+`persistRuleState` are two awaits, not one txn — **RES-3** (self-heals on replay; P3) |
+| DD-2 | Day finalization is idempotent (no double winning-day / double ratchet) | `rules.ts rollTradingDay` (date short-circuit) + `recordClosedDay` upsert + absolute-set counters | UNIQUE `daily_stats(account,date)` + idempotent recompute | ✅ `golden-path.core50k.test.ts`; **RES-3 RESOLVED (Phase 2)**: `recordClosedDay`+`persistRuleState` now run in ONE `db.transaction` (`engine.ts rulesLocked`) — no partial-day window. Proven by `engine-atomicity.test.ts` (fault → neither written; replay idempotent). |
 | DD-3 | Winning day counts once per session day at the authoritative threshold ($150) | `rules.ts` (`net ≥ minWinningDayPnl`, from config) | canonical config | ✅ `payout-boundaries-service.test.ts`, `golden-path.core50k.test.ts` |
 
 ## LIFECYCLE / FUNDED / RESET
@@ -72,7 +73,7 @@ Legend — **Guard**: ADVISORY-LOCK (`pg_advisory_xact_lock`), FOR-UPDATE (row l
 |---|---|---|---|---|
 | LC-1 | An account cannot occupy contradictory lifecycle states | account status column + transition guards | STATE | ✅ `portal-lifecycle.test.ts`, engine state gate |
 | LC-2 | One evaluation pass → exactly one funded account | `commerce.ts certify/approveFunding` | FOR-UPDATE + ADVISORY-LOCK + UNIQUE `account_qualifications(account,life)` + idem key `fund:<qualId>` | ✅ `commerce.test.ts:464`, `commerce-funding.test.ts`; **new** integrity `DUPLICATE_FUNDED_SUCCESSOR` |
-| LC-3 | One failed account → at most one reset successor; failed account preserved | `account-reset.ts` + `commerce.ts` | idem key `reset:<failedAccountId>` (UNIQUE order key) + entitlement uniqueness | ✅ `portal-lifecycle.test.ts`; **new** `resilience-races.test.ts` (8-concurrent → 1 successor). ⚠️ `resetOfAccountId` itself has no unique index — invariant holds via the idem key; a partial unique index is recommended defense-in-depth (RES-4, P3). **new** integrity `DUPLICATE_RESET_SUCCESSOR` detects it. |
+| LC-3 | One failed account → at most one reset successor; failed account preserved | `account-reset.ts` + `commerce.ts` | idem key `reset:<failedAccountId>` (UNIQUE order key) + entitlement uniqueness + **DB partial unique index** | ✅ `portal-lifecycle.test.ts`; `resilience-races.test.ts` (8-concurrent → 1 successor); `crash-recovery.test.ts` (crash → ≤1, retry → 1). **RES-4 RESOLVED (Phase 2)**: partial unique index `accounts_reset_of_key WHERE reset_of_account_id IS NOT NULL` (migration 0036) now fails a second successor closed at the DB. Integrity `DUPLICATE_RESET_SUCCESSOR` retained as defense-in-depth. |
 
 ## PAYOUTS
 
@@ -96,11 +97,13 @@ Legend — **Guard**: ADVISORY-LOCK (`pg_advisory_xact_lock`), FOR-UPDATE (row l
 
 | ID | Severity | Invariant | Disposition |
 |---|---|---|---|
-| RES-1 | P2 | RSK-7 — contract cap vs working orders | Product decision (does "max N" bound working orders?); characterized, **not** changed (Part XLIV). |
+| RES-1 | P2 | RSK-7 — contract cap vs working orders | Product decision (does "max N" bound working orders?); characterized, **not** changed. **Unchanged in Phase 2.** |
 | RES-2 | P3 | ORD-2 / RSK-3 — optional `expectedVersion` | By design; document. Server row-lock still serializes; only conflict *detection* is opt-out. |
-| RES-3 | P3 | DD-2 — EOD two-write non-atomic | Self-heals on replay (idempotent). Recommend wrapping in one txn in a later phase. |
-| RES-4 | P3 | LC-3 — `resetOfAccountId` no unique index | Invariant proven safe via idem key; add partial unique index as defense-in-depth. Detected by integrity check. |
-| RES-5 | P3 | AUD-1 — personal-control chain audit best-effort | Durable in-txn event exists; hash-chain row can be missed on a swallowed error. |
-| PV2-G1 | — (fixed) | test determinism | **Fixed** this phase (test-mode scrypt work factor). |
+| RES-3 | ✅ FIXED (Phase 2) | DD-2 — EOD two-write non-atomic | **RESOLVED**: `recordClosedDay`+`persistRuleState` now one `db.transaction`. `engine-atomicity.test.ts`. |
+| RES-4 | ✅ FIXED (Phase 2) | LC-3 — `resetOfAccountId` no unique index | **RESOLVED**: partial unique index `accounts_reset_of_key` (migration 0036). Fail-closed proof in `resilience-races.test.ts`. |
+| RES-5 | P3 | AUD-1 — personal-control chain audit best-effort | Durable in-txn `traderRiskControlEvents` row IS the authoritative record (atomic) — no mutation is unrecorded. Chain audit stays best-effort; future: deliver via outbox. |
+| RES-P2-1 | ✅ FIXED (Phase 2); P2 today / P1 at launch | MON-5 — failed payout left balance debited with no reversal | **RESOLVED**: `failPayout` reverses the debit atomically (balance restore + REVERSAL, idempotent). New detector `FAILED_PAYOUT_DEBIT_NOT_REVERSED`. `payout-reversal-crash.test.ts`. |
+| PV2-G1 | — (fixed Phase 1) | test determinism | Fixed via test-mode scrypt work factor; **mechanically proven isolated in Phase 2** (`test-mode-security.test.ts`). |
 
-**No P0 or P1 invariant was found false.**
+**No P0 or P1 invariant was found false in Phase 1 or Phase 2.** Phase 2 fixed two real
+data-integrity defects at the root (RES-3, RES-P2-1) and added one DB-level guarantee (RES-4).
