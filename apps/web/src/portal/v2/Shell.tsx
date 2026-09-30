@@ -13,7 +13,7 @@
 import type { JSX, ReactNode } from 'react';
 import './Shell.css';
 
-export interface NavItem { key: string; label: string; }
+export interface NavItem { key: string; label: string; /** marks a development-only destination */ status?: 'dev'; }
 
 export const PORTAL_V2_NAV: readonly NavItem[] = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -25,10 +25,13 @@ export const PORTAL_V2_NAV: readonly NavItem[] = [
   { key: 'support', label: 'Support' },
 ];
 
-export function V2Sidebar({ active, onNavigate, showOwner = false }: {
+export function V2Sidebar({ active, onNavigate, showOwner = false, nav = PORTAL_V2_NAV }: {
   active: string;
   onNavigate?: (key: string) => void;
   showOwner?: boolean;
+  /** The destinations to render; defaults to the full design list. A real shell
+   *  should pass only destinations that have a usable implementation. */
+  nav?: readonly NavItem[];
 }): JSX.Element {
   return (
     <aside className="htv2-side" aria-label="Primary">
@@ -37,7 +40,7 @@ export function V2Sidebar({ active, onNavigate, showOwner = false }: {
         <span className="htv2-side-name ht-t-nav">Happy Trader</span>
       </div>
       <nav className="htv2-side-nav">
-        {PORTAL_V2_NAV.map((n) => (
+        {nav.map((n) => (
           <button
             key={n.key}
             type="button"
@@ -46,6 +49,7 @@ export function V2Sidebar({ active, onNavigate, showOwner = false }: {
             onClick={() => onNavigate?.(n.key)}
           >
             {n.label}
+            {n.status === 'dev' && <span className="htv2-side-tag">dev</span>}
           </button>
         ))}
         {showOwner && (
@@ -71,17 +75,18 @@ export function V2TopBar({ breadcrumb, utilities }: { breadcrumb?: ReactNode; ut
   );
 }
 
-export function V2AppShell({ active, onNavigate, showOwner, breadcrumb, utilities, children }: {
+export function V2AppShell({ active, onNavigate, showOwner, nav, breadcrumb, utilities, children }: {
   active: string;
   onNavigate?: (key: string) => void;
   showOwner?: boolean;
+  nav?: readonly NavItem[];
   breadcrumb?: ReactNode;
   utilities?: ReactNode;
   children: ReactNode;
 }): JSX.Element {
   return (
     <div className="htv2-shell">
-      <V2Sidebar active={active} onNavigate={onNavigate} showOwner={showOwner} />
+      <V2Sidebar active={active} onNavigate={onNavigate} showOwner={showOwner} nav={nav} />
       <div className="htv2-shell-main">
         <V2TopBar breadcrumb={breadcrumb} utilities={utilities} />
         <main className="htv2-workspace">

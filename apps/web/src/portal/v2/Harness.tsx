@@ -72,8 +72,7 @@ export function PortalV2Harness(): JSX.Element {
       <V2AppShell
         active={active}
         onNavigate={setActive}
-        showOwner
-        breadcrumb={<span>Portal V2 harness · <strong>DEV ONLY — representative values</strong></span>}
+        breadcrumb={<span>Portal V2 harness · <strong>DEV ONLY — design-system showcase</strong></span>}
         utilities={<V2Button variant="secondary" size="sm">Account ▾</V2Button>}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ht-space-8)' }}>

@@ -1,7 +1,23 @@
 /*
  * HAPPY TRADER — Portal V2 primitive styles. Scoped under `.htv2`; `--ht-*` only.
  */
+/*
+ * Portal V2 scroll ownership — the ROOT.
+ *
+ * There is ONE intentional vertical scroll model for Portal V2: the MAIN
+ * WORKSPACE owns vertical scrolling (see Shell.css `.htv2-workspace`), never the
+ * document and never this root. The trading terminal locks the document
+ * (`theme.css`: `body { overflow: hidden }`, `html,body,#root { height:100% }`),
+ * so Portal V2 does NOT rely on the page scrolling — it binds its own root to the
+ * viewport and scrolls the workspace inside it. `100dvh` (with a `100vh`
+ * fallback) tracks the real, mobile-chrome-aware viewport. `overflow: hidden`
+ * here guarantees this root never becomes a second scroller. Documented in
+ * docs/company/PORTAL_V2_SCROLL_ARCHITECTURE.md.
+ */
 .htv2 {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--ht-bg);
   color: var(--ht-text);
 }

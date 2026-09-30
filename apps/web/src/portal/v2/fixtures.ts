@@ -49,6 +49,21 @@ export const FIXTURE_VIEW: AccountsView = {
 
 export const FIXTURE_VIEW_EMPTY: AccountsView = { accounts: [], activeSlotsUsed: 0, maxActiveSlots: 5 };
 
+/**
+ * A deterministically LONG accounts view for the dev review environment and the
+ * scroll regression: every fixture account state, so the page provably exceeds the
+ * viewport at review widths and vertical scrolling can be verified end to end.
+ */
+export const FIXTURE_VIEW_LONG: AccountsView = {
+  accounts: [
+    FIXTURE_ACCOUNTS.evaluationActive!, FIXTURE_ACCOUNTS.fundedActive!, FIXTURE_ACCOUNTS.evaluationPassed!,
+    FIXTURE_ACCOUNTS.breached!, FIXTURE_ACCOUNTS.completed!, FIXTURE_ACCOUNTS.provisioning!,
+    FIXTURE_ACCOUNTS.atFloor!, FIXTURE_ACCOUNTS.large!, FIXTURE_ACCOUNTS.closed!, FIXTURE_ACCOUNTS.archived!,
+  ],
+  activeSlotsUsed: 4,
+  maxActiveSlots: 5,
+};
+
 // ---- Account-detail fixtures (dev harness only) ----------------------------
 const EVAL_RULES: PortalRulesView = {
   profitTargetMicros: 6_000 * M, maxLossMicros: 4_000 * M, drawdownType: 'EOD_TRAILING',
@@ -67,6 +82,16 @@ function detail(summary: AccountSummary, over: Partial<AccountDetailFull> = {}):
     lifecycles: [{ seq: 1, startedAt: 1_700_000_000_000, endedAt: null, endReason: null, finalStatus: null, startingBalanceMicros: summary.startingBalanceMicros }],
     ...over,
   };
+}
+
+/**
+ * Resolve a detail fixture for any summary: the richer hand-authored detail when
+ * one exists for this account id, otherwise a derived detail from the summary — so
+ * every account card in the dev review can open to a real V2 Account Detail view.
+ */
+export function fixtureDetailFor(summary: AccountSummary): AccountDetailFull {
+  const known = Object.values(FIXTURE_DETAILS).find((d) => d.id === summary.id);
+  return known ?? detail(summary);
 }
 
 /** One detail per major state, mapped through the real adapter in the harness. */

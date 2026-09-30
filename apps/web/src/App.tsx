@@ -20,8 +20,11 @@ const AdminApp = lazy(() => import('./admin/AdminApp').then((m) => ({ default: m
  * every rail size and state for side-by-side comparison against the references.
  */
 const IconGallery = lazy(() => import('./dev/IconGallery').then((m) => ({ default: m.IconGallery })));
-// Portal V2 design-system harness: DEVELOPMENT BUILDS ONLY (see /portal-v2 below).
-const PortalV2Harness = lazy(() => import('./portal/v2/Harness').then((m) => ({ default: m.PortalV2Harness })));
+// Portal V2 dev REVIEW shell: DEVELOPMENT BUILDS ONLY (see /portal-v2 below). A real
+// V2 shell with working navigation to the implemented V2 pages (Accounts, Account
+// Detail) + a dev design-system sub-route. Replaces the old bare design-system harness
+// as the /portal-v2 entry so Nathan gets a coherent, navigable review environment.
+const PortalV2Review = lazy(() => import('./portal/v2/Review').then((m) => ({ default: m.PortalV2Review })));
 
 /*
  * Native checkout is its own path and its own bundle, so the payment component
@@ -168,18 +171,20 @@ export function App(): JSX.Element {
     );
   }
 
-  // Portal V2 design-system harness: DEVELOPMENT BUILDS ONLY, no session, rendered
-  // before the gate. In a production build `designLabEnabled()` is false so this is
-  // skipped and /portal-v2 falls through to the 404 — the isolated V2 foundation is
-  // never reachable by customers and never affects the live V1 Portal.
+  // Portal V2 dev review shell: DEVELOPMENT BUILDS ONLY, no session, rendered before
+  // the gate. In a production build `designLabEnabled()` is false so this is skipped
+  // and /portal-v2 falls through to the 404 — the isolated V2 foundation is never
+  // reachable by customers and never affects the live V1 Portal. The review shell
+  // routes its own sub-paths (/portal-v2/accounts, /portal-v2/accounts/:id,
+  // /portal-v2/dev/design-system) client-side.
   if (
     designLabEnabled() &&
     typeof window !== 'undefined' &&
     window.location.pathname.startsWith('/portal-v2')
   ) {
     return (
-      <Suspense fallback={<div className="boot-splash">Loading Portal V2 harness…</div>}>
-        <PortalV2Harness />
+      <Suspense fallback={<div className="boot-splash">Loading Portal V2…</div>}>
+        <PortalV2Review />
       </Suspense>
     );
   }
