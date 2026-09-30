@@ -97,7 +97,7 @@ Legend — **Guard**: ADVISORY-LOCK (`pg_advisory_xact_lock`), FOR-UPDATE (row l
 
 | ID | Severity | Invariant | Disposition |
 |---|---|---|---|
-| RES-1 | P2 | RSK-7 — contract cap vs working orders | Product decision (does "max N" bound working orders?); characterized, **not** changed. **Unchanged in Phase 2.** |
+| RES-1 | P2 | RSK-7 — contract cap vs working orders | Product decision (does "max N" bound working orders?); characterized, **not** changed. **Unchanged in Phase 2 & Phase 3.** Phase 3 quantified the exact mechanism, blast radius (bounded, single-account, no money-duplication, P&L still reconciles) and fix requirements in `RES1_CONTRACT_LIMIT_ANALYSIS.md`. |
 | RES-2 | P3 | ORD-2 / RSK-3 — optional `expectedVersion` | By design; document. Server row-lock still serializes; only conflict *detection* is opt-out. |
 | RES-3 | ✅ FIXED (Phase 2) | DD-2 — EOD two-write non-atomic | **RESOLVED**: `recordClosedDay`+`persistRuleState` now one `db.transaction`. `engine-atomicity.test.ts`. |
 | RES-4 | ✅ FIXED (Phase 2) | LC-3 — `resetOfAccountId` no unique index | **RESOLVED**: partial unique index `accounts_reset_of_key` (migration 0036). Fail-closed proof in `resilience-races.test.ts`. |

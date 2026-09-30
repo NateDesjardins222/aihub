@@ -730,7 +730,11 @@ workflow commits fully, rolls back fully, or recovers deterministically. See
   authoritative durable record is the atomic in-txn `trader_risk_control_events` row (no mutation is
   unrecorded). Future: deliver the chain audit through the durable outbox.
 - **RES-1 (P2, PRODUCT DECISION, unchanged).** Whether "max N contracts" bounds working orders remains
-  Nathan's decision; documented only, not changed.
+  Nathan's decision; documented only, not changed. **Phase 3** quantified it in full —
+  `RES1_CONTRACT_LIMIT_ANALYSIS.md`: the cap is checked at submit time against position + this order only
+  (no working-order count, no fill-time cap), so stacked resting orders can fill past the cap; it is
+  bounded, single-account, never duplicates money, and P&L/drawdown still bind correctly. Fix requirements
+  are enumerated there for when the product decision is made.
 - **PV2-G1** — the Phase-1 test-mode scrypt reduction is now **mechanically proven isolated** from
   production/default runtimes (`selectScryptParams`, `test-mode-security.test.ts`).
 
