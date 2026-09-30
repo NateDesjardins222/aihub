@@ -9,9 +9,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../../http/app.js';
-import { getDb } from '../../db/client.js';
+import { createDb } from '../../db/client.js';
 import { accounts, dailyAccountStats, payoutLedger, payoutRequests, users } from '../../db/schema.js';
 import { hashPassword } from '../../auth/password.js';
 import { defaultOrganizationId, provisionAccount } from '../provisioning.js';
@@ -30,8 +28,8 @@ import { Prng } from './model/prng.js';
 
 const M = 1_000_000;
 const $ = (d: number) => d * M;
-let app: FastifyInstance;
-let db: ReturnType<typeof getDb>['db'];
+let handle: ReturnType<typeof createDb>;
+let db: ReturnType<typeof createDb>['db'];
 let organizationId: string;
 const EVAL_KEY = `sl-eval-${Math.random().toString(36).slice(2, 7)}`;
 const FUNDED_KEY = `sl-dest-${Math.random().toString(36).slice(2, 7)}`;
@@ -91,11 +89,15 @@ async function ledgerRows(reqId: string, type: string) {
 async function balanceOf(id: string): Promise<number> { const [a] = await db.select().from(accounts).where(eq(accounts.id, id)); return a!.balanceMicros; }
 
 beforeAll(async () => {
-  process.env['DATABASE_URL'] = process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
+  const url = process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
+  process.env['DATABASE_URL'] = url;
   process.env['HTF_AUTO_FUNDING'] = 'false';
-  app = (await buildApp()).app;
-  await app.ready();
-  db = getDb().db;
+  // A dedicated pool with NO background workers. This test manually drives the
+  // payout-ops flow (runFastLane/submitPayable/failPayout); buildApp's background
+  // PayoutOpsWorker would race that manual stepping and advance PAYABLE rows out
+  // from under the test.
+  handle = createDb(url);
+  db = handle.db;
   organizationId = await defaultOrganizationId(db);
   await publishProfileVersion(db, { organizationId, key: FUNDED_KEY, name: 'SL Funded 50K', accountType: 'FUNDED_SIM', config: fundedConfig() });
   await publishProfileVersion(db, { organizationId, key: EVAL_KEY, name: 'SL Eval 50K', accountType: 'EVALUATION', config: evalConfig() });
@@ -103,7 +105,7 @@ beforeAll(async () => {
   resetMockPayoutProvider();
   await closeCircuitBreaker(db, organizationId, 'sl reset', SYSTEM_ACTOR).catch(() => undefined);
 }, 60000);
-afterAll(async () => { await app?.close(); });
+afterAll(async () => { await handle?.sql.end({ timeout: 5 }); });
 
 describe('Part XXII — failed-payout reversal torture (RES-P2-1)', () => {
   it('across many seeded sequences: one exact reversal, immune to retry + duplicate callback, later payout still works', async () => {

@@ -69,17 +69,24 @@ beforeAll(async () => {
   await publishProfileVersion(db, { organizationId, key: EVAL_KEY, name: 'CR Eval 50K', accountType: 'EVALUATION', config: config(FUNDED_KEY) });
 });
 afterAll(async () => {
-  if (createdUsers.length > 0) {
-    // Clear qualifications first: funded_account_id is a NO-ACTION FK, so a
-    // user→accounts cascade alone would be blocked by a funded successor.
-    const accts = await db.select({ id: accounts.id }).from(accounts).where(inArray(accounts.userId, createdUsers));
-    const ids = accts.map((a) => a.id);
-    if (ids.length > 0) {
-      await db.delete(accountQualifications).where(or(inArray(accountQualifications.accountId, ids), inArray(accountQualifications.fundedAccountId, ids)));
+  // Best-effort cleanup; app.close() must always run so the background workers do
+  // not leak into the next test file and race its shared-DB assertions.
+  try {
+    if (createdUsers.length > 0) {
+      // Clear qualifications first: funded_account_id is a NO-ACTION FK, so a
+      // user→accounts cascade alone would be blocked by a funded successor.
+      const accts = await db.select({ id: accounts.id }).from(accounts).where(inArray(accounts.userId, createdUsers));
+      const ids = accts.map((a) => a.id);
+      if (ids.length > 0) {
+        await db.delete(accountQualifications).where(or(inArray(accountQualifications.accountId, ids), inArray(accountQualifications.fundedAccountId, ids)));
+      }
+      await db.delete(users).where(inArray(users.id, createdUsers));
     }
-    await db.delete(users).where(inArray(users.id, createdUsers));
+  } catch {
+    /* residue is harmless on the disposable test DB */
+  } finally {
+    await app.close();
   }
-  await app.close();
 });
 
 describe('Part V — provisioning crash + response-loss', () => {

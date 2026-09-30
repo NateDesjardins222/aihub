@@ -75,8 +75,17 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (users_.length > 0) await db.delete(users).where(inArray(users.id, users_));
-  await app.close();
+  // Cleanup is best-effort: users owning accounts with append-only payout_ledger
+  // rows cannot be deleted (by design). Crucially, app.close() must ALWAYS run —
+  // if a throwing delete skipped it, the background outbox/payout workers would
+  // leak into the next test file and race its shared-DB assertions.
+  try {
+    if (users_.length > 0) await db.delete(users).where(inArray(users.id, users_));
+  } catch {
+    /* residue is harmless on the disposable test DB */
+  } finally {
+    await app.close();
+  }
 });
 
 describe('Part IV — account-cap race at 2 / 5 / 20 concurrency', () => {

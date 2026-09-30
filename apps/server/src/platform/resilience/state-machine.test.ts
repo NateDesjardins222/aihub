@@ -8,9 +8,7 @@
  * env flag. Optimised for state space explored, not test count.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../../http/app.js';
-import { getDb } from '../../db/client.js';
+import { createDb } from '../../db/client.js';
 import { defaultOrganizationId } from '../provisioning.js';
 import { publishProfileVersion } from '../profiles.js';
 import { updateOpsConfig, closeCircuitBreaker } from '../payout-ops-config.js';
@@ -21,8 +19,8 @@ import { runSeed, replaySteps, shrink, type Step } from './model/fuzzer.js';
 
 const M = 1_000_000;
 const $ = (d: number) => d * M;
-let app: FastifyInstance;
-let db: ReturnType<typeof getDb>['db'];
+let handle: ReturnType<typeof createDb>;
+let db: ReturnType<typeof createDb>['db'];
 let organizationId: string;
 const EVAL_KEY = `sm-eval-${Math.random().toString(36).slice(2, 7)}`;
 const FUNDED_KEY = `sm-dest-${Math.random().toString(36).slice(2, 7)}`;
@@ -44,11 +42,14 @@ function evalConfig() {
 }
 
 beforeAll(async () => {
-  process.env['DATABASE_URL'] = process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
+  const url = process.env['TEST_DATABASE_URL'] ?? 'postgres://atlas:atlas@localhost:5432/atlas_test';
+  process.env['DATABASE_URL'] = url;
   process.env['HTF_AUTO_FUNDING'] = 'false';
-  app = (await buildApp()).app;
-  await app.ready();
-  db = getDb().db;
+  // A dedicated pool with NO background workers: the fuzzer drives the payout/
+  // lifecycle domain directly and asserts a deterministic authoritative digest,
+  // which a background OutboxWorker/PayoutOpsWorker mutating state would break.
+  handle = createDb(url);
+  db = handle.db;
   organizationId = await defaultOrganizationId(db);
   await publishProfileVersion(db, { organizationId, key: FUNDED_KEY, name: 'SM Funded 50K', accountType: 'FUNDED_SIM', config: fundedConfig() });
   await publishProfileVersion(db, { organizationId, key: EVAL_KEY, name: 'SM Eval 50K', accountType: 'EVALUATION', config: evalConfig() });
@@ -57,7 +58,7 @@ beforeAll(async () => {
   await closeCircuitBreaker(db, organizationId, 'sm reset', SYSTEM_ACTOR).catch(() => undefined);
 }, 60000);
 
-afterAll(async () => { await app?.close(); });
+afterAll(async () => { await handle?.sql.end({ timeout: 5 }); });
 
 // The committed regression corpus: a handful of named, valuable seeds.
 const CORPUS: readonly number[] = [

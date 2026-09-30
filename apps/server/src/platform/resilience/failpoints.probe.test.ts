@@ -58,8 +58,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (createdUsers.length > 0) await db.delete(users).where(inArray(users.id, createdUsers));
-  await app.close();
+  // Best-effort cleanup; app.close() must always run so the background workers do
+  // not leak into the next test file and race its shared-DB assertions.
+  try {
+    if (createdUsers.length > 0) await db.delete(users).where(inArray(users.id, createdUsers));
+  } catch {
+    /* residue is harmless on the disposable test DB */
+  } finally {
+    await app.close();
+  }
 });
 
 describe('FaultInjector forces a real rollback (probe)', () => {
