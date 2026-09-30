@@ -743,3 +743,43 @@ reconciliation oracle (`reconcile.ts`), backup/restore drill (`scripts/resilienc
 an added integrity detector. **Validation:** 43 resilience tests (8 files; 32 new across 7 new files),
 typecheck + build clean, migrate-from-zero + restore drill pass, canonical run once. No economics,
 product-rule, contract-limit, Portal V2, Atlas, or provider change.
+
+---
+
+## Security Phase 1 (2026-09-30, base `ae9a4a3`) — findings
+
+Hostile-client / auth / authz / API-abuse / trust-boundary attack pass. Baseline
+security suites re-attacked and green (166/166). No P0/P1 found. Full detail:
+`SECURITY_PHASE1_REPORT.md`, `SECURITY_TRUST_BOUNDARY_MAP.md`,
+`SECURITY_ENDPOINT_MATRIX.md`, `SECURITY_INVARIANT_LEDGER.md`.
+
+- **SEC-1 (P2 — FIXED).** The step-up reauth endpoint `POST /api/v1/admin/security/reauth`
+  re-verifies the operator password to mint a step-up token (gates FINANCIAL / STAFF /
+  KILL_SWITCH actions) but had no rate limit (global limiter is `global:false`), leaving
+  the step-up password gate open to online brute force by any holder of a valid access
+  token. **Fixed:** per-IP cap 10/min (`owner-staff.ts`), regression `security-phase1.test.ts`.
+- **SEC-2 (P2 — documented, not changed).** Market-data replay/recording/provider controls
+  (`/api/v1/marketdata/replay/*`, `/recordings/capture`, `/provider`) are a customer-facing
+  Atlas feature gated by bare `requireUser`, but implemented as a **global singleton**
+  (`deps.replay`/`deps.recorder`), so one customer's replay load/play/seek or live↔replay
+  provider switch affects **every** tenant's chart feed. Impact is market-data *display*
+  only — no money, authz, orders, or cross-customer private data. A correct fix is
+  per-session replay isolation, which is an Atlas market-data redesign (out of Phase-1
+  scope). Recommend: gate the mutating global controls behind an operator role, or isolate
+  replay per session, before multi-tenant launch.
+- **SEC-3 (P3 — pre-launch gate).** The payout webhook `/api/v1/webhooks/payout/:provider`
+  performs no signature verification (a seam) and reads the parsed body, not a captured raw
+  body. Production fails closed (mock/unconfigured → 202 no-op; settlement guarded by
+  terminal/out-of-order checks + unique `(request, entry_type)` ledger). Must gain raw-body
+  signature verification + a non-attacker-controlled dedup key before any real payout rail
+  is enabled. Contrast: the commerce/Whop webhook is fully verified.
+- **SEC-4 (P3 — confirm intent).** `POST /api/v1/admin/users/:id/notes` runs at SUPPORT
+  while sibling note redaction requires ADMIN. Confirm whether SUPPORT should author user
+  notes; tighten if not.
+- **Access-token revocation (P3, pre-existing tradeoff).** Logout / `revokeAllSessions`
+  revoke refresh tokens only; a stateless access JWT stays valid until its ≤15-min `exp`.
+  Acceptable JWT tradeoff; documented.
+
+No real secret is committed (only test/placeholder/`.env.example`); no server secret in the
+web bundle; injection audit found no externally-reachable SQL/command/path/SSRF/redirect/XSS/
+prototype-pollution sink. No economics, product-rule, RES-1, Portal V2, or Atlas change.

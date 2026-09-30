@@ -33,6 +33,7 @@
     "diagnose:chaos": "node tools/diagnose-chaos.mjs",
     "diagnose:interrupt": "node tools/diagnose-interrupt.mjs",
     "diagnose:lifecycle": "node tools/diagnose-lifecycle.mjs",
+    "security:check": "bash scripts/security-check.sh",
     "security:fuzz": "pnpm --filter @atlas/server exec tsx ../../scripts/fuzz-security.ts",
     "security:torture": "pnpm --filter @atlas/server exec tsx ../../scripts/torture-security.ts"
   },

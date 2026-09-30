@@ -30,7 +30,14 @@ export function ownerStaffRoutes() {
     app.addHook('preHandler', requireUser);
 
     // ---- reauth (any signed-in operator can step up their own session) ------
-    app.post('/security/reauth', async (request) => {
+    // SEC-1: this endpoint re-verifies the operator's PASSWORD to mint a step-up
+    // token that gates FINANCIAL / STAFF / KILL_SWITCH actions. Without its own
+    // limit it inherits the global `global:false` (i.e. UNLIMITED), leaving the
+    // step-up password gate open to online brute force by anyone holding a valid
+    // (or stolen) access token. Cap it per-IP like /login (tighter — it guards
+    // privileged operations). `trustProxy` is off by default, so a spoofed
+    // X-Forwarded-For cannot mint a fresh bucket.
+    app.post('/security/reauth', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request) => {
       const b = z.object({ password: z.string().min(1), class: z.enum(REAUTH_CLASSES) }).parse(request.body);
       return mintStepUp(db, request.user!.id, b.password, b.class);
     });
