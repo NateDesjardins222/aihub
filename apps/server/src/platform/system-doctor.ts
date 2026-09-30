@@ -15,6 +15,7 @@ import type { Database } from '../db/client.js';
 import { payoutReconciliationRecords, supportTickets, systemCheckResults } from '../db/schema.js';
 import { resolveRithmicConnection } from '../infra/rithmic-config.js';
 import { affiliatePayoutProviderStatus } from './affiliate-payouts.js';
+import { outboxHealth } from './outbox.js';
 import { supportStorageStatus } from './support-attachments.js';
 import { slaState } from './support-inbox.js';
 import { and, eq } from 'drizzle-orm';
@@ -166,6 +167,37 @@ function checkSupportStorage(): SystemCheck {
   };
 }
 
+/**
+ * Transactional outbox backlog — is the delivery worker keeping up? A stalled
+ * worker (dead, wedged, or fallen behind) is invisible to the money invariants
+ * but silently delays projections and downstream effects, so it gets a
+ * first-class doctor probe. Read-only: it never drains, deletes, or acks a row.
+ * A dead-lettered (poisoned) event or a backlog older than the stall threshold
+ * is WARNING — operationally important, but not money-at-risk CRITICAL.
+ */
+async function checkOutbox(db: Database): Promise<SystemCheck> {
+  try {
+    const [h, ms] = await timed(() => outboxHealth(db));
+    const status: CheckStatus = h.state === 'DEGRADED' ? 'WARNING' : 'HEALTHY';
+    return {
+      key: 'outbox',
+      status,
+      severity: status === 'WARNING' ? 'WARNING' : 'INFO',
+      expected: 'worker draining; no dead-letter; oldest pending under threshold',
+      actual: h.reason,
+      durationMs: ms,
+      detail: {
+        pending: h.pending,
+        deadLetter: h.deadLetter,
+        oldestPendingAgeMs: h.oldestPendingAgeMs,
+        stallThresholdMs: h.stallThresholdMs,
+      },
+    };
+  } catch (e) {
+    return { key: 'outbox', status: 'CRITICAL', severity: 'CRITICAL', expected: 'outbox queryable', actual: `unreadable: ${(e as Error).message.slice(0, 80)}`, durationMs: 0 };
+  }
+}
+
 const CRITICAL_STATUSES: CheckStatus[] = ['CRITICAL'];
 const WARNING_STATUSES: CheckStatus[] = ['WARNING', 'SUSPICIOUS'];
 
@@ -187,6 +219,7 @@ export async function runSystemDoctor(db: Database, organizationId: string, pers
   checks.push(checkRithmic());
   checks.push(await checkPayoutReconciliation(db, organizationId));
   checks.push(await checkProvisioning(db));
+  checks.push(await checkOutbox(db));
   checks.push(checkNotificationProvider());
   checks.push(checkAffiliatePayoutProvider());
   checks.push(await checkSupport(db, organizationId));

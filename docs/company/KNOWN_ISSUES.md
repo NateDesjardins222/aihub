@@ -783,3 +783,50 @@ security suites re-attacked and green (166/166). No P0/P1 found. Full detail:
 No real secret is committed (only test/placeholder/`.env.example`); no server secret in the
 web bundle; injection audit found no externally-reachable SQL/command/path/SSRF/redirect/XSS/
 prototype-pollution sink. No economics, product-rule, RES-1, Portal V2, or Atlas change.
+
+---
+
+## Operational Readiness Phase 1 (2026-09-30, base `3fe1d19`)
+
+Observability / health / diagnostics / incident-evidence / safe-operations pass.
+The operational surface was already mature (liveness/readiness, kill switches, audit
+hash chain, System Doctor, integrity + reconciliation tooling, provider-safety,
+incidents/alerts). This phase inventoried it, proved it, and closed a handful of
+low-risk visibility gaps. **No P0/P1 operational defect found.** Full detail:
+`OPERATIONAL_READINESS_PHASE1_REPORT.md`, `OPERATIONAL_READINESS_MAP.md`,
+`OPERATIONAL_SIGNAL_MODEL.md`, `OPERATIONAL_ALERT_CATALOG.md`,
+`OPERATIONAL_INCIDENT_RUNBOOK.md`.
+
+- **OPS-1 (P2 — FIXED).** Log redaction was too narrow (only authorization header +
+  password/refreshToken body). Widened to cookies, `set-cookie`, `x-stepup-token`,
+  webhook signature headers, and additional token/password body fields (`http/app.ts`).
+- **OPS-2 (P3 — FIXED).** No `x-request-id` on responses and a client-supplied request
+  id was trusted verbatim. Added `safeRequestId()` + Fastify `genReqId` (bounded token
+  or generated UUID) and an `x-request-id` response header for support correlation.
+- **OPS-3 (P2 — FIXED).** The RES-P2-1 detector (failed payout debited but not reversed)
+  existed only in the CLI integrity suite, invisible to the owner console. Added
+  `INV_FAILED_PAYOUT_DEBIT_REVERSED` to `platform/integrity.ts` (console suite now 11 checks).
+- **OPS-4 (P3 — FIXED).** `outboxStats` gained `oldestPendingAgeMs`; a reusable
+  `outboxHealth()` (HEALTHY/DEGRADED + reason) now makes a stall detectable from the
+  shared helper, not just inlined admin code.
+- **OPS-5 (P2 — FIXED).** System Doctor gained a first-class `outbox` probe (was only
+  surfaced on the admin `/system` endpoint).
+- **OPS-6 (P2 — FIXED).** Rate-limit blocks (429) and privileged authz denials (403)
+  now emit a bounded, payload-free `securityEvent` structured log (no audit-chain flood,
+  no metric cardinality). Login success/failure audit remains a documented gap below.
+- **OPS-7 (P3 — documented, not changed).** Two divergent integrity/reconciliation
+  stacks (CLI/resilience vs HTTP/console); neither a superset. Unifying is a larger
+  refactor, out of Phase-1 scope. OPS-3 closed the one launch-critical divergence
+  (RES-P2-1) so the console no longer misses it.
+- **OPS-8 (P3 — documented).** Provider health uses three vocabularies incl. a
+  `ProviderHealthState` name collision (contracts vs payout); no md/exec health
+  transition test suite (payout DOWN→HEALTHY is proven). Renaming a shared contract
+  type is out of scope.
+- **OPS-9 (P3 — documented).** No forced-shutdown drain timeout and no outbox worker
+  heartbeat; a stall is inferred from oldest-pending age. Login success/failure is not
+  audited (the SECURITY stream's `auth.*` prefix has no producer yet).
+
+New read-only operator tooling: `pnpm ops:check` (build, DB, providers, outbox health,
+System Doctor, latest persisted integrity — never a deep scan). No economics,
+product-rule, RES-1, SEC-2, SEC-3, Portal V2, or Atlas change; no provider activated;
+no paid monitoring stack added.

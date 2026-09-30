@@ -19,6 +19,7 @@
     "db:seed": "pnpm --filter @atlas/server db:seed",
     "db:reconcile": "pnpm --filter @atlas/server exec tsx scripts/reconcile-products.ts",
     "integrity:check": "pnpm --filter @atlas/server exec tsx scripts/integrity-check.ts",
+    "ops:check": "pnpm --filter @atlas/server exec tsx scripts/ops-check.ts",
     "test:browser": "node tests/browser/run.mjs",
     "audit:candles": "node tools/candle-audit.mjs",
     "audit:latency": "node tools/latency-probe.mjs",

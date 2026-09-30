@@ -32,6 +32,20 @@ suites: 166/166 green). This is the security counterpart to
 | SI-23 | Provider integrations fail closed in production (no mock money/KYC/payout) | `config/provider-safety.ts` | `provider-safety.test.ts`, `provider-safety.prod.test.ts` |
 | SI-24 | Production refuses to boot on an insecure `JWT_SECRET` or wildcard CORS | `config/env.ts` boot guards | `env` config tests |
 
+## Operational Readiness Phase 1 addenda (2026-09-30)
+
+- **SI-10 strengthened.** Log redaction was widened (OPS-1) beyond the response/bundle
+  guarantee to the structured LOG stream: cookies, `set-cookie`, `x-stepup-token`,
+  webhook signature headers, and token/password body fields are now redacted
+  (`http/app.ts`). A secret cannot ride into logs through those paths.
+- **New operational security signal (OPS-6).** Rate-limit blocks (429) and privileged
+  authorization denials (403) emit a bounded, payload-free `securityEvent` structured
+  log — visibility without an audit-chain flood or metric cardinality. This is a signal,
+  not an invariant with a proving test; login success/failure audit remains a gap.
+- **Request-id injection closed (OPS-2).** A client-supplied request id is sanitized
+  (`safeRequestId`) before it reaches the log/audit `requestId` field, so a hostile
+  client cannot forge log events through it. Proven in `operational-readiness.test.ts`.
+
 ## Gaps / non-invariants (honestly stated)
 
 - **Access-token revocation is not immediate** — a stateless JWT stays valid until

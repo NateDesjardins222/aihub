@@ -191,20 +191,81 @@ export class OutboxWorker {
   }
 }
 
-/** Counts for observability and tests. Optionally scoped to one aggregate. */
-export async function outboxStats(
-  db: Database,
-  aggregateId?: string,
-): Promise<{ pending: number; deadLetter: number; delivered: number }> {
+export interface OutboxStats {
+  readonly pending: number;
+  readonly deadLetter: number;
+  readonly delivered: number;
+  /**
+   * Age, in ms, of the OLDEST undelivered non-dead-letter row (its `createdAt`
+   * to now), or null when nothing is pending. This is the one field that reveals
+   * a STALLED worker: a healthy drain keeps this small; a worker that is dead,
+   * wedged, or falling behind lets it grow without bound. Backlog COUNT alone
+   * cannot tell a burst (draining) from a stall (not draining) — age can.
+   */
+  readonly oldestPendingAgeMs: number | null;
+}
+
+/** Counts + oldest-pending age for observability and tests. Optionally scoped to one aggregate. */
+export async function outboxStats(db: Database, aggregateId?: string): Promise<OutboxStats> {
   const rows = await db
     .select({
       pending: sql<number>`count(*) filter (where ${outboxEvents.deliveredAt} is null and ${outboxEvents.deadLetter} = false)::int`,
       deadLetter: sql<number>`count(*) filter (where ${outboxEvents.deadLetter} = true)::int`,
       delivered: sql<number>`count(*) filter (where ${outboxEvents.deliveredAt} is not null)::int`,
+      oldestPendingAt: sql<
+        string | null
+      >`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveredAt} is null and ${outboxEvents.deadLetter} = false)`,
     })
     .from(outboxEvents)
     .where(aggregateId ? eq(outboxEvents.aggregateId, aggregateId) : undefined);
-  return rows[0] ?? { pending: 0, deadLetter: 0, delivered: 0 };
+  const r = rows[0] ?? { pending: 0, deadLetter: 0, delivered: 0, oldestPendingAt: null };
+  const oldestPendingAgeMs =
+    r.oldestPendingAt == null ? null : Math.max(0, Date.now() - new Date(r.oldestPendingAt).getTime());
+  return { pending: r.pending, deadLetter: r.deadLetter, delivered: r.delivered, oldestPendingAgeMs };
+}
+
+/**
+ * How long the oldest pending outbox row may sit before the backlog is judged
+ * DEGRADED. The worker ticks on a short interval and drains in bulk, so a
+ * healthy system clears the backlog in well under a minute; a row older than
+ * this means the worker is not keeping up (or is not running). Documented,
+ * conservative default — override per deployment, never a silent magic number.
+ */
+export const OUTBOX_STALL_THRESHOLD_MS = 60_000;
+
+export type OutboxHealthState = 'HEALTHY' | 'DEGRADED';
+
+export interface OutboxHealth extends OutboxStats {
+  readonly state: OutboxHealthState;
+  readonly stallThresholdMs: number;
+  /** Why the state is what it is — safe, human-readable, no payloads. */
+  readonly reason: string;
+}
+
+/**
+ * A reusable, read-only outbox health assessment for operational tooling
+ * (System Doctor, the admin console, `ops:check`). It never deletes a row and
+ * never marks one delivered — a stall must stay a stall until the worker drains
+ * it. DEGRADED when any row is dead-lettered (a poisoned event a human must
+ * look at) or the oldest pending row is older than the stall threshold.
+ */
+export async function outboxHealth(
+  db: Database,
+  opts?: { aggregateId?: string; stallThresholdMs?: number },
+): Promise<OutboxHealth> {
+  const stallThresholdMs = opts?.stallThresholdMs ?? OUTBOX_STALL_THRESHOLD_MS;
+  const stats = await outboxStats(db, opts?.aggregateId);
+  const stalled = stats.oldestPendingAgeMs !== null && stats.oldestPendingAgeMs > stallThresholdMs;
+  const state: OutboxHealthState = stats.deadLetter > 0 || stalled ? 'DEGRADED' : 'HEALTHY';
+  const reason =
+    stats.deadLetter > 0
+      ? `${stats.deadLetter} dead-lettered event(s) need review`
+      : stalled
+        ? `oldest pending event is ${stats.oldestPendingAgeMs}ms old (> ${stallThresholdMs}ms) — worker may be stalled`
+        : stats.pending > 0
+          ? `${stats.pending} pending, draining normally`
+          : 'no backlog';
+  return { ...stats, state, stallThresholdMs, reason };
 }
 
 /**

@@ -1,4 +1,5 @@
 /** Fastify application assembly. */
+import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -75,12 +76,54 @@ export interface BuiltApp {
   readonly engine: TradingEngine;
 }
 
+/**
+ * A safe per-request id. Every request gets a stable id used in structured logs
+ * and the audit `Actor.requestId`, so a support ticket can be tied to exact log
+ * lines. A CLIENT may propose one via `x-request-id` / `request-id` to correlate
+ * across a call chain — but it is never trusted verbatim: only a short, plain
+ * token (letters, digits, `-`, `_`, `.`, ≤64 chars) is accepted, otherwise a
+ * fresh UUID is generated. This stops a hostile client from injecting newlines,
+ * control characters, or unbounded junk into the log/audit stream via the id.
+ */
+const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
+export function safeRequestId(raw: unknown): string {
+  const candidate = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof candidate === 'string' && SAFE_REQUEST_ID.test(candidate)) return candidate;
+  return randomUUID();
+}
+
 export async function buildApp(): Promise<BuiltApp> {
   const app = Fastify({
     logger: {
       level: isProduction() ? 'info' : 'warn',
-      redact: ['req.headers.authorization', 'req.body.password', 'req.body.refreshToken'],
+      // Keep secrets and session material OUT of the structured log stream. This
+      // is a payments/trading system: an access token, refresh token, cookie,
+      // step-up token, or webhook signature in a log line is a credential leak.
+      // pino redaction is path-based, so every place a secret can ride in is
+      // listed explicitly — headers (authorization/cookie/step-up/webhook sig)
+      // and the body fields that carry a password or token.
+      redact: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers["x-stepup-token"]',
+        'req.headers["webhook-signature"]',
+        'req.headers["x-whop-signature"]',
+        'res.headers["set-cookie"]',
+        'req.body.password',
+        'req.body.newPassword',
+        'req.body.currentPassword',
+        'req.body.refreshToken',
+        'req.body.token',
+        'req.body.totp',
+        'req.body.code',
+        'req.body.secret',
+      ],
     },
+    // Every request gets a stable id (logs + audit Actor). A client-proposed
+    // `x-request-id`/`request-id` is accepted only if it is a short plain token;
+    // otherwise a UUID is generated — a hostile client cannot forge log events
+    // or inject control characters through the id. See safeRequestId().
+    genReqId: (req) => safeRequestId(req.headers['x-request-id'] ?? req.headers['request-id']),
     // OFF by default: `request.ip` is the real socket peer, so a client cannot
     // forge it via `X-Forwarded-For` to escape an IP-keyed rate limit. Turned on
     // only when TRUSTED_PROXY names a real proxy in front. See config/env.ts.
@@ -92,8 +135,10 @@ export async function buildApp(): Promise<BuiltApp> {
     origin: env().CORS_ORIGIN === '*' ? true : env().CORS_ORIGIN.split(','),
     credentials: true,
     // The browser cannot read a response header it has not been told about,
-    // and the execution instrument needs the server's own timing.
-    exposedHeaders: ['x-atlas-ms'],
+    // and the execution instrument needs the server's own timing. `x-request-id`
+    // is exposed so a client can quote it in a support ticket and an operator can
+    // grep the exact server log lines for that request.
+    exposedHeaders: ['x-atlas-ms', 'x-request-id'],
   });
 
   await app.register(rateLimit, {
@@ -140,8 +185,43 @@ export async function buildApp(): Promise<BuiltApp> {
 
   registerAuth(app);
 
+  /*
+   * Security operational signal — a bounded, payload-free breadcrumb.
+   *
+   * Rate-limit blocks (429) and privileged authorization denials (403) are
+   * ENFORCED elsewhere; here we make them VISIBLE to operators without alert
+   * spam. This is a structured log line only — never an audit-chain row (which
+   * an attacker could otherwise flood) and never a metric label (which would
+   * explode cardinality). It carries only the safe, bounded fields: the event
+   * name, the server-owned request id, the HTTP method, the matched ROUTE
+   * PATTERN (`/api/v1/admin/...`, never the raw URL with ids), the response
+   * code, and the actor id when a principal is attached. It NEVER logs the
+   * request body, query, headers, or any attacker-supplied string, so a hostile
+   * caller cannot forge a log event or inject a payload through it. Ordinary 401
+   * (unauthenticated) and 404 are deliberately NOT signalled — that is normal
+   * traffic, not an operational security event.
+   */
+  const logSecurityEvent = (
+    request: Parameters<Parameters<typeof app.setErrorHandler>[0]>[1],
+    event: 'rate_limit_blocked' | 'authz_denied',
+    code: number,
+  ): void => {
+    request.log.warn(
+      {
+        securityEvent: event,
+        requestId: request.id,
+        method: request.method,
+        route: request.routeOptions?.url ?? 'unmatched',
+        code,
+        actorId: (request as { user?: { id?: string } }).user?.id ?? null,
+      },
+      `security: ${event}`,
+    );
+  };
+
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ApiError) {
+      if (error.statusCode === 403) logSecurityEvent(request, 'authz_denied', 403);
       return reply
         .code(error.statusCode)
         .send({ error: { code: error.code, message: error.message, detail: error.detail } });
@@ -156,6 +236,7 @@ export async function buildApp(): Promise<BuiltApp> {
       });
     }
     if ((error as { statusCode?: number }).statusCode === 429) {
+      logSecurityEvent(request, 'rate_limit_blocked', 429);
       return reply
         .code(429)
         .send({ error: { code: 'RATE_LIMITED', message: 'Too many requests.' } });
@@ -231,6 +312,10 @@ export async function buildApp(): Promise<BuiltApp> {
     if (started !== undefined) {
       reply.header('x-atlas-ms', (performance.now() - started).toFixed(1));
     }
+    // Echo the (safe, server-owned) request id so a client/support can correlate
+    // a response to server log lines. Always the validated id, never raw client
+    // input (see genReqId/safeRequestId).
+    reply.header('x-request-id', String(request.id));
     return payload;
   });
 

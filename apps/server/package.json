@@ -17,7 +17,8 @@
     "rithmic:verify": "tsx scripts/rithmic-verify.ts",
     "affiliate:economics": "tsx scripts/affiliate-economics-stress.ts",
     "economics:validate": "tsx scripts/economics-validate.ts",
-    "integrity:check": "tsx scripts/integrity-check.ts"
+    "integrity:check": "tsx scripts/integrity-check.ts",
+    "ops:check": "tsx scripts/ops-check.ts"
   },
   "dependencies": {
     "@atlas/contracts": "workspace:*",

@@ -93,6 +93,36 @@ async function checkPaidPayoutHasDebit(db: Database, organizationId: string): Pr
   };
 }
 
+/**
+ * Every FAILED payout that was already debited has a compensating REVERSAL —
+ * the RES-P2-1 invariant. A provider FAILED result must restore the trader's
+ * balance atomically with the state flip (`payout-operations.ts#failPayout`);
+ * a FAILED request that still has a DEBIT but no REVERSAL means money was taken
+ * and never returned. This detector already existed in the CLI integrity suite
+ * (`resilience/integrity-checks.ts` FAILED_PAYOUT_DEBIT_NOT_REVERSED); it is
+ * surfaced here so the OWNER CONSOLE sees the same P0 corruption, not only an
+ * operator who happens to run `pnpm integrity:check`.
+ */
+async function checkFailedPayoutDebitReversed(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db.execute(sql`
+    select pr.id as id from payout_requests pr
+    where pr.organization_id = ${organizationId} and pr.state = 'FAILED'
+      and exists (select 1 from payout_ledger d where d.payout_request_id = pr.id and d.entry_type = 'DEBIT')
+      and not exists (select 1 from payout_ledger r where r.payout_request_id = pr.id and r.entry_type = 'REVERSAL')
+    limit 50
+  `);
+  const arr = rows as unknown as Array<{ id: string }>;
+  return {
+    key: 'INV_FAILED_PAYOUT_DEBIT_REVERSED',
+    status: arr.length ? 'FAIL' : 'PASS',
+    severity: arr.length ? 'CRITICAL' : 'INFO',
+    affectedCount: arr.length,
+    expected: 'every FAILED payout that was debited has a REVERSAL (balance made whole)',
+    actual: arr.length ? `${arr.length} FAILED payout(s) debited but not reversed` : 'all failed payouts reversed',
+    sampleRefs: arr.slice(0, 10).map((r) => r.id),
+  };
+}
+
 /** No payout has more than one DEBIT (double-debit). Structurally guarded, verified here. */
 async function checkNoDoubleDebit(db: Database): Promise<IntegrityCheck> {
   const rows = await db
@@ -212,6 +242,7 @@ export async function runIntegrityChecks(db: Database, organizationId: string, p
     await checkActiveAccountsPerIdentity(db, organizationId),
     await checkPayoutCycles(db, organizationId),
     await checkPaidPayoutHasDebit(db, organizationId),
+    await checkFailedPayoutDebitReversed(db, organizationId),
     await checkNoDoubleDebit(db),
     await checkAuditChain(db, organizationId),
     await checkAffiliateCommissionHasConversion(db, organizationId),
