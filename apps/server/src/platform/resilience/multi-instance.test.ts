@@ -212,8 +212,19 @@ describe('Part XIII — cross-instance payout: exactly-once business + ledger ef
 });
 
 describe('Part IX — process-local authority audit + post-run integrity', () => {
-  it('no cross-instance operation produced a corruption finding', async () => {
+  it('no cross-instance operation produced a corruption finding for this run', async () => {
+    // Scoped to THIS run's entities: runIntegrityChecks is global (it scans the whole
+    // database), and in the full canonical suite that DB is shared with hundreds of
+    // other tests whose fixtures legitimately trip global detectors. Restrict to the
+    // users this test created and the accounts they own.
+    const accts = createdUsers.length
+      ? await db.select({ id: accounts.id }).from(accounts).where(inArray(accounts.userId, createdUsers))
+      : [];
+    const mine = new Set<string>([...createdUsers, ...accts.map((a) => a.id)]);
     const findings = await runIntegrityChecks(db);
-    expect(findings.filter((f) => f.severity === 'P0' || f.severity === 'P1')).toEqual([]);
+    const relevant = findings.filter(
+      (f) => (f.severity === 'P0' || f.severity === 'P1') && f.sample.some((s) => mine.has(s)),
+    );
+    expect(relevant).toEqual([]);
   });
 });
