@@ -43,6 +43,17 @@ import {
 } from '../../platform/achievements.js';
 import { ensureCustomerIdentity } from '../../platform/customer-identity.js';
 import { defaultOrganizationId } from '../../platform/provisioning.js';
+import { progressForUser } from '../../platform/progress.js';
+import {
+  archivePersonalGoal,
+  completePersonalGoal,
+  createPersonalGoal,
+  listPersonalGoals,
+  updatePersonalGoal,
+  GoalError,
+  type GoalKind,
+  type GoalMetric,
+} from '../../platform/personal-goals.js';
 import {
   getPersonalRiskProfile,
   upsertPersonalControl,
@@ -64,6 +75,14 @@ function mapPortalError(err: unknown): never {
     if (err.code === 'ACCOUNT_NOT_FOUND') throw ApiError.notFound(err.code, err.message);
     if (err.code === 'STALE_VERSION') throw ApiError.conflict(err.code, err.message);
     throw ApiError.badRequest(err.code, err.message, err.detail);
+  }
+  throw err;
+}
+
+function mapGoalError(err: unknown): never {
+  if (err instanceof GoalError) {
+    if (err.code === 'NOT_FOUND') throw ApiError.notFound(err.code, err.message);
+    throw ApiError.badRequest(err.code, err.message);
   }
   throw err;
 }
@@ -368,6 +387,81 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ ok: true });
     },
   );
+
+  // ---- Progress & personal goals ------------------------------------------
+  // The customer's personal Happy Trader journey. Every figure is authoritative
+  // and server-owned; goals belong to the caller's identity and are enforced
+  // server-side (never trust an id from the body).
+  app.get('/progress', async (request, reply) => {
+    return reply.send(await progressForUser(db, request.user!.id));
+  });
+
+  app.get('/goals', async (request, reply) => {
+    return reply.send({ goals: await listPersonalGoals(db, request.user!.id) });
+  });
+
+  app.post<{
+    Body: { title?: string; note?: string | null; kind?: string; metric?: string | null; targetValue?: number | null; pinned?: boolean };
+  }>('/goals', async (request, reply) => {
+    const organizationId = await defaultOrganizationId(db);
+    const b = request.body ?? {};
+    try {
+      const goal = await createPersonalGoal(db, {
+        organizationId,
+        userId: request.user!.id,
+        title: b.title ?? '',
+        note: b.note ?? null,
+        kind: (b.kind as GoalKind) ?? 'MANUAL',
+        metric: (b.metric as GoalMetric | null) ?? null,
+        targetValue: b.targetValue ?? null,
+        pinned: b.pinned === true,
+        actor: { type: 'USER', userId: request.user!.id },
+      });
+      return reply.send({ goal });
+    } catch (err) {
+      mapGoalError(err);
+    }
+  });
+
+  app.patch<{
+    Params: { id: string };
+    Body: { title?: string; note?: string | null; targetValue?: number | null; pinned?: boolean };
+  }>('/goals/:id', async (request, reply) => {
+    const b = request.body ?? {};
+    try {
+      const goal = await updatePersonalGoal(db, request.user!.id, request.params.id, {
+        title: b.title,
+        note: b.note,
+        targetValue: b.targetValue,
+        pinned: b.pinned,
+        actor: { type: 'USER', userId: request.user!.id },
+      });
+      return reply.send({ goal });
+    } catch (err) {
+      mapGoalError(err);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>('/goals/:id/complete', async (request, reply) => {
+    try {
+      const goal = await completePersonalGoal(db, request.user!.id, request.params.id, {
+        type: 'USER',
+        userId: request.user!.id,
+      });
+      return reply.send({ goal });
+    } catch (err) {
+      mapGoalError(err);
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>('/goals/:id', async (request, reply) => {
+    try {
+      await archivePersonalGoal(db, request.user!.id, request.params.id, { type: 'USER', userId: request.user!.id });
+      return reply.send({ ok: true });
+    } catch (err) {
+      mapGoalError(err);
+    }
+  });
 
   // ---- Profile (public display identity, presentation-only) ---------------
   app.get('/profile', async (request, reply) => {

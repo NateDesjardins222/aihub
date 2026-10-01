@@ -260,6 +260,13 @@
       "when": 1790349100000,
       "tag": "0036_reset_successor_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790349200000,
+      "tag": "0037_personal_goals",
+      "breakpoints": true
     }
   ]
 }

@@ -55,6 +55,7 @@ async function run() {
     { key: 'accounts', path: '/portal-v2/accounts', heading: 'Accounts' },
     { key: 'payouts', path: '/portal-v2/payouts', heading: 'Payouts' },
     { key: 'certificates', path: '/portal-v2/certificates', heading: 'Certificates' },
+    { key: 'progress', path: '/portal-v2/progress', heading: 'Progress', pageHeading: 'journey' },
     { key: 'billing', path: '/portal-v2/billing', heading: 'Billing' },
     { key: 'support', path: '/portal-v2/support', heading: 'Support' },
     { key: 'dashboard', path: '/portal-v2', heading: 'Dashboard' },
@@ -64,7 +65,7 @@ async function run() {
     await page.waitForTimeout(200);
     const url = new URL(page.url());
     ok(url.pathname === n.path, `${n.heading} → ${n.path} (got ${url.pathname})`);
-    ok((await page.locator('h1.ht-t-page-title, .htv2-section-title', { hasText: new RegExp(n.heading, 'i') }).count()) > 0, `${n.heading} renders a real heading`);
+    ok((await page.locator('h1.ht-t-page-title, .htv2-section-title', { hasText: new RegExp(n.pageHeading ?? n.heading, 'i') }).count()) > 0, `${n.heading} renders a real heading`);
   }
 
   console.log('Accounts master/detail + account detail tabs:');
@@ -115,6 +116,42 @@ async function run() {
   await page.locator('[data-testid="htv2-cert-cat-payouts"]').click();
   await page.waitForTimeout(120);
   ok(await page.locator('[data-testid="htv2-cert"]').count() >= 1, 'payouts category filters the vault');
+
+  console.log('EXP1 — Progress & Achievements (journey, clubs, goals):');
+  await page.goto(`${BASE}/portal-v2/progress`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(250);
+  ok(await page.locator('[data-testid="htv2-progress-hero"]').count() === 1, 'progress hero renders');
+  ok(await page.locator('[data-testid="htv2-progress-timeline"]').count() === 1, 'journey timeline renders');
+  ok(await page.locator('[data-testid="htv2-club-card"]').count() === 3, 'three trader clubs render');
+  ok(await page.locator('[data-testid="htv2-progress-goals"]').count() === 1, 'personal goals render');
+  // Create a goal through the real dialog (dev harness local state).
+  await page.locator('[data-testid="htv2-progress-new-goal"]').click();
+  await page.waitForTimeout(150);
+  ok(await page.locator('[data-testid="htv2-goal-dialog"]').count() === 1, 'goal dialog opens');
+  await page.locator('[data-testid="htv2-goal-title"]').fill('Browser-check goal');
+  await page.locator('[data-testid="htv2-goal-save"]').click();
+  await page.waitForTimeout(200);
+  ok((await page.locator('[data-testid="htv2-goal-card"]').count()) >= 1, 'a goal card is present after creating');
+  // Metallic focal accent (aura) is used on the hero lifetime-paid value.
+  ok(await page.locator('.htv2-progress .htv2-metal-champagne').count() >= 1, 'hero uses a metallic focal accent');
+  // Zero-customer: truthful zeros, no clubs achieved.
+  await page.goto(`${BASE}/portal-v2/progress?state=empty`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(200);
+  ok(await page.locator('[data-testid="htv2-club-achieved"]').count() === 0, 'zero-customer has no achieved clubs');
+
+  console.log('EXP1 — reduced motion is honored (no transitions/animations at rest):');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(`${BASE}/portal-v2/progress`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(200);
+  const motionOff = await page.evaluate(() => {
+    const el = document.querySelector('.htv2-prog-hero');
+    if (!el) return false;
+    const d = getComputedStyle(el).animationDuration;
+    // reduced-motion collapses animation durations to ~0.001ms
+    return d === '0.001ms' || d === '0s';
+  });
+  ok(motionOff, 'prefers-reduced-motion collapses entrance animation');
+  await page.emulateMedia({ reducedMotion: null });
 
   console.log('R2 — Payouts premium hero + Billing payment method:');
   await page.goto(`${BASE}/portal-v2/payouts`, { waitUntil: 'networkidle' });

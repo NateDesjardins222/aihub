@@ -222,3 +222,76 @@ export const FIXTURE_VIEW_EMPTY_CUSTOMER: AccountsView = { accounts: [], activeS
 export const FIXTURE_PAYOUTS_EMPTY: PayoutsView = { totalPaidMicros: 0, availableMicros: 0, inReviewMicros: 0, cyclesText: '0 of 5', standing: [], history: [] };
 export const FIXTURE_BILLING_EMPTY: BillingView = { totalSpentMicros: 0, orderCount: 0, activeEntitlements: 0, orders: [] };
 export const FIXTURE_SUPPORT_EMPTY: SupportView = { openCount: 0, tickets: [] };
+
+// ---------------------------------------------------------------------------
+// Progress & Achievements (Experience Layer Phase 1) — dev-review fixtures.
+// Unmistakably development values; no production path imports them. In production
+// this view comes from GET /api/v1/portal/progress (authoritative server data).
+// ---------------------------------------------------------------------------
+import type { ProgressView, GoalView } from './progress-page';
+
+const M10K = 10_000 * M;
+
+/** A funded, paid customer well into their journey (exercises clubs + timeline). */
+export const FIXTURE_PROGRESS: ProgressView = {
+  memberSinceMs: now - 420 * DAY,
+  hero: {
+    lifetimePaidTraderShareMicros: 62_400 * M,
+    fundedAccounts: 2,
+    evaluationsPassed: 3,
+    achievementsEarned: 6,
+    currentClub: 'FIFTYK_CLUB',
+    nextClub: { key: 'HUNDREDK_CLUB', thresholdMicros: 100_000 * M, remainingMicros: 37_600 * M },
+  },
+  clubs: [
+    { key: 'TENK_CLUB', thresholdMicros: M10K, achieved: true, achievedAt: now - 300 * DAY, physical: false },
+    { key: 'FIFTYK_CLUB', thresholdMicros: 50_000 * M, achieved: true, achievedAt: now - 60 * DAY, physical: false },
+    { key: 'HUNDREDK_CLUB', thresholdMicros: 100_000 * M, achieved: false, achievedAt: null, physical: true },
+  ],
+  milestones: [
+    { id: 'm-fiftyk', type: 'FIFTYK_CLUB', at: now - 60 * DAY, meta: null },
+    { id: 'm-tenk', type: 'TENK_CLUB', at: now - 300 * DAY, meta: null },
+    { id: 'm-first', type: 'FIRST_PAYOUT', at: now - 350 * DAY, meta: null },
+    { id: 'm-funded', type: 'FUNDED', at: now - 380 * DAY, meta: null },
+  ],
+  goals: [
+    {
+      id: 'g-100k', title: 'Reach the $100K Club', note: 'My big one for this year.', kind: 'TRACKED',
+      metric: 'CUMULATIVE_PAYOUT_MICROS', targetValue: 100_000 * M, currentValue: 62_400 * M,
+      status: 'ACTIVE', pinned: true, completedAt: null, createdAt: now - 70 * DAY,
+    },
+    {
+      id: 'g-fund3', title: 'Earn a third funded account', kind: 'TRACKED',
+      metric: 'FUNDED_ACCOUNTS', targetValue: 3, currentValue: 2,
+      status: 'ACTIVE', pinned: true, completedAt: null, createdAt: now - 40 * DAY, note: null,
+    },
+    {
+      id: 'g-routine', title: 'Build a consistent weekly review habit', note: 'Every Sunday.', kind: 'MANUAL',
+      metric: null, targetValue: null, currentValue: null,
+      status: 'ACTIVE', pinned: false, completedAt: null, createdAt: now - 20 * DAY,
+    },
+    {
+      id: 'g-first-payout', title: 'Withdraw my first payout', kind: 'MANUAL',
+      metric: null, targetValue: null, currentValue: null,
+      status: 'COMPLETED', pinned: false, completedAt: now - 350 * DAY, createdAt: now - 400 * DAY, note: null,
+    },
+  ] as GoalView[],
+  achievementsPublic: false,
+};
+
+/** Zero-customer journey: truthful zeros, a welcoming start. */
+export const FIXTURE_PROGRESS_EMPTY: ProgressView = {
+  memberSinceMs: now - 2 * DAY,
+  hero: {
+    lifetimePaidTraderShareMicros: 0, fundedAccounts: 0, evaluationsPassed: 0,
+    achievementsEarned: 0, currentClub: null, nextClub: { key: 'TENK_CLUB', thresholdMicros: M10K, remainingMicros: M10K },
+  },
+  clubs: [
+    { key: 'TENK_CLUB', thresholdMicros: M10K, achieved: false, achievedAt: null, physical: false },
+    { key: 'FIFTYK_CLUB', thresholdMicros: 50_000 * M, achieved: false, achievedAt: null, physical: false },
+    { key: 'HUNDREDK_CLUB', thresholdMicros: 100_000 * M, achieved: false, achievedAt: null, physical: true },
+  ],
+  milestones: [],
+  goals: [],
+  achievementsPublic: false,
+};

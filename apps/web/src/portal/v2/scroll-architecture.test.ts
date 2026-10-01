@@ -64,7 +64,7 @@ describe('Portal V2 scroll ownership — CSS contract', () => {
 describe('Portal V2 — honest customer navigation (rebuilt at human-rejection #1)', () => {
   it('the sidebar shows only real customer destinations — no dev tooling, no owner', () => {
     const keys = REVIEW_NAV.map((n) => n.key);
-    expect(keys).toEqual(['dashboard', 'accounts', 'payouts', 'certificates', 'billing', 'support']);
+    expect(keys).toEqual(['dashboard', 'accounts', 'payouts', 'certificates', 'progress', 'billing', 'support']);
     // The rejected entries are gone from customer navigation entirely.
     expect(keys).not.toContain('design');
     expect(keys).not.toContain('owner');
@@ -81,6 +81,7 @@ describe('Portal V2 — honest customer navigation (rebuilt at human-rejection #
     expect(parseRoute('/portal-v2/accounts/f-eval')).toEqual({ view: 'detail', id: 'f-eval' });
     expect(parseRoute('/portal-v2/payouts')).toEqual({ view: 'payouts' });
     expect(parseRoute('/portal-v2/certificates')).toEqual({ view: 'certificates' });
+    expect(parseRoute('/portal-v2/progress')).toEqual({ view: 'progress' });
     expect(parseRoute('/portal-v2/billing')).toEqual({ view: 'billing' });
     expect(parseRoute('/portal-v2/support')).toEqual({ view: 'support' });
     // Owner is reachable (account menu, owners only) but is NOT a customer nav key.

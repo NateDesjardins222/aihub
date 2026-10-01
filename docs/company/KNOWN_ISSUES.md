@@ -911,3 +911,15 @@ change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
 - **PV2R3-3 (seams).** Portfolio-P&L endpoint, payment-provider management URL, receipts, physical
   certificate commerce, achievements, and a future support assistant are documented seams — see
   PRODUCT_UX_DEBT.md and the PORTAL_V2_* / *_EXISTING_SYSTEM_AUDIT docs.
+
+## Experience Layer Phase 1 (EXP1)
+
+- **EXP1-A (deferred, not a defect).** Production customer portal (V1) does not yet mount
+  the Portal V2 Progress surface; V2 remains the gated dev-review harness. Server endpoints
+  (`/api/v1/portal/progress`, `/goals`) are implemented and tested.
+- **EXP1-B (deferred).** No in-app notification center / "unseen achievement" nav dot this
+  phase; achievement-unlock sound hooks documented but not implemented (no auto audio).
+- **EXP1-C (deferred).** Owner-side customer-journey visibility beyond existing achievement
+  + payout-ops surfaces; no Owner Console changes made (documented dependency).
+- No P0/P1 introduced by EXP1. No trading-economics, Atlas, provider, or Owner Console
+  changes. Clubs use cumulative PAID trader-share only; tracked goals cannot be forged.

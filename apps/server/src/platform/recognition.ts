@@ -18,6 +18,7 @@ import { issueCertificate } from './certificates.js';
 import { cumulativeTraderShareMicros, issueAchievement, PAYOUT_THRESHOLDS, CLUB_MILESTONES } from './achievements.js';
 import { renderCertificate } from './certificate-render-service.js';
 import { enqueueNotification } from './notifications.js';
+import { reconcilePersonalGoals } from './personal-goals.js';
 
 type IssuedCertificate = Awaited<ReturnType<typeof issueCertificate>>;
 
@@ -83,6 +84,8 @@ async function handle(db: Database, event: DomainEvent): Promise<void> {
         dedupeKey: `pass:${qualId}`,
       });
       await deliverCertificate(db, passCert);
+      // A passed evaluation may satisfy an EVALUATIONS_PASSED tracked goal.
+      await reconcilePersonalGoals(db, userId).catch(() => undefined);
       return;
     }
     case 'account.funded': {
@@ -93,6 +96,8 @@ async function handle(db: Database, event: DomainEvent): Promise<void> {
       // Becoming a funded trader — a once-per-identity achievement. The unique
       // index is (org, dedupeKey), so the key must be scoped to the trader.
       await issueAchievement(db, { organizationId, userId, type: 'FUNDED', dedupeKey: `funded:${userId}` });
+      // A new funded account may satisfy a FUNDED_ACCOUNTS tracked goal.
+      await reconcilePersonalGoals(db, userId).catch(() => undefined);
       return;
     }
     case 'payout.paid': {
@@ -161,6 +166,8 @@ async function handle(db: Database, event: DomainEvent): Promise<void> {
             .onConflictDoNothing({ target: [physicalRewardFulfillment.organizationId, physicalRewardFulfillment.customerIdentityId, physicalRewardFulfillment.type] });
         }
       }
+      // A paid payout may satisfy a CUMULATIVE_PAYOUT_MICROS tracked goal.
+      await reconcilePersonalGoals(db, userId).catch(() => undefined);
       return;
     }
     case 'account.completed': {

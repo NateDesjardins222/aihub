@@ -29,6 +29,7 @@ export const PORTAL_V2_NAV: readonly NavItem[] = [
   { key: 'accounts', label: 'Accounts' },
   { key: 'payouts', label: 'Payouts' },
   { key: 'certificates', label: 'Certificates' },
+  { key: 'progress', label: 'Progress' },
   { key: 'billing', label: 'Billing' },
   { key: 'support', label: 'Support' },
 ];

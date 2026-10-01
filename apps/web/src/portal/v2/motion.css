@@ -1,0 +1,130 @@
+/*
+ * HAPPY TRADER — Portal V2 MOTION + AURA SYSTEM (Experience Layer Phase 1).
+ *
+ * ONE coherent motion language, scoped under `.htv2`. The rule: MOTION ON INTERACTION,
+ * CALM AT REST. Everything animates `transform`/`opacity` only (no layout thrash). All
+ * motion is disabled under `prefers-reduced-motion` with identical functionality.
+ *
+ * Nothing here moves on its own: every transition is triggered by a user action (hover,
+ * press, focus, selection) or a real product event (entrance, achievement unlock).
+ */
+.htv2 {
+  /* ---- Durations ---- */
+  --motion-instant: 70ms;
+  --motion-fast: 120ms;
+  --motion-standard: 200ms;
+  --motion-emphasis: 320ms;
+
+  /* ---- Easing (premium; no bounce/overshoot) ---- */
+  --motion-ease: cubic-bezier(0.2, 0.7, 0.3, 1);     /* standard decel */
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);  /* soft settle */
+  --motion-ease-in: cubic-bezier(0.4, 0, 0.9, 0.3);
+
+  /* ---- Interaction response magnitudes (restrained) ---- */
+  --motion-lift: -1px;            /* hover translateY */
+  --motion-lift-lg: -2px;         /* emphasis hover */
+  --motion-press: 0.5px;          /* press translateY */
+  --motion-tilt-max: 3deg;        /* pointer tilt ceiling (payment card) */
+
+  /* ---- Aura / metallic accents (semantic; used RARELY, for focal points) ---- */
+  --aura-champagne: #e7dcc4;
+  --aura-rose: #e6c7bd;            /* rose-champagne */
+  --aura-gold: #d9c08a;            /* achievement gold (restrained) */
+  --aura-chrome: #f5f4f1;          /* warm white / chrome */
+  /* Metallic text sweeps (ivory → accent → ivory), low-contrast so they read as metal. */
+  --aura-grad-champagne: linear-gradient(100deg, #f3ecd9 0%, #e7dcc4 46%, #cfc7bd 74%, #efe9dc 100%);
+  --aura-grad-rose: linear-gradient(100deg, #f4e7e1 0%, #e6c7bd 48%, #d8b7ad 72%, #f2e6e0 100%);
+  --aura-grad-gold: linear-gradient(100deg, #f1e6c6 0%, #d9c08a 48%, #c6ac73 72%, #efe4c4 100%);
+}
+
+/* ============================ Metallic text ============================ */
+.htv2-metal-champagne, .htv2-metal-rose, .htv2-metal-gold {
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  color: var(--aura-chrome); /* solid fallback */
+}
+.htv2-metal-champagne { background-image: var(--aura-grad-champagne); }
+.htv2-metal-rose { background-image: var(--aura-grad-rose); }
+.htv2-metal-gold { background-image: var(--aura-grad-gold); }
+@media (prefers-contrast: more), print {
+  .htv2-metal-champagne, .htv2-metal-rose, .htv2-metal-gold {
+    -webkit-text-fill-color: currentColor; color: var(--ht-champagne); background: none;
+  }
+}
+@media (forced-colors: active) {
+  .htv2-metal-champagne, .htv2-metal-rose, .htv2-metal-gold {
+    -webkit-text-fill-color: CanvasText; color: CanvasText; background: none;
+  }
+}
+
+/* ============================ Ambient aura ============================ */
+/* A low-opacity radial warm light BEHIND a focal object. Decorative only (aria-hidden). */
+.htv2-aura { position: relative; isolation: isolate; }
+.htv2-aura::before {
+  content: ""; position: absolute; inset: -30% -20%; z-index: -1; pointer-events: none;
+  background: radial-gradient(60% 60% at 50% 40%, color-mix(in srgb, var(--aura-champagne) 16%, transparent), transparent 70%);
+  opacity: 0; transition: opacity var(--motion-emphasis) var(--motion-ease);
+}
+.htv2-aura-rose::before { background: radial-gradient(60% 60% at 50% 40%, color-mix(in srgb, var(--aura-rose) 18%, transparent), transparent 70%); }
+.htv2-aura-gold::before { background: radial-gradient(60% 60% at 50% 40%, color-mix(in srgb, var(--aura-gold) 20%, transparent), transparent 70%); }
+.htv2-aura-on::before, .htv2-aura:hover::before { opacity: 1; }
+
+/* ============================ Interaction primitives ============================ */
+/* Lift: subtle hover raise + settle. Applied to opt-in surfaces, never every rectangle. */
+.htv2-lift { transition: transform var(--motion-standard) var(--motion-ease-out), border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-standard) var(--motion-ease-out); will-change: transform; }
+.htv2-lift:hover { transform: translateY(var(--motion-lift)); }
+.htv2-lift:active { transform: translateY(var(--motion-press)); transition-duration: var(--motion-instant); }
+
+/* Press response for buttons (augments existing .htv2-btn). */
+.htv2 .htv2-btn { transition: background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease-out); }
+.htv2 .htv2-btn-primary:hover:not(:disabled) { transform: translateY(var(--motion-lift)); }
+.htv2 .htv2-btn:active:not(:disabled) { transform: translateY(var(--motion-press)); transition-duration: var(--motion-instant); }
+
+/* ============================ Entrance motion ============================ */
+/* Opt-in, subtle, plays ONCE on mount of a major section. Stagger via inline --i. */
+@keyframes htv2-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.htv2-enter { animation: htv2-enter var(--motion-emphasis) var(--motion-ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* ============================ Achievement unlock ============================ */
+/* Muted → metallic resolve + a brief halo. Triggered only when a real unlock is shown. */
+@keyframes htv2-unlock { 0% { opacity: 0.55; transform: scale(0.985); } 60% { opacity: 1; } 100% { transform: none; } }
+.htv2-unlock { animation: htv2-unlock var(--motion-emphasis) var(--motion-ease-out) both; }
+
+/* ============================ Pointer tilt (payment card) ============================ */
+.htv2-tilt {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+  transition: transform var(--motion-standard) var(--motion-ease-out);
+  will-change: transform;
+}
+/* A soft metallic highlight that follows the pointer — restrained, no glare/hologram. */
+.htv2-tilt-light {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(130px 130px at var(--lx, 50%) var(--ly, 50%),
+    color-mix(in srgb, var(--aura-chrome) 22%, transparent), transparent 70%);
+  opacity: calc(var(--tilt-active, 0) * 1);
+  transition: opacity var(--motion-standard) var(--motion-ease);
+  mix-blend-mode: screen;
+}
+
+/* ============================ Touch ============================ */
+/* On touch (no hover), replace lift/tilt with a small press-scale; never emulate tilt. */
+@media (hover: none) {
+  .htv2-lift:hover { transform: none; }
+  .htv2-lift:active { transform: scale(0.99); }
+  .htv2-tilt { transform: none !important; }
+}
+
+/* ============================ Reduced motion (MANDATORY) ============================ */
+@media (prefers-reduced-motion: reduce) {
+  .htv2 *, .htv2 *::before, .htv2 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .htv2-lift:hover, .htv2-lift:active,
+  .htv2 .htv2-btn-primary:hover:not(:disabled), .htv2 .htv2-btn:active:not(:disabled) { transform: none; }
+  .htv2-tilt { transform: none !important; }
+  .htv2-aura::before { opacity: 0 !important; }
+  .htv2-enter, .htv2-unlock { animation: none !important; opacity: 1 !important; transform: none !important; }
+}

@@ -27,6 +27,9 @@ import { V2AccountPanel } from './AccountPanel';
 import { V2AccountDetail, type DetailTab } from './AccountDetail';
 import { V2PayoutsPage, V2CertificatesPage, V2BillingPage, V2OwnerNotice } from './pages';
 import { V2ProfilePage } from './profile';
+import {
+  V2ProgressPage, type ProgressView, type GoalView, type GoalDraft,
+} from './progress-page';
 import { V2SupportCenter } from './support';
 import { sampleArtifactFor } from './cert-samples';
 import { toAccountView, productLabel, type AccountViewExtra } from './account-view';
@@ -36,6 +39,7 @@ import {
   FIXTURE_PORTFOLIO_SERIES, FIXTURE_PROFILE,
   FIXTURE_VIEW_EMPTY_CUSTOMER, FIXTURE_PAYOUTS_EMPTY, FIXTURE_BILLING_EMPTY,
   FIXTURE_SUPPORT_EMPTY, FIXTURE_PROFILE_EMPTY,
+  FIXTURE_PROGRESS, FIXTURE_PROGRESS_EMPTY,
 } from './fixtures';
 import { formatMoney } from './format';
 import { V2PerfChart } from './perf-chart';
@@ -54,6 +58,7 @@ export const REVIEW_NAV: readonly NavItem[] = [
   { key: 'accounts', label: 'Accounts' },
   { key: 'payouts', label: 'Payouts' },
   { key: 'certificates', label: 'Certificates' },
+  { key: 'progress', label: 'Progress' },
   { key: 'billing', label: 'Billing' },
   { key: 'support', label: 'Support' },
 ];
@@ -64,6 +69,7 @@ export type Route =
   | { view: 'detail'; id: string }
   | { view: 'payouts' }
   | { view: 'certificates' }
+  | { view: 'progress' }
   | { view: 'billing' }
   | { view: 'support' }
   | { view: 'profile' }
@@ -77,6 +83,7 @@ export function parseRoute(pathname: string): Route {
   if (m) return { view: 'detail', id: decodeURIComponent(m[1]!) };
   if (p === `${BASE}/payouts`) return { view: 'payouts' };
   if (p === `${BASE}/certificates`) return { view: 'certificates' };
+  if (p === `${BASE}/progress`) return { view: 'progress' };
   if (p === `${BASE}/billing`) return { view: 'billing' };
   if (p === `${BASE}/support`) return { view: 'support' };
   if (p === `${BASE}/profile`) return { view: 'profile' };
@@ -106,6 +113,7 @@ interface PortalData {
   activity: ActivityItem[];
   series: SeriesPoint[];
   profile: ProfileView;
+  progress: ProgressView;
   extraFor: (a: AccountSummary) => ReturnType<typeof extraFor>;
 }
 
@@ -131,12 +139,12 @@ export function PortalV2Review(): JSX.Element {
     ? {
         accountsView: FIXTURE_VIEW_EMPTY_CUSTOMER, payouts: FIXTURE_PAYOUTS_EMPTY, certs: [],
         billing: FIXTURE_BILLING_EMPTY, support: FIXTURE_SUPPORT_EMPTY, activity: [],
-        series: [], profile: FIXTURE_PROFILE_EMPTY, extraFor: () => undefined,
+        series: [], profile: FIXTURE_PROFILE_EMPTY, progress: FIXTURE_PROGRESS_EMPTY, extraFor: () => undefined,
       }
     : {
         accountsView: FIXTURE_VIEW_LONG, payouts: FIXTURE_PAYOUTS, certs: FIXTURE_CERTS,
         billing: FIXTURE_BILLING, support: FIXTURE_SUPPORT, activity: FIXTURE_ACTIVITY,
-        series: FIXTURE_PORTFOLIO_SERIES, profile: FIXTURE_PROFILE, extraFor,
+        series: FIXTURE_PORTFOLIO_SERIES, profile: FIXTURE_PROFILE, progress: FIXTURE_PROGRESS, extraFor,
       }), [empty]);
 
   useEffect(() => {
@@ -229,6 +237,9 @@ export function PortalV2Review(): JSX.Element {
         }}
       />
     );
+  } else if (route.view === 'progress') {
+    crumb = <Crumb trail={['Progress']} />;
+    content = <ProgressReview initial={data.progress} onOpenPayouts={() => go(`${BASE}/payouts`)} onAddAccount={addAccount} />;
   } else if (route.view === 'billing') {
     crumb = <Crumb trail={['Billing']} />;
     content = (
@@ -289,6 +300,53 @@ function Crumb({ trail }: { trail: string[] }): JSX.Element {
       ))}
     </span>
   );
+}
+
+// ----------------------------------------------------------------- Progress ----
+/**
+ * Dev-review container for the Progress & Achievements surface. The dev harness has
+ * no session, so goal CRUD runs over LOCAL React state seeded from the fixture —
+ * exactly as the other V2 surfaces use fixtures in review. Production mounts
+ * V2ProgressPage against the authoritative endpoints (GET /api/v1/portal/progress
+ * and the /api/v1/portal/goals CRUD); nothing here is persisted or shown as truth.
+ */
+function ProgressReview({ initial, onOpenPayouts, onAddAccount }: {
+  initial: ProgressView;
+  onOpenPayouts: () => void;
+  onAddAccount: () => void;
+}): JSX.Element {
+  const [goals, setGoals] = useState<GoalView[]>(initial.goals);
+  const view: ProgressView = { ...initial, goals };
+
+  const actions = {
+    onCreateGoal: (d: GoalDraft) => {
+      const g: GoalView = {
+        id: `g-${Math.random().toString(36).slice(2, 9)}`,
+        title: d.title, note: d.note, kind: d.kind, metric: d.metric, targetValue: d.targetValue,
+        // Tracked goals derive progress from authoritative data in production; the
+        // dev harness shows 0 against the chosen target until a server would fill it.
+        currentValue: d.kind === 'TRACKED' ? 0 : null,
+        status: 'ACTIVE', pinned: false, completedAt: null, createdAt: Date.now(),
+      };
+      setGoals((gs) => [g, ...gs]);
+    },
+    onUpdateGoal: (id: string, patch: { title?: string; note?: string | null; targetValue?: number | null }) =>
+      setGoals((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g))),
+    onCompleteGoal: (id: string) =>
+      setGoals((gs) => gs.map((g) => (g.id === id && g.kind === 'MANUAL' ? { ...g, status: 'COMPLETED' as const, pinned: false, completedAt: Date.now() } : g))),
+    onArchiveGoal: (id: string) => setGoals((gs) => gs.filter((g) => g.id !== id)),
+    onTogglePin: (id: string, pinned: boolean) => {
+      setGoals((gs) => {
+        const pinnedCount = gs.filter((g) => g.pinned && g.status === 'ACTIVE').length;
+        if (pinned && pinnedCount >= 3) return gs; // mirror the server pin ceiling
+        return gs.map((g) => (g.id === id ? { ...g, pinned } : g));
+      });
+    },
+    onOpenPayouts,
+    onAddAccount,
+  };
+
+  return <V2ProgressPage view={view} actions={actions} />;
 }
 
 // ----------------------------------------------------------------- Dashboard ----
@@ -373,6 +431,26 @@ function Dashboard({ data, onOpenAccount, onTrade, onAddAccount, go }: {
       )}
 
       {accts.length > 0 && <NextUp accounts={accts} extraFor={data.extraFor} onOpenAccount={onOpenAccount} go={go} />}
+
+      {(data.progress.hero.lifetimePaidTraderShareMicros > 0 || data.progress.hero.achievementsEarned > 0) && (
+        <V2Section title="Your journey" actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/progress`)} data-testid="htv2-dash-journey">Open journey →</button>}>
+          <div className="htv2-dash-journey" data-testid="htv2-dash-journey-strip">
+            <div className="htv2-dash-journey-lead htv2-aura htv2-aura-on">
+              <span className="ht-t-label">Paid to you, lifetime</span>
+              <span className="ht-t-fin-lg ht-num htv2-metal-champagne">{formatMoney(data.progress.hero.lifetimePaidTraderShareMicros, { maxFractionDigits: 0 })}</span>
+            </div>
+            <div className="htv2-dash-journey-meta">
+              {data.progress.hero.currentClub && <span className="ht-t-body-sm">Member of the <strong>{data.progress.hero.currentClub === 'HUNDREDK_CLUB' ? '$100K' : data.progress.hero.currentClub === 'FIFTYK_CLUB' ? '$50K' : '$10K'} Club</strong></span>}
+              {data.progress.hero.nextClub && (
+                <span className="ht-t-meta htv2-tone-muted">
+                  {formatMoney(data.progress.hero.nextClub.remainingMicros, { maxFractionDigits: 0 })} to the next club
+                </span>
+              )}
+              <span className="ht-t-meta htv2-tone-muted">{data.progress.hero.achievementsEarned} milestone{data.progress.hero.achievementsEarned === 1 ? '' : 's'} earned</span>
+            </div>
+          </div>
+        </V2Section>
+      )}
 
       {accts.length > 0 && <PortfolioPerformance series={data.series} />}
 

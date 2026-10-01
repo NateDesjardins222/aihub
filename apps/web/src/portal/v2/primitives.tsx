@@ -7,6 +7,7 @@
  * No data fetching here: components take already-projected values.
  */
 import type { JSX, ReactNode } from 'react';
+import './motion.css';
 import './primitives.css';
 
 /** Root wrapper that scopes the V2 token/type layer. Everything V2 lives inside one. */

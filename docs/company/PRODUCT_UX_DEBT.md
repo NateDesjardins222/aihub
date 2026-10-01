@@ -162,3 +162,19 @@ Documented seams carried from R3 (none faked in-product; each has a truthful sta
 - **Future support chatbot**: documented seam only (not built).
 
 **Do not act on the above before the Portal V2 visual-acceptance phase.**
+
+## Experience Layer Phase 1 (EXP1) — Progress & motion
+
+- **EXP1-1 (seam, deferred).** Portal V2 is the dev-review harness; the Progress page uses
+  fixtures + local-state goal CRUD there. Production wiring of `V2ProgressPage` to
+  `GET /api/v1/portal/progress` and `/goals` CRUD is built and server-tested but the
+  production customer app (V1 portal) does not yet mount the V2 Progress surface.
+- **EXP1-2 (deferred).** Number-roll transitions on live-updating financial values are not
+  implemented (values render final + exact). Documented in PORTAL_V2_MOTION_SYSTEM.md.
+- **EXP1-3 (deferred).** Achievement-unlock sound hook architecture is documented but no
+  sound is implemented (no auto audio). No full-screen/blocking unlock UI.
+- **EXP1-4 (deferred).** In-app notification center and the Progress nav "unseen
+  achievement" dot are deferred (achievements carry a `viewedAt`-style capability in the
+  reused backend but the indicator is not wired this phase).
+- **EXP1-5 (owner dependency).** Owner-side visibility of the customer journey/clubs beyond
+  existing achievement + payout-ops surfaces is deferred; no Owner Console changes made.

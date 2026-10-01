@@ -13,7 +13,28 @@ import { useEffect, useMemo, useState, type JSX } from 'react';
 import type { Cert } from '../lib';
 import { V2StatStrip, V2Section, V2EmptyState, V2Status, type StatusKind } from './primitives';
 import { formatMoney } from './format';
+import { useTilt } from './tilt';
 import './pages.css';
+
+/** A premium payment-card face with a restrained pointer tilt + light response. */
+function PaymentCardFace({ pm, className = '' }: { pm: PaymentMethodView; className?: string }): JSX.Element {
+  const tilt = useTilt(3);
+  return (
+    <div
+      ref={tilt.ref as (el: HTMLDivElement | null) => void}
+      onPointerMove={tilt.onPointerMove}
+      onPointerLeave={tilt.onPointerLeave}
+      className={`htv2-paymethod2-card htv2-tilt ${className}`}
+      data-testid="htv2-paycard"
+    >
+      <span className="htv2-paymethod2-chip" aria-hidden />
+      <span className="htv2-paymethod2-brand ht-t-fin-md">{pm.brand}</span>
+      <span className="htv2-paymethod2-num ht-num">•••• •••• •••• {pm.last4}</span>
+      <span className="htv2-paymethod2-exp ht-t-meta ht-num">Expires {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}</span>
+      <span className="htv2-tilt-light" aria-hidden />
+    </div>
+  );
+}
 
 function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
@@ -70,9 +91,9 @@ export function V2PayoutsPage({ view, onOpenAccount, actions = {} }: {
       {/* Premium ledger hero — a calm statement of what you've earned and what's ready.
           Deliberately NOT a gambling surface: no streak meters, no confetti, no chance. */}
       <section className="htv2-payout-hero" data-testid="htv2-payout-hero">
-        <div className="htv2-payout-hero-main">
+        <div className="htv2-payout-hero-main htv2-aura htv2-aura-on">
           <span className="ht-t-label">Paid to you, lifetime</span>
-          <span className="htv2-payout-hero-value ht-t-display ht-num htv2-metal">{formatMoney(view.totalPaidMicros, { maxFractionDigits: 0 })}</span>
+          <span className="htv2-payout-hero-value ht-t-display ht-num htv2-metal-champagne">{formatMoney(view.totalPaidMicros, { maxFractionDigits: 0 })}</span>
         </div>
         <div className="htv2-payout-hero-side">
           <div className="htv2-payout-hero-avail">
@@ -269,7 +290,7 @@ async function downloadArtifact(c: Cert, actions: CertActions, kind: 'image' | '
 function CertCard({ c, actions, onOpen }: { c: Cert; actions: CertActions; onOpen: () => void }): JSX.Element {
   const { url, state } = useArtifact(c, actions);
   return (
-    <button className="htv2-certtile" data-testid="htv2-cert" onClick={onOpen} aria-label={`${certKindLabel(c.type)} certificate — ${c.publicDisplayName}`}>
+    <button className="htv2-certtile htv2-lift" data-testid="htv2-cert" onClick={onOpen} aria-label={`${certKindLabel(c.type)} certificate — ${c.publicDisplayName}`}>
       <span className="htv2-certtile-art" data-state={state}>
         {state === 'ready' && url
           ? <img className="htv2-certtile-img" src={url} alt={`${c.publicDisplayName} certificate`} />
@@ -388,12 +409,7 @@ export function V2BillingPage({ view, onOpenAccount, actions = {} }: {
       <V2Section title="Payment method" actions={pm ? <button className="htv2-link ht-t-nav" onClick={() => setManaging(true)} data-testid="htv2-billing-manage-pm">Manage →</button> : undefined}>
         {pm ? (
           <div className="htv2-paymethod2" data-testid="htv2-billing-paymethod">
-            <div className="htv2-paymethod2-card">
-              <span className="htv2-paymethod2-chip" aria-hidden />
-              <span className="htv2-paymethod2-brand ht-t-fin-md">{pm.brand}</span>
-              <span className="htv2-paymethod2-num ht-num">•••• •••• •••• {pm.last4}</span>
-              <span className="htv2-paymethod2-exp ht-t-meta ht-num">Expires {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}</span>
-            </div>
+            <PaymentCardFace pm={pm} />
             <dl className="htv2-paymethod2-meta">
               {pm.isDefault && <div><dt className="ht-t-label">Status</dt><dd><V2Status kind="funded">Default</V2Status></dd></div>}
               {pm.billingName && <div><dt className="ht-t-label">Billing name</dt><dd className="ht-t-fin-sm">{pm.billingName}</dd></div>}
@@ -417,12 +433,7 @@ export function V2BillingPage({ view, onOpenAccount, actions = {} }: {
               <span className="ht-t-section">Payment method</span>
               <button className="htv2-certmodal-x" onClick={() => setManaging(false)} aria-label="Close">✕</button>
             </header>
-            <div className="htv2-paymethod2-card htv2-pmmodal-card">
-              <span className="htv2-paymethod2-chip" aria-hidden />
-              <span className="htv2-paymethod2-brand ht-t-fin-md">{pm.brand}</span>
-              <span className="htv2-paymethod2-num ht-num">•••• •••• •••• {pm.last4}</span>
-              <span className="htv2-paymethod2-exp ht-t-meta ht-num">Expires {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}</span>
-            </div>
+            <PaymentCardFace pm={pm} className="htv2-pmmodal-card" />
             <p className="ht-t-body-sm">To change or remove your card, continue to our payment provider’s secure portal. Card details are entered and stored there — never on Happy Trader’s servers, and never in this app.</p>
             <div className="htv2-certmodal-actions">
               {actions.onManagePaymentMethod && <button className="htv2-btn htv2-btn-primary htv2-btn-sm ht-t-button" onClick={actions.onManagePaymentMethod} data-testid="htv2-billing-pm-continue">Continue to secure provider ↗</button>}

@@ -162,3 +162,16 @@
   .htv2-row { flex-wrap: wrap; }
   .htv2-vault { grid-template-columns: 1fr; }
 }
+
+/* ---- Dashboard "Your journey" strip (links to Progress & Achievements) ---- */
+.htv2-dash-journey {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ht-space-4);
+  padding: var(--ht-space-5); border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md);
+  background:
+    radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--ht-champagne) 6%, transparent), transparent 55%),
+    var(--ht-surface-1);
+}
+.htv2-dash-journey-lead { display: flex; flex-direction: column; gap: 2px; }
+.htv2-dash-journey-meta { display: flex; flex-direction: column; gap: 3px; text-align: right; }
+.htv2-dash-journey-meta strong { color: var(--ht-text-strong); font-weight: 600; }
+@media (max-width: 560px) { .htv2-dash-journey-meta { text-align: left; } }

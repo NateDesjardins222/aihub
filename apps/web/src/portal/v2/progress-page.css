@@ -1,0 +1,134 @@
+/*
+ * Portal V2 — Progress & Achievements surface.
+ *
+ * Calm at rest, premium on interaction. Motion/aura come from motion.css; this
+ * file is layout + the restrained club/goal/timeline surfaces. Everything stays
+ * black/graphite/warm-white; metallic accents are rare and come from the aura
+ * system only (lifetime-paid value, achieved clubs).
+ */
+
+.htv2-progress { max-width: 1040px; }
+
+/* ---- Hero summary ---- */
+.htv2-prog-hero {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--ht-space-5);
+  align-items: center; padding: var(--ht-space-6);
+  border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-lg);
+  background:
+    radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--ht-champagne) 6%, transparent), transparent 55%),
+    linear-gradient(140deg, var(--ht-surface-2), var(--ht-bg-elevated));
+}
+.htv2-prog-hero-lead { display: flex; flex-direction: column; gap: 4px; }
+.htv2-prog-hero-value { line-height: 1.02; }
+.htv2-prog-hero-club { color: var(--ht-text-muted); }
+.htv2-prog-hero-club strong { color: var(--ht-text); font-weight: 600; }
+.htv2-prog-hero-stats {
+  margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ht-space-4);
+}
+.htv2-prog-hero-stats dt { color: var(--ht-text-muted); }
+.htv2-prog-hero-stats dd { margin: 2px 0 0; color: var(--ht-text-strong); }
+
+/* ---- Journey timeline ---- */
+.htv2-timeline { overflow-x: auto; padding-bottom: var(--ht-space-2); }
+.htv2-timeline-track {
+  list-style: none; margin: 0; padding: 0; display: flex; gap: 0; min-width: min-content;
+}
+.htv2-timeline-node {
+  position: relative; flex: 1 0 150px; min-width: 150px; padding: var(--ht-space-5) var(--ht-space-4) 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+/* The connecting rail runs through the dots along the top of each node. */
+.htv2-timeline-node::before {
+  content: ""; position: absolute; top: calc(var(--ht-space-5) + 5px); left: 0; right: 0; height: 1px;
+  background: var(--ht-border-subtle); z-index: 0;
+}
+.htv2-timeline-node:first-child::before { left: 50%; }
+.htv2-timeline-node:last-child::before { right: 50%; }
+.htv2-timeline-dot {
+  position: relative; z-index: 1; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--ht-surface-3); border: 1px solid var(--ht-border-strong);
+}
+.htv2-timeline-node.is-past .htv2-timeline-dot { background: var(--ht-champagne); border-color: var(--ht-champagne); }
+.htv2-timeline-node.is-start .htv2-timeline-dot { background: var(--ht-text-muted); border-color: var(--ht-text-muted); }
+.htv2-timeline-node.is-now .htv2-timeline-dot {
+  background: var(--aura-chrome); border-color: var(--aura-champagne);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--aura-champagne) 22%, transparent);
+}
+.htv2-timeline-node.is-future .htv2-timeline-dot { background: transparent; border-style: dashed; }
+.htv2-timeline-when { color: var(--ht-text-muted); }
+.htv2-timeline-node.is-now .htv2-timeline-when { color: var(--ht-champagne); }
+.htv2-timeline-label { color: var(--ht-text); }
+
+/* ---- Trader clubs ---- */
+.htv2-prog-clubs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ht-space-4); }
+.htv2-club-card {
+  display: flex; flex-direction: column; gap: 10px; padding: var(--ht-space-5);
+  border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1);
+}
+.htv2-club-card.is-achieved { border-color: color-mix(in srgb, var(--aura-gold) 40%, var(--ht-border-strong)); }
+.htv2-club-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); }
+.htv2-club-name { color: var(--ht-text-strong); }
+.htv2-club-badge { color: var(--ht-champagne); white-space: nowrap; }
+.htv2-club-bar { height: 4px; border-radius: 999px; background: var(--ht-surface-3); overflow: hidden; }
+.htv2-club-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--ht-champagne), var(--aura-gold)); border-radius: inherit; }
+
+/* ---- Goals ---- */
+.htv2-prog-focus, .htv2-prog-goals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ht-space-4); }
+.htv2-goal-card {
+  display: flex; flex-direction: column; gap: 8px; padding: var(--ht-space-5);
+  border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1);
+}
+.htv2-goal-card.is-focus { border-color: var(--ht-border-strong); background: var(--ht-surface-2); }
+.htv2-goal-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); }
+.htv2-goal-title { color: var(--ht-text-strong); }
+.htv2-goal-kind { color: var(--ht-text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+.htv2-goal-kind.is-tracked { color: var(--ht-champagne); }
+.htv2-goal-note { margin: 0; color: var(--ht-text-muted); }
+.htv2-goal-bar { height: 4px; border-radius: 999px; background: var(--ht-surface-3); overflow: hidden; }
+.htv2-goal-fill { display: block; height: 100%; background: var(--ht-champagne); border-radius: inherit; }
+.htv2-goal-actions { display: flex; flex-wrap: wrap; gap: var(--ht-space-4); margin-top: 2px; }
+.htv2-goal-actions .htv2-link:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.htv2-prog-done { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.htv2-prog-done-row {
+  display: flex; align-items: center; gap: var(--ht-space-3); padding: 9px 0;
+  border-top: 1px solid var(--ht-border-subtle);
+}
+.htv2-prog-done-row:first-child { border-top: none; }
+.htv2-prog-done-check { color: var(--ht-pos); font-weight: 700; }
+.htv2-prog-done-row .ht-t-meta { margin-left: auto; color: var(--ht-text-muted); }
+
+/* ---- Goal dialog (reuses the modal scrim from pages.css) ---- */
+.htv2-goaldialog {
+  width: min(460px, 94vw); display: flex; flex-direction: column; gap: var(--ht-space-4);
+  padding: var(--ht-space-5); border: 1px solid var(--ht-border-strong); border-radius: var(--ht-radius-lg);
+  background: var(--ht-bg-elevated); box-shadow: var(--ht-shadow-lg, 0 10px 24px rgba(0,0,0,0.45));
+}
+.htv2-field { display: flex; flex-direction: column; gap: 6px; }
+.htv2-input {
+  width: 100%; box-sizing: border-box; padding: 9px 11px; font: inherit; color: var(--ht-text-strong);
+  background: var(--ht-surface-1); border: 1px solid var(--ht-border-strong); border-radius: var(--ht-radius-sm);
+}
+.htv2-input:focus { outline: none; border-color: var(--ht-border-focus); }
+textarea.htv2-input { resize: vertical; min-height: 44px; }
+.htv2-seg { display: inline-flex; border: 1px solid var(--ht-border-strong); border-radius: var(--ht-radius-sm); overflow: hidden; width: max-content; }
+.htv2-seg-btn {
+  padding: 7px 16px; font: inherit; color: var(--ht-text-muted); background: var(--ht-surface-1);
+  border: none; border-right: 1px solid var(--ht-border-strong); cursor: pointer;
+}
+.htv2-seg-btn:last-child { border-right: none; }
+.htv2-seg-btn.on { background: var(--ht-surface-3); color: var(--ht-text-strong); }
+.htv2-goal-tracked-fields { display: flex; flex-direction: column; gap: var(--ht-space-4); }
+
+/* ---- Responsive: stack hero, clubs and goals; timeline becomes vertical ---- */
+@media (max-width: 760px) {
+  .htv2-prog-hero { grid-template-columns: 1fr; }
+  .htv2-prog-clubs { grid-template-columns: 1fr; }
+  .htv2-prog-focus, .htv2-prog-goals { grid-template-columns: 1fr; }
+  .htv2-timeline { overflow-x: visible; }
+  .htv2-timeline-track { flex-direction: column; min-width: 0; }
+  .htv2-timeline-node { flex: none; min-width: 0; padding: 0 0 var(--ht-space-5) var(--ht-space-5); }
+  .htv2-timeline-node::before { top: 5px; bottom: 0; left: 5px; right: auto; width: 1px; height: auto; }
+  .htv2-timeline-node:first-child::before { top: 5px; left: 5px; }
+  .htv2-timeline-node:last-child::before { bottom: 50%; }
+}

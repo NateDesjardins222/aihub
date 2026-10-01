@@ -2044,6 +2044,53 @@ export const achievements = pgTable(
   ],
 );
 
+/**
+ * Personal goals — the customer's OWN goals on their Happy Trader journey
+ * (Portal V2 Experience Layer, Progress & Achievements surface).
+ *
+ * These are authoritative server records owned by `customerIdentityId`, never
+ * localStorage. A goal is either MANUAL (a personal aim the customer marks done
+ * themselves) or TRACKED (bound to an authoritative metric — lifetime paid
+ * trader-share, funded accounts, evaluations passed — that completes
+ * AUTOMATICALLY when the real figure crosses the target). A TRACKED goal can
+ * NEVER be marked complete by request: its completion is derived from the same
+ * authoritative aggregates that drive payouts, so it cannot be forged. Goals
+ * reward progress/accomplishment/ownership — NOT trading activity, streaks, or
+ * volume (those metrics are deliberately not expressible here).
+ */
+export const personalGoals = pgTable(
+  'personal_goals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 120 }).notNull(),
+    note: varchar('note', { length: 600 }),
+    /** MANUAL | TRACKED */
+    kind: varchar('kind', { length: 16 }).notNull(),
+    /** TRACKED only: CUMULATIVE_PAYOUT_MICROS | FUNDED_ACCOUNTS | EVALUATIONS_PASSED */
+    metric: varchar('metric', { length: 32 }),
+    /** TRACKED only: the target value (micro-dollars for money metrics, a count otherwise). */
+    targetValue: micros('target_value'),
+    /** ACTIVE | COMPLETED | ARCHIVED */
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    /** "Current focus": the customer pins 1–3 active goals to the top of the journey. */
+    pinned: boolean('pinned').notNull().default(false),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('personal_goals_identity_idx').on(t.customerIdentityId),
+    index('personal_goals_identity_status_idx').on(t.customerIdentityId, t.status),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Native copy trading (Atlas Native Copy Trading V1)
 // ---------------------------------------------------------------------------
