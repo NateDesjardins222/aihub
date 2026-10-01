@@ -120,9 +120,14 @@ describe('at-rest sealing', () => {
     expect(open(sealed)).toBe(secret);
     expect(open('v1.aaa.bbb.ccc')).toBeNull();
     expect(open('garbage')).toBeNull();
-    // Flip a character in the ciphertext segment: the GCM tag must reject it.
+    // Flip a bit in the ciphertext BYTES (not a trailing base64url character,
+    // whose final char can carry insignificant padding bits that decode to the
+    // same bytes — a no-op "tamper" that let this assertion pass only by luck):
+    // the GCM tag must reject a genuine byte change, deterministically.
     const parts = sealed.split('.');
-    parts[3] = parts[3]!.slice(0, -1) + (parts[3]!.endsWith('A') ? 'B' : 'A');
+    const ciphertextBytes = Buffer.from(parts[3]!, 'base64url');
+    ciphertextBytes[0] ^= 0x01;
+    parts[3] = ciphertextBytes.toString('base64url');
     expect(open(parts.join('.'))).toBeNull();
   });
 });
