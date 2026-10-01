@@ -45,7 +45,10 @@ const OnboardingApp = lazy(() => import('./onboarding/OnboardingApp').then((m) =
  * achievements, profile). Its own path and bundle, behind sign-in, beside the
  * terminal — a trader who only trades never downloads it.
  */
-const PortalApp = lazy(() => import('./portal/PortalApp').then((m) => ({ default: m.PortalApp })));
+// Portal Convergence Phase 1: `/portal` is the ONE canonical customer product —
+// the approved V2 experience (V2 shell + pages) backed by the hardened authoritative
+// core. It replaces the rejected horizontal-nav V1 PortalApp as the customer runtime.
+const PortalApp = lazy(() => import('./portal/PortalV2App').then((m) => ({ default: m.PortalV2App })));
 
 /*
  * Public certificate verification (/verify/:token). Unauthenticated and its own
