@@ -20,6 +20,7 @@
     "db:reconcile": "pnpm --filter @atlas/server exec tsx scripts/reconcile-products.ts",
     "integrity:check": "pnpm --filter @atlas/server exec tsx scripts/integrity-check.ts",
     "ops:check": "pnpm --filter @atlas/server exec tsx scripts/ops-check.ts",
+    "customer:certify": "pnpm --filter @atlas/server exec tsx scripts/customer-certify.ts",
     "test:portal-v2-scroll": "node scripts/portal-v2-scroll.mjs",
     "test:browser": "node tests/browser/run.mjs",
     "audit:candles": "node tools/candle-audit.mjs",

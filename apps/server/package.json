@@ -18,7 +18,8 @@
     "affiliate:economics": "tsx scripts/affiliate-economics-stress.ts",
     "economics:validate": "tsx scripts/economics-validate.ts",
     "integrity:check": "tsx scripts/integrity-check.ts",
-    "ops:check": "tsx scripts/ops-check.ts"
+    "ops:check": "tsx scripts/ops-check.ts",
+    "customer:certify": "tsx scripts/customer-certify.ts"
   },
   "dependencies": {
     "@atlas/contracts": "workspace:*",
