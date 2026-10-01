@@ -1,0 +1,77 @@
+/*
+ * Portal V2 — Profile & account center styles. Scoped under `.htv2`; `--ht-*` only.
+ * Sharp, institutional: a quiet section sub-rail + flat definition lists with hairline
+ * rules — no cards-in-cards, no component-library chrome.
+ */
+
+/* Shared page scaffolding (also defined in pages.css; duplicated so this surface is
+   self-contained if mounted without the other pages). */
+.htv2-page-actions { display: flex; align-items: center; gap: var(--ht-space-4); }
+
+/* A back link sitting directly in the page header is left-aligned, not stretched. */
+.htv2-page-head > .htv2-link { align-self: flex-start; }
+
+/* ---- Section sub-rail (Profile / Security / Notifications / Verification) ---- */
+.htv2-subrail {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--ht-border-subtle);
+  overflow-x: auto;
+}
+.htv2-subrail-tab {
+  position: relative;
+  padding: 8px 12px 10px;
+  background: transparent;
+  border: none;
+  color: var(--ht-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--ht-fast) var(--ht-ease);
+}
+.htv2-subrail-tab:hover { color: var(--ht-text); }
+.htv2-subrail-tab.on { color: var(--ht-text-strong); }
+.htv2-subrail-tab.on::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px;
+  background: var(--ht-champagne); border-radius: 999px;
+}
+
+/* ---- Definition list (flat, hairline-separated key/value rows) ---- */
+.htv2-deflist {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ht-border-subtle);
+  border-radius: var(--ht-radius-md);
+  background: var(--ht-surface-1);
+}
+.htv2-def {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  align-items: baseline;
+  gap: var(--ht-space-3) var(--ht-space-5);
+  padding: var(--ht-space-4) var(--ht-space-5);
+  border-top: 1px solid var(--ht-border-subtle);
+}
+.htv2-def:first-child { border-top: none; }
+.htv2-def dt { color: var(--ht-text-muted); }
+.htv2-def dd { margin: 0; color: var(--ht-text); min-width: 0; }
+.htv2-def-note { grid-column: 1 / -1; margin: 0; max-width: 60ch; }
+
+@media (max-width: 640px) {
+  .htv2-def { grid-template-columns: 1fr; gap: 4px; }
+  .htv2-def-note { grid-column: 1; }
+}
+
+/* ---- Notifications ---- */
+.htv2-note-channels { display: flex; align-items: center; gap: var(--ht-space-4); }
+.htv2-note-chips { display: inline-flex; gap: var(--ht-space-4); }
+.htv2-note-list {
+  list-style: none; margin: 0; padding: 0;
+  border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1);
+}
+.htv2-note-item { padding: 10px var(--ht-space-5); border-top: 1px solid var(--ht-border-subtle); color: var(--ht-text); }
+.htv2-note-item:first-child { border-top: none; }
+
+/* ---- Verification ---- */
+.htv2-verify-head { display: flex; align-items: center; gap: var(--ht-space-3); }
+.htv2-verify-hint { margin: 0; color: var(--ht-text); max-width: 60ch; }

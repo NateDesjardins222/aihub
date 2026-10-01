@@ -142,15 +142,17 @@ export const FIXTURE_PAYOUTS: PayoutsView = {
 };
 
 export const FIXTURE_CERTS: Cert[] = [
-  { id: 'c1', certificatePublicId: 'HT-FT-10294', verificationToken: 'tok_ft_10294', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 50K — Funded Trader', amountMicros: 50_000 * M, status: 'ISSUED', issuedAt: now - 34 * DAY, accountId: 'f-funded' },
-  { id: 'c2', certificatePublicId: 'HT-PO-20571', verificationToken: 'tok_po_20571', type: 'PAYOUT', publicDisplayName: 'Payout Award', amountMicros: 2_250 * M, status: 'ISSUED', issuedAt: now - 6 * DAY, accountId: 'f-large' },
-  { id: 'c3', certificatePublicId: 'HT-FT-10880', verificationToken: 'tok_ft_10880', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 150K — Funded Trader', amountMicros: 150_000 * M, status: 'ISSUED', issuedAt: now - 61 * DAY, accountId: 'f-large' },
+  { id: 'c1', certificatePublicId: 'HT-FT-10294', verificationToken: 'tok_ft_10294', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 50K — Funded Trader', amountMicros: 50_000 * M, status: 'ISSUED', issuedAt: now - 34 * DAY, accountId: 'f-funded', renderStatus: 'RENDERED', hasImage: true, hasPdf: true },
+  { id: 'c2', certificatePublicId: 'HT-PO-20571', verificationToken: 'tok_po_20571', type: 'PAYOUT', publicDisplayName: 'Payout Award', amountMicros: 2_250 * M, status: 'ISSUED', issuedAt: now - 6 * DAY, accountId: 'f-large', renderStatus: 'RENDERED', hasImage: true, hasPdf: false },
+  { id: 'c3', certificatePublicId: 'HT-FT-10880', verificationToken: 'tok_ft_10880', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 150K — Funded Trader', amountMicros: 150_000 * M, status: 'ISSUED', issuedAt: now - 61 * DAY, accountId: 'f-large', renderStatus: 'RENDERED', hasImage: true, hasPdf: true },
+  { id: 'c4', certificatePublicId: 'HT-AC-33120', verificationToken: 'tok_ac_33120', type: 'ACCOUNT_COMPLETION', publicDisplayName: 'CORE 100K — Evaluation Passed', amountMicros: null, status: 'ISSUED', issuedAt: now - 40 * DAY, accountId: 'f-eval', renderStatus: 'RENDERED', hasImage: true, hasPdf: false },
 ];
 
 export const FIXTURE_BILLING: BillingView = {
   totalSpentMicros: 897 * M,
   orderCount: 3,
   activeEntitlements: 2,
+  paymentMethod: { brand: 'Visa', last4: '4242', expMonth: 8, expYear: 2028 },
   orders: [
     { id: 'o1', dateMs: now - 61 * DAY, item: 'CORE 150K Evaluation', amountMicros: 549 * M, state: 'PAID', accountId: 'f-large' },
     { id: 'o2', dateMs: now - 40 * DAY, item: 'CORE 100K Evaluation', amountMicros: 349 * M, state: 'PAID', accountId: 'f-eval' },
@@ -172,3 +174,50 @@ export const FIXTURE_ACTIVITY: ActivityItem[] = [
   { when: '6 days ago', label: 'CORE 150K payout paid', amount: '+$2,250', amountTone: 'positive' },
   { when: '3 days ago', label: 'SELECT 100K account breached', amount: '-$4,100', amountTone: 'negative' },
 ];
+
+// ---- Human-review #2: portfolio performance series + zero-customer state --------
+import type { SeriesPoint } from './primitives';
+import type { ProfileView } from './profile';
+
+/** Dev-only account-center identity. Shows the display/legal-identity SEPARATION and a
+ *  realistic security/verification posture — never real PII (see PORTAL_V2_PROFILE_IDENTITY.md). */
+export const FIXTURE_PROFILE: ProfileView = {
+  email: 'trader@example.com',
+  publicDisplayName: 'A. Trader',
+  defaultDisplayName: 'A. Trader',
+  legalNameOnFile: true,
+  memberSinceMs: now - 61 * DAY,
+  verification: 'VERIFIED',
+  security: { mfaEnabled: true, activeSessions: 2, lastSignInMs: now - 1 * DAY },
+  notifications: { email: true, sms: true },
+};
+
+/** Zero-customer account-center: a brand-new customer, nothing earned, nothing verified. */
+export const FIXTURE_PROFILE_EMPTY: ProfileView = {
+  email: 'newtrader@example.com',
+  publicDisplayName: null,
+  defaultDisplayName: null,
+  legalNameOnFile: false,
+  memberSinceMs: now - 1 * DAY,
+  verification: 'NOT_STARTED',
+  security: { mfaEnabled: false, activeSessions: 1, lastSignInMs: now },
+  notifications: { email: true, sms: false },
+};
+
+/** Dev-only cumulative realized P&L across the customer's accounts (portfolio level).
+ *  In production this is one authoritative projection (see PORTAL_V2_PERFORMANCE_METRICS.md);
+ *  here it is a representative monotone-ish walk so the chart is exercised. */
+export const FIXTURE_PORTFOLIO_SERIES: SeriesPoint[] = (() => {
+  const pts: SeriesPoint[] = [];
+  let v = 0; let seed = 20260101;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const start = now - 120 * DAY;
+  for (let i = 0; i <= 120; i += 1) { v += Math.round((rnd() - 0.42) * 900) * M / 1; pts.push({ t: start + i * DAY, v: Math.max(-20000 * M, v) }); }
+  return pts;
+})();
+
+/** A deterministic ZERO-CUSTOMER view: a real new customer with no business records. */
+export const FIXTURE_VIEW_EMPTY_CUSTOMER: AccountsView = { accounts: [], activeSlotsUsed: 0, maxActiveSlots: 5 };
+export const FIXTURE_PAYOUTS_EMPTY: PayoutsView = { totalPaidMicros: 0, availableMicros: 0, inReviewMicros: 0, cyclesText: '0 of 5', standing: [], history: [] };
+export const FIXTURE_BILLING_EMPTY: BillingView = { totalSpentMicros: 0, orderCount: 0, activeEntitlements: 0, orders: [] };
+export const FIXTURE_SUPPORT_EMPTY: SupportView = { openCount: 0, tickets: [] };

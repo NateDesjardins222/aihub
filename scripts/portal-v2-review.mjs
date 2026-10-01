@@ -27,7 +27,10 @@ async function run() {
   await page.waitForTimeout(300);
 
   console.log('Brand:');
-  ok(await page.locator('img.htv2-wordmark[alt="Happy Trader Funding"]').count() === 1, 'supplied wordmark renders');
+  // Review #2: the sidebar carries the stacked lockup (desktop) + wide lockup (mobile),
+  // both the supplied official asset. At least one renders; CSS shows the right one.
+  ok(await page.locator('img.htv2-wordmark[alt="Happy Trader Funding"]').count() >= 1, 'supplied wordmark renders');
+  ok(await page.locator('img.htv2-side-logo-stacked').count() === 1, 'stacked brand lockup present (larger logo)');
   ok(await page.locator('.htv2-side-mark').count() === 0, 'no fake square brand mark');
 
   console.log('No dev/engineering content in customer DOM:');
@@ -64,11 +67,16 @@ async function run() {
     ok((await page.locator('h1.ht-t-page-title, .htv2-section-title', { hasText: new RegExp(n.heading, 'i') }).count()) > 0, `${n.heading} renders a real heading`);
   }
 
-  console.log('Account detail + tabs:');
+  console.log('Accounts master/detail + account detail tabs:');
   await page.goto(`${BASE}/portal-v2/accounts`, { waitUntil: 'networkidle' });
-  await page.locator('[data-testid="htv2-account-panel"]').first().locator('button', { hasText: 'Details' }).click();
+  await page.waitForTimeout(200);
+  // Review #2: Accounts is a master/detail manager (index + workspace), not a card wall.
+  ok(await page.locator('[data-testid="htv2-accounts-index"]').count() === 1, 'accounts index (master) renders');
+  ok(await page.locator('[data-testid="htv2-account-workspace"]').count() === 1, 'account workspace (detail) renders');
+  ok(await page.locator('[data-testid="htv2-accounts-filter-all"]').count() === 1, 'account filters present');
+  await page.locator('[data-testid="htv2-open-full-account"]').first().click();
   await page.waitForTimeout(250);
-  ok(page.url().includes('/portal-v2/accounts/'), 'Details opens an account detail route');
+  ok(page.url().includes('/portal-v2/accounts/'), 'Open full account opens an account detail route');
   ok(await page.locator('[data-testid="htv2-detail"]').count() === 1, 'detail surface renders');
   for (const t of ['overview', 'performance', 'controls', 'rules', 'activity']) {
     await page.locator(`[data-testid="htv2-detail-tab-${t}"]`).click();
@@ -78,6 +86,47 @@ async function run() {
   await page.locator('[data-testid="htv2-detail-back"]').click();
   await page.waitForTimeout(150);
   ok(page.url().endsWith('/portal-v2/accounts'), 'detail back → accounts');
+
+  console.log('R2 — Profile & account center (from the account menu):');
+  await page.goto(`${BASE}/portal-v2`, { waitUntil: 'networkidle' });
+  await page.locator('[data-testid="htv2-account-menu"]').click();
+  await page.waitForTimeout(150);
+  await page.locator('.htv2-acctmenu-pop button', { hasText: /profile/i }).first().click();
+  await page.waitForTimeout(200);
+  ok(page.url().endsWith('/portal-v2/profile'), 'account menu → profile route');
+  ok(await page.locator('[data-testid="htv2-profile-tab-security"]').count() === 1, 'profile has a Security section');
+  await page.locator('[data-testid="htv2-profile-tab-verification"]').click();
+  await page.waitForTimeout(120);
+  ok(await page.locator('[data-testid="htv2-profile-verification"]').count() === 1, 'verification pane renders (KYC distinct from display name)');
+
+  console.log('R2 — Certificates category rail + verify, no fake artifact:');
+  await page.goto(`${BASE}/portal-v2/certificates`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(150);
+  ok(await page.locator('[data-testid="htv2-cert-cat-funded"]').count() === 1, 'Funded category tab present');
+  ok(await page.locator('[data-testid="htv2-cert-verify"]').first().count() === 1, 'certificate Verify action present');
+  await page.locator('[data-testid="htv2-cert-cat-payouts"]').click();
+  await page.waitForTimeout(120);
+  ok(await page.locator('[data-testid="htv2-cert"]').count() >= 1, 'payouts category filters the vault');
+
+  console.log('R2 — Payouts premium hero + Billing payment method:');
+  await page.goto(`${BASE}/portal-v2/payouts`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(120);
+  ok(await page.locator('[data-testid="htv2-payout-hero"]').count() === 1, 'payouts premium hero present');
+  await page.goto(`${BASE}/portal-v2/billing`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(120);
+  ok(await page.locator('[data-testid="htv2-billing-paymethod"]').count() === 1, 'billing payment method present (safe projection)');
+
+  console.log('R2 — Zero-customer state shows zeros, not demo data:');
+  await page.goto(`${BASE}/portal-v2?state=empty`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(150);
+  const emptyDash = (await page.locator('body').innerText()).toLowerCase();
+  ok(emptyDash.includes('welcome to happy trader') || emptyDash.includes("don't have any accounts"), 'zero-customer dashboard shows a welcome/empty state');
+  await page.goto(`${BASE}/portal-v2/accounts?state=empty`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(150);
+  ok(await page.locator('[data-testid="htv2-accounts-empty"]').count() === 1, 'zero-customer accounts shows empty state, not demo records');
+  await page.goto(`${BASE}/portal-v2/certificates?state=empty`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(150);
+  ok(await page.locator('[data-testid="htv2-cert"]').count() === 0, 'zero-customer certificates shows none');
 
   console.log('No horizontal page overflow:');
   for (const w of [1920, 1440, 1280, 1024, 768, 390]) {

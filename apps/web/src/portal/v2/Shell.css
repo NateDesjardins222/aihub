@@ -41,8 +41,10 @@
   margin-bottom: var(--ht-space-2);
   border-bottom: 1px solid var(--ht-border-subtle);
 }
-.htv2-wordmark { display: block; height: auto; width: 100%; max-width: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
-.htv2-side-logo { width: 150px; max-width: 100%; }
+.htv2-wordmark { display: block; height: auto; max-width: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
+/* Desktop: the stacked lockup, sized to read clearly (fixes "logo too small"). */
+.htv2-side-logo-stacked { width: 158px; max-width: 100%; }
+.htv2-side-logo-wide { display: none; }
 
 .htv2-side-nav { display: flex; flex-direction: column; gap: 1px; margin-top: var(--ht-space-1); }
 .htv2-side-link {
@@ -129,7 +131,9 @@
     padding: var(--ht-space-2) var(--ht-space-4);
   }
   .htv2-side-brand { padding: 0; margin: 0; border-bottom: none; flex: 0 0 auto; }
-  .htv2-side-logo { width: auto; height: 15px; }
+  /* Mobile strip: swap to the wide lockup, height-constrained. */
+  .htv2-side-logo-stacked { display: none; }
+  .htv2-side-logo-wide { display: block; width: auto; height: 16px; }
   .htv2-side-nav { flex-direction: row; gap: 2px; margin-top: 0; }
   .htv2-side-link { height: 30px; padding: 0 10px; }
   .htv2-side-link.is-active::before { left: 7px; right: 7px; top: auto; bottom: 0; width: auto; height: 2px; }

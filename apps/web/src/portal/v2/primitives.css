@@ -77,19 +77,21 @@
 
 .htv2 :focus-visible { outline: 2px solid var(--ht-border-focus); outline-offset: 1px; border-radius: var(--ht-radius-xs); }
 
-/* ---- Status (STEP 20): dot + label, restrained surface, never a saturated pill ---- */
+/* ---- Status (rebuilt at human-review #2): a small state dot + text, NOT a boxed
+   pill. Reads as part of a financial system, not a component-library badge. The dot
+   carries the semantic colour; the label is a quiet uppercase micro-label. ---- */
 .htv2-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
-  border-radius: var(--ht-radius-sm);
-  border: 1px solid var(--ht-border);
-  background: var(--ht-surface-2);
-  color: var(--ht-text-muted);
   white-space: nowrap;
+  color: var(--ht-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  font-weight: 600;
 }
-.htv2-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.htv2-status-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; flex: 0 0 auto; }
 .htv2-status-evaluation { color: var(--ht-accent); }
 .htv2-status-funded { color: var(--ht-positive); }
 .htv2-status-payout { color: var(--ht-champagne-muted); }
@@ -203,3 +205,16 @@
 }
 .htv2-link:hover { color: var(--ht-text-strong); text-decoration: underline; text-underline-offset: 2px; }
 .htv2-link:focus-visible { outline: 2px solid var(--ht-border-focus); outline-offset: 2px; border-radius: var(--ht-radius-xs); }
+
+/* ---- Area/line chart (portfolio + payout performance) ---- */
+.htv2-area { width: 100%; height: 180px; display: block; }
+.htv2-area-line { fill: none; stroke: var(--ht-champagne); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.htv2-area-fill { fill: color-mix(in srgb, var(--ht-champagne) 10%, transparent); stroke: none; }
+.htv2-area-zero { stroke: var(--ht-border-strong); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.htv2-chart-ranges { display: inline-flex; gap: 2px; }
+.htv2-chart-range { padding: 4px 9px; background: transparent; border: 1px solid transparent; border-radius: var(--ht-radius-sm); color: var(--ht-text-muted); cursor: pointer; font-size: 11px; }
+.htv2-chart-range:hover { color: var(--ht-text); }
+.htv2-chart-range.on { color: var(--ht-text-strong); border-color: var(--ht-border); background: var(--ht-surface-2); }
+.htv2-chart-frame { border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1); padding: var(--ht-space-4); }
+.htv2-chart-caption { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); margin-bottom: var(--ht-space-3); }
+.htv2-chart-empty { padding: var(--ht-space-8) var(--ht-space-4); color: var(--ht-text-muted); text-align: center; }

@@ -116,3 +116,30 @@ none of it a functional defect:
   Accounts vertical) — add when a vertical needs it (`KNOWN_ISSUES.md` PV2-2).
 
 **Do not act on the above before the Portal V2 visual-acceptance phase.**
+
+---
+
+## Portal V2 — Human-Acceptance Review #2 (customer-experience restructure)
+
+Debt deliberately carried from Review #2. None of these are faked in the product — each is a
+documented seam with a truthful UI state today.
+
+- **Portfolio P&L series endpoint.** `PortfolioPerformance` is built and renders a supplied
+  authoritative `SeriesPoint[]`; the production cumulative-P&L projection endpoint is the seam
+  to wire (see PORTAL_V2_PERFORMANCE_METRICS.md). Component ready; no fake data.
+- **Payment-method provider flow.** Only the safe projection (brand/last-4/expiry) is shown;
+  "Update" is a provider-hosted seam (`onManagePaymentMethod`). No in-portal card form.
+- **Receipts.** `onViewReceipt` seam; the Receipt link renders only when a real receipt source
+  is wired (hidden in the dev review rather than faked).
+- **Certificate artifact in review.** `resolveArtifact` returns null without a session, so the
+  vault shows "Preview available in your account". Production wires `/:id/{image,pdf}`.
+- **Physical ("framed") certificate commerce.** Exists in V1 (`/order-framed`), not yet
+  surfaced in V2.
+- **Achievements** (distinct from certificates) not yet a V2 surface.
+- **Notification preferences** are presented as desk-managed (read-only categories/channels);
+  a customer-editable write path is a future seam.
+- **Symbol brand derivative** (`happy-trader-symbol.png`) quarantined from shipping surfaces
+  until a clean-edged source is supplied (faint frame artifact after keying) — see
+  HAPPY_TRADER_BRAND_ASSET_MAP.md.
+
+**Do not act on the above before the Portal V2 visual-acceptance phase.**

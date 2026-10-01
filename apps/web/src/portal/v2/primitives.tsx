@@ -171,3 +171,32 @@ export function V2ActivityList({ items }: { items: ActivityItem[] }): JSX.Elemen
     </ul>
   );
 }
+
+/**
+ * V2AreaChart — a dependency-free financial area/line chart (cumulative P&L, balance,
+ * etc.). Pure SVG, champagne stroke + faint fill, optional zero baseline. Presentation
+ * only: the caller supplies an authoritative numeric series (or an empty one → the
+ * caller shows an empty state). Never fabricates data.
+ */
+export interface SeriesPoint { t: number; v: number }
+export function V2AreaChart({ points, height = 180, ariaLabel = 'Performance chart' }: {
+  points: SeriesPoint[]; height?: number; ariaLabel?: string;
+}): JSX.Element | null {
+  if (points.length < 2) return null;
+  const W = 1000, H = height, pad = 6;
+  const vs = points.map((p) => p.v);
+  const min = Math.min(...vs, 0), max = Math.max(...vs, 0);
+  const range = max - min || 1;
+  const x = (i: number): number => pad + (i / (points.length - 1)) * (W - pad * 2);
+  const y = (v: number): number => H - pad - ((v - min) / range) * (H - pad * 2);
+  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const area = `${line} L${x(points.length - 1).toFixed(1)},${(H - pad).toFixed(1)} L${x(0).toFixed(1)},${(H - pad).toFixed(1)} Z`;
+  const zeroY = min <= 0 && max >= 0 ? y(0) : null;
+  return (
+    <svg className="htv2-area" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={ariaLabel} data-testid="htv2-area-chart">
+      {zeroY != null && <path className="htv2-area-zero" d={`M0,${zeroY.toFixed(1)} L${W},${zeroY.toFixed(1)}`} />}
+      <path className="htv2-area-fill" d={area} />
+      <path className="htv2-area-line" d={line} />
+    </svg>
+  );
+}

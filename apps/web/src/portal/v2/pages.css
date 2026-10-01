@@ -7,6 +7,29 @@
 .htv2-page-head-row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: var(--ht-space-4); }
 .htv2-page-actions { display: flex; align-items: center; gap: var(--ht-space-4); }
 
+/* ---- Payout premium hero (calm, rewarding — NOT a gambling surface) ---- */
+.htv2-payout-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-6); flex-wrap: wrap;
+  padding: var(--ht-space-6) var(--ht-space-6);
+  border: 1px solid var(--ht-border); border-radius: var(--ht-radius-lg);
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--ht-champagne) 5%, transparent), transparent 60%),
+    var(--ht-surface-1);
+}
+.htv2-payout-hero-main { display: flex; flex-direction: column; gap: var(--ht-space-2); min-width: 0; }
+.htv2-payout-hero-value { line-height: 1.05; }
+.htv2-payout-hero-side { display: flex; align-items: center; gap: var(--ht-space-6); flex: 0 0 auto; }
+.htv2-payout-hero-avail { display: flex; flex-direction: column; gap: var(--ht-space-2); }
+
+/* ---- Winning-days progress (calm rail, not a streak meter) ---- */
+.htv2-wd-bar { display: block; height: 3px; width: 160px; max-width: 100%; margin-top: 6px; background: var(--ht-surface-hover); border-radius: 999px; overflow: hidden; }
+.htv2-wd-bar > span { display: block; height: 100%; background: var(--ht-positive); border-radius: 999px; }
+
+/* ---- Payment method ---- */
+.htv2-paymethod { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-4); padding: var(--ht-space-4) var(--ht-space-5); border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1); flex-wrap: wrap; }
+.htv2-paymethod-card { display: flex; align-items: baseline; gap: var(--ht-space-3); min-width: 0; }
+.htv2-paymethod-brand { color: var(--ht-text-strong); }
+
 /* ---- Standing rows (payout) ---- */
 .htv2-rows {
   display: flex; flex-direction: column;
@@ -33,9 +56,22 @@
 .htv2-ledger td.num, .htv2-ledger th.num { text-align: right; }
 .htv2-ledger tbody tr:hover td { background: var(--ht-surface-1); }
 
+/* ---- Category rail (certificates) ---- */
+.htv2-catrail { display: flex; gap: 2px; border-bottom: 1px solid var(--ht-border-subtle); overflow-x: auto; }
+.htv2-catrail-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px 10px; background: transparent; border: none; cursor: pointer;
+  color: var(--ht-text-muted); white-space: nowrap; transition: color var(--ht-fast) var(--ht-ease);
+}
+.htv2-catrail-tab:hover { color: var(--ht-text); }
+.htv2-catrail-tab.on { color: var(--ht-text-strong); }
+.htv2-catrail-tab.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--ht-champagne); border-radius: 999px; }
+.htv2-catrail-n { color: var(--ht-text-faint); font-size: 11px; }
+.htv2-catrail-tab.on .htv2-catrail-n { color: var(--ht-text-muted); }
+
 /* ---- Certificate vault ---- */
 .htv2-vault {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--ht-space-4);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--ht-space-4);
 }
 .htv2-cert {
   display: flex; flex-direction: column; gap: 8px;
@@ -44,10 +80,19 @@
   transition: border-color var(--ht-fast) var(--ht-ease);
 }
 .htv2-cert:hover { border-color: var(--ht-border-strong); }
+/* Artifact preview: a quiet framed well; shows the rendered image or a truthful note. */
+.htv2-cert-preview {
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 16 / 10; width: 100%; overflow: hidden;
+  background: var(--ht-bg-elevated); border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md);
+}
+.htv2-cert-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.htv2-cert-preview-note { color: var(--ht-text-faint); padding: var(--ht-space-4); text-align: center; }
 .htv2-cert-top { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-3); }
 .htv2-cert-kind { color: var(--ht-champagne-muted); }
 .htv2-cert-name { color: var(--ht-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .htv2-cert-amt { color: var(--ht-text-strong); }
+.htv2-cert-actions { display: flex; flex-wrap: wrap; gap: var(--ht-space-3); }
 .htv2-cert-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-3); margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--ht-border-subtle); }
 .htv2-cert-foot > .ht-num { color: var(--ht-text-faint); overflow: hidden; text-overflow: ellipsis; }
 

@@ -84,7 +84,7 @@
   --ht-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
 
   /* ---- Shell dimensions (tunable during human review) ---- */
-  --ht-sidebar-w: 164px;      /* target 150–180px */
+  --ht-sidebar-w: 204px;      /* widened so the stacked brand lockup reads premium */
   --ht-topbar-h: 48px;
   --ht-control-h: 32px;       /* 30–36px control target */
   --ht-control-h-sm: 28px;

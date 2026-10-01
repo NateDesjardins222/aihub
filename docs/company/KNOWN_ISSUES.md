@@ -874,3 +874,21 @@ change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
 - **PV2R1-2 (status).** Portal V2 remains dev-only and NOT migrated; V1 is live +
   instant rollback. Human acceptance by Nathan pending; claim bounded to
   "ready for human acceptance".
+
+---
+
+## Portal V2 — Human-Acceptance Review #2 (customer-experience restructure)
+
+- **PV2R2-1 (status).** Portal V2 remains dev-only (`/portal-v2`, gated by
+  `designLabEnabled()`); production 404s. Not migrated; V1 live with instant rollback. Review
+  #2 delivered: larger official brand lockup, de-pilled status, Accounts master/detail,
+  Profile & account center (new), categorised Certificate vault with real
+  download/verify seams, premium (non-gambling) Payouts, provider-safe Billing with payment
+  method + provenance, portfolio performance chart, and a deterministic zero-customer mode
+  (`?state=empty`). Claim bounded to "ready for human acceptance (#2)".
+- **PV2R2-2 (seams, not defects).** Portfolio-P&L endpoint, payment-method provider flow,
+  receipts, notification-preference writes, and physical-certificate commerce are documented
+  seams with truthful UI states — see PRODUCT_UX_DEBT.md and the PORTAL_V2_* architecture docs.
+  No surface fabricates data to cover a seam.
+- **PV2R2-3 (brand).** The chrome symbol derivative is held out of shipping surfaces pending a
+  clean-edged source (HAPPY_TRADER_BRAND_ASSET_MAP.md). Stacked + wide wordmarks ship.

@@ -17,6 +17,7 @@
  * purple bar, or a giant pill.
  */
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import stackedUrl from './brand/happy-trader-funding-stacked.png';
 import wordmarkUrl from './brand/happy-trader-funding-wordmark.png';
 import './Shell.css';
 
@@ -32,9 +33,12 @@ export const PORTAL_V2_NAV: readonly NavItem[] = [
   { key: 'support', label: 'Support' },
 ];
 
-/** The brand wordmark. Supplied raster asset — never retyped, recreated, or distorted. */
-export function V2Wordmark({ className = '' }: { className?: string }): JSX.Element {
-  return <img className={`htv2-wordmark ${className}`} src={wordmarkUrl} alt="Happy Trader Funding" draggable={false} />;
+/** The brand wordmark. Supplied raster assets — never retyped, recreated, or distorted.
+ *  `variant` picks the correct supplied lockup: the STACKED mark reads large and
+ *  premium in the vertical sidebar; the WIDE mark fits the horizontal mobile strip. */
+export function V2Wordmark({ variant = 'wide', className = '' }: { variant?: 'stacked' | 'wide'; className?: string }): JSX.Element {
+  const src = variant === 'stacked' ? stackedUrl : wordmarkUrl;
+  return <img className={`htv2-wordmark ${className}`} src={src} alt="Happy Trader Funding" draggable={false} />;
 }
 
 export function V2Sidebar({ active, onNavigate, nav = PORTAL_V2_NAV }: {
@@ -45,7 +49,10 @@ export function V2Sidebar({ active, onNavigate, nav = PORTAL_V2_NAV }: {
   return (
     <aside className="htv2-side" aria-label="Primary">
       <div className="htv2-side-brand">
-        <V2Wordmark className="htv2-side-logo" />
+        {/* Stacked lockup for the vertical sidebar (desktop); wide lockup for the
+            mobile top strip. CSS swaps them so the brand is always sized correctly. */}
+        <V2Wordmark variant="stacked" className="htv2-side-logo htv2-side-logo-stacked" />
+        <V2Wordmark variant="wide" className="htv2-side-logo htv2-side-logo-wide" />
       </div>
       <nav className="htv2-side-nav" aria-label="Customer">
         {nav.map((n) => (

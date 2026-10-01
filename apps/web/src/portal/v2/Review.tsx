@@ -20,19 +20,26 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import { V2AppShell, V2AccountMenu, type NavItem, type AccountMenuAction } from './Shell';
 import {
-  V2Section, V2Button, V2StatStrip, V2Attention, V2ActivityList, V2Divider,
+  V2Section, V2Button, V2StatStrip, V2Attention, V2ActivityList, V2Divider, V2AreaChart, V2EmptyState,
 } from './primitives';
 import { V2AccountsView } from './AccountsView';
 import { V2AccountPanel } from './AccountPanel';
 import { V2AccountDetail, type DetailTab } from './AccountDetail';
 import { V2PayoutsPage, V2CertificatesPage, V2BillingPage, V2SupportPage, V2OwnerNotice } from './pages';
+import { V2ProfilePage } from './profile';
 import { toAccountView, productLabel } from './account-view';
 import {
   FIXTURE_VIEW_LONG, fixtureDetailFor, FIXTURE_FUNDED_EXTRA,
   FIXTURE_PAYOUTS, FIXTURE_CERTS, FIXTURE_BILLING, FIXTURE_SUPPORT, FIXTURE_ACTIVITY,
+  FIXTURE_PORTFOLIO_SERIES, FIXTURE_PROFILE,
+  FIXTURE_VIEW_EMPTY_CUSTOMER, FIXTURE_PAYOUTS_EMPTY, FIXTURE_BILLING_EMPTY,
+  FIXTURE_SUPPORT_EMPTY, FIXTURE_PROFILE_EMPTY,
 } from './fixtures';
 import { formatMoney } from './format';
-import type { AccountDetailFull, AccountSummary } from '../lib';
+import type { SeriesPoint, ActivityItem } from './primitives';
+import type { AccountsView, AccountDetailFull, AccountSummary, Cert } from '../lib';
+import type { PayoutsView, BillingView, SupportView } from './pages';
+import type { ProfileView } from './profile';
 import './tokens.css';
 import './type.css';
 
@@ -56,6 +63,7 @@ export type Route =
   | { view: 'certificates' }
   | { view: 'billing' }
   | { view: 'support' }
+  | { view: 'profile' }
   | { view: 'owner' };
 
 export function parseRoute(pathname: string): Route {
@@ -68,6 +76,7 @@ export function parseRoute(pathname: string): Route {
   if (p === `${BASE}/certificates`) return { view: 'certificates' };
   if (p === `${BASE}/billing`) return { view: 'billing' };
   if (p === `${BASE}/support`) return { view: 'support' };
+  if (p === `${BASE}/profile`) return { view: 'profile' };
   if (p === `${BASE}/owner`) return { view: 'owner' };
   return { view: 'dashboard' }; // unknown sub-paths → dashboard, never a blank/trapped screen
 }
@@ -82,8 +91,20 @@ function activeKeyFor(route: Route): string {
   return route.view;
 }
 
-const ACCTS = FIXTURE_VIEW_LONG.accounts;
 const extraFor = (a: AccountSummary) => FIXTURE_FUNDED_EXTRA[a.id];
+
+/** The projected data the review renders — swapped wholesale for the zero-customer mode. */
+interface PortalData {
+  accountsView: AccountsView;
+  payouts: PayoutsView;
+  certs: Cert[];
+  billing: BillingView;
+  support: SupportView;
+  activity: ActivityItem[];
+  series: SeriesPoint[];
+  profile: ProfileView;
+  extraFor: (a: AccountSummary) => ReturnType<typeof extraFor>;
+}
 
 export function PortalV2Review(): JSX.Element {
   const [pathname, setPathname] = useState(() =>
@@ -95,6 +116,25 @@ export function PortalV2Review(): JSX.Element {
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('role') === 'owner';
   }, [pathname]);
+
+  // ZERO-CUSTOMER review mode (`?state=empty`): a brand-new customer with no business
+  // records. Every surface must truthfully show zeros/empty states — never demo data.
+  const empty = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('state') === 'empty';
+  }, [pathname]);
+
+  const data = useMemo((): PortalData => (empty
+    ? {
+        accountsView: FIXTURE_VIEW_EMPTY_CUSTOMER, payouts: FIXTURE_PAYOUTS_EMPTY, certs: [],
+        billing: FIXTURE_BILLING_EMPTY, support: FIXTURE_SUPPORT_EMPTY, activity: [],
+        series: [], profile: FIXTURE_PROFILE_EMPTY, extraFor: () => undefined,
+      }
+    : {
+        accountsView: FIXTURE_VIEW_LONG, payouts: FIXTURE_PAYOUTS, certs: FIXTURE_CERTS,
+        billing: FIXTURE_BILLING, support: FIXTURE_SUPPORT, activity: FIXTURE_ACTIVITY,
+        series: FIXTURE_PORTFOLIO_SERIES, profile: FIXTURE_PROFILE, extraFor,
+      }), [empty]);
 
   useEffect(() => {
     const onPop = (): void => setPathname(window.location.pathname);
@@ -117,9 +157,14 @@ export function PortalV2Review(): JSX.Element {
   const onNavigate = useCallback((key: string): void => go(pathForNav(key)), [go]);
   const openAccount = useCallback((id: string): void => go(`${BASE}/accounts/${encodeURIComponent(id)}`), [go]);
   const openTrade = useCallback((publicId: string): void => { window.location.href = `/?account=${publicId}`; }, []);
+  // Add account → the legitimate existing purchase flow (hosted at the app root). The
+  // review routes to it rather than fabricating a purchase (see PORTAL_V2_DATA_TRUTH_MAP.md).
+  const addAccount = useCallback((): void => { window.location.href = '/'; }, []);
 
-  // The account menu: real actions. Owner Console (owners only) lives HERE, never in nav.
+  // The account menu: real actions. Profile/Account center lives in this utility
+  // surface (not primary nav). Owner Console (owners only) also lives HERE, never in nav.
   const accountActions: AccountMenuAction[] = [];
+  accountActions.push({ key: 'profile', label: 'Profile & security', onSelect: () => go(`${BASE}/profile`) });
   if (showOwner) accountActions.push({ key: 'owner', label: 'Owner Console', tone: 'owner', onSelect: () => go(`${BASE}/owner`) });
   accountActions.push({ key: 'signout', label: 'Sign out', onSelect: () => { window.location.href = '/'; } });
 
@@ -130,17 +175,17 @@ export function PortalV2Review(): JSX.Element {
     crumb = <Crumb trail={['Accounts']} />;
     content = (
       <V2AccountsView
-        state={{ status: 'ready', view: FIXTURE_VIEW_LONG }}
-        extraFor={extraFor}
+        state={{ status: 'ready', view: data.accountsView }}
+        extraFor={data.extraFor}
         actions={{
           onOpen: (a) => openAccount(a.id),
           onTrade: (a) => openTrade(a.publicId),
-          onGetAccount: () => { window.location.href = '/'; },
+          onGetAccount: addAccount,
         }}
       />
     );
   } else if (route.view === 'detail') {
-    const summary = ACCTS.find((a) => a.id === route.id);
+    const summary = data.accountsView.accounts.find((a) => a.id === route.id);
     const detail: AccountDetailFull | null = summary ? fixtureDetailFor(summary) : null;
     crumb = <Crumb trail={['Accounts', summary ? productLabel(summary) : 'Account']} />;
     content = detail ? (
@@ -155,22 +200,62 @@ export function PortalV2Review(): JSX.Element {
     );
   } else if (route.view === 'payouts') {
     crumb = <Crumb trail={['Payouts']} />;
-    content = <V2PayoutsPage view={FIXTURE_PAYOUTS} onOpenAccount={openAccount} />;
+    content = (
+      <V2PayoutsPage
+        view={data.payouts}
+        onOpenAccount={openAccount}
+        actions={{ onRequestPayout: (id) => openAccount(id) }}
+      />
+    );
   } else if (route.view === 'certificates') {
     crumb = <Crumb trail={['Certificates']} />;
-    content = <V2CertificatesPage certs={FIXTURE_CERTS} onOpenAccount={openAccount} />;
+    content = (
+      <V2CertificatesPage
+        certs={data.certs}
+        onOpenAccount={openAccount}
+        actions={{
+          // Dev review has no session, so the authenticated artifact endpoint is not
+          // called — the card shows a truthful "preview available in your account" state.
+          // Production wires this to GET /api/v1/portal/certificates/:id/{image,pdf}.
+          resolveArtifact: async () => null,
+          onVerify: (token) => { window.location.href = `/verify/${token}`; },
+        }}
+      />
+    );
   } else if (route.view === 'billing') {
     crumb = <Crumb trail={['Billing']} />;
-    content = <V2BillingPage view={FIXTURE_BILLING} onOpenAccount={openAccount} />;
+    content = (
+      <V2BillingPage
+        view={data.billing}
+        onOpenAccount={openAccount}
+        actions={{
+          onAddAccount: addAccount,
+          // Payment-method management is a provider-hosted flow (card data never touches
+          // our origin). Receipts are server/provider-rendered; neither is fabricated in
+          // the dev review — see PORTAL_V2_BILLING_ARCHITECTURE.md.
+          onManagePaymentMethod: () => { window.location.href = '/onboarding'; },
+        }}
+      />
+    );
   } else if (route.view === 'support') {
     crumb = <Crumb trail={['Support']} />;
-    content = <V2SupportPage view={FIXTURE_SUPPORT} />;
+    content = <V2SupportPage view={data.support} />;
+  } else if (route.view === 'profile') {
+    crumb = <Crumb trail={['Profile & security']} />;
+    content = (
+      <V2ProfilePage
+        view={data.profile}
+        onBack={() => go(BASE)}
+        onManageSecurity={() => { window.location.href = '/onboarding'; }}
+        onManageVerification={() => { window.location.href = '/onboarding'; }}
+      />
+    );
   } else if (route.view === 'owner') {
     crumb = <Crumb trail={['Owner Console']} />;
     content = <V2OwnerNotice onBack={() => go(BASE)} onOpenAdmin={() => { window.location.href = '/admin'; }} />;
   } else {
     crumb = <Crumb trail={['Dashboard']} />;
-    content = <Dashboard onOpenAccount={openAccount} onTrade={openTrade} go={go} />;
+    content = <Dashboard data={data} onOpenAccount={openAccount} onTrade={openTrade} onAddAccount={addAccount} go={go} />;
   }
 
   return (
@@ -199,25 +284,31 @@ function Crumb({ trail }: { trail: string[] }): JSX.Element {
 }
 
 // ----------------------------------------------------------------- Dashboard ----
-function Dashboard({ onOpenAccount, onTrade, go }: {
+function Dashboard({ data, onOpenAccount, onTrade, onAddAccount, go }: {
+  data: PortalData;
   onOpenAccount: (id: string) => void;
   onTrade: (publicId: string) => void;
+  onAddAccount: () => void;
   go: (to: string) => void;
 }): JSX.Element {
+  const accts = data.accountsView.accounts;
   const isEval = (a: AccountSummary): boolean => a.portalState.startsWith('EVALUATION');
   const isFunded = (a: AccountSummary): boolean => a.accountType === 'FUNDED_SIM' && !a.portalState.startsWith('COMPLETED');
-  const activeCount = ACCTS.filter((a) => ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'].includes(a.status)).length;
-  const totalBalance = ACCTS.reduce((s, a) => s + a.balanceMicros, 0);
-  const netPnl = ACCTS.reduce((s, a) => s + (a.balanceMicros - a.startingBalanceMicros), 0);
-  const breached = ACCTS.filter((a) => a.portalState === 'FAILED');
-  const topAccounts = ACCTS.filter((a) => a.portalState !== 'ARCHIVED' && a.portalState !== 'INACTIVE_CLOSED').slice(0, 4);
-  const payoutAvailable = FIXTURE_PAYOUTS.availableMicros;
+  const activeCount = accts.filter((a) => ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'].includes(a.status)).length;
+  const totalBalance = accts.reduce((s, a) => s + a.balanceMicros, 0);
+  const netPnl = accts.reduce((s, a) => s + (a.balanceMicros - a.startingBalanceMicros), 0);
+  const breached = accts.filter((a) => a.portalState === 'FAILED');
+  const topAccounts = accts.filter((a) => a.portalState !== 'ARCHIVED' && a.portalState !== 'INACTIVE_CLOSED').slice(0, 4);
+  const payoutAvailable = data.payouts.availableMicros;
 
   return (
     <div className="htv2-page">
-      <header className="htv2-page-head">
-        <h1 className="ht-t-page-title">Dashboard</h1>
-        <p className="ht-t-meta">Your accounts, standing, and what needs attention.</p>
+      <header className="htv2-page-head htv2-page-head-row">
+        <div>
+          <h1 className="ht-t-page-title">Dashboard</h1>
+          <p className="ht-t-meta">Your accounts, standing, and what needs attention.</p>
+        </div>
+        <V2Button variant="secondary" size="sm" onClick={onAddAccount}>Add account</V2Button>
       </header>
 
       <V2StatStrip
@@ -225,11 +316,19 @@ function Dashboard({ onOpenAccount, onTrade, go }: {
           { label: 'Total balance', value: formatMoney(totalBalance, { maxFractionDigits: 0 }) },
           { label: 'Net P&L', value: formatMoney(netPnl, { sign: true, maxFractionDigits: 0 }), tone: netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : 'muted' },
           { label: 'Active accounts', value: String(activeCount) },
-          { label: 'Evaluations', value: String(ACCTS.filter(isEval).length) },
-          { label: 'Funded', value: String(ACCTS.filter(isFunded).length) },
-          { label: 'Total paid', value: formatMoney(FIXTURE_PAYOUTS.totalPaidMicros, { maxFractionDigits: 0 }) },
+          { label: 'Evaluations', value: String(accts.filter(isEval).length) },
+          { label: 'Funded', value: String(accts.filter(isFunded).length) },
+          { label: 'Total paid', value: formatMoney(data.payouts.totalPaidMicros, { maxFractionDigits: 0 }) },
         ]}
       />
+
+      {accts.length === 0 && (
+        <V2EmptyState
+          title="Welcome to Happy Trader"
+          hint="You don't have any accounts yet. Buy an evaluation to get started — your accounts, performance and payouts will appear here."
+          action={<V2Button variant="primary" size="sm" onClick={onAddAccount}>Add account</V2Button>}
+        />
+      )}
 
       {breached.length > 0 ? (
         <V2Attention
@@ -247,27 +346,75 @@ function Dashboard({ onOpenAccount, onTrade, go }: {
         />
       ) : null}
 
-      <V2Section
-        title="Your accounts"
-        actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/accounts`)}>All accounts →</button>}
-      >
-        <div className="htv2-acct-grid">
-          {topAccounts.map((a) => (
-            <V2AccountPanel
-              key={a.id}
-              a={toAccountView(a, extraFor(a))}
-              onDetails={() => onOpenAccount(a.id)}
-              onTrade={() => onTrade(a.publicId)}
-            />
-          ))}
-        </div>
-      </V2Section>
+      {topAccounts.length > 0 && (
+        <V2Section
+          title="Your accounts"
+          actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/accounts`)}>All accounts →</button>}
+        >
+          <div className="htv2-acct-grid">
+            {topAccounts.map((a) => (
+              <V2AccountPanel
+                key={a.id}
+                a={toAccountView(a, data.extraFor(a))}
+                onDetails={() => onOpenAccount(a.id)}
+                onTrade={() => onTrade(a.publicId)}
+              />
+            ))}
+          </div>
+        </V2Section>
+      )}
 
-      <V2Section title="Recent activity" actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/payouts`)}>Payout history →</button>}>
-        <V2ActivityList items={FIXTURE_ACTIVITY} />
-      </V2Section>
+      {accts.length > 0 && <PortfolioPerformance series={data.series} />}
+
+      {data.activity.length > 0 && (
+        <V2Section title="Recent activity" actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/payouts`)}>Payout history →</button>}>
+          <V2ActivityList items={data.activity} />
+        </V2Section>
+      )}
 
       <V2Divider />
     </div>
+  );
+}
+
+/** Portfolio-level cumulative realized P&L (authoritative series in production; dev
+ *  fixture here). Range buttons slice the same series — never fabricate new points.
+ *  An empty/short series shows a truthful empty state, never a drawn-in line. */
+function PortfolioPerformance({ series: full }: { series: SeriesPoint[] }): JSX.Element {
+  const RANGES: Array<{ key: string; days: number | null }> = [
+    { key: '30D', days: 30 }, { key: '90D', days: 90 }, { key: 'All', days: null },
+  ];
+  const [range, setRange] = useState('90D');
+  const days = RANGES.find((r) => r.key === range)!.days;
+  const series = days == null ? full : full.slice(-days);
+  const last = series[series.length - 1]?.v ?? 0;
+  const hasSeries = full.length >= 2;
+  return (
+    <V2Section
+      title="Portfolio performance"
+      actions={hasSeries ? (
+        <span className="htv2-chart-ranges">
+          {RANGES.map((r) => (
+            <button key={r.key} className={`htv2-chart-range${range === r.key ? ' on' : ''}`} onClick={() => setRange(r.key)}>{r.key}</button>
+          ))}
+        </span>
+      ) : undefined}
+    >
+      <div className="htv2-chart-frame">
+        {hasSeries ? (
+          <>
+            <div className="htv2-chart-caption">
+              <span className="ht-t-label">Cumulative realized P&amp;L</span>
+              <span className={`ht-t-fin-md ht-num htv2-tone-${last > 0 ? 'positive' : last < 0 ? 'negative' : 'muted'}`}>
+                {formatMoney(last, { sign: true, maxFractionDigits: 0 })}
+              </span>
+            </div>
+            <V2AreaChart points={series} height={160} ariaLabel="Portfolio cumulative realized P&L" />
+          </>
+        ) : (
+          <p className="htv2-chart-empty ht-t-body-sm">No trading history yet. Your performance appears here once you place your first trades.</p>
+        )}
+      </div>
+    </V2Section>
   );
 }
