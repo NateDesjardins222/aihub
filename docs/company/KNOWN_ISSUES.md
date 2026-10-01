@@ -926,17 +926,43 @@ change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
 
 ## Customer Product Integrity Phase 1 (CPI)
 
-- **CPI-1 (P2/UX).** Portal→Atlas "Trade" handoff falls back to another *owned*
-  account if the linked publicId is not in Atlas VISIBLE_STATUSES (never cross-customer);
-  the `readAccountHandoff` resolver has no test. Candidate for the hardening phase.
-- **CPI-2 (P2).** Production Dashboard payout-count badge degrades to 0 on a fetch
-  error (error-as-zero) — the top-level accounts fetch was fixed to show an error
-  banner, this secondary badge was not. Not a fixture/ownership defect.
-- **CPI-3 (P3).** Anonymous affiliate `/apply` has no duplicate/email dedup (only a
-  5/min rate limit); logged-in applications dedup correctly (409 ALREADY_APPLIED).
-- **CPI-4 (note).** `portal-accounts.ts` duplicates the literal `5` for the active-slot
-  display instead of importing `MAX_ACTIVE_ACCOUNTS`; display-only, no enforcement risk.
+- **CPI-1 (P2/UX). RESOLVED — Customer System Hardening §4A.** Portal→Atlas handoff
+  no longer silently substitutes another account. The selection decision is a pure,
+  tested function (`apps/web/src/state/account-selection.ts`): a verified handoff
+  selects exactly the requested account; an unresolvable handoff raises
+  `handoffUnavailable` and the terminal shows a notice (`HandoffNotice.tsx`) rather
+  than passing a fallback off as the requested account. 8 regression cases
+  (`account-selection.test.ts`).
+- **CPI-2 (P2). RESOLVED — §4B.** The dashboard payout badge no longer renders a
+  failed `/certificates` fetch as `0`. `countBadge()` keeps the count unknown ("—")
+  on error, distinct from a real `0` (`apps/web/src/portal/metric-display.ts`,
+  5 regression cases).
+- **CPI-3 (P3). RESOLVED — §4C.** Anonymous affiliate `/apply` now dedups by email
+  (the only stable key for an anonymous applicant), mirroring the logged-in guard;
+  a DECLINED applicant may re-apply (`affiliates.ts submitApplication`, 3 regression
+  cases).
+- **CPI-4 (note). RESOLVED — §4D.** `portal-accounts.ts` reads the single
+  `MAX_ACTIVE_ACCOUNTS` constant it enforces with; the duplicated literal is gone.
+  Regression asserts the reported cap equals the enforcement constant.
 - No P0/P1. All customer business chains CONNECTED and cross-system reconciled
-  (see docs/CUSTOMER_PRODUCT_INTEGRITY_REPORT.md). EOD canonical flake root-caused as
+  (see docs/CUSTOMER_PRODUCT_INTEGRITY_REPORT.md and
+  docs/CUSTOMER_SYSTEM_HARDENING_REPORT.md). EOD canonical flake root-caused as
   a test-only fixed-sleep timing dependency and fixed deterministically; no risk-engine
   change.
+
+## Customer System Hardening Phase 1 (adversarial certification)
+
+- No P0/P1/P2 open. The four CPI carry-forwards above are RESOLVED with regressions.
+- Integrity detectors hardened against false positives and multi-corruption
+  (`customer-product-integrity.test.ts`, 9 cases).
+- `pnpm customer:certify` (FAST / `CUSTOMER_CERTIFY_DEEP=1`) aggregates the
+  customer-chain proofs, exits nonzero on failure, and refuses to target production.
+- **HARD-1 (residual, accepted).** The affiliate anonymous-dedup and the pre-existing
+  logged-in dedup are query-guards inside the submit transaction, not a DB unique
+  index, so a sub-second double-submit race could still create two rows. Mitigated by
+  the 5/min rate limit; a partial unique index is the future hardening if it ever
+  recurs. Not launch-blocking.
+- **EXTERNAL PRODUCTION UNVERIFIED.** Rithmic, Whop-production, the payout rail, KYC,
+  object storage and email are NOT connected in this environment and are NOT certified.
+  `customer:certify` certifies internal software only; see
+  docs/CUSTOMER_SYSTEM_CERTIFICATION.md.
