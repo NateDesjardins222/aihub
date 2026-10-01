@@ -70,8 +70,8 @@
 }
 
 /* ---- link ---- */
-.htv2-link { background: none; border: none; color: var(--ht-champagne); cursor: pointer; padding: 0; }
-.htv2-link:hover { color: var(--ht-text-strong); }
+/* .htv2-link is defined canonically in primitives.css (muted → strong, underline on
+   hover only, never default blue). Kept there so it is available on every page. */
 
 /* ---- tables ---- */
 .htv2-table-wrap { width: 100%; overflow-x: auto; }

@@ -830,3 +830,28 @@ New read-only operator tooling: `pnpm ops:check` (build, DB, providers, outbox h
 System Doctor, latest persisted integrity — never a deep scan). No economics,
 product-rule, RES-1, SEC-2, SEC-3, Portal V2, or Atlas change; no provider activated;
 no paid monitoring stack added.
+
+---
+
+## Portal V2 Full Product Rebuild (base `298a69c`, 2026-10-01)
+
+Frontend-only rebuild of the customer Portal V2 (dev-only `/portal-v2` review
+surface). No backend/economics/payout/rules/risk/lifecycle change. See
+`PORTAL_V2_REBUILD_REPORT.md`, `PORTAL_V2_PRODUCT_ARCHITECTURE.md`,
+`PORTAL_V2_VISUAL_SYSTEM.md`.
+
+- **PV2R-1 (P3 — FIXED, test-only).** `golden-path.core50k.test.ts` carried a
+  clock-triggered **test-data time-bomb**: it seeded `activatedAt: new Date()` and
+  recorded winning days hardcoded as `2026-10-01`…`2026-10-05`. The (correct,
+  unchanged) product rule counts qualifying winning days **strictly after** the
+  cycle-start date (= activation day), so the moment the real clock reached
+  2026-10-01 the first winning day was excluded (4 < 5) → `INSUFFICIENT_WINNING_DAYS`,
+  cascading to 5 failures (steps 10–15). Proven unrelated to the rebuild (zero server
+  code in the diff; it would fail identically on base on this date). Fixed by making
+  the fixture's dates **relative to now** so it can never rot again; no product,
+  payout, or economics logic changed. Canonical then green (3156 pass, 0 fail).
+- **PV2R-2 (status, not a defect).** Portal V2 remains **dev-only** and **not
+  migrated** to production; V1 is the live customer portal and instant rollback.
+  Owner Console is role-gated and absent for a normal customer. Human acceptance
+  (Nathan) is pending; Claude's claim is bounded to "candidate ready for human
+  acceptance."

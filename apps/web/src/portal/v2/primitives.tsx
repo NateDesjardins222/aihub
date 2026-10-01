@@ -111,3 +111,63 @@ export function V2EmptyState({ title, hint, action }: { title: string; hint?: st
 export function V2Card({ children, className = '' }: { children: ReactNode; className?: string }): JSX.Element {
   return <div className={`htv2-card ${className}`}>{children}</div>;
 }
+
+/**
+ * A horizontal financial summary — label-over-value stats separated by thin
+ * vertical rules, framed by a single hairline. This is the deliberate alternative
+ * to the "four giant stat cards" AI-dashboard cliché: one quiet surface, high
+ * density, tabular numerals. Wraps gracefully on narrow widths.
+ */
+export interface StatStripItem { label: string; value: ReactNode; tone?: 'default' | 'positive' | 'negative' | 'muted'; }
+export function V2StatStrip({ items }: { items: StatStripItem[] }): JSX.Element {
+  return (
+    <div className="htv2-stat-strip" data-testid="htv2-stat-strip">
+      {items.map((it, i) => (
+        <div className="htv2-stat" key={i}>
+          <div className="htv2-stat-label ht-t-label">{it.label}</div>
+          <div className={`htv2-stat-value ht-t-fin-md ht-num htv2-tone-${it.tone ?? 'default'}`}>{it.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A quiet attention row — shown ONLY when something authoritative needs the
+ * customer's action (payout eligible, breach, hold, billing). Never decorative.
+ */
+export function V2Attention({ tone = 'default', title, detail, action }: {
+  tone?: 'default' | 'positive' | 'warning' | 'negative';
+  title: ReactNode;
+  detail?: ReactNode;
+  action?: ReactNode;
+}): JSX.Element {
+  return (
+    <div className={`htv2-attention htv2-attention-${tone}`} role="status" data-testid="htv2-attention">
+      <span className="htv2-attention-dot" aria-hidden />
+      <div className="htv2-attention-body">
+        <span className="htv2-attention-title ht-t-body-sm">{title}</span>
+        {detail != null && <span className="htv2-attention-detail ht-t-meta">{detail}</span>}
+      </div>
+      {action != null && <div className="htv2-attention-action">{action}</div>}
+    </div>
+  );
+}
+
+/** A compact, quiet activity feed row (time · event · optional amount). */
+export interface ActivityItem { when: string; label: string; amount?: ReactNode; amountTone?: 'default' | 'positive' | 'negative' | 'muted'; }
+export function V2ActivityList({ items }: { items: ActivityItem[] }): JSX.Element {
+  return (
+    <ul className="htv2-activity" data-testid="htv2-activity">
+      {items.map((it, i) => (
+        <li className="htv2-activity-row" key={i}>
+          <span className="htv2-activity-when ht-t-meta ht-num">{it.when}</span>
+          <span className="htv2-activity-label ht-t-body-sm">{it.label}</span>
+          {it.amount != null && (
+            <span className={`htv2-activity-amt ht-t-fin-sm ht-num htv2-tone-${it.amountTone ?? 'default'}`}>{it.amount}</span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}

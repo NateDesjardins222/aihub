@@ -63,7 +63,8 @@ stretch the shell past the viewport).
 `designLabEnabled()` (a production build 404s). It routes its own sub-paths
 client-side (pushState + popstate):
 
-- `/portal-v2` → review dashboard landing
+- `/portal-v2` → review **Dashboard** (premium financial hierarchy: summary strip →
+  attention row (only when needed) → accounts (centerpiece) → recent activity)
 - `/portal-v2/accounts` → V2 Accounts (real presentational view, dev fixtures)
 - `/portal-v2/accounts/:id` → V2 Account Detail with tabs (overview/performance/controls/rules/activity)
 - `/portal-v2/dev/design-system` → the component design-system harness (dev-only)
@@ -93,3 +94,17 @@ server-side authorization at `/admin` remains authoritative regardless.
 
 > Do NOT "fix" a future scroll problem with a page-specific `overflow` override, a
 > magic viewport height, a spacer, or `!important`. Fix the ownership chain here.
+
+## See also
+
+The Full Product Rebuild (base `298a69c`) built on this contract without changing
+it. The visual direction (Inter Variable typography, champagne discipline, the
+no-default-underline link rule) and the product/IA/component system are documented
+separately:
+
+- `PORTAL_V2_VISUAL_SYSTEM.md` — typography, colour, champagne, geometry.
+- `PORTAL_V2_PRODUCT_ARCHITECTURE.md` — IA, shell, components, container seam.
+- `PORTAL_V2_HUMAN_ACCEPTANCE_CHECKLIST.md` / `PORTAL_V2_REBUILD_REPORT.md`.
+
+The UI face is Inter Variable, scoped to `.htv2` (the terminal/V1 keep DM Sans).
+Nav never underlines by default; `.htv2-link` underlines on hover/focus only.

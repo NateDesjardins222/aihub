@@ -15,6 +15,9 @@ import { registerDrawingDiagnostics } from './chart/drawings/diagnostics';
  */
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/jetbrains-mono';
+// Inter Variable — the Portal V2 UI/number face (scoped to `.htv2`; the terminal
+// and V1 keep DM Sans). Premium financial-UI standard with true tabular numerals.
+import '@fontsource-variable/inter';
 import './styles/theme.css';
 
 // A readable, drivable seam onto the drawing layer, for tools/drawing-matrix.mjs.

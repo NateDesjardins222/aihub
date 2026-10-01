@@ -369,11 +369,22 @@ describe('CORE 50K Golden Path — one business system, end to end', () => {
   it('9. five qualifying winning days recorded on the funded account via the authoritative day-close writer', async () => {
     // Bring the funded account to a withdrawable-profit state and record 5 winning
     // days through recordClosedDay (the exact writer the engine day-roll uses).
-    await db.update(accounts).set({ balanceMicros: 51_000 * M, dayStartBalanceMicros: 51_000 * M, dayStartEquityMicros: 51_000 * M, highWaterMarkMicros: 51_000 * M, activatedAt: new Date() }).where(eq(accounts.id, fundedAccountId));
+    //
+    // Dates are RELATIVE to "now" so this fixture can never rot: a hardcoded
+    // calendar (previously 2026-10-0X) silently breaks the day the real clock
+    // reaches it, because the (correct, unchanged) product rule counts winning days
+    // STRICTLY AFTER the cycle-start date, and the cycle starts on the account's
+    // activation day. Anchor activation 10 days ago, then record 5 winning days that
+    // all fall strictly after it (and all in the past).
+    const activated = new Date();
+    activated.setUTCDate(activated.getUTCDate() - 10);
+    const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+    await db.update(accounts).set({ balanceMicros: 51_000 * M, dayStartBalanceMicros: 51_000 * M, dayStartEquityMicros: 51_000 * M, highWaterMarkMicros: 51_000 * M, activatedAt: activated }).where(eq(accounts.id, fundedAccountId));
     for (let i = 0; i < 5; i += 1) {
-      const day = `2026-10-0${i + 1}`;
+      const d = new Date(activated);
+      d.setUTCDate(d.getUTCDate() + i + 1);
       await recordClosedDay(db, fundedAccountId, {
-        tradeDate: day, startingBalanceMicros: 50_800 * M, endingBalanceMicros: 51_000 * M, counted: true,
+        tradeDate: isoDay(d), startingBalanceMicros: 50_800 * M, endingBalanceMicros: 51_000 * M, counted: true,
       });
     }
     const rows = await db.select().from(dailyAccountStats).where(eq(dailyAccountStats.accountId, fundedAccountId));

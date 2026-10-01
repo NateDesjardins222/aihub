@@ -20,11 +20,17 @@
  */
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import { V2AppShell, type NavItem } from './Shell';
-import { V2Root, V2Section, V2Card, V2Metric, V2FinancialValue, V2Button, V2Metal, V2EmptyState } from './primitives';
+import {
+  V2Root, V2Section, V2Button, V2Metal, V2EmptyState,
+  V2StatStrip, V2Attention, V2ActivityList, V2Divider,
+} from './primitives';
 import { V2AccountsView } from './AccountsView';
-import { V2AccountDetail, DETAIL_TABS, type DetailTab } from './AccountDetail';
+import { V2AccountPanel } from './AccountPanel';
+import { V2AccountDetail, type DetailTab } from './AccountDetail';
+import { toAccountView } from './account-view';
 import { PortalV2Harness } from './Harness';
 import { FIXTURE_VIEW_LONG, fixtureDetailFor } from './fixtures';
+import { formatMoney } from './format';
 import type { AccountDetailFull, AccountSummary } from '../lib';
 import './tokens.css';
 import './type.css';
@@ -152,35 +158,74 @@ export function PortalV2Review(): JSX.Element {
       />
     );
   } else {
-    // Home / dashboard landing — a real, concise V2 landing (not a component dump).
-    crumb = <span>Portal V2 · <strong>Review</strong></span>;
-    const totalBalance = FIXTURE_VIEW_LONG.accounts.reduce((s, a) => s + a.balanceMicros, 0);
+    // Dashboard — the customer's answer to "where do I stand?". A premium financial
+    // hierarchy: summary strip → attention (only if needed) → accounts (centerpiece)
+    // → recent activity. Not a four-card SaaS dashboard, no hero banner.
+    crumb = <span>Portal V2 · <strong>Dashboard</strong></span>;
+    const accts = FIXTURE_VIEW_LONG.accounts;
+    const isEval = (a: AccountSummary): boolean => a.portalState.startsWith('EVALUATION');
+    const isFunded = (a: AccountSummary): boolean => a.accountType === 'FUNDED_SIM' && !a.portalState.startsWith('COMPLETED');
+    const activeCount = accts.filter((a) => ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'].includes(a.status)).length;
+    const totalBalance = accts.reduce((s, a) => s + a.balanceMicros, 0);
+    const breached = accts.filter((a) => a.portalState === 'FAILED');
+    const topAccounts = accts.slice(0, 4);
     content = (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ht-space-8)' }}>
-        <div>
-          <div className="ht-t-page-title"><V2Metal>Happy Trader</V2Metal> — Portal V2</div>
-          <p className="ht-t-body-sm" style={{ color: 'var(--ht-text-muted)', marginTop: 6 }}>
-            Isolated V2 review environment · DEV ONLY — representative values, no live session.
-          </p>
-        </div>
-        <V2Section title="Overview">
-          <V2Card>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--ht-space-5)' }}>
-              <V2Metric label="Accounts" value={String(FIXTURE_VIEW_LONG.accounts.length)} />
-              <V2Metric label="Active slots" value={`${FIXTURE_VIEW_LONG.activeSlotsUsed} / ${FIXTURE_VIEW_LONG.maxActiveSlots}`} />
-              <V2Metric label="Total balance" value={<V2FinancialValue tone="muted" size="md">{`$${Math.round(totalBalance / 1_000_000).toLocaleString()}`}</V2FinancialValue>} />
-            </div>
-          </V2Card>
-        </V2Section>
-        <V2Section title="Review the implemented V2 pages">
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <V2Button variant="primary" onClick={() => go(`${BASE}/accounts`)}>Open Accounts →</V2Button>
-            <V2Button variant="secondary" onClick={() => go(`${BASE}/dev/design-system`)}>Design system (dev)</V2Button>
+      <div className="htv2-page">
+        <header className="htv2-page-head">
+          <h1 className="ht-t-page-title">Dashboard</h1>
+          <p className="ht-t-meta">Your accounts, standing, and what needs attention.</p>
+        </header>
+
+        <V2StatStrip
+          items={[
+            { label: 'Active accounts', value: String(activeCount) },
+            { label: 'Evaluation', value: String(accts.filter(isEval).length) },
+            { label: 'Funded', value: String(accts.filter(isFunded).length) },
+            { label: 'Total balance', value: formatMoney(totalBalance, { maxFractionDigits: 0 }) },
+          ]}
+        />
+
+        {breached.length > 0 && (
+          <V2Attention
+            tone="negative"
+            title={`${breached.length} account${breached.length > 1 ? 's' : ''} breached`}
+            detail="A breached account can no longer trade. Review the account for details."
+            action={<V2Button variant="secondary" size="sm" onClick={() => go(`${BASE}/accounts`)}>Review</V2Button>}
+          />
+        )}
+
+        <V2Section
+          title="Your accounts"
+          actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/accounts`)}>View all accounts →</button>}
+        >
+          <div className="htv2-acct-grid">
+            {topAccounts.map((a) => (
+              <V2AccountPanel
+                key={a.id}
+                a={toAccountView(a)}
+                onDetails={() => go(`${BASE}/accounts/${encodeURIComponent(a.id)}`)}
+                onTrade={() => { window.location.href = `/?account=${a.publicId}`; }}
+              />
+            ))}
           </div>
         </V2Section>
+
+        <V2Section title="Recent activity">
+          <V2ActivityList
+            items={[
+              { when: 'Today', label: 'Evaluation account CORE 100K balance updated', amount: '+$3,200', amountTone: 'positive' },
+              { when: 'Yesterday', label: 'Funded account CORE 50K — winning day recorded', amount: '+$820', amountTone: 'positive' },
+              { when: '3 days ago', label: 'SELECT 100K account breached', amount: '-$4,100', amountTone: 'negative' },
+              { when: '1 week ago', label: 'CORE 100K evaluation account provisioned' },
+            ]}
+          />
+        </V2Section>
+
+        <V2Divider />
         <p className="ht-t-meta">
-          Only implemented V2 destinations appear in the sidebar. Payouts, Certificates, Achievements,
-          Billing and Support are not yet built in V2 and are intentionally omitted rather than shown as dead links.
+          Isolated V2 review · development environment — values are representative, not a live session.
+          Payouts, Certificates, Achievements, Billing and Support are not yet rebuilt in V2 and are
+          intentionally omitted from navigation rather than shown as dead links.
         </p>
       </div>
     );

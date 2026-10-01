@@ -38,8 +38,15 @@ describe('V2 excludes purple entirely', () => {
 });
 
 describe('V2 has no default link underlines', () => {
-  it('never sets text-decoration: underline', () => {
-    expect(allCss).not.toMatch(/text-decoration:\s*underline/);
+  // An underline is permitted ONLY as a hover/focus affordance on a text link
+  // (mission §58: "text links may underline on hover/focus where appropriate").
+  // Strip interactive rule blocks (:hover / :focus / :focus-visible) and assert
+  // nothing underlines in the resting state — no default, always-on underline.
+  const stripInteractiveRules = (css: string): string =>
+    css.replace(/[^{}]*:(?:hover|focus|focus-visible)[^{}]*\{[^{}]*\}/g, '');
+
+  it('never sets a default (resting-state) text-decoration: underline', () => {
+    expect(stripInteractiveRules(allCss)).not.toMatch(/text-decoration:\s*underline/);
   });
 });
 

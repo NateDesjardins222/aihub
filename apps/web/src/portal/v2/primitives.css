@@ -111,3 +111,89 @@
 /* ---- Empty state ---- */
 .htv2-empty { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: var(--ht-space-8) var(--ht-space-5); border: 1px dashed var(--ht-border); border-radius: var(--ht-radius-md); }
 .htv2-empty-hint { margin: 0; color: var(--ht-text-muted); max-width: 46ch; }
+
+/* ---- Dashboard: horizontal financial summary strip (the anti-four-card) ---- */
+.htv2-stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--ht-border-subtle);
+  border-radius: var(--ht-radius-md);
+  background: var(--ht-surface-1);
+}
+.htv2-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 140px;
+  padding: var(--ht-space-4) var(--ht-space-5);
+  border-left: 1px solid var(--ht-border-subtle);
+}
+.htv2-stat:first-child { border-left: none; }
+.htv2-stat-value { line-height: 1.1; }
+
+/* ---- Attention row (only rendered when action is genuinely required) ---- */
+.htv2-attention {
+  display: flex;
+  align-items: center;
+  gap: var(--ht-space-3);
+  padding: 10px var(--ht-space-4);
+  border: 1px solid var(--ht-border);
+  border-radius: var(--ht-radius-md);
+  background: var(--ht-surface-1);
+}
+.htv2-attention-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ht-text-muted); }
+.htv2-attention-positive { border-color: color-mix(in srgb, var(--ht-positive) 32%, var(--ht-border)); }
+.htv2-attention-positive .htv2-attention-dot { background: var(--ht-positive); }
+.htv2-attention-warning { border-color: color-mix(in srgb, var(--ht-warning) 32%, var(--ht-border)); }
+.htv2-attention-warning .htv2-attention-dot { background: var(--ht-warning); }
+.htv2-attention-negative { border-color: color-mix(in srgb, var(--ht-negative) 32%, var(--ht-border)); }
+.htv2-attention-negative .htv2-attention-dot { background: var(--ht-negative); }
+.htv2-attention-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.htv2-attention-title { color: var(--ht-text-strong); }
+.htv2-attention-action { flex: 0 0 auto; }
+
+/* ---- Recent activity (compact, quiet rows with thin separators) ---- */
+.htv2-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ht-border-subtle);
+  border-radius: var(--ht-radius-md);
+  background: var(--ht-surface-1);
+}
+.htv2-activity-row {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  align-items: baseline;
+  gap: var(--ht-space-3);
+  padding: 10px var(--ht-space-4);
+  border-top: 1px solid var(--ht-border-subtle);
+}
+.htv2-activity-row:first-child { border-top: none; }
+.htv2-activity-when { color: var(--ht-text-faint); white-space: nowrap; }
+.htv2-activity-label { color: var(--ht-text); min-width: 0; }
+.htv2-activity-amt { text-align: right; white-space: nowrap; }
+
+@media (max-width: 560px) {
+  .htv2-activity-row { grid-template-columns: 1fr auto; }
+  .htv2-activity-when { grid-column: 1 / -1; order: -1; }
+}
+
+/* ---- Page scaffolding (consistent header rhythm across V2 pages) ---- */
+.htv2-page { display: flex; flex-direction: column; gap: var(--ht-space-6); }
+.htv2-page-head { display: flex; flex-direction: column; gap: 4px; }
+.htv2-page-head .ht-t-page-title { margin: 0; }
+
+/* ---- Text link (never default browser blue; underline only on hover/focus) ---- */
+.htv2-link {
+  color: var(--ht-text-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color var(--ht-fast) var(--ht-ease);
+}
+.htv2-link:hover { color: var(--ht-text-strong); text-decoration: underline; text-underline-offset: 2px; }
+.htv2-link:focus-visible { outline: 2px solid var(--ht-border-focus); outline-offset: 2px; border-radius: var(--ht-radius-xs); }
