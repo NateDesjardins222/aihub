@@ -8,7 +8,7 @@
  * worker renders and delivers PENDING rows through the provider; a funded account
  * exists whether or not the email ever sends. See docs/notifications-v1.md.
  */
-import { and, asc, eq, lte } from 'drizzle-orm';
+import { and, asc, eq, lte, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { notificationMessages } from '../db/schema.js';
 import { events, type DomainEvent } from './events.js';
@@ -424,7 +424,14 @@ export async function deliverPendingNotifications(
       and(
         eq(notificationMessages.status, 'PENDING'),
         eq(notificationMessages.terminal, false),
-        lte(notificationMessages.availableAt, new Date()),
+        // Compare the due time against the DATABASE clock, not the Node client
+        // clock: availableAt is written with the DB's now() (column default and
+        // the retry-backoff update below both land on DB time), so filtering
+        // with a client-side `new Date()` can skip a just-enqueued, genuinely-due
+        // row whenever the DB clock is a hair ahead of the app's — harmless in
+        // production (the 5s worker retries) but a single-shot delivery in a test
+        // then leaves it PENDING. Using now() makes "is it due?" skew-free.
+        lte(notificationMessages.availableAt, sql`now()`),
       ),
     )
     .orderBy(asc(notificationMessages.availableAt))

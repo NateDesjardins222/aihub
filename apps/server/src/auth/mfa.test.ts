@@ -126,7 +126,7 @@ describe('at-rest sealing', () => {
     // the GCM tag must reject a genuine byte change, deterministically.
     const parts = sealed.split('.');
     const ciphertextBytes = Buffer.from(parts[3]!, 'base64url');
-    ciphertextBytes[0] ^= 0x01;
+    ciphertextBytes[0] = (ciphertextBytes[0] ?? 0) ^ 0x01;
     parts[3] = ciphertextBytes.toString('base64url');
     expect(open(parts.join('.'))).toBeNull();
   });
