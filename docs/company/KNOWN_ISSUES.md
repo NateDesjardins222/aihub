@@ -966,3 +966,66 @@ change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
   object storage and email are NOT connected in this environment and are NOT certified.
   `customer:certify` certifies internal software only; see
   docs/CUSTOMER_SYSTEM_CERTIFICATION.md.
+
+---
+
+## Portal Convergence Phase 1 — one canonical `/portal` (base `1a532e3`)
+
+The two competing customer portals are converged. **`/portal` is now the ONE
+canonical customer product: the approved V2 experience (`V2AppShell` sidebar + V2
+pages, `apps/web/src/portal/PortalV2App.tsx`) backed by the hardened authoritative
+customer core (`/api/v1/*`; the browser computes no business truth).** The rejected
+horizontal-nav V1 shell (`portal/PortalApp.tsx`) is no longer the customer runtime.
+`/portal-v2` remains a DEV-only review harness (fixtures, `designLabEnabled()`-gated,
+404 in production) — never a second production product. Authoritative docs:
+`docs/CANONICAL_CUSTOMER_PORTAL.md`, `docs/PORTAL_CONVERGENCE_MAP.md`,
+`docs/PORTAL_CONVERGENCE_REPORT.md`. The pre-convergence `PORTAL_V2_ROUTE_ARCHITECTURE.md`
+carries a superseded banner.
+
+**No P0 and no P1.** The items below are documented scope limitations where the V2
+presentation would otherwise require fabricating data the backend does not serve — all
+degrade truthfully, none fabricate.
+
+- **PCV-1 (P3, scope).** No portal-level cumulative performance chart on the Dashboard
+  (no authoritative portfolio-series endpoint). Per-account performance is live in
+  Account Detail. No curve is ever fabricated — the Dashboard chart renders only when an
+  authoritative series exists.
+- **PCV-2 (P3, scope).** Billing `totalSpent` roll-up is not shown (order price micros
+  are not exposed authoritatively); order rows are truthful. Payment method shows
+  none-on-file (provider-hosted checkout).
+- **PCV-3 (P3, scope).** Payouts `inReview` / `cyclesText` summary fields are blank where
+  no authoritative customer-facing source exists; standing, history, and lifetime-paid are
+  authoritative. Max paid payout cycles remain 5 (server-authoritative); no `3 of 12` or
+  invented cycle count renders.
+- **PCV-4 (P4, hygiene).** Profile / security / verification use the hardened V1 surfaces
+  (`ProfilePage`, `PayoutMethodsPage`) mounted inside the V2 shell; the richer V2
+  `ProfileView` has no backend yet, so it is not promoted (avoids fabricating identity
+  fields). Replace with a native V2 profile when the backend serves it.
+- **PCV-5 (P4, cleanup).** The legacy `portal/PortalApp.tsx` and its `pages/*Page.tsx`
+  remain in the tree, unrouted (no longer the customer runtime), pending a careful delete
+  in a follow-up. They are not reachable by any customer route.
+
+**Validation:** web typecheck PASS; production web build PASS; 189 web tests PASS (incl.
+new `portal-convergence.test.ts` fixture-firewall + route proofs); headless browser
+(logged-in, SPA nav) shows the canonical V2 shell at `/portal`, the rejected shell absent,
+0 console errors (screenshots in `docs/portal-convergence-screens/`); `customer:certify`
+FAST and DEEP PASS. Human L5 acceptance against the ACTUAL customer app (`/portal`)
+PENDING HUMAN (Nathan), with ChatGPT independent convergence review as directed.
+
+- **PCV-6 (P3, pre-existing test-infra flake — NOT a convergence defect, NOT a product
+  bug).** The full `pnpm validate:release` serialized suite (3295 tests, ~575s) surfaced
+  12 failures across 6 **server-side** files — `trading/{determinism,adversarial,
+  eod-trailing-engine}.test.ts`, `http/affiliate-{http,security}.test.ts`,
+  `db/schema.test.ts` — under heavy shared-Postgres + CPU contention. The signatures are
+  all isolation/contention, not logic: a `deadlock detected` on `DELETE accounts` in a
+  harness teardown (two live transactions), another file's lifecycle `endedAt` leaking
+  into `schema.test`, affiliate `409 already-applied` + cascading `undefined` from rows a
+  prior file left in the shared DB, and replay-determinism values drifting when `settle()`
+  wall-clock waits under-drain on a starved CPU. **Every one of the 6 files passes in
+  isolation on a freshly-prepared DB (48/48 tests green).** None is in code the Portal
+  Convergence changed — the diff from baseline `1a532e3` touches **0 server files** (web +
+  docs only). This is a latent full-run isolation fragility of the trading/affiliate test
+  harnesses (async engine work and shared seed rows bleeding across files), independent of
+  convergence. Recommended future hardening: quiesce `TradingEngine` async work before
+  harness teardown, and give the affiliate HTTP suites per-file DB isolation. Not
+  launch-blocking and not a customer-facing issue.

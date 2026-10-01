@@ -6,6 +6,22 @@
 
 ---
 
+> **⚠️ SUPERSEDED BY PORTAL CONVERGENCE PHASE 1 (2026-10-01).** This document
+> describes the pre-convergence world in which `/portal` served the V1 shell and
+> `/portal-v2` was an isolated dev harness. That split no longer exists.
+>
+> **`/portal` is now the ONE canonical customer product: the approved V2 experience
+> (the `V2AppShell` sidebar + V2 pages) backed by the hardened authoritative customer
+> core (`/api/v1/*`).** `App.tsx` mounts `portal/PortalV2App.tsx` at `/portal`. The
+> rejected horizontal-nav V1 shell is no longer the customer runtime. `/portal-v2`
+> remains a DEV-only review harness (fixtures, `designLabEnabled()`-gated, 404 in
+> production) — never a second production product.
+>
+> Authoritative current state: **`docs/CANONICAL_CUSTOMER_PORTAL.md`** and
+> **`docs/PORTAL_CONVERGENCE_MAP.md`**. The sections below are retained for history.
+
+---
+
 ## 1. Purpose
 
 How routing, authorization, and data dependencies are structured for Portal V2, and the migration path from the live V1 portal to V2 **without ever taking V1 offline**. Phase 1's rule: V1 stays production truth; V2 is built and proven in isolation; rollback = *do not switch the route*.
