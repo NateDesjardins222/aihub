@@ -923,3 +923,20 @@ change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
   + payout-ops surfaces; no Owner Console changes made (documented dependency).
 - No P0/P1 introduced by EXP1. No trading-economics, Atlas, provider, or Owner Console
   changes. Clubs use cumulative PAID trader-share only; tracked goals cannot be forged.
+
+## Customer Product Integrity Phase 1 (CPI)
+
+- **CPI-1 (P2/UX).** Portal→Atlas "Trade" handoff falls back to another *owned*
+  account if the linked publicId is not in Atlas VISIBLE_STATUSES (never cross-customer);
+  the `readAccountHandoff` resolver has no test. Candidate for the hardening phase.
+- **CPI-2 (P2).** Production Dashboard payout-count badge degrades to 0 on a fetch
+  error (error-as-zero) — the top-level accounts fetch was fixed to show an error
+  banner, this secondary badge was not. Not a fixture/ownership defect.
+- **CPI-3 (P3).** Anonymous affiliate `/apply` has no duplicate/email dedup (only a
+  5/min rate limit); logged-in applications dedup correctly (409 ALREADY_APPLIED).
+- **CPI-4 (note).** `portal-accounts.ts` duplicates the literal `5` for the active-slot
+  display instead of importing `MAX_ACTIVE_ACCOUNTS`; display-only, no enforcement risk.
+- No P0/P1. All customer business chains CONNECTED and cross-system reconciled
+  (see docs/CUSTOMER_PRODUCT_INTEGRITY_REPORT.md). EOD canonical flake root-caused as
+  a test-only fixed-sleep timing dependency and fixed deterministically; no risk-engine
+  change.

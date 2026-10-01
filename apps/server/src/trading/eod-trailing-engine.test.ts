@@ -15,11 +15,11 @@
  *  - a trailing-drawdown breach fires when equity <= floor (remaining <= 0).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { requireInstrument } from '@atlas/instruments';
 import { TradingEngine } from './engine.js';
 import { OPEN_MARKET_TS, ScriptedMarket, createFixture, settle, type TestFixture } from './harness.js';
-import { accounts } from '../db/schema.js';
+import { accounts, orders } from '../db/schema.js';
 
 requireInstrument('NQ');
 const $ = (d: number): number => d * 1_000_000;
@@ -32,13 +32,37 @@ const CLEAN_ENV = {
 let fixture: TestFixture; let market: ScriptedMarket; let engine: TradingEngine; let seq = 0;
 const cid = (): string => `eod-${(seq += 1)}-${Date.now()}`;
 
+const TERMINAL_ORDER = new Set(['FILLED', 'REJECTED', 'CANCELLED', 'EXPIRED']);
+/**
+ * Wait for a submitted order to reach a terminal state by OBSERVING the
+ * authoritative orders row, not by sleeping a fixed number of milliseconds. The
+ * fill transaction persists the position and balance before it stamps the
+ * terminal status, so once the status is terminal the balance/floor this test
+ * asserts on are already durable. This is deterministic under full-suite load —
+ * a fixed `settle(20)` was not, which is why this file flaked only under
+ * canonical contention while passing in isolation.
+ */
+async function waitOrderTerminal(clientOrderId: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const [row] = await fixture.db
+      .select({ status: orders.status })
+      .from(orders)
+      .where(and(eq(orders.accountId, fixture.accountId), eq(orders.clientOrderId, clientOrderId)));
+    if (row && TERMINAL_ORDER.has(row.status)) return;
+    if (Date.now() > deadline) throw new Error(`order ${clientOrderId} not terminal (last=${row?.status ?? 'missing'})`);
+    await settle(2);
+  }
+}
 async function buy(qty: number): Promise<void> {
-  await engine.submitOrder({ accountId: fixture.accountId, userId: fixture.userId, clientOrderId: cid(), symbol: 'NQ', side: 'BUY', qty, type: 'MARKET' });
-  await settle(20);
+  const id = cid();
+  await engine.submitOrder({ accountId: fixture.accountId, userId: fixture.userId, clientOrderId: id, symbol: 'NQ', side: 'BUY', qty, type: 'MARKET' });
+  await waitOrderTerminal(id);
 }
 async function sell(qty: number): Promise<void> {
-  await engine.submitOrder({ accountId: fixture.accountId, userId: fixture.userId, clientOrderId: cid(), symbol: 'NQ', side: 'SELL', qty, type: 'MARKET' });
-  await settle(20);
+  const id = cid();
+  await engine.submitOrder({ accountId: fixture.accountId, userId: fixture.userId, clientOrderId: id, symbol: 'NQ', side: 'SELL', qty, type: 'MARKET' });
+  await waitOrderTerminal(id);
 }
 async function acct(): Promise<{ balanceMicros: number; drawdownFloorMicros: number; status: string; currentTradeDate: string | null }> {
   const [r] = await fixture.db.select().from(accounts).where(eq(accounts.id, fixture.accountId));

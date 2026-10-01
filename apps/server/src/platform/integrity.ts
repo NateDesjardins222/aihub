@@ -236,6 +236,94 @@ async function checkResolvedTicketHasSummary(db: Database, organizationId: strin
   };
 }
 
+/**
+ * Stranded purchase: an order whose money is retained (COMPLETED /
+ * PROVISION_BLOCKED / PROVISION_FAILED) but which never produced a provisioned
+ * account past a generous processing window. The commerce layer has a recovery
+ * sweep + event re-drive, so a *transient* unprovisioned order is normal; one
+ * that is still unprovisioned after the window is a paid customer with no account
+ * and MUST be operator-visible (Customer Product Integrity §76/§77). WARNING, not
+ * CRITICAL: the money is retained and the state is recoverable, not corrupt.
+ */
+async function checkStrandedPurchase(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db.execute(sql`
+    select o.id from commercial_orders o
+    where o.organization_id = ${organizationId}
+      and o.status in ('COMPLETED','PROVISION_BLOCKED','PROVISION_FAILED')
+      and o.created_at < now() - interval '30 minutes'
+      and not exists (
+        select 1 from entitlements e
+        where e.commercial_order_id = o.id and e.consumed_by_account_id is not null
+      )
+    limit 50
+  `);
+  const arr = rows as unknown as Array<{ id: string }>;
+  return {
+    key: 'INV_STRANDED_PURCHASE',
+    status: arr.length ? 'FAIL' : 'PASS',
+    severity: arr.length ? 'WARNING' : 'INFO',
+    affectedCount: arr.length,
+    expected: 'every retained-money order provisions an account within the processing window',
+    actual: arr.length ? `${arr.length} paid order(s) stranded without an account` : 'no stranded purchases',
+    sampleRefs: arr.slice(0, 10).map((r) => r.id),
+  };
+}
+
+/**
+ * Orphan account: an account with NO terms source at all — neither a pinned
+ * product version (profile_version_id) nor a legacy rule template
+ * (rule_template_id). Such an account cannot resolve its own rules, so its
+ * economics are undefined. (An account may legitimately have one or the other.)
+ */
+async function checkOrphanAccount(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db.execute(sql`
+    select a.id from accounts a
+    where a.organization_id = ${organizationId}
+      and a.profile_version_id is null
+      and a.rule_template_id is null
+    limit 50
+  `);
+  const arr = rows as unknown as Array<{ id: string }>;
+  return {
+    key: 'INV_ORPHAN_ACCOUNT',
+    status: arr.length ? 'FAIL' : 'PASS',
+    severity: arr.length ? 'CRITICAL' : 'INFO',
+    affectedCount: arr.length,
+    expected: 'every account has a terms source (product version or rule template)',
+    actual: arr.length ? `${arr.length} account(s) with no resolvable terms` : 'all accounts have terms',
+    sampleRefs: arr.slice(0, 10).map((r) => r.id),
+  };
+}
+
+/**
+ * Ownership mismatch: an impossible provenance relation where an entitlement was
+ * consumed into an account owned by a DIFFERENT user than the entitlement, or the
+ * entitlement belongs to a different user than its originating order ("order
+ * customer A → entitlement A → account B"). This is the cross-customer corruption
+ * detector — CRITICAL.
+ */
+async function checkOwnershipMismatch(db: Database, organizationId: string): Promise<IntegrityCheck> {
+  const rows = await db.execute(sql`
+    select e.id from entitlements e
+    where e.organization_id = ${organizationId}
+      and (
+        exists (select 1 from accounts a where a.id = e.consumed_by_account_id and a.user_id <> e.user_id)
+        or exists (select 1 from commercial_orders o where o.id = e.commercial_order_id and o.user_id <> e.user_id)
+      )
+    limit 50
+  `);
+  const arr = rows as unknown as Array<{ id: string }>;
+  return {
+    key: 'INV_OWNERSHIP_MISMATCH',
+    status: arr.length ? 'FAIL' : 'PASS',
+    severity: arr.length ? 'CRITICAL' : 'INFO',
+    affectedCount: arr.length,
+    expected: 'order, entitlement and provisioned account all share one owner',
+    actual: arr.length ? `${arr.length} entitlement(s) with cross-owner provenance` : 'all provenance owners agree',
+    sampleRefs: arr.slice(0, 10).map((r) => r.id),
+  };
+}
+
 export async function runIntegrityChecks(db: Database, organizationId: string, persist = true): Promise<IntegrityReport> {
   const runId = randomUUID();
   const checks: IntegrityCheck[] = [
@@ -250,6 +338,9 @@ export async function runIntegrityChecks(db: Database, organizationId: string, p
     await checkOneCommissionPerOrder(db, organizationId),
     await checkRemediationFourEyes(db, organizationId),
     await checkResolvedTicketHasSummary(db, organizationId),
+    await checkStrandedPurchase(db, organizationId),
+    await checkOrphanAccount(db, organizationId),
+    await checkOwnershipMismatch(db, organizationId),
   ];
   void affiliateConversions;
   if (persist) {

@@ -83,6 +83,9 @@ export function PortalApp(): JSX.Element {
   const ownerConsole = canAccessOwnerConsole(user);
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname, window.location.hash));
   const [accounts, setAccounts] = useState<AccountsView | null>(null);
+  // Distinguish a real fetch failure from a legitimately empty customer: on error
+  // we must NOT render zeros as if authoritative (Customer Product Integrity §68/§182).
+  const [accountsError, setAccountsError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     try { return window.localStorage.getItem(SEL_KEY); } catch { return null; }
   });
@@ -104,7 +107,12 @@ export function PortalApp(): JSX.Element {
   }, []);
 
   const loadAccounts = useCallback(() => {
-    void api.get<AccountsView>('/api/v1/portal/accounts').then(setAccounts).catch(() => setAccounts({ accounts: [], activeSlotsUsed: 0, maxActiveSlots: 5 }));
+    void api
+      .get<AccountsView>('/api/v1/portal/accounts')
+      .then((v) => { setAccounts(v); setAccountsError(false); })
+      // Do NOT substitute a fake empty view — that would read as a brand-new
+      // customer. Flag the error so the UI can tell failure from true zero.
+      .catch(() => setAccountsError(true));
   }, []);
   useEffect(loadAccounts, [loadAccounts]);
 
@@ -153,6 +161,12 @@ export function PortalApp(): JSX.Element {
       </header>
 
       <main className="pt-main">
+        {accountsError && accounts === null && (
+          <div className="pt-error" role="alert" data-testid="pt-accounts-error">
+            <span>We couldn’t load your accounts. This is a connection problem, not an empty account.</span>
+            <button className="pt-link" onClick={() => { setAccountsError(false); loadAccounts(); }}>Retry</button>
+          </div>
+        )}
         {route.name === 'dashboard' && <DashboardPage accounts={accounts} onOpen={(id) => go({ name: 'account', id, tab: 'overview' })} onNav={(n) => go({ name: n } as Route)} />}
         {route.name === 'accounts' && <AccountsPage onOpen={(id) => go({ name: 'account', id, tab: 'overview' })} onToast={showToast} onChanged={loadAccounts} />}
         {route.name === 'account' && <AccountDetailPage accountId={route.id} tab={route.tab} onTab={(t) => go({ name: 'account', id: route.id, tab: t })} onBack={() => go({ name: 'accounts' })} onToast={showToast} />}
