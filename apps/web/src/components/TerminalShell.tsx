@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { useSession, activeInstrument } from '../state/session';
 import { AccountBar } from './AccountBar';
+import { HandoffNotice } from './HandoffNotice';
 import { AppRail } from './AppRail';
 import { DrawingRail } from '../panels/DrawingRail';
 import { ChartGrid } from '../panels/ChartGrid';
@@ -62,6 +63,8 @@ export function TerminalShell(): JSX.Element {
 
       <div className="terminal-column">
         <AccountBar onToggleRail={() => setRailOpen(!railOpen)} railOpen={railOpen} />
+
+        <HandoffNotice />
 
         <div className="terminal-body">
         <div className="terminal-main" style={{ paddingBottom: bottomOpen ? bottomHeight : 22 }}>

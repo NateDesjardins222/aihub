@@ -7,6 +7,7 @@ import { api, setAccessToken, setRefreshToken, getRefreshToken } from '../api/cl
 import type { ApiAccount, ApiInstrument, ApiUser, AuthResponse, LoginResult } from '../api/types';
 import { isMfaChallenge } from '../api/types';
 import { attachPreferences } from './preferences';
+import { resolveAccountSelection } from './account-selection';
 
 export type SessionPhase = 'BOOTING' | 'SIGNED_OUT' | 'SIGNED_IN';
 
@@ -44,6 +45,15 @@ interface SessionState {
   mfaChallengeToken: string | null;
   /** The trade the chart is being asked to show, if any. */
   chartFocus: ChartFocus | null;
+  /**
+   * The Portal handoff publicId (`/?account=<publicId>`) that was requested on
+   * the last load but could NOT be resolved against the owner-scoped account
+   * list — because the account is no longer visible to the trader (locked/
+   * failed/completed), or the link was stale. Non-null means the terminal is
+   * showing a DIFFERENT, owned account than the one the link asked for, and the
+   * UI must say so. Null at every other time. Never persisted.
+   */
+  handoffUnavailable: string | null;
 
   boot: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -54,6 +64,8 @@ interface SessionState {
   setActiveSymbol: (symbol: string) => void;
   refreshAccounts: () => Promise<void>;
   focusTrade: (focus: ChartFocus | null) => void;
+  /** Dismiss the "requested account unavailable" handoff notice. */
+  clearHandoffNotice: () => void;
 }
 
 const SELECTED_ACCOUNT_KEY = 'atlas.selectedAccountId';
@@ -70,6 +82,7 @@ export const useSession = create<SessionState>((set, get) => ({
   busy: false,
   mfaChallengeToken: null,
   chartFocus: null,
+  handoffUnavailable: null,
 
   /** Restore a session from the persisted refresh token, if there is one. */
   async boot() {
@@ -150,7 +163,13 @@ export const useSession = create<SessionState>((set, get) => ({
 
   selectAccount(id) {
     localStorage.setItem(SELECTED_ACCOUNT_KEY, id);
-    set({ selectedAccountId: id });
+    // A deliberate account switch resolves any stale handoff notice: the trader
+    // has now chosen for themselves.
+    set({ selectedAccountId: id, handoffUnavailable: null });
+  },
+
+  clearHandoffNotice() {
+    set({ handoffUnavailable: null });
   },
 
   setActiveSymbol(symbol) {
@@ -178,32 +197,34 @@ export const useSession = create<SessionState>((set, get) => ({
     // the browser never asserts a permission the server did not grant. The param
     // is consumed once, then stripped from the URL so a later refresh or a manual
     // account switch is not overridden by a stale query string.
+    //
+    // The DECISION — which account to open, and whether an explicit handoff was
+    // honoured — is a pure function (resolveAccountSelection) so the §4A
+    // invariant can be proven exhaustively: an explicit, unresolvable handoff is
+    // NEVER silently swapped for another account; it is surfaced via
+    // handoffUnavailable so the terminal can say the requested account is not
+    // available instead of pretending the handoff succeeded.
     const handoff = readAccountHandoff();
-    const handoffAccount = handoff ? accountsResponse.accounts.find((a) => a.publicId === handoff) : undefined;
-
     const remembered = localStorage.getItem(SELECTED_ACCOUNT_KEY);
-    const stillExists = accountsResponse.accounts.some((a) => a.id === remembered);
-    // With nothing remembered, open on a PRACTICE account rather than whatever
-    // happens to be first: an evaluation account has a drawdown and a daily
-    // loss limit, and a trader opening the terminal to try something out should
-    // not have to notice that before their first order.
-    const practice = accountsResponse.accounts.find((a) => a.accountType === 'PRACTICE');
-    const selectedAccountId = handoffAccount
-      ? handoffAccount.id
-      : stillExists
-        ? remembered
-        : (practice?.id ?? accountsResponse.accounts[0]?.id ?? null);
+    const resolution = resolveAccountSelection({
+      accounts: accountsResponse.accounts,
+      handoff,
+      remembered,
+    });
 
-    // Persist an explicit handoff selection so it survives the reload the
-    // portal link triggers, exactly as a manual selection would.
-    if (handoffAccount) {
-      try { localStorage.setItem(SELECTED_ACCOUNT_KEY, handoffAccount.id); } catch { /* ignore */ }
+    // Persist an explicit handoff selection so it survives the reload the portal
+    // link triggers, exactly as a manual selection would. Only a RESOLVED handoff
+    // is persisted — a failed handoff must not overwrite what the trader last
+    // chose, and its fallback selection is not the trader's choice to remember.
+    if (resolution.handoffResolved && resolution.selectedAccountId) {
+      try { localStorage.setItem(SELECTED_ACCOUNT_KEY, resolution.selectedAccountId); } catch { /* ignore */ }
     }
 
     set({
       accounts: accountsResponse.accounts,
       instruments: instrumentsResponse.instruments,
-      selectedAccountId,
+      selectedAccountId: resolution.selectedAccountId,
+      handoffUnavailable: resolution.handoffUnavailable,
     });
   },
 }));

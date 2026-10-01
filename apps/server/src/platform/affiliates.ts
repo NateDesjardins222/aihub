@@ -79,13 +79,20 @@ export async function submitApplication(db: Database, input: ApplicationInput): 
 
   return db.transaction(async (tx) => {
     const scoped = tx as unknown as Database;
-    // Prevent duplicate active applications for the same logged-in user.
-    if (input.userId) {
-      const [existing] = await tx.select({ id: affiliates.id, status: affiliates.status }).from(affiliates)
-        .where(and(eq(affiliates.organizationId, input.organizationId), eq(affiliates.userId, input.userId)));
-      if (existing && existing.status !== 'DECLINED') {
-        throw ApiError.conflict('ALREADY_APPLIED', 'You already have an affiliate application or account.');
-      }
+    // Prevent duplicate active applications. A logged-in applicant is matched by
+    // their user id; an ANONYMOUS applicant by email — the only stable key we
+    // have for them. Before this, the anonymous path had no dedup at all (only a
+    // 5/min rate limit), so a double-submit or an accidental refresh created two
+    // affiliate rows for the same person (CPI-3 / customer-system hardening §4C).
+    // A DECLINED affiliate may re-apply; anything else (SUBMITTED/UNDER_REVIEW/
+    // approved/active) is treated as the existing application.
+    const dupMatch = input.userId
+      ? or(eq(affiliates.userId, input.userId), eq(affiliates.email, email))
+      : eq(affiliates.email, email);
+    const [existing] = await tx.select({ id: affiliates.id, status: affiliates.status }).from(affiliates)
+      .where(and(eq(affiliates.organizationId, input.organizationId), dupMatch));
+    if (existing && existing.status !== 'DECLINED') {
+      throw ApiError.conflict('ALREADY_APPLIED', 'An affiliate application already exists for this email.');
     }
     let identityId: string | null = null;
     if (input.userId) {

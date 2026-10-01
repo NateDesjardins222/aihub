@@ -13,6 +13,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { accountLifecycles, accountProfileVersions, accountProfiles, accounts } from '../db/schema.js';
 import { recordAudit } from './audit.js';
+import { MAX_ACTIVE_ACCOUNTS } from './account-limit.js';
 import type { Actor } from './actor.js';
 
 export const MAX_NICKNAME_LENGTH = 60;
@@ -293,7 +294,10 @@ export async function listPortalAccounts(
     .where(eq(accounts.userId, userId))
     .orderBy(desc(accounts.createdAt));
 
-  const MAX_ACTIVE = 5;
+  // Single source of truth for the active-account cap — the same constant the
+  // server enforces in account-limit.ts, never a re-typed literal that could
+  // drift out of agreement with enforcement (CPI-4 / customer-system hardening §4D).
+  const MAX_ACTIVE = MAX_ACTIVE_ACCOUNTS;
   const summaries: PortalAccountSummary[] = [];
   let used = 0;
   for (const row of rows) {

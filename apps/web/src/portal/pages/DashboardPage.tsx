@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 import type { Route } from '../PortalApp';
 import { AccountCard } from './AccountCard';
 import { type AccountsView, type Cert, EmptyState, Skeleton } from '../lib';
+import { countBadge } from '../metric-display';
 
 export function DashboardPage({
   accounts, onOpen, onNav,
@@ -13,10 +14,18 @@ export function DashboardPage({
   onNav: (n: Route['name']) => void;
 }): JSX.Element {
   const [payoutCount, setPayoutCount] = useState<number | null>(null);
+  // A failed fetch is NOT zero payouts. Collapsing it to 0 told a funded trader
+  // they had been paid nothing — error dressed as an authoritative figure. The
+  // count stays unknown ("—") on error, which a legitimate zero (shown as "0")
+  // never does. (Customer-system hardening §4B / CPI-2.)
+  const [payoutError, setPayoutError] = useState(false);
   useEffect(() => {
     void api.get<{ certificates: Cert[] }>('/api/v1/portal/certificates')
-      .then((r) => setPayoutCount(r.certificates.filter((c) => c.type === 'PAYOUT').length))
-      .catch(() => setPayoutCount(0));
+      .then((r) => {
+        setPayoutCount(r.certificates.filter((c) => c.type === 'PAYOUT').length);
+        setPayoutError(false);
+      })
+      .catch(() => setPayoutError(true));
   }, []);
 
   if (!accounts) {
@@ -40,7 +49,11 @@ export function DashboardPage({
       <div className="pt-summary" data-testid="pt-summary">
         <div><div className="s-k">Active accounts</div><div className="s-v num">{accounts.activeSlotsUsed} <span style={{ color: 'var(--pt-dim)', fontSize: 15 }}>/ {accounts.maxActiveSlots}</span></div></div>
         <div><div className="s-k">Funded</div><div className="s-v num">{funded}</div></div>
-        <div><div className="s-k">Payouts</div><div className="s-v num">{payoutCount ?? '—'}</div></div>
+        <div><div className="s-k">Payouts</div><div
+          className="s-v num"
+          data-testid={payoutError ? 'pt-payout-error' : 'pt-payout-count'}
+          title={payoutError ? "Couldn't load your payouts right now. This is not a zero." : undefined}
+        >{countBadge(payoutCount, payoutError)}</div></div>
         <div><div className="s-k">Total accounts</div><div className="s-v num">{accounts.accounts.length}</div></div>
       </div>
 

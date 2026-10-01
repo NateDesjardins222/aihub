@@ -24,6 +24,7 @@ import {
   unarchiveAccount,
   PortalAccountError,
 } from './portal-accounts.js';
+import { MAX_ACTIVE_ACCOUNTS } from './account-limit.js';
 import { createResetOrder, resetQuote } from './account-reset.js';
 import { exchangeMonthKey, previousMonthKey, runInactivitySweep } from './account-inactivity.js';
 
@@ -126,7 +127,9 @@ describe('portal account service', () => {
     const view = await listPortalAccounts(db, userId);
     expect(view.accounts.map((x) => x.id).sort()).toEqual([a, b].sort());
     expect(view.activeSlotsUsed).toBe(1); // only `a` is active; `b` failed
-    expect(view.maxActiveSlots).toBe(5);
+    // §4D / CPI-4: the portal reports the SAME cap the server enforces, from the
+    // single `MAX_ACTIVE_ACCOUNTS` constant — never a re-typed literal that could drift.
+    expect(view.maxActiveSlots).toBe(MAX_ACTIVE_ACCOUNTS);
 
     await archiveAccount(db, userId, b);
     const hidden = await listPortalAccounts(db, userId);

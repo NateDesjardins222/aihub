@@ -1,0 +1,35 @@
+.handoff-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.handoff-notice-text {
+  flex: 1 1 auto;
+}
+
+.handoff-notice-text strong {
+  font-weight: 600;
+}
+
+.handoff-notice-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--warn);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  opacity: 0.8;
+}
+
+.handoff-notice-dismiss:hover {
+  opacity: 1;
+}

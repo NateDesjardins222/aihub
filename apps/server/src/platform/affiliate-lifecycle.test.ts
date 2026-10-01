@@ -145,6 +145,36 @@ describe('locked activation flow', () => {
     await expect(submitApplication(db, { organizationId: org, userId, fullName: 'Dup', email: 'dup@creator.test', actor: OWNER })).rejects.toThrow();
   });
 
+  // Customer-system hardening §4C / CPI-3: the ANONYMOUS apply path (no userId)
+  // had no dedup — a double-submit created two affiliate rows for one person.
+  it('a duplicate ANONYMOUS application for the same email is refused', async () => {
+    const email = 'anon-dup@creator.test';
+    await submitApplication(db, { organizationId: org, fullName: 'Anon One', email, actor: OWNER });
+    await expect(
+      submitApplication(db, { organizationId: org, fullName: 'Anon Two', email, actor: OWNER }),
+    ).rejects.toThrow();
+    // Exactly one affiliate row exists for that email.
+    const rows = await db.select().from(affiliates).where(and(eq(affiliates.organizationId, org), eq(affiliates.email, email)));
+    expect(rows.length).toBe(1);
+  });
+
+  it('anonymous dedup is case-insensitive on email', async () => {
+    await submitApplication(db, { organizationId: org, fullName: 'Case A', email: 'Case.Dup@creator.test', actor: OWNER });
+    await expect(
+      submitApplication(db, { organizationId: org, fullName: 'Case B', email: 'case.dup@CREATOR.test', actor: OWNER }),
+    ).rejects.toThrow();
+  });
+
+  it('a DECLINED anonymous applicant may re-apply with the same email', async () => {
+    const email = 'anon-redo@creator.test';
+    const { affiliateId } = await submitApplication(db, { organizationId: org, fullName: 'Redo', email, actor: OWNER });
+    await reviewApplication(db, affiliateId, 'DECLINE', OWNER, { declineReason: 'not yet' });
+    // Re-application after a decline is allowed, exactly as for logged-in users.
+    await expect(
+      submitApplication(db, { organizationId: org, fullName: 'Redo Again', email, actor: OWNER }),
+    ).resolves.toBeTruthy();
+  });
+
   it('a disabled/terminated affiliate code does not resolve', async () => {
     const userId = await makeUser();
     const { affiliateId } = await submitApplication(db, { organizationId: org, userId, fullName: 'Term Later', email: 'term@creator.test', actor: OWNER });
