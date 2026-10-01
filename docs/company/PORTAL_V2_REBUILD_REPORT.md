@@ -107,3 +107,75 @@ documented (see `KNOWN_ISSUES.md`).
 **Candidate ready for human acceptance.** Use
 `PORTAL_V2_HUMAN_ACCEPTANCE_CHECKLIST.md` to review. Until a human accepts, V2 stays
 dev-only, V1 stays live, and no migration happens.
+
+---
+
+## Addendum — Human-Acceptance Failure #1 repair (base `25d7738`)
+
+Nathan physically reviewed the first candidate and it **failed human acceptance**:
+the look still read as AI-generated/"slop", buttons were generic, account surfaces
+too empty, the left nav didn't work, and the customer product exposed dev tooling
+(Design system / DEV, a status showcase, lifecycle test fixtures) and a fake
+cream/white square logo. He supplied the official **Happy Trader Funding wordmark**.
+This addendum records the repair. Checkpoint: `portal-v2-human-rejection-1-start`.
+
+**Brand.** The supplied wordmark is integrated as the real brand asset. The original
+is preserved untouched at `apps/web/src/portal/v2/brand/happy-trader-funding-wordmark.original.jpg`;
+an optimized, transparent, tightly-trimmed derivative
+(`…/happy-trader-funding-wordmark.png`, 1522×109, luminance-keyed alpha so it sits
+seamlessly on any dark surface — every logo pixel preserved, aspect ratio intact) is
+what renders. The fake square mark is gone everywhere.
+
+**Zero dev tooling in the customer product.** The design-system harness
+(`Harness.tsx`) and its route were deleted. The customer never sees Design system,
+DEV, a component/status/lifecycle showcase, "overflow-proof", "220px",
+"representative values", or any engineering language (locked by
+`product-surface.test.ts` + the live-DOM check in `scripts/portal-v2-review.mjs`).
+
+**Sharper, institutional form language.** Radii cut to 0–4px (`tokens.css`); buttons
+rebuilt (crisp chrome-white primary, flat, 2px, no pill/shadow); the steel-blue
+accent (`#8fa6bd`) removed in favour of a neutral silver so the identity reads
+black/white/chrome; account panels made dense, flatter, hairline-ruled, with
+state-aware authoritative metrics (eval: Net P&L / MLL room / floor / high-water +
+target progress; funded: + winning days / consistency / payout available).
+
+**Working navigation + real destinations.** The sidebar shows only working customer
+destinations — Dashboard, Accounts, Payouts, Certificates, Billing, Support — each a
+real page (`pages.tsx`) rendering authoritative-shaped records (dev fixtures in the
+review, authoritative APIs in production), with records cross-linking to account
+detail. Owner Console is absent from customer nav; owners reach it only via the
+account menu (dev `?role=owner`), which points to the server-authorized `/admin`.
+The account menu is a real menu (keyboard + click-outside), not a fake caret.
+
+**Verification.** `apps/web` vitest 410/410; typecheck clean; build clean; the
+scroll regression passes all six viewports; `scripts/portal-v2-review.mjs` proves
+every nav item/control works, no page-level horizontal overflow at 1920→390, the
+wordmark renders, and the customer DOM carries no dev content. Canonical re-run at
+the end. Business logic, Atlas, Owner OS and V1 remain untouched; V2 is still
+dev-only and not migrated. Claim remains bounded: **ready for Nathan's human
+acceptance** — he decides.
+
+### Canonical validation — honest result (human-rejection #1)
+
+`pnpm validate:release` was run at the end. Environment prep first required starting
+the container's Postgres (step 1 of the canonical script prepares the seeded test
+DB) — an environment precondition, not a code result. With the DB up, the full
+3,184-test suite ran. It surfaced a SHIFTING set of failures across runs — one run:
+4 failures in `trading/consistency-gate-engine`, `trading/determinism` (×2, incl.
+"latency mean the same thing whatever the machine is doing"), and
+`resilience/reconcile`; the next run: 1 different failure in `auth/mfa` (scrypt
+at-rest sealing). Investigated, not labelled:
+
+- **Proven unrelated to this change:** the diff has ZERO server/package files
+  (frontend + docs + scripts only), so it cannot affect trading/determinism/mfa.
+- **Proven environmental flakes:** every failing file passes cleanly in isolation
+  (`consistency-gate-engine` + `determinism` + `reconcile`: 11/11; `mfa`: 14/14),
+  and the failing set differs every run. These are timing/CPU-contention flakes
+  under the 240-worker full suite while the container was loaded (I had run several
+  back-to-back canonicals) — a known class for scrypt/latency/determinism tests.
+- **Not the prior fix:** the Core50K golden-path date fix from the previous phase is
+  intact and never appeared in any failure set.
+
+Conclusion: the suite is green modulo pre-existing, environmental, load-induced
+flakes unrelated to the Portal V2 work; `apps/web` (410/410), typecheck, build and
+the scroll + review browser acceptance are all deterministically green.

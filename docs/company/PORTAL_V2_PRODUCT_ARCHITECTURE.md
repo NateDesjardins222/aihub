@@ -199,3 +199,26 @@ Resilience / Security / Ops / Economics / Payout / Risk work.
   ≤8px, borders-first elevation (no heavy SaaS shadows).
 - `scripts/portal-v2-scroll.mjs` — real headless-Chromium proof of workspace
   scroll movement across six viewports.
+
+---
+
+## Human-rejection #1 revision (base `25d7738`)
+
+- **Destinations.** The customer sidebar now carries the real set — Dashboard,
+  Accounts, Payouts, Certificates, Billing, Support — each a working page
+  (`pages.tsx`: `V2PayoutsPage`, `V2CertificatesPage`, `V2BillingPage`,
+  `V2SupportPage`) rendering authoritative-shaped records (dev fixtures in the review,
+  authoritative endpoints in production via containers), cross-linking to account
+  detail. Achievements is omitted (no fake badges).
+- **No dev tooling in the customer product.** The design-system harness and its route
+  were **deleted**. No Design system / DEV entry, no component/status/lifecycle
+  showcase, no engineering language — enforced by `product-surface.test.ts` and the
+  live-DOM check in `scripts/portal-v2-review.mjs`.
+- **Brand asset.** `apps/web/src/portal/v2/brand/happy-trader-funding-wordmark.png`
+  (derivative, rendered) + `…-wordmark.original.jpg` (preserved original). Imported in
+  `Shell.tsx` as the sidebar brand; mobile renders it height-constrained in the top
+  strip.
+- **Owner entry.** Owner Console is never in customer nav. The shell's `V2AccountMenu`
+  (a real keyboard/click-outside menu) carries the owner entry for owners only
+  (dev `?role=owner`), pointing at the server-authorized `/admin`.
+- **Account menu.** Real menu with Sign out (and owner entry for owners); no fake caret.

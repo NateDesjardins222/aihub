@@ -105,3 +105,70 @@ export const FIXTURE_DETAILS: Record<string, AccountDetailFull> = {
   completed: detail(FIXTURE_ACCOUNTS.completed!, { rules: FUNDED_RULES }),
   large: detail(FIXTURE_ACCOUNTS.large!, { rules: FUNDED_RULES }),
 };
+
+// ---- Rebuild (human-rejection #1): funded extras + destination-page fixtures ----
+// Dev-only. In production these come from authoritative endpoints (payout
+// eligibility, certificates, commerce orders, support tickets); the dev review
+// supplies representative values so every customer destination is navigable.
+import type { AccountViewExtra } from './account-view';
+import type { ActivityItem } from './primitives';
+import type { Cert } from '../lib';
+import type { PayoutsView, BillingView, SupportView } from './pages';
+
+const DAY = 86_400_000;
+const now = Date.now();
+
+/** Authoritative funded-only extras (winning days / consistency / payout) by id. */
+export const FIXTURE_FUNDED_EXTRA: Record<string, AccountViewExtra> = {
+  'f-funded': { winningDays: 4, requiredWinningDays: 5, consistencyRatio: 0.38, payoutState: 'NOT_ELIGIBLE', availableMicros: 0 },
+  'f-large': { winningDays: 8, requiredWinningDays: 5, consistencyRatio: 0.41, payoutState: 'ELIGIBLE', availableMicros: 2_000 * M },
+  'f-done': { winningDays: 12, requiredWinningDays: 5, consistencyRatio: 0.33 },
+};
+
+export const FIXTURE_PAYOUTS: PayoutsView = {
+  totalPaidMicros: 8_600 * M,
+  availableMicros: 2_000 * M,
+  inReviewMicros: 1_250 * M,
+  cyclesText: '3 of 12',
+  standing: [
+    { accountId: 'f-large', accountLabel: 'CORE 150K · •••• 6789', eligible: true, availableMicros: 2_000 * M, winningDays: '8 / 5' },
+    { accountId: 'f-funded', accountLabel: 'CORE 50K · •••• 2213', eligible: false, availableMicros: 0, winningDays: '4 / 5' },
+  ],
+  history: [
+    { id: 'p1', dateMs: now - 6 * DAY, accountLabel: 'CORE 150K · •••• 6789', grossMicros: 2_500 * M, traderMicros: 2_250 * M, state: 'PAID' },
+    { id: 'p2', dateMs: now - 20 * DAY, accountLabel: 'CORE 150K · •••• 6789', grossMicros: 1_800 * M, traderMicros: 1_620 * M, state: 'PAID' },
+    { id: 'p3', dateMs: now - 2 * DAY, accountLabel: 'CORE 150K · •••• 6789', grossMicros: 1_250 * M, traderMicros: 1_125 * M, state: 'UNDER_REVIEW' },
+  ],
+};
+
+export const FIXTURE_CERTS: Cert[] = [
+  { id: 'c1', certificatePublicId: 'HT-FT-10294', verificationToken: 'tok_ft_10294', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 50K — Funded Trader', amountMicros: 50_000 * M, status: 'ISSUED', issuedAt: now - 34 * DAY, accountId: 'f-funded' },
+  { id: 'c2', certificatePublicId: 'HT-PO-20571', verificationToken: 'tok_po_20571', type: 'PAYOUT', publicDisplayName: 'Payout Award', amountMicros: 2_250 * M, status: 'ISSUED', issuedAt: now - 6 * DAY, accountId: 'f-large' },
+  { id: 'c3', certificatePublicId: 'HT-FT-10880', verificationToken: 'tok_ft_10880', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 150K — Funded Trader', amountMicros: 150_000 * M, status: 'ISSUED', issuedAt: now - 61 * DAY, accountId: 'f-large' },
+];
+
+export const FIXTURE_BILLING: BillingView = {
+  totalSpentMicros: 897 * M,
+  orderCount: 3,
+  activeEntitlements: 2,
+  orders: [
+    { id: 'o1', dateMs: now - 61 * DAY, item: 'CORE 150K Evaluation', amountMicros: 549 * M, state: 'PAID', accountId: 'f-large' },
+    { id: 'o2', dateMs: now - 40 * DAY, item: 'CORE 100K Evaluation', amountMicros: 349 * M, state: 'PAID', accountId: 'f-eval' },
+    { id: 'o3', dateMs: now - 34 * DAY, item: 'CORE 50K Evaluation', amountMicros: 199 * M, state: 'REFUNDED', accountId: 'f-funded' },
+  ],
+};
+
+export const FIXTURE_SUPPORT: SupportView = {
+  openCount: 1,
+  tickets: [
+    { id: 't1', ref: 'HT-4821', subject: 'Payout timing question', state: 'WAITING', updatedMs: now - 1 * DAY },
+    { id: 't2', ref: 'HT-4790', subject: 'Reset my failed evaluation', state: 'RESOLVED', updatedMs: now - 12 * DAY },
+  ],
+};
+
+export const FIXTURE_ACTIVITY: ActivityItem[] = [
+  { when: 'Today', label: 'CORE 100K evaluation — balance updated', amount: '+$3,200', amountTone: 'positive' },
+  { when: '2 days ago', label: 'CORE 150K payout requested', amount: '$1,250', amountTone: 'muted' },
+  { when: '6 days ago', label: 'CORE 150K payout paid', amount: '+$2,250', amountTone: 'positive' },
+  { when: '3 days ago', label: 'SELECT 100K account breached', amount: '-$4,100', amountTone: 'negative' },
+];

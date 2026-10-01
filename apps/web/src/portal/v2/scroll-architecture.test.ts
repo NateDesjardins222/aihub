@@ -61,27 +61,33 @@ describe('Portal V2 scroll ownership — CSS contract', () => {
   });
 });
 
-describe('Portal V2 review shell — honest navigation', () => {
-  it('the review nav shows only implemented destinations (no dead Payouts/Certificates/etc.)', () => {
+describe('Portal V2 — honest customer navigation (rebuilt at human-rejection #1)', () => {
+  it('the sidebar shows only real customer destinations — no dev tooling, no owner', () => {
     const keys = REVIEW_NAV.map((n) => n.key);
-    expect(keys).toEqual(['home', 'accounts', 'design']);
-    expect(keys).not.toContain('payouts');
-    expect(keys).not.toContain('certificates');
+    expect(keys).toEqual(['dashboard', 'accounts', 'payouts', 'certificates', 'billing', 'support']);
+    // The rejected entries are gone from customer navigation entirely.
+    expect(keys).not.toContain('design');
     expect(keys).not.toContain('owner');
   });
 
-  it('the design-system entry is marked development-only', () => {
-    expect(REVIEW_NAV.find((n) => n.key === 'design')?.status).toBe('dev');
+  it('no nav item carries a dev/engineering tag', () => {
+    for (const n of REVIEW_NAV) expect((n as { status?: string }).status).toBeUndefined();
   });
 
-  it('routes parse to the real V2 pages', () => {
-    expect(parseRoute('/portal-v2')).toEqual({ view: 'home' });
-    expect(parseRoute('/portal-v2/')).toEqual({ view: 'home' });
+  it('every visible destination parses to a real page view', () => {
+    expect(parseRoute('/portal-v2')).toEqual({ view: 'dashboard' });
+    expect(parseRoute('/portal-v2/')).toEqual({ view: 'dashboard' });
     expect(parseRoute('/portal-v2/accounts')).toEqual({ view: 'accounts' });
     expect(parseRoute('/portal-v2/accounts/f-eval')).toEqual({ view: 'detail', id: 'f-eval' });
-    expect(parseRoute('/portal-v2/dev/design-system')).toEqual({ view: 'design' });
+    expect(parseRoute('/portal-v2/payouts')).toEqual({ view: 'payouts' });
+    expect(parseRoute('/portal-v2/certificates')).toEqual({ view: 'certificates' });
+    expect(parseRoute('/portal-v2/billing')).toEqual({ view: 'billing' });
+    expect(parseRoute('/portal-v2/support')).toEqual({ view: 'support' });
+    // Owner is reachable (account menu, owners only) but is NOT a customer nav key.
     expect(parseRoute('/portal-v2/owner')).toEqual({ view: 'owner' });
-    // Unknown sub-paths fall back to home, never a blank/trapped screen.
-    expect(parseRoute('/portal-v2/nonsense')).toEqual({ view: 'home' });
+    // The removed design-system route no longer resolves — it falls back to the dashboard.
+    expect(parseRoute('/portal-v2/dev/design-system')).toEqual({ view: 'dashboard' });
+    // Unknown sub-paths fall back to the dashboard, never a blank/trapped screen.
+    expect(parseRoute('/portal-v2/nonsense')).toEqual({ view: 'dashboard' });
   });
 });

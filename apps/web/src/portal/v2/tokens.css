@@ -50,9 +50,12 @@
   --ht-negative-bg: rgba(217, 106, 99, 0.12);
   --ht-warning: #cf9f57;
   --ht-warning-bg: rgba(207, 159, 87, 0.12);
-  /* A single, quiet interactive accent — NOT purple, NOT saturated blue. A cool
-     desaturated steel that recedes; champagne carries brand emphasis instead. */
-  --ht-accent: #8fa6bd;
+  /* A single, quiet interactive accent — chrome/silver to match the wordmark, NOT
+     purple, NOT blue, NOT the old steel (#8fa6bd read "tech/SaaS" and was removed
+     at human review). It is a neutral light silver so "Evaluation" and interactive
+     hints read as part of the black/white/chrome identity; champagne carries the
+     premium accent, semantic green/red/amber carry meaning. */
+  --ht-accent: #c3c4c8;
 
   /* ---- Spacing scale (4-based; no arbitrary 13/27/37) ---- */
   --ht-space-1: 4px;
@@ -65,11 +68,16 @@
   --ht-space-10: 40px;
   --ht-space-12: 48px;
 
-  /* ---- Radii (restrained; ≤8px on application surfaces) ---- */
-  --ht-radius-xs: 2px;
-  --ht-radius-sm: 4px;
-  --ht-radius-md: 6px;
-  --ht-radius-lg: 8px;
+  /* ---- Radii (SHARP institutional geometry; human review rejected soft cards) ----
+     Trading-workstation / private-bank language: edges are nearly square. 0–4px
+     only; 6px reserved for the rare large surface. Fully-round pills (progress,
+     dots) use literal 999px — a shape, not a card corner. */
+  --ht-radius-xs: 0px;
+  --ht-radius-sm: 2px;
+  --ht-radius-md: 3px;
+  --ht-radius-lg: 4px;
+  /* Fully-round pills (progress bars, dots, markers) use the literal 999px in
+     component CSS — a shape, not a card corner — so this token file stays ≤8px. */
 
   /* ---- Elevation (borders first; shadow is a whisper, never a SaaS drop) ---- */
   --ht-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4);

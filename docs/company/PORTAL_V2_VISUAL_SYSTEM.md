@@ -132,3 +132,27 @@ vertical scroll; no page-level horizontal overflow at any width.
 Both strip CSS comments before scanning, so descriptive prose that *names* a
 forbidden thing ("NOT purple") never trips the guard — the guards police what the
 code *does*, not how it explains itself.
+
+---
+
+## Human-rejection #1 revision (base `25d7738`)
+
+The first candidate failed human acceptance for reading as AI-generated/soft. The
+visual system was sharpened without abandoning the quiet-luxury principles:
+
+- **Brand.** The supplied **Happy Trader Funding wordmark** (chrome/silver on black)
+  is the brand mark — a trimmed, transparent raster derivative in the sidebar
+  (original preserved). No fake square. The UI around it stays quiet so the metallic
+  wordmark carries the identity.
+- **Geometry.** Radii cut to **0–4px** (`--ht-radius-xs 0 / sm 2 / md 3 / lg 4`);
+  near-square, institutional. Fully-round `999px` only for true pills.
+- **Buttons.** Rebuilt: primary is a crisp **chrome-white** surface with near-black
+  text (not cream), flat, 2px, no pill, no shadow; secondary = dark + 1px graphite;
+  tertiary = quiet text. Compact 28–32px.
+- **Colour.** The steel-blue accent (`#8fa6bd`) was **removed** — it read tech/SaaS.
+  `--ht-accent` is now a neutral **silver** (`#c3c4c8`); identity is black / white /
+  chrome with champagne as the restrained premium accent and green/red/amber purely
+  semantic.
+- **Density / less card.** Account objects are flatter, hairline-ruled, with a dense
+  2-column authoritative metric grid; concepts are separated by rules and alignment,
+  not boxed. Tables are flat ledgers (`.htv2-ledger`).

@@ -1,35 +1,36 @@
 /**
- * Portal V2 — dev REVIEW shell (Portal V2 Scroll/Shell Hotfix).
+ * Portal V2 — dev REVIEW shell (rebuilt at human-rejection #1).
  *
  * The coherent review entry Nathan opens at `/portal-v2` in a DEVELOPMENT build
- * (guarded by designLabEnabled() in App.tsx; falls through to a 404 in production).
- * Unlike the old harness (a component showcase with decorative dead navigation and
- * a hard-coded Owner Console), this is a REAL V2 shell with WORKING client-side
- * navigation between the V2 pages that actually exist today — Accounts (Phase 1)
- * and Account Detail with its tabs (Phase 2) — driven by the same presentational
- * components production will mount, using clearly-labelled DEV fixtures (there is no
- * session here). Nothing is faked as finished: only implemented destinations appear
- * in the nav; the design-system harness is a clearly dev-only sub-route.
+ * (gated by designLabEnabled() in App.tsx; a production build 404s). It is a REAL,
+ * sharp, institutional customer portal with WORKING client-side navigation across
+ * every destination the sidebar shows — Dashboard, Accounts, Account Detail,
+ * Payouts, Certificates, Billing, Support — driven by the same presentational
+ * components production mounts, using clearly dev-only fixtures (there is no session
+ * here).
  *
- * Owner Console is ROLE-GATED and defaults to OFF (a normal customer never sees it).
- * It appears only on an explicit dev opt-in (`?role=owner`) so the owner variant can
- * be reviewed without faking a production role. Server-side authorization is always
- * authoritative regardless of this UI.
- *
- * Vertical scrolling is owned by the workspace (see PORTAL_V2_SCROLL_ARCHITECTURE.md).
+ * HARD invariants from the human rejection:
+ *  - the brand is the supplied Happy Trader Funding wordmark (no fake square);
+ *  - the customer never sees a Design system / DEV entry, a component/status/lifecycle
+ *    showcase, or any engineering language — all of that was removed;
+ *  - every visible sidebar destination and control actually works (no dead links);
+ *  - Owner Console is NEVER in customer navigation — it lives only in the account
+ *    menu, owner-only, behind the dev `?role=owner` override; server stays authoritative.
  */
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
-import { V2AppShell, type NavItem } from './Shell';
+import { V2AppShell, V2AccountMenu, type NavItem, type AccountMenuAction } from './Shell';
 import {
-  V2Root, V2Section, V2Button, V2Metal, V2EmptyState,
-  V2StatStrip, V2Attention, V2ActivityList, V2Divider,
+  V2Section, V2Button, V2StatStrip, V2Attention, V2ActivityList, V2Divider,
 } from './primitives';
 import { V2AccountsView } from './AccountsView';
 import { V2AccountPanel } from './AccountPanel';
 import { V2AccountDetail, type DetailTab } from './AccountDetail';
-import { toAccountView } from './account-view';
-import { PortalV2Harness } from './Harness';
-import { FIXTURE_VIEW_LONG, fixtureDetailFor } from './fixtures';
+import { V2PayoutsPage, V2CertificatesPage, V2BillingPage, V2SupportPage, V2OwnerNotice } from './pages';
+import { toAccountView, productLabel } from './account-view';
+import {
+  FIXTURE_VIEW_LONG, fixtureDetailFor, FIXTURE_FUNDED_EXTRA,
+  FIXTURE_PAYOUTS, FIXTURE_CERTS, FIXTURE_BILLING, FIXTURE_SUPPORT, FIXTURE_ACTIVITY,
+} from './fixtures';
 import { formatMoney } from './format';
 import type { AccountDetailFull, AccountSummary } from '../lib';
 import './tokens.css';
@@ -37,46 +38,52 @@ import './type.css';
 
 const BASE = '/portal-v2';
 
-/** Only destinations with a real, usable V2 implementation today. No fake breadth. */
+/** Only destinations with a real, working V2 implementation. No dev tooling, no dead links. */
 export const REVIEW_NAV: readonly NavItem[] = [
-  { key: 'home', label: 'Dashboard' },
+  { key: 'dashboard', label: 'Dashboard' },
   { key: 'accounts', label: 'Accounts' },
-  { key: 'design', label: 'Design system', status: 'dev' },
+  { key: 'payouts', label: 'Payouts' },
+  { key: 'certificates', label: 'Certificates' },
+  { key: 'billing', label: 'Billing' },
+  { key: 'support', label: 'Support' },
 ];
 
 export type Route =
-  | { view: 'home' }
+  | { view: 'dashboard' }
   | { view: 'accounts' }
   | { view: 'detail'; id: string }
-  | { view: 'design' }
+  | { view: 'payouts' }
+  | { view: 'certificates' }
+  | { view: 'billing' }
+  | { view: 'support' }
   | { view: 'owner' };
 
 export function parseRoute(pathname: string): Route {
   const p = pathname.replace(/\/+$/, '') || BASE;
-  if (p === BASE) return { view: 'home' };
+  if (p === BASE) return { view: 'dashboard' };
   if (p === `${BASE}/accounts`) return { view: 'accounts' };
   const m = /^\/portal-v2\/accounts\/(.+)$/.exec(p);
   if (m) return { view: 'detail', id: decodeURIComponent(m[1]!) };
-  if (p === `${BASE}/dev/design-system`) return { view: 'design' };
+  if (p === `${BASE}/payouts`) return { view: 'payouts' };
+  if (p === `${BASE}/certificates`) return { view: 'certificates' };
+  if (p === `${BASE}/billing`) return { view: 'billing' };
+  if (p === `${BASE}/support`) return { view: 'support' };
   if (p === `${BASE}/owner`) return { view: 'owner' };
-  return { view: 'home' };
+  return { view: 'dashboard' }; // unknown sub-paths → dashboard, never a blank/trapped screen
 }
 
 function pathForNav(key: string): string {
-  switch (key) {
-    case 'home': return BASE;
-    case 'accounts': return `${BASE}/accounts`;
-    case 'design': return `${BASE}/dev/design-system`;
-    case 'owner': return `${BASE}/owner`;
-    default: return BASE;
-  }
+  return key === 'dashboard' ? BASE : `${BASE}/${key}`;
 }
 
 function activeKeyFor(route: Route): string {
   if (route.view === 'detail') return 'accounts';
-  if (route.view === 'design') return 'design';
+  if (route.view === 'owner') return '';
   return route.view;
 }
+
+const ACCTS = FIXTURE_VIEW_LONG.accounts;
+const extraFor = (a: AccountSummary) => FIXTURE_FUNDED_EXTRA[a.id];
 
 export function PortalV2Review(): JSX.Element {
   const [pathname, setPathname] = useState(() =>
@@ -84,7 +91,6 @@ export function PortalV2Review(): JSX.Element {
   );
   const [tab, setTab] = useState<DetailTab>('overview');
 
-  // Role gate: customer by default; Owner Console only on explicit dev opt-in.
   const showOwner = useMemo(() => {
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('role') === 'owner';
@@ -102,7 +108,6 @@ export function PortalV2Review(): JSX.Element {
     if (window.location.pathname !== to) {
       window.history.pushState({}, '', full);
       setPathname(to);
-      // A fresh page starts at the top of the workspace, never a trapped position.
       const ws = document.querySelector('.htv2-workspace');
       if (ws) ws.scrollTop = 0;
     }
@@ -110,139 +115,159 @@ export function PortalV2Review(): JSX.Element {
 
   const route = parseRoute(pathname);
   const onNavigate = useCallback((key: string): void => go(pathForNav(key)), [go]);
+  const openAccount = useCallback((id: string): void => go(`${BASE}/accounts/${encodeURIComponent(id)}`), [go]);
+  const openTrade = useCallback((publicId: string): void => { window.location.href = `/?account=${publicId}`; }, []);
 
-  // The design-system harness brings its OWN shell — render it standalone so we
-  // don't double-nest shells.
-  if (route.view === 'design') return <PortalV2Harness />;
+  // The account menu: real actions. Owner Console (owners only) lives HERE, never in nav.
+  const accountActions: AccountMenuAction[] = [];
+  if (showOwner) accountActions.push({ key: 'owner', label: 'Owner Console', tone: 'owner', onSelect: () => go(`${BASE}/owner`) });
+  accountActions.push({ key: 'signout', label: 'Sign out', onSelect: () => { window.location.href = '/'; } });
 
-  const nav = REVIEW_NAV;
   let content: JSX.Element;
   let crumb: JSX.Element;
 
   if (route.view === 'accounts') {
-    crumb = <span>Portal V2 · <strong>Accounts</strong></span>;
+    crumb = <Crumb trail={['Accounts']} />;
     content = (
       <V2AccountsView
         state={{ status: 'ready', view: FIXTURE_VIEW_LONG }}
+        extraFor={extraFor}
         actions={{
-          onOpen: (a: AccountSummary) => go(`${BASE}/accounts/${encodeURIComponent(a.id)}`),
-          onGetAccount: () => go(BASE),
+          onOpen: (a) => openAccount(a.id),
+          onTrade: (a) => openTrade(a.publicId),
+          onGetAccount: () => { window.location.href = '/'; },
         }}
       />
     );
   } else if (route.view === 'detail') {
-    const summary = FIXTURE_VIEW_LONG.accounts.find((a) => a.id === route.id);
+    const summary = ACCTS.find((a) => a.id === route.id);
     const detail: AccountDetailFull | null = summary ? fixtureDetailFor(summary) : null;
-    crumb = <span>Portal V2 · Accounts · <strong>{summary?.product?.name ?? 'Account'}</strong></span>;
+    crumb = <Crumb trail={['Accounts', summary ? productLabel(summary) : 'Account']} />;
     content = detail ? (
       <V2AccountDetail
         state={{ status: 'ready', detail }}
         tab={tab}
         onTab={setTab}
-        actions={{ onBack: () => go(`${BASE}/accounts`) }}
+        actions={{ onBack: () => go(`${BASE}/accounts`), onTrade: (d) => openTrade(d.publicId) }}
       />
     ) : (
       <V2AccountDetail state={{ status: 'not-found' }} tab={tab} onTab={setTab} actions={{ onBack: () => go(`${BASE}/accounts`) }} />
     );
+  } else if (route.view === 'payouts') {
+    crumb = <Crumb trail={['Payouts']} />;
+    content = <V2PayoutsPage view={FIXTURE_PAYOUTS} onOpenAccount={openAccount} />;
+  } else if (route.view === 'certificates') {
+    crumb = <Crumb trail={['Certificates']} />;
+    content = <V2CertificatesPage certs={FIXTURE_CERTS} onOpenAccount={openAccount} />;
+  } else if (route.view === 'billing') {
+    crumb = <Crumb trail={['Billing']} />;
+    content = <V2BillingPage view={FIXTURE_BILLING} onOpenAccount={openAccount} />;
+  } else if (route.view === 'support') {
+    crumb = <Crumb trail={['Support']} />;
+    content = <V2SupportPage view={FIXTURE_SUPPORT} />;
   } else if (route.view === 'owner') {
-    // Reached only via the role-gated Owner Console entry (dev `?role=owner`). This
-    // is a truthful placeholder: the customer Portal V2 review does not implement an
-    // owner surface — the real Owner Console is a separate app at /admin, server-
-    // authorized. We never render a fake owner product here.
-    crumb = <span>Portal V2 · <strong>Owner Console</strong></span>;
-    content = (
-      <V2EmptyState
-        title="Owner Console is a separate application"
-        hint="The operator console lives at /admin and is authorized server-side. It is not part of the customer Portal V2 review; this entry is shown only because the dev role override is active."
-        action={<V2Button variant="secondary" size="sm" onClick={() => go(BASE)}>Back to review</V2Button>}
-      />
-    );
+    crumb = <Crumb trail={['Owner Console']} />;
+    content = <V2OwnerNotice onBack={() => go(BASE)} onOpenAdmin={() => { window.location.href = '/admin'; }} />;
   } else {
-    // Dashboard — the customer's answer to "where do I stand?". A premium financial
-    // hierarchy: summary strip → attention (only if needed) → accounts (centerpiece)
-    // → recent activity. Not a four-card SaaS dashboard, no hero banner.
-    crumb = <span>Portal V2 · <strong>Dashboard</strong></span>;
-    const accts = FIXTURE_VIEW_LONG.accounts;
-    const isEval = (a: AccountSummary): boolean => a.portalState.startsWith('EVALUATION');
-    const isFunded = (a: AccountSummary): boolean => a.accountType === 'FUNDED_SIM' && !a.portalState.startsWith('COMPLETED');
-    const activeCount = accts.filter((a) => ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'].includes(a.status)).length;
-    const totalBalance = accts.reduce((s, a) => s + a.balanceMicros, 0);
-    const breached = accts.filter((a) => a.portalState === 'FAILED');
-    const topAccounts = accts.slice(0, 4);
-    content = (
-      <div className="htv2-page">
-        <header className="htv2-page-head">
-          <h1 className="ht-t-page-title">Dashboard</h1>
-          <p className="ht-t-meta">Your accounts, standing, and what needs attention.</p>
-        </header>
-
-        <V2StatStrip
-          items={[
-            { label: 'Active accounts', value: String(activeCount) },
-            { label: 'Evaluation', value: String(accts.filter(isEval).length) },
-            { label: 'Funded', value: String(accts.filter(isFunded).length) },
-            { label: 'Total balance', value: formatMoney(totalBalance, { maxFractionDigits: 0 }) },
-          ]}
-        />
-
-        {breached.length > 0 && (
-          <V2Attention
-            tone="negative"
-            title={`${breached.length} account${breached.length > 1 ? 's' : ''} breached`}
-            detail="A breached account can no longer trade. Review the account for details."
-            action={<V2Button variant="secondary" size="sm" onClick={() => go(`${BASE}/accounts`)}>Review</V2Button>}
-          />
-        )}
-
-        <V2Section
-          title="Your accounts"
-          actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/accounts`)}>View all accounts →</button>}
-        >
-          <div className="htv2-acct-grid">
-            {topAccounts.map((a) => (
-              <V2AccountPanel
-                key={a.id}
-                a={toAccountView(a)}
-                onDetails={() => go(`${BASE}/accounts/${encodeURIComponent(a.id)}`)}
-                onTrade={() => { window.location.href = `/?account=${a.publicId}`; }}
-              />
-            ))}
-          </div>
-        </V2Section>
-
-        <V2Section title="Recent activity">
-          <V2ActivityList
-            items={[
-              { when: 'Today', label: 'Evaluation account CORE 100K balance updated', amount: '+$3,200', amountTone: 'positive' },
-              { when: 'Yesterday', label: 'Funded account CORE 50K — winning day recorded', amount: '+$820', amountTone: 'positive' },
-              { when: '3 days ago', label: 'SELECT 100K account breached', amount: '-$4,100', amountTone: 'negative' },
-              { when: '1 week ago', label: 'CORE 100K evaluation account provisioned' },
-            ]}
-          />
-        </V2Section>
-
-        <V2Divider />
-        <p className="ht-t-meta">
-          Isolated V2 review · development environment — values are representative, not a live session.
-          Payouts, Certificates, Achievements, Billing and Support are not yet rebuilt in V2 and are
-          intentionally omitted from navigation rather than shown as dead links.
-        </p>
-      </div>
-    );
+    crumb = <Crumb trail={['Dashboard']} />;
+    content = <Dashboard onOpenAccount={openAccount} onTrade={openTrade} go={go} />;
   }
 
   return (
-    <V2Root>
+    <div className="htv2">
       <V2AppShell
         active={activeKeyFor(route)}
         onNavigate={onNavigate}
-        nav={nav}
-        showOwner={showOwner}
+        nav={REVIEW_NAV}
         breadcrumb={crumb}
-        utilities={<V2Button variant="secondary" size="sm">Account ▾</V2Button>}
+        utilities={<V2AccountMenu label="Account" actions={accountActions} />}
       >
         {content}
       </V2AppShell>
-    </V2Root>
+    </div>
+  );
+}
+
+function Crumb({ trail }: { trail: string[] }): JSX.Element {
+  return (
+    <span>
+      Portal · {trail.map((t, i) => (
+        <span key={t}>{i === trail.length - 1 ? <strong>{t}</strong> : <>{t} · </>}</span>
+      ))}
+    </span>
+  );
+}
+
+// ----------------------------------------------------------------- Dashboard ----
+function Dashboard({ onOpenAccount, onTrade, go }: {
+  onOpenAccount: (id: string) => void;
+  onTrade: (publicId: string) => void;
+  go: (to: string) => void;
+}): JSX.Element {
+  const isEval = (a: AccountSummary): boolean => a.portalState.startsWith('EVALUATION');
+  const isFunded = (a: AccountSummary): boolean => a.accountType === 'FUNDED_SIM' && !a.portalState.startsWith('COMPLETED');
+  const activeCount = ACCTS.filter((a) => ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'].includes(a.status)).length;
+  const totalBalance = ACCTS.reduce((s, a) => s + a.balanceMicros, 0);
+  const netPnl = ACCTS.reduce((s, a) => s + (a.balanceMicros - a.startingBalanceMicros), 0);
+  const breached = ACCTS.filter((a) => a.portalState === 'FAILED');
+  const topAccounts = ACCTS.filter((a) => a.portalState !== 'ARCHIVED' && a.portalState !== 'INACTIVE_CLOSED').slice(0, 4);
+  const payoutAvailable = FIXTURE_PAYOUTS.availableMicros;
+
+  return (
+    <div className="htv2-page">
+      <header className="htv2-page-head">
+        <h1 className="ht-t-page-title">Dashboard</h1>
+        <p className="ht-t-meta">Your accounts, standing, and what needs attention.</p>
+      </header>
+
+      <V2StatStrip
+        items={[
+          { label: 'Total balance', value: formatMoney(totalBalance, { maxFractionDigits: 0 }) },
+          { label: 'Net P&L', value: formatMoney(netPnl, { sign: true, maxFractionDigits: 0 }), tone: netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : 'muted' },
+          { label: 'Active accounts', value: String(activeCount) },
+          { label: 'Evaluations', value: String(ACCTS.filter(isEval).length) },
+          { label: 'Funded', value: String(ACCTS.filter(isFunded).length) },
+          { label: 'Total paid', value: formatMoney(FIXTURE_PAYOUTS.totalPaidMicros, { maxFractionDigits: 0 }) },
+        ]}
+      />
+
+      {breached.length > 0 ? (
+        <V2Attention
+          tone="negative"
+          title={`${breached.length} account${breached.length > 1 ? 's' : ''} breached`}
+          detail="A breached account can no longer trade. Open it to see the breach detail."
+          action={<V2Button variant="secondary" size="sm" onClick={() => go(`${BASE}/accounts`)}>Review</V2Button>}
+        />
+      ) : payoutAvailable > 0 ? (
+        <V2Attention
+          tone="positive"
+          title={`${formatMoney(payoutAvailable)} available to withdraw`}
+          detail="One of your funded accounts is eligible for a payout."
+          action={<V2Button variant="secondary" size="sm" onClick={() => go(`${BASE}/payouts`)}>Payouts</V2Button>}
+        />
+      ) : null}
+
+      <V2Section
+        title="Your accounts"
+        actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/accounts`)}>All accounts →</button>}
+      >
+        <div className="htv2-acct-grid">
+          {topAccounts.map((a) => (
+            <V2AccountPanel
+              key={a.id}
+              a={toAccountView(a, extraFor(a))}
+              onDetails={() => onOpenAccount(a.id)}
+              onTrade={() => onTrade(a.publicId)}
+            />
+          ))}
+        </div>
+      </V2Section>
+
+      <V2Section title="Recent activity" actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/payouts`)}>Payout history →</button>}>
+        <V2ActivityList items={FIXTURE_ACTIVITY} />
+      </V2Section>
+
+      <V2Divider />
+    </div>
   );
 }

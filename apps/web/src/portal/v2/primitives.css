@@ -39,35 +39,41 @@
   .htv2-metal { -webkit-text-fill-color: CanvasText; color: CanvasText; background: none; }
 }
 
-/* ---- Buttons (STEP 19): compact, low radius, warm ---- */
+/* ---- Buttons: sharp, compact, institutional (rebuilt at human review) ----
+   Near-square (2px), precise, no shadow, no pill, no giant padding. The primary
+   is a crisp high-contrast chrome-white — reads as a trading-workstation action,
+   not a cream SaaS CTA. */
 .htv2-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   height: var(--ht-control-h);
-  padding: 0 14px;
+  padding: 0 13px;
   border-radius: var(--ht-radius-sm);
   border: 1px solid transparent;
   cursor: pointer;
+  letter-spacing: 0.01em;
   transition: background var(--ht-fast) var(--ht-ease), border-color var(--ht-fast) var(--ht-ease), color var(--ht-fast) var(--ht-ease);
   white-space: nowrap;
 }
-.htv2-btn-sm { height: var(--ht-control-h-sm); padding: 0 10px; }
-.htv2-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.htv2-btn-sm { height: var(--ht-control-h-sm); padding: 0 10px; font-size: 12px; }
+.htv2-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Primary: warm near-white / champagne surface, dark text. Not a giant CTA. */
-.htv2-btn-primary { background: var(--ht-champagne); color: #16130c; border-color: var(--ht-champagne); }
-.htv2-btn-primary:hover:not(:disabled) { background: #f0e7d3; border-color: #f0e7d3; }
+/* Primary: crisp chrome-white surface, near-black text. High contrast, flat. */
+.htv2-btn-primary { background: var(--ht-text-strong); color: #0a0a0b; border-color: var(--ht-text-strong); font-weight: 600; }
+.htv2-btn-primary:hover:not(:disabled) { background: #ffffff; border-color: #ffffff; }
 
+/* Secondary: dark surface + thin graphite border. */
 .htv2-btn-secondary { background: var(--ht-surface-2); color: var(--ht-text); border-color: var(--ht-border); }
-.htv2-btn-secondary:hover:not(:disabled) { background: var(--ht-surface-hover); border-color: var(--ht-border-strong); }
+.htv2-btn-secondary:hover:not(:disabled) { background: var(--ht-surface-hover); border-color: var(--ht-border-strong); color: var(--ht-text-strong); }
 
-.htv2-btn-tertiary { background: transparent; color: var(--ht-text-muted); border-color: transparent; padding: 0 6px; }
-.htv2-btn-tertiary:hover:not(:disabled) { color: var(--ht-text); }
+/* Tertiary / ghost: quiet text, no chrome. */
+.htv2-btn-tertiary { background: transparent; color: var(--ht-text-muted); border-color: transparent; padding: 0 4px; }
+.htv2-btn-tertiary:hover:not(:disabled) { color: var(--ht-text-strong); }
 
 .htv2-btn-danger { background: transparent; color: var(--ht-negative); border-color: color-mix(in srgb, var(--ht-negative) 40%, transparent); }
-.htv2-btn-danger:hover:not(:disabled) { background: var(--ht-negative-bg); }
+.htv2-btn-danger:hover:not(:disabled) { background: var(--ht-negative-bg); border-color: var(--ht-negative); }
 
 .htv2 :focus-visible { outline: 2px solid var(--ht-border-focus); outline-offset: 1px; border-radius: var(--ht-radius-xs); }
 

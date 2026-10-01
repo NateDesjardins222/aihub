@@ -49,21 +49,34 @@ describe('toAccountView — determinism & authority', () => {
     expect(accountLifecycleIndex(acct({ portalState: 'FAILED' }))).toBe(-1);
   });
 
+  const metric = (a: AccountSummary, label: string, extra?: Parameters<typeof toAccountView>[1]) =>
+    toAccountView(a, extra).metrics.find((m) => m.label === label);
+
   it('net P&L is a pure display of balance − start (no rule invention)', () => {
-    const up = toAccountView(acct({ balanceMicros: 102_480 * M }));
-    expect(up.netPnlText).toBe('+$2,480');
-    expect(up.netPnlTone).toBe('positive');
-    const down = toAccountView(acct({ balanceMicros: 95_900 * M }));
-    expect(down.netPnlText).toBe('-$4,100');
-    expect(down.netPnlTone).toBe('negative');
-    const flat = toAccountView(acct());
-    expect(flat.netPnlText).toBe('$0');
-    expect(flat.netPnlTone).toBe('muted');
+    const up = metric(acct({ balanceMicros: 102_480 * M }), 'Net P&L');
+    expect(up?.value).toBe('+$2,480');
+    expect(up?.tone).toBe('positive');
+    const down = metric(acct({ balanceMicros: 95_900 * M }), 'Net P&L');
+    expect(down?.value).toBe('-$4,100');
+    expect(down?.tone).toBe('negative');
+    const flat = metric(acct(), 'Net P&L');
+    expect(flat?.value).toBe('$0');
+    expect(flat?.tone).toBe('muted');
   });
 
   it('MLL room is balance − floor, floored at zero', () => {
-    expect(toAccountView(acct()).mllRoomText).toBe('$4,000');
-    expect(toAccountView(acct({ balanceMicros: 95_000 * M })).mllRoomText).toBe('$0'); // below floor
+    expect(metric(acct(), 'MLL room')?.value).toBe('$4,000');
+    expect(metric(acct({ balanceMicros: 95_000 * M }), 'MLL room')?.value).toBe('$0'); // below floor
+  });
+
+  it('surfaces funded authoritative extras (winning days / consistency / payout) only when provided', () => {
+    const funded = acct({ portalState: 'FUNDED_ACTIVE', accountType: 'FUNDED_SIM', profitTargetMicros: 0 });
+    // Without extras: no winning-days metric is invented.
+    expect(metric(funded, 'Winning days')).toBeUndefined();
+    // With authoritative extras: shown.
+    const wd = metric(funded, 'Winning days', { winningDays: 4, requiredWinningDays: 5 });
+    expect(wd?.value).toBe('4 / 5');
+    expect(metric(funded, 'Payout available', { availableMicros: 2_000 * M })?.value).toBe('$2,000');
   });
 
   it('shows AUTHORITATIVE profit-target progress for a live evaluation, clamped 0..100 (PV2-1)', () => {

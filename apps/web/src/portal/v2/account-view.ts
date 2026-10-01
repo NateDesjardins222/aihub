@@ -16,7 +16,7 @@
 import type { AccountSummary } from '../lib';
 import { lifecycleActiveIndex } from './Lifecycle';
 import type { StatusKind } from './primitives';
-import type { V2AccountView } from './AccountPanel';
+import type { V2AccountView, V2Metric } from './AccountPanel';
 import { accountSizeLabel, clampPercent, formatMoney, maskAccountId, moneyTone } from './format';
 
 /** The authoritative portal lifecycle states (mirror of the server `PortalState`). */
@@ -74,35 +74,78 @@ export function productLabel(a: AccountSummary): string {
 }
 
 /**
- * The one deterministic transform. Everything here is a display of authoritative
- * fields — no business rule is decided.
+ * Optional authoritative extras that do NOT live on AccountSummary (winning days,
+ * consistency, payout standing come from PayoutEligibility). When present they
+ * enrich a FUNDED account's metrics; when absent those metrics simply do not render
+ * — never invented. In production the container passes real eligibility; the dev
+ * review passes clearly-labelled dev fixtures.
  */
-export function toAccountView(a: AccountSummary): V2AccountView {
+export interface AccountViewExtra {
+  winningDays?: number;
+  requiredWinningDays?: number;
+  consistencyRatio?: number | null;
+  payoutState?: 'ELIGIBLE' | 'NOT_ELIGIBLE';
+  availableMicros?: number;
+}
+
+/**
+ * The one deterministic transform: authoritative fields → a dense, state-aware
+ * display model. No business rule is decided here — `portalState` is mapped, money
+ * figures are subtracted/formatted for display only.
+ */
+export function toAccountView(a: AccountSummary, extra?: AccountViewExtra): V2AccountView {
   const state = a.portalState as PortalState;
   const presentation = STATE_PRESENTATION[state] ?? { kind: 'neutral' as StatusKind, label: state };
 
   const netPnl = a.balanceMicros - a.startingBalanceMicros; // display only
   const mllRoom = Math.max(0, a.balanceMicros - a.drawdownFloorMicros); // display only
-
-  // State-aware progress (PV2-1, Phase 2). For a LIVE EVALUATION the primary
-  // progress is profit toward the AUTHORITATIVE profit target (from the pinned
-  // version config; the same number the engine passes on). It is never inferred
-  // from account size or product name. A funded/terminal account shows no target
-  // bar — a funded account has already passed, so there is no evaluation target to
-  // progress toward (its authoritative target is 0). Risk room is shown separately
-  // via mllRoomText.
   const prog = evaluationProgress(a);
+
+  const m = (label: string, value: string, tone?: V2Metric['tone']): V2Metric => ({ label, value, tone });
+  const metrics: V2Metric[] = [];
+
+  if (state === 'EVALUATION_ACTIVE') {
+    // The profit-target amount + remaining are carried by the progress bar above, so
+    // the metric grid stays non-redundant: standing + risk figures only.
+    metrics.push(m('Net P&L', formatMoney(netPnl, { sign: true }), moneyTone(netPnl)));
+    metrics.push(m('MLL room', formatMoney(mllRoom)));
+    metrics.push(m('Drawdown floor', formatMoney(a.drawdownFloorMicros)));
+    metrics.push(m('High-water', formatMoney(a.highWaterMarkMicros)));
+  } else if (state === 'FUNDED_ACTIVE') {
+    metrics.push(m('Net P&L', formatMoney(netPnl, { sign: true }), moneyTone(netPnl)));
+    metrics.push(m('MLL room', formatMoney(mllRoom)));
+    metrics.push(m('Drawdown floor', formatMoney(a.drawdownFloorMicros)));
+    metrics.push(m('High-water', formatMoney(a.highWaterMarkMicros)));
+    if (extra?.winningDays != null) {
+      const req = extra.requiredWinningDays;
+      metrics.push(m('Winning days', req != null ? `${extra.winningDays} / ${req}` : String(extra.winningDays)));
+    }
+    if (extra?.consistencyRatio != null) metrics.push(m('Consistency', `${Math.round(extra.consistencyRatio * 100)}%`));
+    if (extra?.availableMicros != null) metrics.push(m('Payout available', formatMoney(extra.availableMicros), extra.availableMicros > 0 ? 'positive' : 'muted'));
+  } else if (state === 'EVALUATION_PASSED') {
+    metrics.push(m('Net P&L', formatMoney(netPnl, { sign: true }), moneyTone(netPnl)));
+    metrics.push(m('MLL room', formatMoney(mllRoom)));
+    metrics.push(m('Drawdown floor', formatMoney(a.drawdownFloorMicros)));
+  } else if (state === 'FAILED') {
+    metrics.push(m('Final balance', formatMoney(a.balanceMicros)));
+    metrics.push(m('Net P&L', formatMoney(netPnl, { sign: true }), moneyTone(netPnl)));
+    metrics.push(m('Breach floor', formatMoney(a.drawdownFloorMicros)));
+  } else if (state === 'COMPLETED_MAX_PAYOUTS') {
+    metrics.push(m('Final balance', formatMoney(a.balanceMicros)));
+    metrics.push(m('Net P&L', formatMoney(netPnl, { sign: true }), moneyTone(netPnl)));
+  } else {
+    metrics.push(m('Balance', formatMoney(a.balanceMicros)));
+  }
 
   return {
     productLabel: productLabel(a),
     maskedId: maskAccountId(a.publicId),
+    accountKind: a.accountType === 'FUNDED_SIM' ? 'Funded' : 'Evaluation',
     statusKind: presentation.kind,
     statusLabel: presentation.label,
     portalState: state,
     balanceText: formatMoney(a.balanceMicros),
-    netPnlText: formatMoney(netPnl, { sign: true }),
-    netPnlTone: moneyTone(netPnl),
-    mllRoomText: formatMoney(mllRoom),
+    metrics,
     progressLabel: prog ? 'Profit target' : undefined,
     progressPct: prog?.pct,
     progressDetail: prog ? `${formatMoney(prog.achievedMicros)} of ${formatMoney(prog.targetMicros)}` : undefined,

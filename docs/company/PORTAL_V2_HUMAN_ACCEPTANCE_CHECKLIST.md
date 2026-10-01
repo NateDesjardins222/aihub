@@ -104,3 +104,30 @@ Routes to walk:
 
 > Until a human marks this accepted, V2 stays dev-only, V1 stays live, and no
 > migration happens.
+
+---
+
+## Revision after Human-Acceptance Failure #1 (base `25d7738`)
+
+What to re-check specifically (the rejected items):
+
+- [ ] The supplied **Happy Trader Funding wordmark** renders in the sidebar (and
+      mobile top strip); the old fake cream square is gone.
+- [ ] The customer product shows **no** Design system / DEV entry, component/status/
+      lifecycle showcase, or engineering language anywhere.
+- [ ] Every sidebar item works: Dashboard, Accounts, Payouts, Certificates, Billing,
+      Support — each a real page; account detail + all tabs work.
+- [ ] Design reads **sharp / institutional** (near-square geometry, chrome-white
+      buttons, dense authoritative account metrics) — not soft SaaS slop.
+- [ ] Account surfaces show materially more authoritative info (eval: target progress
+      + Net P&L / MLL / floor / high-water; funded: + winning days / consistency /
+      payout available).
+- [ ] Owner Console is absent from customer nav; owners get it in the account menu
+      (dev `?role=owner`); the account menu is a real menu (Sign out), no fake caret.
+- [ ] Chrome/white/black identity dominates; no steel-blue; champagne restrained.
+
+Automated gates (this revision): `apps/web` vitest 410/410; typecheck + build clean;
+scroll regression (6 viewports) pass; `scripts/portal-v2-review.mjs` all checks pass
+(nav, tabs, no dead controls, no dev DOM content, no horizontal overflow 1920→390,
+wordmark present, owner gating). Canonical: green modulo environmental load-flakes
+(see rebuild report — proven unrelated, pass in isolation).

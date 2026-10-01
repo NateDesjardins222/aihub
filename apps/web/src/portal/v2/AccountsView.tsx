@@ -10,7 +10,7 @@
 import type { JSX } from 'react';
 import type { AccountsView, AccountSummary } from '../lib';
 import { V2AccountPanel } from './AccountPanel';
-import { toAccountView } from './account-view';
+import { toAccountView, type AccountViewExtra } from './account-view';
 import { V2Button, V2EmptyState, V2Section } from './primitives';
 import './AccountsView.css';
 
@@ -30,7 +30,12 @@ function SkeletonPanel(): JSX.Element {
   return <div className="htv2-acct htv2-acct-skeleton" aria-hidden><span /><span /><span /><span /></div>;
 }
 
-export function V2AccountsView({ state, actions = {} }: { state: V2AccountsState; actions?: AccountsActions }): JSX.Element {
+export function V2AccountsView({ state, actions = {}, extraFor }: {
+  state: V2AccountsState;
+  actions?: AccountsActions;
+  /** Optional authoritative funded extras (winning days / consistency / payout) by account. */
+  extraFor?: (a: AccountSummary) => AccountViewExtra | undefined;
+}): JSX.Element {
   return (
     <V2Section
       title="Accounts"
@@ -78,7 +83,7 @@ export function V2AccountsView({ state, actions = {} }: { state: V2AccountsState
             {state.view.accounts.map((a) => (
               <V2AccountPanel
                 key={a.id}
-                a={toAccountView(a)}
+                a={toAccountView(a, extraFor?.(a))}
                 onDetails={actions.onOpen ? () => actions.onOpen!(a) : undefined}
                 onTrade={actions.onTrade ? () => actions.onTrade!(a) : undefined}
               />

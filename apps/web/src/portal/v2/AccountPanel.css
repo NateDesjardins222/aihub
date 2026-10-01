@@ -1,41 +1,63 @@
 /*
- * V2AccountPanel styles (Product Rebuild Phase 0). Scoped under `.htv2`.
- * Robust layout: everything is flow/grid with min-width:0; nothing can escape.
+ * V2AccountPanel — sharp, dense, institutional (rebuilt at human-rejection #1).
+ * Scoped under `.htv2`. Flat surface, square-ish corners, graphite 1px border, a
+ * dense authoritative metric grid. Everything min-width:0 so nothing escapes.
  */
 .htv2-acct {
   display: flex;
   flex-direction: column;
   gap: var(--ht-space-4);
   background: var(--ht-surface-1);
-  border: 1px solid var(--ht-border-subtle);
+  border: 1px solid var(--ht-border);
   border-radius: var(--ht-radius-lg);
-  padding: var(--ht-space-5);
+  padding: var(--ht-space-4) var(--ht-space-4) var(--ht-space-3);
   min-width: 0;
+  transition: border-color var(--ht-fast) var(--ht-ease);
 }
+.htv2-acct:hover { border-color: var(--ht-border-strong); }
 
 .htv2-acct-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ht-space-3); }
 .htv2-acct-id { min-width: 0; }
-.htv2-acct-product { color: var(--ht-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.htv2-acct-masked { margin-top: 2px; }
+.htv2-acct-product { color: var(--ht-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.01em; }
+.htv2-acct-sub { margin-top: 3px; color: var(--ht-text-muted); }
 
-.htv2-acct-balance { display: flex; flex-direction: column; gap: 2px; }
-.htv2-acct-balance-value { line-height: 1.05; }
-.htv2-acct-balance-label { margin-top: 2px; }
+.htv2-acct-balance { display: flex; align-items: baseline; gap: var(--ht-space-3); }
+.htv2-acct-balance-value { color: var(--ht-text-strong); line-height: 1.05; }
+.htv2-acct-balance-label { color: var(--ht-text-faint); }
 
-.htv2-acct-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--ht-space-3);
-  padding: var(--ht-space-3) 0;
-  border-top: 1px solid var(--ht-border-subtle);
-  border-bottom: 1px solid var(--ht-border-subtle);
-}
-.htv2-acct-metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.htv2-acct-metric-right { align-items: flex-end; text-align: right; }
-
+/* Target progress — quiet, thin, champagne fill. */
 .htv2-acct-progress { display: flex; flex-direction: column; gap: 6px; }
 .htv2-acct-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-2); }
-.htv2-acct-bar { height: 4px; border-radius: 999px; background: var(--ht-surface-2); overflow: hidden; }
-.htv2-acct-bar > span { display: block; height: 100%; background: var(--ht-champagne-muted); border-radius: 999px; }
+.htv2-acct-progress-head .ht-t-label { color: var(--ht-text-muted); }
+.htv2-acct-progress-head .ht-t-meta { color: var(--ht-champagne-muted); }
+.htv2-acct-bar { height: 3px; border-radius: 999px; background: var(--ht-surface-2); overflow: hidden; }
+.htv2-acct-bar > span { display: block; height: 100%; background: var(--ht-champagne-grad); border-radius: 999px; }
 
-.htv2-acct-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-3); }
+/* Dense authoritative metric grid: two columns (wide enough for full figures),
+   hairline top rule, tight rows. */
+.htv2-acct-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px var(--ht-space-3);
+  margin: 0;
+  padding: var(--ht-space-3) 0 var(--ht-space-1);
+  border-top: 1px solid var(--ht-border-subtle);
+}
+.htv2-acct-metric { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.htv2-acct-metric > dt { color: var(--ht-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 12px (overriding the 13px fin-sm role — note the extra class for specificity) keeps
+   seven-figure values like +$1,134,500 un-clipped in the dense 2-col cell, while the
+   balance (26px) stays the hero. */
+.htv2-acct .htv2-acct-metrics .htv2-acct-metric-v {
+  color: var(--ht-text); font-size: 12px; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.htv2-acct-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--ht-space-2);
+  padding-top: var(--ht-space-2); border-top: 1px solid var(--ht-border-subtle);
+}
+
+@media (max-width: 560px) {
+  .htv2-acct-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

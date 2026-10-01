@@ -855,3 +855,22 @@ surface). No backend/economics/payout/rules/risk/lifecycle change. See
   Owner Console is role-gated and absent for a normal customer. Human acceptance
   (Nathan) is pending; Claude's claim is bounded to "candidate ready for human
   acceptance."
+
+## Portal V2 Human-Rejection #1 repair (base `25d7738`, 2026-10-01)
+
+Frontend-only repair after Nathan's human-acceptance failure (wordmark, sharper
+institutional design, working nav + Payouts/Certificates/Billing/Support, richer
+accounts, no dev slop, owner entry moved to the account menu). No server/economics
+change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
+
+- **PV2R1-1 (P3 — environmental, not this change).** The canonical full suite
+  (240 workers) shows load-induced flakes under heavy container load: a different
+  small set fails each run (`trading/determinism` latency/replay, `trading/
+  consistency-gate-engine`, `resilience/reconcile`, `auth/mfa` scrypt sealing), and
+  every one passes in isolation (proven). Timing/CPU-contention sensitive; unrelated
+  to the frontend diff (zero server files changed). Mitigation would be server test
+  config (worker caps / scrypt isolation — see prior "test-scrypt isolation"), out of
+  scope for this frontend repair.
+- **PV2R1-2 (status).** Portal V2 remains dev-only and NOT migrated; V1 is live +
+  instant rollback. Human acceptance by Nathan pending; claim bounded to
+  "ready for human acceptance".
