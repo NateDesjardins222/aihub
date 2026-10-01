@@ -20,14 +20,16 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import { V2AppShell, V2AccountMenu, type NavItem, type AccountMenuAction } from './Shell';
 import {
-  V2Section, V2Button, V2StatStrip, V2Attention, V2ActivityList, V2Divider, V2AreaChart, V2EmptyState,
+  V2Section, V2Button, V2StatStrip, V2Attention, V2ActivityList, V2Divider, V2EmptyState,
 } from './primitives';
 import { V2AccountsView } from './AccountsView';
 import { V2AccountPanel } from './AccountPanel';
 import { V2AccountDetail, type DetailTab } from './AccountDetail';
-import { V2PayoutsPage, V2CertificatesPage, V2BillingPage, V2SupportPage, V2OwnerNotice } from './pages';
+import { V2PayoutsPage, V2CertificatesPage, V2BillingPage, V2OwnerNotice } from './pages';
 import { V2ProfilePage } from './profile';
-import { toAccountView, productLabel } from './account-view';
+import { V2SupportCenter } from './support';
+import { sampleArtifactFor } from './cert-samples';
+import { toAccountView, productLabel, type AccountViewExtra } from './account-view';
 import {
   FIXTURE_VIEW_LONG, fixtureDetailFor, FIXTURE_FUNDED_EXTRA,
   FIXTURE_PAYOUTS, FIXTURE_CERTS, FIXTURE_BILLING, FIXTURE_SUPPORT, FIXTURE_ACTIVITY,
@@ -36,6 +38,7 @@ import {
   FIXTURE_SUPPORT_EMPTY, FIXTURE_PROFILE_EMPTY,
 } from './fixtures';
 import { formatMoney } from './format';
+import { V2PerfChart } from './perf-chart';
 import type { SeriesPoint, ActivityItem } from './primitives';
 import type { AccountsView, AccountDetailFull, AccountSummary, Cert } from '../lib';
 import type { PayoutsView, BillingView, SupportView } from './pages';
@@ -214,10 +217,14 @@ export function PortalV2Review(): JSX.Element {
         certs={data.certs}
         onOpenAccount={openAccount}
         actions={{
-          // Dev review has no session, so the authenticated artifact endpoint is not
-          // called — the card shows a truthful "preview available in your account" state.
-          // Production wires this to GET /api/v1/portal/certificates/:id/{image,pdf}.
-          resolveArtifact: async () => null,
+          // Dev review has no session, so it serves the REAL rendered artwork produced by
+          // the production certificate renderer (captured as dev-review samples; see
+          // cert-samples.ts). Production wires this to the authenticated endpoint
+          // GET /api/v1/portal/certificates/:id/{image,pdf}.
+          resolveArtifact: async (certId) => {
+            const cert = data.certs.find((c) => c.id === certId);
+            return cert ? sampleArtifactFor(cert.type) : null;
+          },
           onVerify: (token) => { window.location.href = `/verify/${token}`; },
         }}
       />
@@ -239,7 +246,8 @@ export function PortalV2Review(): JSX.Element {
     );
   } else if (route.view === 'support') {
     crumb = <Crumb trail={['Support']} />;
-    content = <V2SupportPage view={data.support} />;
+    // Support is a REAL, authoritative surface wired to /api/v1/support (not a fixture).
+    content = <V2SupportCenter />;
   } else if (route.view === 'profile') {
     crumb = <Crumb trail={['Profile & security']} />;
     content = (
@@ -364,6 +372,8 @@ function Dashboard({ data, onOpenAccount, onTrade, onAddAccount, go }: {
         </V2Section>
       )}
 
+      {accts.length > 0 && <NextUp accounts={accts} extraFor={data.extraFor} onOpenAccount={onOpenAccount} go={go} />}
+
       {accts.length > 0 && <PortfolioPerformance series={data.series} />}
 
       {data.activity.length > 0 && (
@@ -377,25 +387,48 @@ function Dashboard({ data, onOpenAccount, onTrade, onAddAccount, go }: {
   );
 }
 
-/** Portfolio-level cumulative realized P&L (authoritative series in production; dev
- *  fixture here). Range buttons slice the same series — never fabricate new points.
- *  An empty/short series shows a truthful empty state, never a drawn-in line. */
+/** Portfolio-level cumulative realized P&L — a REAL interactive chart (human-review #3).
+ *  The caller supplies ONE authoritative cumulative series (micro-dollars); ranges slice
+ *  it (never fabricate points) and companion metrics are derived from the same data. An
+ *  empty/short series shows a truthful empty state, never a drawn-in line. */
 function PortfolioPerformance({ series: full }: { series: SeriesPoint[] }): JSX.Element {
-  const RANGES: Array<{ key: string; days: number | null }> = [
-    { key: '30D', days: 30 }, { key: '90D', days: 90 }, { key: 'All', days: null },
-  ];
-  const [range, setRange] = useState('90D');
-  const days = RANGES.find((r) => r.key === range)!.days;
-  const series = days == null ? full : full.slice(-days);
-  const last = series[series.length - 1]?.v ?? 0;
   const hasSeries = full.length >= 2;
+  const spanDays = hasSeries ? (full[full.length - 1]!.t - full[0]!.t) / 86_400_000 : 0;
+  const ranges = useMemo(() => {
+    const all: Array<{ key: string; days: number | null }> = [
+      { key: '7D', days: 7 }, { key: '30D', days: 30 }, { key: '90D', days: 90 },
+      { key: 'YTD', days: null }, { key: 'All', days: null },
+    ];
+    // Only offer a fixed-window range when the data actually spans it.
+    return all.filter((r) => r.key === 'All' || r.key === 'YTD' || (r.days != null && spanDays >= r.days * 0.5));
+  }, [spanDays]);
+  const [range, setRange] = useState('90D');
+  const activeKey = ranges.some((r) => r.key === range) ? range : 'All';
+
+  const series = useMemo(() => {
+    if (activeKey === 'All') return full;
+    if (activeKey === 'YTD') {
+      const jan1 = new Date(new Date().getFullYear(), 0, 1).getTime();
+      const ytd = full.filter((p) => p.t >= jan1);
+      return ytd.length >= 2 ? ytd : full;
+    }
+    const days = ranges.find((r) => r.key === activeKey)!.days!;
+    const cutoff = full[full.length - 1]!.t - days * 86_400_000;
+    const win = full.filter((p) => p.t >= cutoff);
+    return win.length >= 2 ? win : full;
+  }, [full, ranges, activeKey]);
+
+  const m = useMemo(() => periodMetrics(full, series), [full, series]);
+
   return (
     <V2Section
       title="Portfolio performance"
       actions={hasSeries ? (
-        <span className="htv2-chart-ranges">
-          {RANGES.map((r) => (
-            <button key={r.key} className={`htv2-chart-range${range === r.key ? ' on' : ''}`} onClick={() => setRange(r.key)}>{r.key}</button>
+        <span className="htv2-chart-ranges" role="tablist" aria-label="Performance range">
+          {ranges.map((r) => (
+            <button key={r.key} role="tab" aria-selected={activeKey === r.key}
+              className={`htv2-chart-range${activeKey === r.key ? ' on' : ''}`}
+              onClick={() => setRange(r.key)} data-testid={`htv2-perf-range-${r.key}`}>{r.key}</button>
           ))}
         </span>
       ) : undefined}
@@ -405,11 +438,18 @@ function PortfolioPerformance({ series: full }: { series: SeriesPoint[] }): JSX.
           <>
             <div className="htv2-chart-caption">
               <span className="ht-t-label">Cumulative realized P&amp;L</span>
-              <span className={`ht-t-fin-md ht-num htv2-tone-${last > 0 ? 'positive' : last < 0 ? 'negative' : 'muted'}`}>
-                {formatMoney(last, { sign: true, maxFractionDigits: 0 })}
+              <span className={`ht-t-fin-md ht-num htv2-tone-${m.periodPnl > 0 ? 'positive' : m.periodPnl < 0 ? 'negative' : 'muted'}`}>
+                {formatMoney(m.periodPnl, { sign: true, maxFractionDigits: 0 })} <span className="ht-t-meta">this period</span>
               </span>
             </div>
-            <V2AreaChart points={series} height={160} ariaLabel="Portfolio cumulative realized P&L" />
+            <V2PerfChart series={series} height={240} ariaLabel="Portfolio cumulative realized P&L" />
+            <dl className="htv2-perf-metrics" data-testid="htv2-perf-metrics">
+              <PerfMetric k="Period P&L" v={formatMoney(m.periodPnl, { sign: true, maxFractionDigits: 0 })} tone={m.periodPnl > 0 ? 'positive' : m.periodPnl < 0 ? 'negative' : 'default'} />
+              <PerfMetric k="Best day" v={formatMoney(m.best, { sign: true, maxFractionDigits: 0 })} tone="positive" />
+              <PerfMetric k="Worst day" v={formatMoney(m.worst, { sign: true, maxFractionDigits: 0 })} tone={m.worst < 0 ? 'negative' : 'default'} />
+              <PerfMetric k="Trading days" v={String(m.days)} />
+              <PerfMetric k="Avg / day" v={formatMoney(m.avg, { sign: true, maxFractionDigits: 0 })} tone={m.avg > 0 ? 'positive' : m.avg < 0 ? 'negative' : 'default'} />
+            </dl>
           </>
         ) : (
           <p className="htv2-chart-empty ht-t-body-sm">No trading history yet. Your performance appears here once you place your first trades.</p>
@@ -417,4 +457,96 @@ function PortfolioPerformance({ series: full }: { series: SeriesPoint[] }): JSX.
       </div>
     </V2Section>
   );
+}
+
+/** "Progress & payout readiness" — answers "what am I closest to?" and "can I withdraw?"
+ *  from authoritative account state, as compact clickable rows (no giant cards, no casino
+ *  rings). Evaluations show target progress; funded accounts show winning days + available. */
+function NextUp({ accounts, extraFor, onOpenAccount, go }: {
+  accounts: AccountSummary[];
+  extraFor: (a: AccountSummary) => AccountViewExtra | undefined;
+  onOpenAccount: (id: string) => void;
+  go: (to: string) => void;
+}): JSX.Element | null {
+  const evals = accounts.filter((a) => a.portalState === 'EVALUATION_ACTIVE');
+  const funded = accounts.filter((a) => a.accountType === 'FUNDED_SIM' && a.portalState === 'FUNDED_ACTIVE');
+  if (evals.length === 0 && funded.length === 0) return null;
+  return (
+    <V2Section title="Progress & payout readiness" actions={<button className="htv2-link ht-t-nav" onClick={() => go(`${BASE}/payouts`)}>Payouts →</button>}>
+      <div className="htv2-nextup">
+        {evals.map((a) => {
+          const v = toAccountView(a, extraFor(a));
+          const achieved = a.balanceMicros - a.startingBalanceMicros;
+          const remaining = Math.max(0, (a.profitTargetMicros ?? 0) - achieved);
+          const mll = v.metrics.find((m) => m.label === 'MLL room');
+          return (
+            <button key={a.id} className="htv2-nextup-row" onClick={() => onOpenAccount(a.id)} data-testid="htv2-nextup-eval">
+              <span className="htv2-nextup-id">
+                <span className="ht-t-fin-sm">{v.productLabel}</span>
+                <span className="ht-t-meta ht-num">{v.maskedId} · Evaluation</span>
+              </span>
+              <span className="htv2-nextup-prog">
+                <span className="htv2-nextup-bar"><span style={{ width: `${Math.max(0, Math.min(100, v.progressPct ?? 0))}%` }} /></span>
+                <span className="ht-t-meta ht-num">{Math.round(v.progressPct ?? 0)}% to target</span>
+              </span>
+              <span className="htv2-nextup-fig">
+                <span className="ht-t-fin-sm ht-num">{formatMoney(remaining, { maxFractionDigits: 0 })}</span>
+                <span className="ht-t-meta">to pass{mll ? ` · ${mll.value} MLL room` : ''}</span>
+              </span>
+            </button>
+          );
+        })}
+        {funded.map((a) => {
+          const x = extraFor(a);
+          const avail = x?.availableMicros ?? 0;
+          const wd = x?.winningDays ?? 0; const req = x?.requiredWinningDays;
+          const v = toAccountView(a, x);
+          return (
+            <button key={a.id} className="htv2-nextup-row" onClick={() => onOpenAccount(a.id)} data-testid="htv2-nextup-funded">
+              <span className="htv2-nextup-id">
+                <span className="ht-t-fin-sm">{v.productLabel}</span>
+                <span className="ht-t-meta ht-num">{v.maskedId} · Funded</span>
+              </span>
+              <span className="htv2-nextup-prog">
+                <span className="htv2-nextup-bar"><span style={{ width: `${req ? Math.max(0, Math.min(100, (wd / req) * 100)) : 0}%` }} /></span>
+                <span className="ht-t-meta ht-num">{req ? `${wd} / ${req} winning days` : `${wd} winning days`}</span>
+              </span>
+              <span className="htv2-nextup-fig">
+                <span className={`ht-t-fin-sm ht-num htv2-tone-${avail > 0 ? 'positive' : 'muted'}`}>{formatMoney(avail, { maxFractionDigits: 0 })}</span>
+                <span className="ht-t-meta">{avail > 0 ? 'available now' : 'requestable'}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </V2Section>
+  );
+}
+
+function PerfMetric({ k, v, tone = 'default' }: { k: string; v: string; tone?: 'default' | 'positive' | 'negative' }): JSX.Element {
+  return (
+    <div className="htv2-perf-metric">
+      <dt className="htv2-perf-metric-k">{k}</dt>
+      <dd className={`htv2-perf-metric-v htv2-tone-${tone}`}>{v}</dd>
+    </div>
+  );
+}
+
+/** Derive companion metrics from a cumulative series. Daily deltas come from the FULL
+ *  series (so the window's first day's delta is correct); the window is the visible slice. */
+function periodMetrics(full: SeriesPoint[], window: SeriesPoint[]): { periodPnl: number; best: number; worst: number; days: number; avg: number } {
+  if (window.length < 1) return { periodPnl: 0, best: 0, worst: 0, days: 0, avg: 0 };
+  const idx = new Map(full.map((p, i) => [p.t, i]));
+  const deltas: number[] = [];
+  for (const p of window) {
+    const i = idx.get(p.t);
+    if (i == null) continue;
+    deltas.push(i === 0 ? full[0]!.v : full[i]!.v - full[i - 1]!.v);
+  }
+  const periodPnl = deltas.reduce((s, d) => s + d, 0);
+  const best = deltas.length ? Math.max(...deltas) : 0;
+  const worst = deltas.length ? Math.min(...deltas) : 0;
+  const days = deltas.length;
+  const avg = days ? Math.round(periodPnl / days) : 0;
+  return { periodPnl, best, worst, days, avg };
 }

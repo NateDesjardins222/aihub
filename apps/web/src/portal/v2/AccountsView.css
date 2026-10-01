@@ -119,3 +119,64 @@
   .htv2-ws-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .htv2-page-head-row { flex-direction: column; }
 }
+
+/* ============================================================================
+ * Human-review #3 — RE-COMPOSED Accounts: brokerage ledger + flat statement.
+ * (The R2 index-card classes above are retained but no longer rendered.)
+ * ========================================================================== */
+
+/* State line-nav (sharp text/underline, not pills) */
+.htv2-statenav { display: flex; gap: 2px; border-bottom: 1px solid var(--ht-border-subtle); overflow-x: auto; }
+.htv2-statenav-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px 10px; background: transparent; border: none; cursor: pointer;
+  color: var(--ht-text-muted); white-space: nowrap; transition: color var(--ht-fast) var(--ht-ease);
+}
+.htv2-statenav-tab:hover { color: var(--ht-text); }
+.htv2-statenav-tab.on { color: var(--ht-text-strong); }
+.htv2-statenav-tab.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--ht-champagne); border-radius: 999px; }
+.htv2-statenav-n { color: var(--ht-text-faint); font-size: 11px; }
+.htv2-statenav-tab.on .htv2-statenav-n { color: var(--ht-text-muted); }
+
+/* Account ledger (dense brokerage table) */
+.htv2-acctledger-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); }
+.htv2-acctledger { width: 100%; border-collapse: collapse; font-size: 13px; }
+.htv2-acctledger th, .htv2-acctledger td { text-align: left; padding: 10px var(--ht-space-4); border-bottom: 1px solid var(--ht-border-subtle); white-space: nowrap; }
+.htv2-acctledger thead th { color: var(--ht-text-muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--ht-surface-1); }
+.htv2-acctledger td.num, .htv2-acctledger th.num { text-align: right; }
+.htv2-acctledger tbody tr { cursor: pointer; transition: background var(--ht-fast) var(--ht-ease); }
+.htv2-acctledger tbody tr:hover td { background: var(--ht-surface-1); }
+.htv2-acctledger tbody tr:last-child td { border-bottom: none; }
+.htv2-acctledger tbody tr.on td { background: var(--ht-surface-2); }
+.htv2-acctledger tbody tr.on td:first-child { box-shadow: inset 2px 0 0 var(--ht-champagne); }
+.htv2-acctledger tbody tr:focus-visible { outline: 2px solid var(--ht-border-focus); outline-offset: -2px; }
+.htv2-acctledger-id { color: var(--ht-text-strong); }
+.htv2-acctledger-prog { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.htv2-acctledger-bar { display: inline-block; width: 72px; height: 4px; background: var(--ht-surface-hover); border-radius: 999px; overflow: hidden; }
+.htv2-acctledger-bar > span { display: block; height: 100%; background: var(--ht-champagne); border-radius: 999px; }
+.htv2-acctledger .prog { text-align: right; }
+.htv2-ledger-skel { height: 44px; border-radius: var(--ht-radius-sm); background: linear-gradient(90deg, var(--ht-surface-1), var(--ht-surface-2), var(--ht-surface-1)); margin-bottom: 2px; }
+
+/* Flat financial-statement workspace (no nested cards) */
+.htv2-acctws { display: flex; flex-direction: column; gap: var(--ht-space-5); padding-top: var(--ht-space-2); }
+.htv2-acctws-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-4); padding-bottom: var(--ht-space-3); border-bottom: 1px solid var(--ht-border); }
+.htv2-acctws-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.htv2-acctws-product { color: var(--ht-text-strong); }
+.htv2-acctws-figures { display: flex; gap: var(--ht-space-10); flex-wrap: wrap; }
+.htv2-acctws-fig { display: flex; flex-direction: column; gap: 4px; }
+.htv2-acctws-fig-v { line-height: 1.05; }
+.htv2-acctws-progress { display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+.htv2-acctws-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); }
+.htv2-acctws-statement {
+  margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  border-top: 1px solid var(--ht-border-subtle);
+}
+.htv2-acctws-line { display: flex; flex-direction: column; gap: 3px; padding: var(--ht-space-3) var(--ht-space-4) var(--ht-space-3) 0; border-bottom: 1px solid var(--ht-border-subtle); }
+.htv2-acctws-line dd { margin: 0; color: var(--ht-text); }
+.htv2-acctws-life { display: flex; flex-direction: column; gap: var(--ht-space-3); }
+.htv2-acctws-life-label { }
+.htv2-acctws-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-4); padding-top: var(--ht-space-3); border-top: 1px solid var(--ht-border); }
+
+@media (max-width: 760px) {
+  .htv2-acctws-figures { gap: var(--ht-space-6); }
+}

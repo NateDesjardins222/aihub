@@ -70,10 +70,11 @@ async function run() {
   console.log('Accounts master/detail + account detail tabs:');
   await page.goto(`${BASE}/portal-v2/accounts`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(200);
-  // Review #2: Accounts is a master/detail manager (index + workspace), not a card wall.
-  ok(await page.locator('[data-testid="htv2-accounts-index"]').count() === 1, 'accounts index (master) renders');
-  ok(await page.locator('[data-testid="htv2-account-workspace"]').count() === 1, 'account workspace (detail) renders');
-  ok(await page.locator('[data-testid="htv2-accounts-filter-all"]').count() === 1, 'account filters present');
+  // Review #3: Accounts is a brokerage LEDGER + flat statement workspace, not a card wall.
+  ok(await page.locator('[data-testid="htv2-accounts-ledger"]').count() === 1, 'accounts ledger table renders');
+  ok(await page.locator('[data-testid="htv2-accounts-row"]').count() > 1, 'ledger lists multiple accounts');
+  ok(await page.locator('[data-testid="htv2-account-workspace"]').count() === 1, 'account statement workspace renders');
+  ok(await page.locator('[data-testid="htv2-accounts-filter-all"]').count() === 1, 'account state nav present');
   await page.locator('[data-testid="htv2-open-full-account"]').first().click();
   await page.waitForTimeout(250);
   ok(page.url().includes('/portal-v2/accounts/'), 'Open full account opens an account detail route');
@@ -99,11 +100,18 @@ async function run() {
   await page.waitForTimeout(120);
   ok(await page.locator('[data-testid="htv2-profile-verification"]').count() === 1, 'verification pane renders (KYC distinct from display name)');
 
-  console.log('R2 — Certificates category rail + verify, no fake artifact:');
+  console.log('R3 — Certificates show actual artwork + preview modal:');
   await page.goto(`${BASE}/portal-v2/certificates`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(400);
   ok(await page.locator('[data-testid="htv2-cert-cat-funded"]').count() === 1, 'Funded category tab present');
-  ok(await page.locator('[data-testid="htv2-cert-verify"]').first().count() === 1, 'certificate Verify action present');
+  ok(await page.locator('.htv2-certtile-img').count() >= 1, 'actual rendered certificate artwork is visible in the vault');
+  await page.locator('[data-testid="htv2-cert"]').first().click();
+  await page.waitForTimeout(300);
+  ok(await page.locator('[data-testid="htv2-cert-modal"]').count() === 1, 'clicking a certificate opens the large preview');
+  ok(await page.locator('.htv2-certmodal-img').count() === 1, 'preview shows the full rendered artifact');
+  ok(await page.locator('[data-testid="htv2-cert-verify"]').count() === 1, 'preview offers Verify');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
   await page.locator('[data-testid="htv2-cert-cat-payouts"]').click();
   await page.waitForTimeout(120);
   ok(await page.locator('[data-testid="htv2-cert"]').count() >= 1, 'payouts category filters the vault');

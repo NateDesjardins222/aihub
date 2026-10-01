@@ -59,3 +59,14 @@ empty/seam state** rather than a fake:
    supplies fixtures. The same components render both, so what Nathan reviews is what ships.
 3. No second source of truth is introduced. New read needs are additive projections over the
    existing authoritative records, not new writable stores.
+
+---
+## Review #3 — real product surfaces
+- **Support** is now a REAL container (`support.tsx`) wired to `/api/v1/support/*` (create/list/
+  thread/reply), identical mechanism to the tested Portal V1. Submit creates an AUTHORITATIVE ticket;
+  no local-state fake. Unauthenticated preview → empty list + real errors, never a fabricated ticket.
+- **Certificates** show the real rendered artifact (auth endpoint in prod; real renderer samples in
+  the dev review). **Accounts** re-composed to a brokerage ledger + flat statement. **Performance**
+  is a real interactive chart over an authoritative series.
+- Isolation unchanged: production 404s `/portal-v2`; `fixtures.ts` + `cert-samples.ts` are imported
+  only by the dev review; a regression test asserts production containers import no fixture module.

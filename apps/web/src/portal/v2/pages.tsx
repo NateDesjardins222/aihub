@@ -196,6 +196,7 @@ export function V2CertificatesPage({ certs, onOpenAccount, actions = {} }: {
   actions?: CertActions;
 }): JSX.Element {
   const [cat, setCat] = useState<CertCategory>('all');
+  const [open, setOpen] = useState<Cert | null>(null);
   const counts = useMemo(() => {
     const c: Record<CertCategory, number> = { all: 0, funded: 0, payouts: 0, completion: 0 };
     for (const def of CERT_CATS) c[def.key] = certs.filter(def.match).length;
@@ -226,71 +227,107 @@ export function V2CertificatesPage({ certs, onOpenAccount, actions = {} }: {
           </nav>
           <div className="htv2-vault" data-testid="htv2-certs">
             {visible.map((c) => (
-              <CertCard key={c.id} c={c} onOpenAccount={onOpenAccount} actions={actions} />
+              <CertCard key={c.id} c={c} actions={actions} onOpen={() => setOpen(c)} />
             ))}
           </div>
         </>
       )}
+      {open && <CertModal c={open} actions={actions} onClose={() => setOpen(null)} onOpenAccount={onOpenAccount} />}
     </div>
   );
 }
 
-function CertCard({ c, onOpenAccount, actions }: { c: Cert; onOpenAccount: (id: string) => void; actions: CertActions }): JSX.Element {
-  const [preview, setPreview] = useState<string | null>(null);
-  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+/** Resolve the rendered artifact into an object URL, tracking state. Shared by card + modal. */
+function useArtifact(c: Cert, actions: CertActions): { url: string | null; state: 'loading' | 'ready' | 'unavailable' } {
+  const [url, setUrl] = useState<string | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const rendered = c.renderStatus == null || c.renderStatus === 'RENDERED';
-
   useEffect(() => {
-    if (!actions.resolveArtifact || !rendered || c.hasImage === false) { setPreviewState('unavailable'); return; }
-    let live = true;
-    let url: string | null = null;
-    setPreviewState('loading');
+    if (!actions.resolveArtifact || !rendered || c.hasImage === false) { setState('unavailable'); return; }
+    let live = true; let made: string | null = null;
+    setState('loading');
     void actions.resolveArtifact(c.id, 'image').then((u) => {
       if (!live) { if (u) URL.revokeObjectURL(u); return; }
-      if (u) { url = u; setPreview(u); setPreviewState('ready'); } else { setPreviewState('unavailable'); }
+      if (u) { made = u; setUrl(u); setState('ready'); } else { setState('unavailable'); }
     });
-    return () => { live = false; if (url) URL.revokeObjectURL(url); };
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
   }, [c.id, c.hasImage, rendered, actions]);
+  return { url, state };
+}
 
-  const doDownload = async (kind: 'image' | 'pdf'): Promise<void> => {
-    if (!actions.resolveArtifact) return;
-    const url = await actions.resolveArtifact(c.id, kind);
-    if (!url) return;
-    const a = document.createElement('a');
-    a.href = url; a.download = `${c.certificatePublicId}.${kind === 'pdf' ? 'pdf' : 'png'}`;
-    document.body.appendChild(a); a.click(); a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
-  };
+async function downloadArtifact(c: Cert, actions: CertActions, kind: 'image' | 'pdf'): Promise<void> {
+  if (!actions.resolveArtifact) return;
+  const url = await actions.resolveArtifact(c.id, kind);
+  if (!url) return;
+  const a = document.createElement('a');
+  a.href = url; a.download = `${c.certificatePublicId}.${kind === 'pdf' ? 'pdf' : 'png'}`;
+  document.body.appendChild(a); a.click(); a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
 
+/** An artwork-DOMINANT tile: the real rendered certificate is the tile. Click → preview. */
+function CertCard({ c, actions, onOpen }: { c: Cert; actions: CertActions; onOpen: () => void }): JSX.Element {
+  const { url, state } = useArtifact(c, actions);
   return (
-    <article className="htv2-cert" data-testid="htv2-cert">
-      <div className="htv2-cert-preview" data-state={previewState}>
-        {previewState === 'ready' && preview
-          ? <img className="htv2-cert-img" src={preview} alt={`${c.publicDisplayName} certificate`} />
-          : <span className="htv2-cert-preview-note ht-t-meta">{previewState === 'loading' ? 'Loading preview…' : 'Preview available in your account'}</span>}
+    <button className="htv2-certtile" data-testid="htv2-cert" onClick={onOpen} aria-label={`${certKindLabel(c.type)} certificate — ${c.publicDisplayName}`}>
+      <span className="htv2-certtile-art" data-state={state}>
+        {state === 'ready' && url
+          ? <img className="htv2-certtile-img" src={url} alt={`${c.publicDisplayName} certificate`} />
+          : <span className="htv2-certtile-note ht-t-meta">{state === 'loading' ? 'Loading…' : 'Preview available in your account'}</span>}
+        <span className="htv2-certtile-view ht-t-nav">View</span>
+      </span>
+      <span className="htv2-certtile-meta">
+        <span className="htv2-certtile-kind ht-t-label">{certKindLabel(c.type)}</span>
+        {c.amountMicros != null && <span className="htv2-certtile-amt ht-t-fin-sm ht-num">{formatMoney(c.amountMicros)}</span>}
+        <span className="htv2-certtile-date ht-t-meta ht-num">{fmtDate(c.issuedAt)}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Large preview: the actual rendered certificate, full size, with metadata + real actions. */
+function CertModal({ c, actions, onClose, onOpenAccount }: { c: Cert; actions: CertActions; onClose: () => void; onOpenAccount: (id: string) => void }): JSX.Element {
+  const { url, state } = useArtifact(c, actions);
+  const rendered = c.renderStatus == null || c.renderStatus === 'RENDERED';
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="htv2-certmodal-scrim" role="dialog" aria-modal="true" aria-label="Certificate preview" data-testid="htv2-cert-modal" onClick={onClose}>
+      <div className="htv2-certmodal" onClick={(e) => e.stopPropagation()}>
+        <div className="htv2-certmodal-art" data-state={state}>
+          {state === 'ready' && url
+            ? <img className="htv2-certmodal-img" src={url} alt={`${c.publicDisplayName} certificate`} />
+            : <span className="htv2-certtile-note ht-t-meta">{state === 'loading' ? 'Loading…' : 'Preview available in your account'}</span>}
+        </div>
+        <aside className="htv2-certmodal-side">
+          <header className="htv2-certmodal-head">
+            <span className="htv2-cert-kind ht-t-label">{certKindLabel(c.type)}</span>
+            <button className="htv2-certmodal-x" onClick={onClose} aria-label="Close">✕</button>
+          </header>
+          <dl className="htv2-certmodal-dl">
+            <div><dt className="ht-t-label">Recipient</dt><dd className="ht-t-fin-sm">{c.publicDisplayName}</dd></div>
+            {c.amountMicros != null && <div><dt className="ht-t-label">Amount</dt><dd className="ht-t-fin-sm ht-num">{formatMoney(c.amountMicros)}</dd></div>}
+            <div><dt className="ht-t-label">Issued</dt><dd className="ht-t-fin-sm ht-num">{fmtDate(c.issuedAt)}</dd></div>
+            <div><dt className="ht-t-label">Certificate ID</dt><dd className="ht-t-fin-sm ht-num">#{c.certificatePublicId}</dd></div>
+          </dl>
+          <div className="htv2-certmodal-actions">
+            {rendered && c.hasImage !== false && actions.resolveArtifact && (
+              <button className="htv2-btn htv2-btn-secondary htv2-btn-sm ht-t-button" onClick={() => void downloadArtifact(c, actions, 'image')} data-testid="htv2-cert-download-image">Download image</button>
+            )}
+            {rendered && c.hasPdf && actions.resolveArtifact && (
+              <button className="htv2-btn htv2-btn-secondary htv2-btn-sm ht-t-button" onClick={() => void downloadArtifact(c, actions, 'pdf')} data-testid="htv2-cert-download-pdf">Download PDF</button>
+            )}
+            {actions.onVerify && (
+              <button className="htv2-btn htv2-btn-secondary htv2-btn-sm ht-t-button" onClick={() => actions.onVerify!(c.verificationToken)} data-testid="htv2-cert-verify">Verify ↗</button>
+            )}
+          </div>
+          {c.accountId && <button className="htv2-link ht-t-nav" onClick={() => onOpenAccount(c.accountId!)}>View associated account →</button>}
+        </aside>
       </div>
-      <div className="htv2-cert-top">
-        <span className="htv2-cert-kind ht-t-label">{certKindLabel(c.type)}</span>
-        <span className="ht-t-meta ht-num">{fmtDate(c.issuedAt)}</span>
-      </div>
-      <div className="htv2-cert-name ht-t-section">{c.publicDisplayName}</div>
-      {c.amountMicros != null && <div className="htv2-cert-amt ht-t-fin-md ht-num">{formatMoney(c.amountMicros)}</div>}
-      <div className="htv2-cert-actions">
-        {rendered && c.hasImage !== false && actions.resolveArtifact && (
-          <button className="htv2-link ht-t-nav" onClick={() => void doDownload('image')} data-testid="htv2-cert-download-image">Download image</button>
-        )}
-        {rendered && c.hasPdf && actions.resolveArtifact && (
-          <button className="htv2-link ht-t-nav" onClick={() => void doDownload('pdf')} data-testid="htv2-cert-download-pdf">Download PDF</button>
-        )}
-        {actions.onVerify && (
-          <button className="htv2-link ht-t-nav" onClick={() => actions.onVerify!(c.verificationToken)} data-testid="htv2-cert-verify">Verify ↗</button>
-        )}
-      </div>
-      <div className="htv2-cert-foot">
-        <span className="ht-t-meta ht-num">#{c.certificatePublicId}</span>
-        {c.accountId && <button className="htv2-link ht-t-nav" onClick={() => onOpenAccount(c.accountId!)}>View account →</button>}
-      </div>
-    </article>
+    </div>
   );
 }
 
@@ -302,7 +339,12 @@ export interface OrderRow {
 }
 /** Provider-safe payment-method projection. NEVER a raw card number — only the brand,
  *  last four, and expiry the payment provider returns. Null when none is on file. */
-export interface PaymentMethodView { brand: string; last4: string; expMonth: number; expYear: number }
+export interface PaymentMethodView {
+  brand: string; last4: string; expMonth: number; expYear: number;
+  isDefault?: boolean;
+  // Provider-safe billing contact (only what the provider returns; never card data).
+  billingName?: string | null; billingEmail?: string | null; country?: string | null;
+}
 export interface BillingView {
   totalSpentMicros: number; orderCount: number; activeEntitlements: number; orders: OrderRow[];
   paymentMethod?: PaymentMethodView | null;
@@ -327,6 +369,7 @@ export function V2BillingPage({ view, onOpenAccount, actions = {} }: {
   actions?: BillingActions;
 }): JSX.Element {
   const pm = view.paymentMethod ?? null;
+  const [managing, setManaging] = useState(false);
   return (
     <div className="htv2-page">
       <PageHead
@@ -342,26 +385,52 @@ export function V2BillingPage({ view, onOpenAccount, actions = {} }: {
         ]}
       />
 
-      <V2Section title="Payment method">
-        <div className="htv2-paymethod" data-testid="htv2-billing-paymethod">
-          {pm ? (
-            <>
-              <div className="htv2-paymethod-card">
-                <span className="htv2-paymethod-brand ht-t-fin-sm">{pm.brand}</span>
-                <span className="ht-t-meta ht-num">•••• {pm.last4}</span>
-                <span className="ht-t-meta ht-num">exp {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}</span>
-              </div>
-              {actions.onManagePaymentMethod && <button className="htv2-link ht-t-nav" onClick={actions.onManagePaymentMethod} data-testid="htv2-billing-manage-pm">Update →</button>}
-            </>
-          ) : (
-            <>
-              <span className="ht-t-body-sm htv2-tone-muted">No payment method on file.</span>
-              {actions.onManagePaymentMethod && <button className="htv2-link ht-t-nav" onClick={actions.onManagePaymentMethod} data-testid="htv2-billing-add-pm">Add payment method →</button>}
-            </>
-          )}
-        </div>
+      <V2Section title="Payment method" actions={pm ? <button className="htv2-link ht-t-nav" onClick={() => setManaging(true)} data-testid="htv2-billing-manage-pm">Manage →</button> : undefined}>
+        {pm ? (
+          <div className="htv2-paymethod2" data-testid="htv2-billing-paymethod">
+            <div className="htv2-paymethod2-card">
+              <span className="htv2-paymethod2-chip" aria-hidden />
+              <span className="htv2-paymethod2-brand ht-t-fin-md">{pm.brand}</span>
+              <span className="htv2-paymethod2-num ht-num">•••• •••• •••• {pm.last4}</span>
+              <span className="htv2-paymethod2-exp ht-t-meta ht-num">Expires {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}</span>
+            </div>
+            <dl className="htv2-paymethod2-meta">
+              {pm.isDefault && <div><dt className="ht-t-label">Status</dt><dd><V2Status kind="funded">Default</V2Status></dd></div>}
+              {pm.billingName && <div><dt className="ht-t-label">Billing name</dt><dd className="ht-t-fin-sm">{pm.billingName}</dd></div>}
+              {pm.billingEmail && <div><dt className="ht-t-label">Billing email</dt><dd className="ht-t-fin-sm ht-num">{pm.billingEmail}</dd></div>}
+              {pm.country && <div><dt className="ht-t-label">Country</dt><dd className="ht-t-fin-sm">{pm.country}</dd></div>}
+            </dl>
+          </div>
+        ) : (
+          <div className="htv2-paymethod" data-testid="htv2-billing-paymethod">
+            <span className="ht-t-body-sm htv2-tone-muted">No payment method on file.</span>
+            {actions.onManagePaymentMethod && <button className="htv2-link ht-t-nav" onClick={actions.onManagePaymentMethod} data-testid="htv2-billing-add-pm">Add payment method →</button>}
+          </div>
+        )}
         <p className="ht-t-meta">Card details are held by our payment provider and never stored on our servers.</p>
       </V2Section>
+
+      {managing && pm && (
+        <div className="htv2-certmodal-scrim" role="dialog" aria-modal="true" aria-label="Manage payment method" data-testid="htv2-billing-pm-modal" onClick={() => setManaging(false)}>
+          <div className="htv2-pmmodal" onClick={(e) => e.stopPropagation()}>
+            <header className="htv2-certmodal-head">
+              <span className="ht-t-section">Payment method</span>
+              <button className="htv2-certmodal-x" onClick={() => setManaging(false)} aria-label="Close">✕</button>
+            </header>
+            <div className="htv2-paymethod2-card htv2-pmmodal-card">
+              <span className="htv2-paymethod2-chip" aria-hidden />
+              <span className="htv2-paymethod2-brand ht-t-fin-md">{pm.brand}</span>
+              <span className="htv2-paymethod2-num ht-num">•••• •••• •••• {pm.last4}</span>
+              <span className="htv2-paymethod2-exp ht-t-meta ht-num">Expires {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}</span>
+            </div>
+            <p className="ht-t-body-sm">To change or remove your card, continue to our payment provider’s secure portal. Card details are entered and stored there — never on Happy Trader’s servers, and never in this app.</p>
+            <div className="htv2-certmodal-actions">
+              {actions.onManagePaymentMethod && <button className="htv2-btn htv2-btn-primary htv2-btn-sm ht-t-button" onClick={actions.onManagePaymentMethod} data-testid="htv2-billing-pm-continue">Continue to secure provider ↗</button>}
+              <button className="htv2-btn htv2-btn-secondary htv2-btn-sm ht-t-button" onClick={() => setManaging(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <V2Section title="Order history">
         {view.orders.length === 0 ? (

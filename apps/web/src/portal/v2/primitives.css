@@ -218,3 +218,49 @@
 .htv2-chart-frame { border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1); padding: var(--ht-space-4); }
 .htv2-chart-caption { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); margin-bottom: var(--ht-space-3); }
 .htv2-chart-empty { padding: var(--ht-space-8) var(--ht-space-4); color: var(--ht-text-muted); text-align: center; }
+
+/* ---- Interactive performance chart (lightweight-charts host + crosshair tooltip) ---- */
+.htv2-perfchart { position: relative; width: 100%; }
+.htv2-perfchart-host { width: 100%; }
+.htv2-perftip {
+  position: absolute; top: 6px; left: 6px; z-index: 3; pointer-events: none;
+  display: inline-flex; flex-direction: column; gap: 1px;
+  padding: 6px 9px; border: 1px solid var(--ht-border-strong); border-radius: var(--ht-radius-sm);
+  background: var(--ht-bg-elevated); box-shadow: var(--ht-shadow-pop);
+  opacity: 0; transition: opacity var(--ht-fast) var(--ht-ease);
+}
+.htv2-perftip-d { color: var(--ht-text-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.htv2-perftip-v { color: var(--ht-text-strong); font-variant-numeric: tabular-nums; font-size: 13px; }
+
+/* ---- "Progress & payout readiness" (dashboard) — flat clickable rows ---- */
+.htv2-nextup { display: flex; flex-direction: column; border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1); }
+.htv2-nextup-row {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 0.9fr);
+  align-items: center; gap: var(--ht-space-4);
+  padding: 11px var(--ht-space-4); border-top: 1px solid var(--ht-border-subtle);
+  background: transparent; border-left: none; border-right: none; cursor: pointer; text-align: left; width: 100%;
+  transition: background var(--ht-fast) var(--ht-ease);
+}
+.htv2-nextup-row:first-child { border-top: none; }
+.htv2-nextup-row:hover { background: var(--ht-surface-2); }
+.htv2-nextup-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.htv2-nextup-id .ht-t-fin-sm { color: var(--ht-text-strong); }
+.htv2-nextup-prog { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.htv2-nextup-bar { display: block; height: 4px; width: 100%; background: var(--ht-surface-hover); border-radius: 999px; overflow: hidden; }
+.htv2-nextup-bar > span { display: block; height: 100%; background: var(--ht-champagne); border-radius: 999px; }
+.htv2-nextup-fig { display: flex; flex-direction: column; gap: 2px; text-align: right; }
+@media (max-width: 640px) {
+  .htv2-nextup-row { grid-template-columns: 1fr auto; }
+  .htv2-nextup-prog { grid-column: 1 / -1; order: 3; }
+}
+
+/* Companion metrics beside/under the chart — flat, hairline-separated, no cards. */
+.htv2-perf-metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1);
+  margin-top: var(--ht-space-3);
+}
+.htv2-perf-metric { display: flex; flex-direction: column; gap: 4px; padding: var(--ht-space-3) var(--ht-space-4); border-left: 1px solid var(--ht-border-subtle); }
+.htv2-perf-metric:first-child { border-left: none; }
+.htv2-perf-metric-k { color: var(--ht-text-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+.htv2-perf-metric-v { color: var(--ht-text); font-variant-numeric: tabular-nums; }

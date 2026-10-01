@@ -892,3 +892,22 @@ change. See `PORTAL_V2_REBUILD_REPORT.md` addendum.
   No surface fabricates data to cover a seam.
 - **PV2R2-3 (brand).** The chrome symbol derivative is held out of shipping surfaces pending a
   clean-edged source (HAPPY_TRADER_BRAND_ASSET_MAP.md). Stacked + wide wordmarks ship.
+
+---
+
+## Portal V2 — Human-Acceptance Review #3 (real product depth)
+
+- **PV2R3-1 (status).** Portal V2 remains dev-only (`/portal-v2`, `designLabEnabled()`); production
+  404s; not migrated; V1 live with instant rollback. R3 delivered: Accounts re-composed to a
+  brokerage ledger + flat statement; Certificates show ACTUAL rendered artwork (artwork-first gallery +
+  large preview, real download/verify); a REAL interactive performance chart (lightweight-charts) with
+  companion metrics; Support wired to the authoritative `/api/v1/support` ticket API (create/list/
+  thread/reply); deeper provider-safe Billing (card face + manage modal); Dashboard progress & payout
+  readiness. Claim bounded to "ready for human acceptance (#3)".
+- **PV2R3-2 (preview auth).** The vite-only preview is unauthenticated, so live-wired surfaces
+  (Support list/create) show empty/real-error states there; full-stack + signed-in they are live.
+  Authoritative support create/lifecycle + certificate/ticket/billing IDOR are proven by existing
+  server tests (`support-http.test.ts`, `certificate-security.routes.test.ts`).
+- **PV2R3-3 (seams).** Portfolio-P&L endpoint, payment-provider management URL, receipts, physical
+  certificate commerce, achievements, and a future support assistant are documented seams — see
+  PRODUCT_UX_DEBT.md and the PORTAL_V2_* / *_EXISTING_SYSTEM_AUDIT docs.

@@ -44,3 +44,12 @@ introduced, and nothing here changes economics or business rules.
 ## Escalation triggers (HARD STOP + report, do not proceed)
 Cross-tenant data access, raw card storage, review-fixture leakage into production, or any
 change that would alter economics/business rules.
+
+---
+## Review #3 — confirmed operator coverage
+- **Support**: operator endpoints EXIST (`/api/v1/admin/ops/support`, permission-gated) and an admin
+  web UI exists — customer ticketing is operationally complete today (not a new Owner Console dep).
+- **Certificates**: renderer/storage/verification exist; V2 consumes them. Owner issuance/revocation
+  remains the owner workstream.
+- Review #3 built NO Owner Console. Portfolio-P&L projection endpoint + payment-provider management
+  URL + receipts remain the additive seams listed above.

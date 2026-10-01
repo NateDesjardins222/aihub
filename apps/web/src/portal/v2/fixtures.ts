@@ -144,15 +144,16 @@ export const FIXTURE_PAYOUTS: PayoutsView = {
 export const FIXTURE_CERTS: Cert[] = [
   { id: 'c1', certificatePublicId: 'HT-FT-10294', verificationToken: 'tok_ft_10294', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 50K — Funded Trader', amountMicros: 50_000 * M, status: 'ISSUED', issuedAt: now - 34 * DAY, accountId: 'f-funded', renderStatus: 'RENDERED', hasImage: true, hasPdf: true },
   { id: 'c2', certificatePublicId: 'HT-PO-20571', verificationToken: 'tok_po_20571', type: 'PAYOUT', publicDisplayName: 'Payout Award', amountMicros: 2_250 * M, status: 'ISSUED', issuedAt: now - 6 * DAY, accountId: 'f-large', renderStatus: 'RENDERED', hasImage: true, hasPdf: false },
-  { id: 'c3', certificatePublicId: 'HT-FT-10880', verificationToken: 'tok_ft_10880', type: 'FUNDED_TRADER', publicDisplayName: 'CORE 150K — Funded Trader', amountMicros: 150_000 * M, status: 'ISSUED', issuedAt: now - 61 * DAY, accountId: 'f-large', renderStatus: 'RENDERED', hasImage: true, hasPdf: true },
-  { id: 'c4', certificatePublicId: 'HT-AC-33120', verificationToken: 'tok_ac_33120', type: 'ACCOUNT_COMPLETION', publicDisplayName: 'CORE 100K — Evaluation Passed', amountMicros: null, status: 'ISSUED', issuedAt: now - 40 * DAY, accountId: 'f-eval', renderStatus: 'RENDERED', hasImage: true, hasPdf: false },
+  { id: 'c3', certificatePublicId: 'HT-TC-10880', verificationToken: 'tok_tc_10880', type: 'TENK_CLUB', publicDisplayName: '$10K Club', amountMicros: 10_000 * M, status: 'ISSUED', issuedAt: now - 61 * DAY, accountId: 'f-large', renderStatus: 'RENDERED', hasImage: true, hasPdf: true },
+  { id: 'c4', certificatePublicId: 'HT-AC-33120', verificationToken: 'tok_ac_33120', type: 'ACCOUNT_COMPLETED', publicDisplayName: 'CORE 100K — Account Completed', amountMicros: 25_000 * M, status: 'ISSUED', issuedAt: now - 40 * DAY, accountId: 'f-eval', renderStatus: 'RENDERED', hasImage: true, hasPdf: false },
+  { id: 'c5', certificatePublicId: 'HT-FC-41007', verificationToken: 'tok_fc_41007', type: 'FIFTYK_CLUB', publicDisplayName: '$50K Club', amountMicros: 50_000 * M, status: 'ISSUED', issuedAt: now - 3 * DAY, accountId: 'f-large', renderStatus: 'RENDERED', hasImage: true, hasPdf: true },
 ];
 
 export const FIXTURE_BILLING: BillingView = {
   totalSpentMicros: 897 * M,
   orderCount: 3,
   activeEntitlements: 2,
-  paymentMethod: { brand: 'Visa', last4: '4242', expMonth: 8, expYear: 2028 },
+  paymentMethod: { brand: 'Visa', last4: '4242', expMonth: 8, expYear: 2028, isDefault: true, billingName: 'A. Trader', billingEmail: 'trader@example.com', country: 'United States' },
   orders: [
     { id: 'o1', dateMs: now - 61 * DAY, item: 'CORE 150K Evaluation', amountMicros: 549 * M, state: 'PAID', accountId: 'f-large' },
     { id: 'o2', dateMs: now - 40 * DAY, item: 'CORE 100K Evaluation', amountMicros: 349 * M, state: 'PAID', accountId: 'f-eval' },

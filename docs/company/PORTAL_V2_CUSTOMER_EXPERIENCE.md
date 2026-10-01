@@ -49,3 +49,12 @@ overflow. Sidebar collapses to a horizontal strip under 900px.
 Tabs use `role="tab"`/`aria-selected`; progress bars expose `aria-valuenow`; the area chart
 carries `role="img"` + `aria-label`; focus-visible rings on all controls; status color is
 paired with text, never color-only.
+
+---
+## Review #3 — real product depth
+- Accounts: brokerage account LEDGER (dense, tabular, state dots, progress) + a flat financial-
+  statement workspace for the selected account — materially re-composed, not restyled.
+- Dashboard: added "Progress & payout readiness" (what you're closest to; funded winning-days +
+  available) and a real interactive portfolio chart; kept attention + recent activity; no clutter.
+- Certificates: artwork-first gallery + large preview. Support: real ticket create + thread.
+  Billing: real card face + provider-safe manage modal.

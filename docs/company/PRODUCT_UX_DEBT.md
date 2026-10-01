@@ -143,3 +143,22 @@ documented seam with a truthful UI state today.
   HAPPY_TRADER_BRAND_ASSET_MAP.md.
 
 **Do not act on the above before the Portal V2 visual-acceptance phase.**
+
+---
+
+## Portal V2 — Human-Acceptance Review #3 (real product depth)
+
+Documented seams carried from R3 (none faked in-product; each has a truthful state):
+- **Support in the unauthenticated preview**: the vite-only dev preview has no backend/session, so
+  the ticket list is empty and the New Request form surfaces the real server response. The surface is
+  live-wired to `/api/v1/support`; authoritative create/lifecycle is proven by `support-http.test.ts`.
+- **Certificate artwork in the dev review**: real renderer output shipped as samples (`cert-samples.ts`);
+  production serves the customer's own via the authenticated endpoint. `EVALUATION_PASSED` / `HUNDREDK_CLUB`
+  have no approved master → `DISABLED` (no sample), as the renderer reports.
+- **Portfolio-P&L endpoint**: `V2PerfChart` is ready; the production cumulative-P&L projection endpoint
+  is the seam the container fills.
+- **Payment-method change / receipts**: provider-hosted flow + receipt endpoint remain seams (no fake).
+- **Physical certificate commerce & Achievements**: still not surfaced in V2.
+- **Future support chatbot**: documented seam only (not built).
+
+**Do not act on the above before the Portal V2 visual-acceptance phase.**

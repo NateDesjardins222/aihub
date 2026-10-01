@@ -45,3 +45,14 @@ No certificates → "No certificates yet" guidance. Zero-customer mode shows thi
 - Physical ("framed") certificate commerce (`/order-framed`) exists in V1 and is **not yet**
   surfaced in V2 — tracked in PRODUCT_UX_DEBT.md.
 - Achievements (distinct from certificates) are not yet a V2 surface.
+
+---
+## Review #3 — actual artwork is now the visual object
+The vault was rejected (R2) for showing text/placeholder instead of the certificate. R3:
+- Each tile IS the certificate: the real rendered artwork dominates (artwork-first tile),
+  caption (type · amount · date) below. Click → a large preview modal with the full artifact +
+  metadata (recipient, amount, issued, cert ID) + Download image / Download PDF / Verify / View account.
+- Production fetches the customer's own artifact via the authenticated endpoint (bearer→blob).
+- The dev review (no session) serves REAL renderer output as samples (`cert-samples.ts`), produced
+  by `scripts/render-golden-certs.mjs` using the SAME `CanvasCertificateRenderer`, masters and fonts.
+  These are the actual certificate artwork, not CSS — never fabricated. No production path imports them.

@@ -1,0 +1,49 @@
+/* Portal V2 — Support center. Scoped under `.htv2`; `--ht-*` only. Institutional,
+   flat: request list as hairline rows, a calm form, a readable conversation thread. */
+
+.htv2-support-signin {
+  padding: 10px var(--ht-space-4); border: 1px solid var(--ht-border);
+  border-radius: var(--ht-radius-md); background: var(--ht-surface-1); color: var(--ht-text-muted);
+}
+
+/* Request list */
+.htv2-support-rows { display: flex; flex-direction: column; border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1); }
+.htv2-support-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-4);
+  padding: 12px var(--ht-space-4); border-top: 1px solid var(--ht-border-subtle);
+  background: transparent; border-left: none; border-right: none; cursor: pointer; text-align: left; width: 100%;
+  transition: background var(--ht-fast) var(--ht-ease);
+}
+.htv2-support-row:first-child { border-top: none; }
+.htv2-support-row:hover { background: var(--ht-surface-2); }
+.htv2-support-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.htv2-support-row-subj { color: var(--ht-text-strong); }
+.htv2-ledger-skel { height: 44px; background: linear-gradient(90deg, var(--ht-surface-1), var(--ht-surface-2), var(--ht-surface-1)); }
+
+/* Form */
+.htv2-support-form { display: grid; gap: var(--ht-space-4); max-width: 580px; }
+.htv2-field { display: flex; flex-direction: column; gap: 6px; }
+.htv2-input, .htv2-select, .htv2-textarea {
+  background: var(--ht-surface-2); color: var(--ht-text);
+  border: 1px solid var(--ht-border); border-radius: var(--ht-radius-sm);
+  padding: 8px 10px; font: inherit; width: 100%;
+}
+.htv2-textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
+.htv2-input:focus, .htv2-select:focus, .htv2-textarea:focus { outline: none; border-color: var(--ht-border-focus); }
+.htv2-support-err { color: var(--ht-negative); margin: 0; }
+
+/* Thread */
+.htv2-support-thread { display: flex; flex-direction: column; gap: var(--ht-space-4); }
+.htv2-support-thread-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ht-space-4); padding-bottom: var(--ht-space-3); border-bottom: 1px solid var(--ht-border); }
+.htv2-support-thread-head .ht-t-section { color: var(--ht-text-strong); }
+.htv2-support-resolution { display: flex; flex-direction: column; gap: 4px; padding: var(--ht-space-4); border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); background: var(--ht-surface-1); }
+.htv2-support-resolution p { margin: 0; color: var(--ht-text); }
+.htv2-support-messages { display: flex; flex-direction: column; gap: var(--ht-space-3); }
+.htv2-support-msg { padding: 10px var(--ht-space-4); border: 1px solid var(--ht-border-subtle); border-radius: var(--ht-radius-md); }
+.htv2-support-msg-me { background: var(--ht-surface-2); }
+.htv2-support-msg-staff { background: var(--ht-surface-1); border-color: color-mix(in srgb, var(--ht-champagne) 18%, var(--ht-border-subtle)); }
+.htv2-support-msg-who { margin-bottom: 4px; }
+.htv2-support-msg-body { color: var(--ht-text); white-space: pre-wrap; }
+.htv2-support-reply { display: flex; flex-direction: column; gap: var(--ht-space-3); align-items: flex-start; }
+.htv2-support-reply .htv2-textarea { width: 100%; }
+.htv2-support-reopen { padding-top: var(--ht-space-2); }

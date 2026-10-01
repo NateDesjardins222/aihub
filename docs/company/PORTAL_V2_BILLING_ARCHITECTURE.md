@@ -43,3 +43,11 @@ server-authoritative (commerce engine); the portal only reflects the resulting o
 ## Seams / debt
 - Real receipt artifact endpoint is not yet surfaced in V2 (`onViewReceipt` seam).
 - Invoices (as distinct documents from receipts) are not yet modelled in V2.
+
+---
+## Review #3 — deeper payment management (provider-safe)
+Payment method now renders a real card face + provider-safe billing contact (status/default,
+billing name/email/country — only what the provider returns). "Manage" opens a modal showing the
+card, a clear explanation that card data lives with the provider (never our servers/app), and
+"Continue to secure provider ↗" (the real provider-hosted seam). No card form, no fake "card
+updated". Purchase→account provenance and receipts seam unchanged from R2.

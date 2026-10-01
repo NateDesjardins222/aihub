@@ -37,3 +37,12 @@ the authoritative accounts projection and payout read model. Net P&L tone is sig
 - The portfolio cumulative-P&L projection endpoint is the production source to wire for the
   dashboard chart; until then the container must supply the series (the component is ready).
 - Benchmarks / period-over-period comparisons are not yet modelled.
+
+---
+## Review #3 — real interactive chart
+The static SVG was rejected. `perf-chart.tsx` (`V2PerfChart`) now uses lightweight-charts (the same
+library Atlas uses; independent of Atlas) for a real crosshair, date/value tooltip, responsive
+resize, and themed rendering. Ranges 7D/30D/90D/YTD/All slice ONE authoritative cumulative series
+(never fabricate points); companion metrics (period P&L, best/worst day, trading days, avg/day) are
+derived from the same data. `<2` points → truthful empty state. Account detail keeps its authoritative
+EquityCurve. Reconciliation: period P&L = sum of daily deltas in the window = last−baseline.

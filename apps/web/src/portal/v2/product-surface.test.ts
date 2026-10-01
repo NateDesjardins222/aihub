@@ -156,3 +156,61 @@ describe('Portal V2 R2 — zero-customer mode shows zeros, not demo data', () =>
     expect(r).toMatch(/FIXTURE_VIEW_EMPTY_CUSTOMER/);
   });
 });
+
+// ---- Human-acceptance Review #3 guardrails --------------------------------
+
+describe('Portal V2 R3 — no fixture/sample leakage beyond the dev review', () => {
+  // fixtures.ts and cert-samples.ts are DEV-REVIEW ONLY. They must be imported only by the
+  // review harness (Review.tsx) and tests — never by a presentational/production surface.
+  const devOnly = ['./fixtures', './cert-samples'];
+  const allowed = new Set(['Review.tsx']);
+  for (const f of renderFiles) {
+    if (allowed.has(f) || f.endsWith('.test.ts') || f.endsWith('.test.tsx')) continue;
+    it(`${f} imports no dev-review fixture/sample module`, () => {
+      const code = read(f);
+      for (const mod of devOnly) {
+        expect(code, `${f} imports ${mod}`).not.toMatch(new RegExp(`from '${mod.replace('.', '\\.')}'`));
+      }
+    });
+  }
+});
+
+describe('Portal V2 R3 — certificates show the ACTUAL artwork', () => {
+  it('the vault renders the rendered artifact image and a large preview modal', () => {
+    const p = read('pages.tsx');
+    expect(p).toMatch(/htv2-certtile-img/);     // artwork dominates the tile
+    expect(p).toMatch(/htv2-certmodal/);        // click → large preview
+    expect(p).toMatch(/resolveArtifact/);       // real artifact, not CSS
+  });
+  it('real certificate sample artifacts (renderer output) exist for the dev review', () => {
+    for (const f of ['funded-trader', 'payout', 'account-completed', 'tenk-club', 'fiftyk-club']) {
+      expect(existsSync(join(here, `brand/certs/${f}.sample.png`)), f).toBe(true);
+    }
+  });
+});
+
+describe('Portal V2 R3 — support is wired to the authoritative ticket API', () => {
+  it('the support surface calls the real /api/v1/support endpoints (not a fixture)', () => {
+    const s = read('support.tsx');
+    expect(s).toMatch(/\/api\/v1\/support\/me\/tickets/);
+    expect(s).toMatch(/api\.post<\{ id: string \}>\('\/api\/v1\/support\/tickets'/);
+    expect(s).toMatch(/\/messages/);
+  });
+});
+
+describe('Portal V2 R3 — performance is a real interactive chart', () => {
+  it('uses lightweight-charts (crosshair/tooltip/resize), not a static SVG', () => {
+    const c = read('perf-chart.tsx');
+    expect(c).toMatch(/from 'lightweight-charts'/);
+    expect(c).toMatch(/subscribeCrosshairMove/);
+    expect(c).toMatch(/ResizeObserver/);
+  });
+});
+
+describe('Portal V2 R3 — Accounts is re-composed (ledger + statement)', () => {
+  it('renders a brokerage account ledger table, not a card wall', () => {
+    const a = read('AccountsView.tsx');
+    expect(a).toMatch(/htv2-accounts-ledger/);
+    expect(a).toMatch(/htv2-acctws-statement/);
+  });
+});
