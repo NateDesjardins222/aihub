@@ -196,6 +196,23 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
 
   /**
+   * Background workers (scanning startup sweeps + the continuous pollers that
+   * `buildApp` starts: notification worker, outbox delivery worker, account
+   * LISTEN/NOTIFY listener, payout-ops worker, inactivity worker).
+   *
+   * `auto` (the default) runs them in development and production but NOT under
+   * `NODE_ENV=test`: in the shared single-process test database they are
+   * fire-and-forget async that outlives the test that started it, scanning
+   * whole tables and contending on the same rows the next test is asserting on —
+   * the PCV-6 non-determinism (cross-file pollution, EOD teardown deadlock,
+   * CPU/connection starvation that under-drains the engine). Tests that need a
+   * worker construct their own, scoped to their own pool, and drain it
+   * deterministically. Set `on` to force them on under test (opt-in), or `off`
+   * to force them off outside test. See docs/TEST_ISOLATION_ARCHITECTURE.md.
+   */
+  HTF_BACKGROUND_WORKERS: z.enum(['auto', 'on', 'off']).default('auto'),
+
+  /**
    * Identity verification (Stripe Identity). OPTIONAL and NOT wired in this
    * milestone. With these unset the identity provider is the deterministic MOCK;
    * the Stripe adapter exists only as a seam that reports itself unconfigured and
@@ -273,6 +290,19 @@ export function productionMisconfiguration(config: AppEnv): string | null {
 
 export function isProduction(): boolean {
   return env().NODE_ENV === 'production';
+}
+
+/**
+ * Whether `buildApp` should start its background workers (scanning startup
+ * sweeps + continuous pollers). `auto` → on everywhere except `NODE_ENV=test`;
+ * `on`/`off` force it either way. See the `HTF_BACKGROUND_WORKERS` schema note
+ * and docs/TEST_ISOLATION_ARCHITECTURE.md for why they are off under test.
+ */
+export function backgroundWorkersEnabled(): boolean {
+  const mode = env().HTF_BACKGROUND_WORKERS;
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return env().NODE_ENV !== 'test';
 }
 
 /**

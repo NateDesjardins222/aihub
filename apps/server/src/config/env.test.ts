@@ -39,6 +39,7 @@ const base: AppEnv = {
   TRUSTED_PROXY: 'false',
   WHOP_SANDBOX: false,
   HTF_AUTO_FUNDING: true,
+  HTF_BACKGROUND_WORKERS: 'auto',
   OBJECT_STORE_PROVIDER: 'local',
   ARTIFACT_STORE_DIR: '.artifacts',
   PRODIGI_ENV: 'sandbox',

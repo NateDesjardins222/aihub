@@ -12,8 +12,23 @@ export interface DbHandle {
   readonly db: Database;
 }
 
+/**
+ * Test isolation (PCV-6): when the per-worker vitest harness has assigned this
+ * process a cloned database, `HTF_TEST_WORKER_DB` holds that clone's URL and
+ * EVERY connection this process opens is routed to it — including the ~30 test
+ * files that pass a hard-coded `atlas_test` URL to `createDb`. This makes
+ * parallel test files run against disjoint databases instead of contending on
+ * one. The variable is set ONLY by apps/server/src/test/setup-worker-db.ts and
+ * ONLY when HTF_TEST_ISOLATION=1; it is never set in development or production,
+ * so there the requested URL is used unchanged. See
+ * docs/TEST_ISOLATION_ARCHITECTURE.md.
+ */
+function resolveDbUrl(url: string): string {
+  return process.env['HTF_TEST_WORKER_DB'] ?? url;
+}
+
 export function createDb(url = env().DATABASE_URL): DbHandle {
-  const sql = postgres(url, {
+  const sql = postgres(resolveDbUrl(url), {
     max: 10,
     idle_timeout: 20,
     transform: { undefined: null },
@@ -40,7 +55,7 @@ let lockPool: postgres.Sql | null = null;
 
 export function getLockSql(url = env().DATABASE_URL): postgres.Sql {
   if (!lockPool) {
-    lockPool = postgres(url, { max: 20, idle_timeout: 20, transform: { undefined: null }, onnotice: () => {} });
+    lockPool = postgres(resolveDbUrl(url), { max: 20, idle_timeout: 20, transform: { undefined: null }, onnotice: () => {} });
   }
   return lockPool;
 }

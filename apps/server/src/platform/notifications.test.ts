@@ -22,6 +22,7 @@ import { events } from './events.js';
 import {
   deliverPendingNotifications,
   enqueueNotification,
+  registerNotificationConsumer,
   resendNotification,
 } from './notifications.js';
 import {
@@ -155,22 +156,32 @@ describe('event consumer', () => {
     const sms = await startContactVerification(db, { identityId, channel: 'SMS', value: '+15552223333' });
     await confirmContactVerification(db, { challengeId: sms.challengeId, code: sms.devCode! });
 
-    const accountId = crypto.randomUUID();
-    await events.publish(db, { type: 'account.funded', organizationId, userId, accountId, payload: { publicId: 'SIM-1' } });
-    await events.publish(db, { type: 'account.funded', organizationId, userId, accountId, payload: { publicId: 'SIM-1' } });
+    // Drive the consumer explicitly. Under test the app does NOT run the
+    // notification consumer (PCV-6: it would enqueue a PENDING intent on every
+    // domain event across every file and pollute the shared database); the one
+    // test that exercises it registers its own, scoped to this test, and stops it
+    // after. Behaviour and assertions are unchanged — this only owns the lifetime.
+    const stopConsumer = registerNotificationConsumer(db);
+    try {
+      const accountId = crypto.randomUUID();
+      await events.publish(db, { type: 'account.funded', organizationId, userId, accountId, payload: { publicId: 'SIM-1' } });
+      await events.publish(db, { type: 'account.funded', organizationId, userId, accountId, payload: { publicId: 'SIM-1' } });
 
-    // The consumer is deferred; wait briefly, then check.
-    const seen = await (async () => {
-      for (let i = 0; i < 40; i += 1) {
-        const rows = await db.select().from(notificationMessages).where(and(eq(notificationMessages.customerIdentityId, identityId), eq(notificationMessages.type, 'FUNDED_READY')));
-        if (rows.length >= 2) return rows; // one EMAIL + one SMS
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      return db.select().from(notificationMessages).where(and(eq(notificationMessages.customerIdentityId, identityId), eq(notificationMessages.type, 'FUNDED_READY')));
-    })();
-    // Exactly one per channel despite two identical events.
-    expect(seen.filter((r) => r.channel === 'EMAIL')).toHaveLength(1);
-    expect(seen.filter((r) => r.channel === 'SMS')).toHaveLength(1);
+      // The consumer is deferred; wait briefly, then check.
+      const seen = await (async () => {
+        for (let i = 0; i < 40; i += 1) {
+          const rows = await db.select().from(notificationMessages).where(and(eq(notificationMessages.customerIdentityId, identityId), eq(notificationMessages.type, 'FUNDED_READY')));
+          if (rows.length >= 2) return rows; // one EMAIL + one SMS
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return db.select().from(notificationMessages).where(and(eq(notificationMessages.customerIdentityId, identityId), eq(notificationMessages.type, 'FUNDED_READY')));
+      })();
+      // Exactly one per channel despite two identical events.
+      expect(seen.filter((r) => r.channel === 'EMAIL')).toHaveLength(1);
+      expect(seen.filter((r) => r.channel === 'SMS')).toHaveLength(1);
+    } finally {
+      stopConsumer();
+    }
   });
 });
 

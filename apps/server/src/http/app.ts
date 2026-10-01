@@ -4,7 +4,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
-import { env, isProduction, trustProxyOption } from '../config/env.js';
+import { backgroundWorkersEnabled, env, isProduction, trustProxyOption } from '../config/env.js';
 import { ApiError } from './errors.js';
 import { registerAuth } from './auth-plugin.js';
 import { authRoutes } from './routes/auth.js';
@@ -400,7 +400,6 @@ export async function buildApp(): Promise<BuiltApp> {
    * un-certified, so a qualification is never lost. The engine is untouched.
    */
   const stopCertifying = registerAutoCertification(db);
-  void certifyPassedEvaluations(db).catch(() => undefined);
 
   /*
    * Automatic pass -> funded: certification emits evaluation.qualified, and this
@@ -410,18 +409,6 @@ export async function buildApp(): Promise<BuiltApp> {
    * fund:<qualId> idempotency key.
    */
   const stopAutoFunding = registerAutoFunding(db);
-  void fundEligibleQualifications(db).catch(() => undefined);
-
-  /*
-   * Customer notifications attach here, strictly downstream: a committed domain
-   * event records a notification intent (off the publishing call stack), and a
-   * separate worker delivers it through the provider. Trading/payment/provisioning
-   * never wait for email or SMS. With no Resend/Twilio credentials the mock
-   * providers record what would have been sent; a real-but-unconfigured provider
-   * SUPPRESSES rather than faking delivery.
-   */
-  const stopNotificationConsumer = registerNotificationConsumer(db);
-  const stopNotificationWorker = startNotificationWorker(db);
 
   /*
    * A paid purchase whose identity/agreements gate was not yet satisfied parks
@@ -430,7 +417,6 @@ export async function buildApp(): Promise<BuiltApp> {
    * payment is never lost and provisioning is exactly-once and idempotent.
    */
   const stopProvisioningRecovery = registerProvisioningRecovery(db);
-  void retryPendingProvisioning(db).catch(() => undefined);
 
   /*
    * Recognition: a deferred bystander issues certificates and achievements on
@@ -459,50 +445,103 @@ export async function buildApp(): Promise<BuiltApp> {
   /*
    * Seed the required agreements (dev placeholder content) so the onboarding
    * gate has current versions to enforce. Idempotent — republishing identical
-   * content is a no-op.
+   * content is a no-op. AWAITED (was fire-and-forget): db:seed does not seed
+   * agreements, the acceptance-gate tests need current versions present the
+   * moment the app is ready, and awaiting removes a startup race that left the
+   * gate briefly empty. It is a one-shot committed write, not a scanning worker,
+   * so it runs in every environment — including test.
    */
-  void defaultOrganizationId(db)
-    .then((organizationId) => seedDefaultAgreements(db, organizationId))
-    .catch(() => undefined);
+  const organizationId = await defaultOrganizationId(db);
+  await seedDefaultAgreements(db, organizationId).catch(() => undefined);
 
   /*
-   * The outbox delivery worker keeps the operational read model current and
-   * wakes other instances. It drains account.changed events into the projection
-   * and, after each committed batch, NOTIFYs so an instance holding a trader's
-   * or owner's socket re-publishes even for a change processed elsewhere. Its
-   * connection is the dedicated lock pool, kept off the query pool.
+   * Background workers — the scanning startup sweeps and the continuous pollers.
+   * OFF under NODE_ENV=test (backgroundWorkersEnabled(); see PCV-6 /
+   * docs/TEST_ISOLATION_ARCHITECTURE.md): in the shared single-process test DB
+   * they are fire-and-forget async that outlives the test that started it,
+   * scanning whole tables and contending on the rows the next file is asserting
+   * on — the non-determinism this phase removes. The synchronous lifecycle
+   * subscribers above (certify/fund/provision/recognition/copy) stay on
+   * everywhere. The notification consumer is gated too: it enqueues an intent row
+   * on every domain event, and with the delivery worker off those rows would pile
+   * up as PENDING in the shared test database and make a later delivery test's
+   * bounded batch miss its own row (cross-file pollution). The one test that
+   * exercises the consumer registers its own. Tests that need any of these drive
+   * them against their own pool, deterministically.
    */
-  const workerPg = getLockSql();
-  const outboxWorker = new OutboxWorker(db, {
-    handler: accountOutboxHandler,
-    onDelivered: (accountIds) => void notifyAccountChanged(workerPg, accountIds),
-  });
-  outboxWorker.start();
+  let stopNotificationConsumer: (() => void) | null = null;
+  let stopNotificationWorker: (() => void) | null = null;
+  let outboxWorker: OutboxWorker | null = null;
+  let accountListener: Awaited<ReturnType<typeof listenAccountChanged>> | null = null;
+  let payoutOpsWorker: PayoutOpsWorker | null = null;
+  let inactivityWorker: InactivityWorker | null = null;
 
-  const accountListener = await listenAccountChanged(workerPg, (accountId) => {
-    void gateway.publishAccountState(accountId);
-  }).catch((): null => null);
+  if (backgroundWorkersEnabled()) {
+    /*
+     * Customer notifications attach here, strictly downstream: a committed domain
+     * event records a notification intent (off the publishing call stack), which
+     * the delivery worker below sends through the provider. Trading/payment/
+     * provisioning never wait for email or SMS. With no Resend/Twilio credentials
+     * the mock providers record what would have been sent; a real-but-unconfigured
+     * provider SUPPRESSES rather than faking delivery.
+     */
+    stopNotificationConsumer = registerNotificationConsumer(db);
 
-  /*
-   * The durable payout-operations worker resumes work no single request can
-   * guarantee: submitting PAYABLE payouts a treasury/breaker delay left behind and
-   * retrying transient provider failures with the SAME idempotency key. Claims are
-   * disjoint (`FOR UPDATE SKIP LOCKED`) and `submitPayable` re-locks the row and
-   * no-ops unless still PAYABLE, so two instances can never double-submit and a
-   * restart simply picks the durable rows back up. Without this loop a payout left
-   * PAYABLE by a transient error would wait for a manual owner submit (HTF-26).
-   */
-  const payoutOpsWorker = new PayoutOpsWorker(db, { name: 'payout-ops' });
-  payoutOpsWorker.start();
+    /*
+     * Startup recovery sweeps: certify/fund/provision any row a crash left mid-
+     * flight. One-shot scans, so they run only here, never under test (tests
+     * invoke the sweep function directly when they mean to exercise it).
+     */
+    void certifyPassedEvaluations(db).catch(() => undefined);
+    void fundEligibleQualifications(db).catch(() => undefined);
+    void retryPendingProvisioning(db).catch(() => undefined);
 
-  /*
-   * Funded-account inactivity enforcement (HTF-18). The monthly-inactivity rule
-   * was implemented and disclosed but never bound to a scheduler, so it would
-   * never fire. This runs the idempotent, server-time-authoritative sweep on a
-   * slow cadence; an on-demand owner route also exists for manual runs.
-   */
-  const inactivityWorker = new InactivityWorker(db);
-  inactivityWorker.start();
+    /*
+     * The notification DELIVERY worker (distinct from the consumer above, which
+     * only enqueues intents): polls for pending messages and sends them through
+     * the provider. Trading/payment/provisioning never wait on it.
+     */
+    stopNotificationWorker = startNotificationWorker(db);
+
+    /*
+     * The outbox delivery worker keeps the operational read model current and
+     * wakes other instances. It drains account.changed events into the projection
+     * and, after each committed batch, NOTIFYs so an instance holding a trader's
+     * or owner's socket re-publishes even for a change processed elsewhere. Its
+     * connection is the dedicated lock pool, kept off the query pool.
+     */
+    const workerPg = getLockSql();
+    outboxWorker = new OutboxWorker(db, {
+      handler: accountOutboxHandler,
+      onDelivered: (accountIds) => void notifyAccountChanged(workerPg, accountIds),
+    });
+    outboxWorker.start();
+
+    accountListener = await listenAccountChanged(workerPg, (accountId) => {
+      void gateway.publishAccountState(accountId);
+    }).catch((): null => null);
+
+    /*
+     * The durable payout-operations worker resumes work no single request can
+     * guarantee: submitting PAYABLE payouts a treasury/breaker delay left behind and
+     * retrying transient provider failures with the SAME idempotency key. Claims are
+     * disjoint (`FOR UPDATE SKIP LOCKED`) and `submitPayable` re-locks the row and
+     * no-ops unless still PAYABLE, so two instances can never double-submit and a
+     * restart simply picks the durable rows back up. Without this loop a payout left
+     * PAYABLE by a transient error would wait for a manual owner submit (HTF-26).
+     */
+    payoutOpsWorker = new PayoutOpsWorker(db, { name: 'payout-ops' });
+    payoutOpsWorker.start();
+
+    /*
+     * Funded-account inactivity enforcement (HTF-18). The monthly-inactivity rule
+     * was implemented and disclosed but never bound to a scheduler, so it would
+     * never fire. This runs the idempotent, server-time-authoritative sweep on a
+     * slow cadence; an on-demand owner route also exists for manual runs.
+     */
+    inactivityWorker = new InactivityWorker(db);
+    inactivityWorker.start();
+  }
 
   app.addHook('onClose', async () => {
     stopRecording();
@@ -511,11 +550,11 @@ export async function buildApp(): Promise<BuiltApp> {
     stopProvisioningRecovery();
     stopRecognition();
     stopCopyBreach();
-    stopNotificationConsumer();
-    stopNotificationWorker();
-    outboxWorker.stop();
-    payoutOpsWorker.stop();
-    inactivityWorker.stop();
+    stopNotificationConsumer?.();
+    stopNotificationWorker?.();
+    outboxWorker?.stop();
+    payoutOpsWorker?.stop();
+    inactivityWorker?.stop();
     await accountListener?.close().catch(() => undefined);
     engine.stop();
     await stack.market.stop();
