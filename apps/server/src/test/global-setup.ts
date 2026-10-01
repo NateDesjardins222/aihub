@@ -66,6 +66,10 @@ export default async function setup(): Promise<() => Promise<void>> {
   }
 
   return async () => {
+    // HTF_KEEP_CLONES=1 leaves the clones in place so a following run can reuse
+    // them dirty (the dirty/repeat-DB proof's first pass sets it). Stale clones
+    // are harmless — the next run's globalSetup drops-if-exists before cloning.
+    if (process.env['HTF_KEEP_CLONES'] === '1') return;
     const admin2 = postgres(adminDbUrl(base), { max: 1, onnotice: () => {} });
     try {
       for (let workerId = 1; workerId <= poolSize; workerId += 1) {

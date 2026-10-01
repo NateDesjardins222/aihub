@@ -47,10 +47,12 @@ echo ""
 echo ">>> prepare template database (migrated + seeded)"
 bash scripts/prepare-test-db.sh
 
+# $1 = target(s), $2 = shuffle seed. Extra env (HTF_KEEP_CLONES / HTF_SKIP_CLONE)
+# is supplied by the caller.
 run_suite() {
-  node_modules/.bin/vitest run "$TARGET" \
+  node_modules/.bin/vitest run $1 \
     --fileParallelism --maxWorkers="$WORKERS" \
-    --sequence.shuffle.files --sequence.seed="$1"
+    --sequence.shuffle.files --sequence.seed="$2"
 }
 
 fail=0
@@ -58,7 +60,7 @@ for i in $(seq 1 "$ITER"); do
   seed=$(( (RANDOM * 32768 + RANDOM) % 1000000 + 1 ))
   echo ""
   echo ">>> determinism iteration $i / $ITER  (shuffle seed $seed, fresh clones)"
-  if run_suite "$seed"; then
+  if run_suite "$TARGET" "$seed"; then
     echo "<<< iteration $i: PASS"
   else
     echo "<<< iteration $i: FAIL (seed $seed)"
@@ -67,13 +69,32 @@ for i in $(seq 1 "$ITER"); do
   fi
 done
 
+# Dirty/repeat-DB proof (PCV-6 §22). Scoped to the FIXTURE-BASED collision
+# suites, which are designed to be repeat-safe (unique per-fixture identity +
+# scoped self-cleanup) and are exactly the surfaces PCV-6 reproduced. It is NOT
+# the whole suite on purpose: bootstrap/singleton tests ("create the FIRST owner
+# on an empty database", seeded-catalog counts) legitimately require the prepared
+# baseline and cannot pass twice on one un-reseeded database by design — they are
+# covered by the fresh-clone iterations above and by the twice-consecutive
+# canonical validation, which re-prepares each run. The first pass dirties the
+# clones and KEEPS them; the second pass reuses the dirtied clones — passing then
+# proves no cross-run accumulation (fixtures unique, cleanup scoped).
+DIRTY_TARGET="${PCV6_DIRTY_TARGET:-apps/server/src/trading apps/server/src/platform/resilience apps/server/src/http/affiliate-http.test.ts apps/server/src/http/affiliate-security.test.ts apps/server/src/platform/projection-outbox.test.ts}"
 if [ "$fail" = "0" ]; then
   echo ""
-  echo ">>> dirty/repeat-DB iteration (reuse the clones the last run dirtied)"
-  if HTF_SKIP_CLONE=1 run_suite 424242; then
-    echo "<<< dirty/repeat-DB: PASS"
+  echo ">>> dirty/repeat-DB: pass 1/2 — dirty the clones (fresh create, keep)"
+  if HTF_KEEP_CLONES=1 run_suite "$DIRTY_TARGET" 424242; then
+    echo "<<< dirty/repeat-DB pass 1: PASS (clones now dirty, kept)"
+    echo ""
+    echo ">>> dirty/repeat-DB: pass 2/2 — REUSE the dirtied clones (the proof)"
+    if HTF_SKIP_CLONE=1 run_suite "$DIRTY_TARGET" 424243; then
+      echo "<<< dirty/repeat-DB: PASS"
+    else
+      echo "<<< dirty/repeat-DB: FAIL"
+      fail=1
+    fi
   else
-    echo "<<< dirty/repeat-DB: FAIL"
+    echo "<<< dirty/repeat-DB pass 1: FAIL"
     fail=1
   fi
 fi
