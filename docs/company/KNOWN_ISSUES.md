@@ -1029,3 +1029,41 @@ PENDING HUMAN (Nathan), with ChatGPT independent convergence review as directed.
   convergence. Recommended future hardening: quiesce `TradingEngine` async work before
   harness teardown, and give the affiliate HTTP suites per-file DB isolation. Not
   launch-blocking and not a customer-facing issue.
+
+---
+
+## Customer Experience Layer Phase 2 — one canonical `/portal`, made alive (base `a7c9a07`)
+
+Presentation-only experience upgrade of the canonical customer product. **No business rule
+changed** (risk, drawdown, consistency, payout eligibility/caps/cycles, ownership, identity,
+execution, lifecycle, certificates, clubs, provisioning are untouched). `/portal` remains the
+one canonical product; `/portal-v2` remains the DEV-only review harness. Authoritative docs:
+`docs/HAPPY_TRADER_EXPERIENCE_SYSTEM.md`, `docs/CUSTOMER_EXPERIENCE_EVENT_MAP.md`,
+`docs/CUSTOMER_VISUALIZATION_DATA_MAP.md`.
+
+**No new P0 and no new P1.** Additions: a systemic experience layer (rose-gold/champagne
+accent + glow hierarchy + living background + interactive cards + 3 motion tiers + page
+transitions, all reduced-motion aware); an authoritative, idempotent, owner-scoped celebration
+engine (new `celebration_acks` table, migration `0038` — presentation support only); a rebuilt
+Progress page (Goals top with persistent checkboxes, visual Journey, connected Clubs, Where You
+Stand, Accomplishments; Current-Focus duplication removed; tracked goals still un-forgeable);
+and a new Analytics tab + read-only payout-history projection — all on authoritative data.
+
+- **EXP2-1 (P3, scope).** Analytics shows portfolio *summary* + per-account equity sparklines
+  + a daily realized-P&L heatmap + account comparison, but not a single merged cross-account
+  equity **time-series** (no authoritative aggregate series endpoint; composing one would risk
+  misrepresentation). Documented in `CUSTOMER_VISUALIZATION_DATA_MAP.md`.
+- **EXP2-2 (P3, scope).** No consistency **time-series** (only the point-in-time ratio +
+  per-request snapshots exist). Not charted over time.
+- **EXP2-3 (P4, hygiene).** The old pre-rebuild Progress CSS classes (`htv2-prog-hero`,
+  `htv2-timeline*`, `htv2-club-card*`, `htv2-goal-card*`) remain in `progress-page.css`,
+  unused by the rebuilt page. Harmless; a later cleanup can drop them.
+- **PCV-6 (unchanged).** The full `validate:release` run still exhibits the pre-existing
+  server-side shared-Postgres/CPU contention flakes (all pass in isolation; 0 server business
+  files changed by this phase). Tracked above; not introduced here.
+
+**Validation:** web typecheck PASS; server typecheck PASS; focused experience + convergence
+web tests PASS (16); server `celebrations.test.ts` PASS (4 — authoritative sourcing, ack
+idempotency/no-replay, cross-customer isolation, malformed-key rejection); migration `0038`
+applies cleanly. Human L5 visual acceptance of the Experience Layer is PENDING HUMAN (Nathan),
+with ChatGPT independent review as directed.

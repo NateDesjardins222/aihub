@@ -205,6 +205,7 @@ interface WebAnalytics {
   equity: { points: Array<{ tExitMs: number; equityMicros: number }>; maxDrawdownMicros: number; finalEquityMicros: number };
   days: { totalTradingDays: number; profitableDays: number; percentProfitableDays: number | null; bestDayMicros: number; worstDayMicros: number };
   trades: { winRate: number | null; profitFactor: number | null };
+  startingBalanceMicros: number;
 }
 interface WebTrade { netPnlMicros: number; tradeDate: string }
 interface WebPayoutRow { id: string; accountName: string | null; state: string; traderShareMicros: number | null; paidAt: number | null; requestedAt: number }
@@ -216,7 +217,8 @@ interface WebPayoutRow { id: string; accountName: string | null; state: string; 
 export function CanonicalAnalytics({ onOpenAccount }: { onOpenAccount: (id: string) => void }): JSX.Element {
   const [res, retry] = useResource<AnalyticsView>(async ({ live }) => {
     const view = await api.get<AccountsView>(INCLUDE_ARCHIVED);
-    const tradable = view.accounts.filter((a) => a.accountType === 'FUNDED_SIM' || a.accountType === 'EVALUATION_SIM');
+    // Authoritative account types: funded = 'FUNDED_SIM', evaluation = 'EVALUATION' (asymmetric by design).
+    const tradable = view.accounts.filter((a) => a.accountType === 'FUNDED_SIM' || a.accountType === 'EVALUATION');
     const rows: AnalyticsAccountRow[] = [];
     const dayMap = new Map<string, number>();
     await Promise.all(tradable.map(async (a) => {
@@ -231,7 +233,9 @@ export function CanonicalAnalytics({ onOpenAccount }: { onOpenAccount: (id: stri
           label: productLabel(a),
           accountType: a.accountType,
           status: a.status,
-          realizedPnlMicros: an.equity.finalEquityMicros,
+          // Realized P&L is NET of the account's starting balance (the equity curve is
+          // based at the starting balance server-side); with no trades this is $0, not the balance.
+          realizedPnlMicros: an.equity.finalEquityMicros - an.startingBalanceMicros,
           maxDrawdownMicros: an.equity.maxDrawdownMicros,
           winRate: an.trades.winRate,
           profitFactor: an.trades.profitFactor,
@@ -240,7 +244,8 @@ export function CanonicalAnalytics({ onOpenAccount }: { onOpenAccount: (id: stri
           percentProfitableDays: an.days.percentProfitableDays,
           bestDayMicros: an.days.bestDayMicros,
           worstDayMicros: an.days.worstDayMicros,
-          equity: an.equity.points.map((p) => ({ t: p.tExitMs, v: p.equityMicros })),
+          // Sparkline shows net P&L over time (based at 0), not absolute equity.
+          equity: an.equity.points.map((p) => ({ t: p.tExitMs, v: p.equityMicros - an.startingBalanceMicros })),
         });
         for (const t of tr.trades) dayMap.set(t.tradeDate, (dayMap.get(t.tradeDate) ?? 0) + t.netPnlMicros);
       } catch { /* an account whose analytics can't load is omitted, never shown as zero */ }
