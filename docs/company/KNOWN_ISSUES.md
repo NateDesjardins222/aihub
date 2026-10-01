@@ -1030,6 +1030,32 @@ PENDING HUMAN (Nathan), with ChatGPT independent convergence review as directed.
   harness teardown, and give the affiliate HTTP suites per-file DB isolation. Not
   launch-blocking and not a customer-facing issue.
 
+  - **PCV-6 — RESOLVED (Engineering Integrity Phase, base `4480d04`).** Root-caused
+    with reproduced evidence: `buildApp()` started fire-and-forget background
+    workers (scanning startup sweeps + continuous pollers + the notification
+    consumer) that outlived the test which created them and, in the shared
+    single-process database, wrote into rows the next file was asserting on —
+    proven non-deterministic under file parallelism (10 files/18 tests vs 16
+    files/56 tests on two back-to-back parallel runs). Fixed at the source:
+    those workers are gated off under `NODE_ENV=test`
+    (`backgroundWorkersEnabled()`), keeping the synchronous lifecycle
+    subscribers; `seedDefaultAgreements` is now awaited. Concurrency is made
+    provably safe (not merely avoided) by opt-in per-worker database isolation
+    (`CREATE DATABASE … TEMPLATE` clone per vitest fork, routed centrally in
+    `db/client.ts`), exercised by the new `pnpm test:determinism`. The
+    determinism harness also surfaced and fixed two **pre-existing** latent test
+    flakes (neither a product defect, neither DB-contention): the MFA at-rest
+    tamper test flipped a bit-insignificant base64url padding char, and
+    notification delivery compared the due time to the Node clock instead of the
+    DB clock. **Deterministic proof:** server suite green serially (192 files /
+    2360 tests, 0 fail); `pnpm test:determinism` 10/10 parallel + randomized-order
+    + per-worker-isolation iterations PASS plus a dirty/repeat-DB pass;
+    `customer:certify` FAST PASS (all integrity invariants); canonical
+    `validate:release` run twice consecutively, exit 0 both. No business rule
+    changed, no test skipped/weakened/removed, migration set intact. Full detail:
+    `docs/PCV6_FAILURE_MAP.md`, `docs/TEST_ISOLATION_ARCHITECTURE.md`,
+    `docs/PCV6_RESOLUTION_REPORT.md`.
+
 ---
 
 ## Customer Experience Layer Phase 2 — one canonical `/portal`, made alive (base `a7c9a07`)
