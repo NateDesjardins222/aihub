@@ -66,9 +66,18 @@ Run once at the end, not blindly repeated:
 
 - Web typecheck: PASS. Server typecheck: PASS.
 - `pnpm customer:certify` FAST: PASS (8 suites / 78 tests, integrity clean, exit 0).
+- `CUSTOMER_CERTIFY_DEEP=1 pnpm customer:certify`: PASS on a freshly seeded DB —
+  integrity PASS, FAST 8 suites + DEEP 5 suites (13 total) green, exit 0. NOTE:
+  the integrity gate is a point-in-time scan and must run against a freshly
+  prepared test DB (`scripts/prepare-test-db.sh`); run against a DB already
+  polluted by the full suite it correctly reports residual rows as FAIL — that is
+  the detector doing its job, not a product defect.
 - Production guard: refuses with `NODE_ENV=production` / prod DATABASE_URL (exit 3).
 - Canonical `pnpm validate:release` (prepare-test-db + typecheck + full test +
-  build): **<RESULT PENDING — patched on completion>**.
+  build): **PASSED** — typecheck green (all packages), **244 test files / 3277
+  tests passed** (1 file + 6 tests skipped), production build clean.
+  "RELEASE VALIDATION PASSED". No flakes; the EOD terminal-state sync (from CPI)
+  held under full-suite load.
 
 ## Defect ledger
 

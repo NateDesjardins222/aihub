@@ -48,9 +48,12 @@ pnpm customer:certify --json               # machine-readable report
 Exit codes: `0` certified · `1` harness failed to run · `2` a gate FAILED · `3`
 refused (target looks like production — the harness never targets production).
 
-Requires a migrated non-production DB (e.g. `scripts/prepare-test-db.sh` against
-`atlas_test`). The harness refuses when `NODE_ENV=production` or `DATABASE_URL`
-names a production database.
+Requires a **freshly prepared** non-production DB (`scripts/prepare-test-db.sh`
+against `atlas_test`). The integrity gate is a point-in-time scan of whatever DB
+you point it at: run it right after `prepare-test-db`. Run against a DB already
+polluted by the full test suite, it will correctly report the residual rows as a
+FAIL — that is the detector working, not a product defect. The harness refuses
+when `NODE_ENV=production` or `DATABASE_URL` names a production database.
 
 ## Human acceptance
 
