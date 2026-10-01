@@ -94,6 +94,31 @@
   /* ---- Motion (quiet) ---- */
   --ht-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
   --ht-fast: 110ms;
+
+  /* ---- Experience accent: ROSE GOLD / CHAMPAGNE (Experience Layer Phase 2) ----
+     Nathan's direction: the single LIVING accent that represents progress, success,
+     achievement and important interaction — NOT every border, word, or button. Kept
+     restrained so the base stays a black/white/chrome luxury terminal. Use via the
+     glow tokens below and the metallic sweeps in motion.css. */
+  --ht-rose: #e6c7bd;            /* rose-champagne (shared with --aura-rose) */
+  --ht-rose-deep: #d8b2a4;       /* deeper rose for 1px accent strokes */
+  --ht-rose-soft: rgba(230, 199, 189, 0.14);   /* faint rose wash (fills) */
+  --ht-rose-line: rgba(230, 199, 189, 0.30);   /* rose hairline */
+  --ht-champagne-soft: rgba(231, 220, 196, 0.12);
+
+  /* ---- Glow hierarchy (§12: intensity communicates hierarchy, never random) ----
+     LOW  = hover / ambient focal; MED = important actionable state; HIGH = achievement.
+     Each is a layered soft shadow in the accent, tuned to read on near-black. */
+  --ht-glow-low: 0 0 0 1px var(--ht-rose-line), 0 2px 18px -8px rgba(230, 199, 189, 0.22);
+  --ht-glow-med: 0 0 0 1px var(--ht-rose-line), 0 4px 26px -6px rgba(230, 199, 189, 0.34);
+  --ht-glow-high: 0 0 0 1px rgba(230, 199, 189, 0.5), 0 6px 40px -4px rgba(230, 199, 189, 0.5);
+  --ht-glow-success: 0 0 0 1px rgba(70, 185, 138, 0.4), 0 4px 30px -6px rgba(70, 185, 138, 0.4);
+
+  /* ---- Focus ring (one consistent accessible ring) ---- */
+  --ht-focus-ring: 0 0 0 2px var(--ht-bg), 0 0 0 4px rgba(230, 199, 189, 0.55);
+
+  /* ---- Surface elevation (hover raise pairs with --motion-lift) ---- */
+  --ht-elevate-hover: 0 1px 0 rgba(0,0,0,0.4), 0 10px 30px -14px rgba(0,0,0,0.6);
 }
 
 /*

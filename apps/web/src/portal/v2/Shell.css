@@ -16,9 +16,15 @@
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-  background: var(--ht-bg);
+  position: relative;
+  /* Transparent so the fixed living background (.htv2-bg, z-index:0) shows through the
+     workspace. The sidebar/top bar keep their own opaque surfaces above it (z-index:1). */
+  background: transparent;
   color: var(--ht-text);
 }
+/* Nav chrome paints above the atmosphere; the workspace stays transparent so content
+   cards sit on the living background. */
+.htv2-side, .htv2-shell-main { position: relative; z-index: 1; }
 
 /* ---- Sidebar ---- */
 .htv2-side {

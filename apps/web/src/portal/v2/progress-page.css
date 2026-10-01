@@ -132,3 +132,61 @@ textarea.htv2-input { resize: vertical; min-height: 44px; }
   .htv2-timeline-node:first-child::before { top: 5px; left: 5px; }
   .htv2-timeline-node:last-child::before { bottom: 50%; }
 }
+
+/* ============================ Experience Layer Phase 2 — rebuilt IA ============================ */
+
+/* ---- My goals ---- */
+.htv2-goal-add {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: var(--ht-control-h); padding: 0 12px; margin-bottom: var(--ht-space-3);
+  background: var(--ht-surface-1); border: 1px dashed var(--ht-border-strong);
+  border-radius: var(--ht-radius-sm); color: var(--ht-text-muted); cursor: pointer;
+  transition: color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease);
+}
+.htv2-goal-add:hover { color: var(--ht-text); border-color: var(--ht-rose); }
+.htv2-goal-add span { color: var(--ht-rose); font-size: 15px; line-height: 1; }
+.htv2-goal-compose { display: flex; align-items: center; gap: var(--ht-space-3); margin-bottom: var(--ht-space-3); }
+.htv2-goal-compose .htv2-input { flex: 1; }
+
+.htv2-goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ht-space-2); }
+.htv2-goal {
+  display: flex; align-items: flex-start; gap: var(--ht-space-3);
+  padding: var(--ht-space-4); background: var(--ht-surface-1);
+  border: 1px solid var(--ht-border); border-radius: var(--ht-radius-sm);
+}
+.htv2-goal .htv2-check { margin-top: 1px; }
+.htv2-goal-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.htv2-goal-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ht-space-3); }
+.htv2-goal-title { color: var(--ht-text-strong); }
+.htv2-goal-kind { color: var(--ht-text-faint); flex: 0 0 auto; }
+.htv2-goal-kind.is-tracked { color: var(--ht-champagne-muted); }
+.htv2-goal-note { color: var(--ht-text-muted); margin: 0; }
+.htv2-goal-track { display: flex; align-items: center; gap: var(--ht-space-3); }
+.htv2-goal-error { color: var(--ht-negative); }
+.htv2-goal-actions { display: flex; gap: var(--ht-space-4); margin-top: 2px; }
+
+/* Completed (expandable) */
+.htv2-goals-completed { margin-top: var(--ht-space-4); }
+.htv2-done { list-style: none; margin: var(--ht-space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.htv2-done-row { display: flex; align-items: center; gap: var(--ht-space-3); color: var(--ht-text-muted); }
+.htv2-check.is-static { width: 16px; height: 16px; background: var(--ht-rose-deep); border: 1px solid var(--ht-rose); position: relative; cursor: default; }
+.htv2-check.is-static::after { content: ""; position: absolute; left: 4px; top: 0; width: 5px; height: 9px; border: solid #1a1412; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+
+/* ---- Where you stand ---- */
+.htv2-stand { display: flex; flex-direction: column; gap: var(--ht-space-5); }
+.htv2-stand-lead {
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: inherit;
+}
+.htv2-stand-lead:disabled { cursor: default; }
+.htv2-stand-value { line-height: 1.05; }
+
+/* ---- Accomplishments ---- */
+.htv2-accomplish { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.htv2-accomplish-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--ht-space-3); padding: 10px 0; border-bottom: 1px solid var(--ht-border-subtle); }
+.htv2-accomplish-row:last-child { border-bottom: none; }
+.htv2-accomplish-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--ht-rose-deep); }
+
+@media (max-width: 720px) {
+  .htv2-goal-compose { flex-wrap: wrap; }
+}

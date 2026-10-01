@@ -17,7 +17,9 @@ import {
   type PayoutsView, type BillingView, type PayoutStandingRow, type PayoutHistoryRow, type OrderRow,
 } from './pages';
 import { V2ProgressPage, type ProgressView, type GoalView, type GoalDraft } from './progress-page';
+import { V2AnalyticsPage, type AnalyticsView, type AnalyticsAccountRow, type AnalyticsDay } from './analytics-page';
 import { V2Dashboard, type V2DashboardData } from './dashboard';
+import { V2PageSkeleton } from './experience';
 import { productLabel, type AccountViewExtra } from './account-view';
 import { PayoutModule } from '../pages/PayoutModule';
 import type { AccountsView, AccountSummary, Cert, PayoutEligibility } from '../lib';
@@ -171,7 +173,7 @@ export function CanonicalCertificates({ onOpenAccount }: { onOpenAccount: (id: s
 }
 
 // --- Progress -----------------------------------------------------------------
-export function CanonicalProgress({ onOpenPayouts, onAddAccount }: { onOpenPayouts: () => void; onAddAccount: () => void }): JSX.Element {
+export function CanonicalProgress({ onOpenPayouts, onAddAccount, onOpenCertificates }: { onOpenPayouts: () => void; onAddAccount: () => void; onOpenCertificates?: () => void }): JSX.Element {
   const [res, retry] = useResource<ProgressView>(async () => api.get<ProgressView>('/api/v1/portal/progress'), []);
   const [view, setView] = useState<ProgressView | null>(null);
   useEffect(() => { if (res.status === 'ready') setView(res.data); }, [res]);
@@ -181,18 +183,81 @@ export function CanonicalProgress({ onOpenPayouts, onAddAccount }: { onOpenPayou
   }, []);
 
   if (res.status === 'error') return <ErrorPanel message={res.message} onRetry={retry} />;
-  if (!view) return <div className="htv2-page"><header className="htv2-page-head"><h1 className="ht-t-page-title">Progress</h1><p className="ht-t-meta">Loading…</p></header></div>;
+  if (!view) return <V2PageSkeleton title="Progress" rows={4} />;
 
+  // Goal writes resolve to a boolean so the optimistic checkbox can roll back on
+  // failure (error ≠ false completion); each confirmed write re-reads authoritative.
   const actions = {
-    onCreateGoal: async (d: GoalDraft) => { await api.post('/api/v1/portal/goals', { title: d.title, note: d.note, kind: d.kind, metric: d.metric, targetValue: d.targetValue }).catch(() => {}); await refresh(); },
-    onUpdateGoal: async (id: string, patch: { title?: string; note?: string | null; targetValue?: number | null }) => { await api.patch(`/api/v1/portal/goals/${id}`, patch).catch(() => {}); await refresh(); },
-    onCompleteGoal: async (id: string) => { await api.post(`/api/v1/portal/goals/${id}/complete`, {}).catch(() => {}); await refresh(); },
-    onArchiveGoal: async (id: string) => { await api.delete(`/api/v1/portal/goals/${id}`).catch(() => {}); await refresh(); },
-    onTogglePin: async (id: string, pinned: boolean) => { await api.patch(`/api/v1/portal/goals/${id}`, { pinned }).catch(() => {}); await refresh(); },
+    onCreateGoal: async (d: GoalDraft) => { try { await api.post('/api/v1/portal/goals', { title: d.title, note: d.note, kind: d.kind, metric: d.metric, targetValue: d.targetValue }); await refresh(); return true; } catch { return false; } },
+    onUpdateGoal: async (id: string, patch: { title?: string; note?: string | null; targetValue?: number | null }) => { try { await api.patch(`/api/v1/portal/goals/${id}`, patch); await refresh(); return true; } catch { return false; } },
+    onCompleteGoal: async (id: string) => { try { await api.post(`/api/v1/portal/goals/${id}/complete`, {}); await refresh(); return true; } catch { return false; } },
+    onArchiveGoal: async (id: string) => { try { await api.delete(`/api/v1/portal/goals/${id}`); await refresh(); return true; } catch { return false; } },
+    onTogglePin: async (id: string, pinned: boolean) => { try { await api.patch(`/api/v1/portal/goals/${id}`, { pinned }); await refresh(); return true; } catch { return false; } },
     onOpenPayouts,
     onAddAccount,
+    onOpenCertificates,
   };
   return <V2ProgressPage view={view} actions={actions} />;
+}
+
+// --- Analytics ----------------------------------------------------------------
+interface WebAnalytics {
+  equity: { points: Array<{ tExitMs: number; equityMicros: number }>; maxDrawdownMicros: number; finalEquityMicros: number };
+  days: { totalTradingDays: number; profitableDays: number; percentProfitableDays: number | null; bestDayMicros: number; worstDayMicros: number };
+  trades: { winRate: number | null; profitFactor: number | null };
+}
+interface WebTrade { netPnlMicros: number; tradeDate: string }
+interface WebPayoutRow { id: string; accountName: string | null; state: string; traderShareMicros: number | null; paidAt: number | null; requestedAt: number }
+
+/** Portfolio-level analytics composed from authoritative per-account data (§59/§60).
+ *  Fans out per-account analytics + trades, aggregates a daily realized-P&L calendar,
+ *  and reads real payout history. Never fabricates: an account whose analytics can't
+ *  load is simply omitted; a thin day grid renders empty cells, never invented P&L. */
+export function CanonicalAnalytics({ onOpenAccount }: { onOpenAccount: (id: string) => void }): JSX.Element {
+  const [res, retry] = useResource<AnalyticsView>(async ({ live }) => {
+    const view = await api.get<AccountsView>(INCLUDE_ARCHIVED);
+    const tradable = view.accounts.filter((a) => a.accountType === 'FUNDED_SIM' || a.accountType === 'EVALUATION_SIM');
+    const rows: AnalyticsAccountRow[] = [];
+    const dayMap = new Map<string, number>();
+    await Promise.all(tradable.map(async (a) => {
+      try {
+        const [an, tr] = await Promise.all([
+          api.get<WebAnalytics>(`/api/v1/portal/accounts/${a.id}/analytics`),
+          api.get<{ trades: WebTrade[] }>(`/api/v1/portal/accounts/${a.id}/trades`),
+        ]);
+        if (!live()) return;
+        rows.push({
+          accountId: a.id,
+          label: productLabel(a),
+          accountType: a.accountType,
+          status: a.status,
+          realizedPnlMicros: an.equity.finalEquityMicros,
+          maxDrawdownMicros: an.equity.maxDrawdownMicros,
+          winRate: an.trades.winRate,
+          profitFactor: an.trades.profitFactor,
+          totalTradingDays: an.days.totalTradingDays,
+          profitableDays: an.days.profitableDays,
+          percentProfitableDays: an.days.percentProfitableDays,
+          bestDayMicros: an.days.bestDayMicros,
+          worstDayMicros: an.days.worstDayMicros,
+          equity: an.equity.points.map((p) => ({ t: p.tExitMs, v: p.equityMicros })),
+        });
+        for (const t of tr.trades) dayMap.set(t.tradeDate, (dayMap.get(t.tradeDate) ?? 0) + t.netPnlMicros);
+      } catch { /* an account whose analytics can't load is omitted, never shown as zero */ }
+    }));
+    rows.sort((x, y) => y.realizedPnlMicros - x.realizedPnlMicros);
+    const calendar: AnalyticsDay[] = [...dayMap.entries()].map(([date, pnlMicros]) => ({ date, pnlMicros })).sort((p, q) => p.date.localeCompare(q.date));
+    let payouts: AnalyticsView['payouts'] = [];
+    try {
+      const h = await api.get<{ payouts: WebPayoutRow[] }>('/api/v1/portal/payouts/history');
+      payouts = h.payouts.map((p) => ({ id: p.id, accountLabel: p.accountName ?? 'Funded account', state: p.state, traderShareMicros: p.traderShareMicros, paidAt: p.paidAt, requestedAt: p.requestedAt }));
+    } catch { /* history unavailable → none; never a fabricated row */ }
+    return { accounts: rows, calendar, payouts };
+  }, []);
+
+  if (res.status === 'error') return <ErrorPanel message={res.message} onRetry={retry} />;
+  if (res.status === 'loading') return <V2PageSkeleton title="Analytics" rows={4} />;
+  return <V2AnalyticsPage view={res.data} onOpenAccount={onOpenAccount} />;
 }
 
 // --- Billing ------------------------------------------------------------------
@@ -254,24 +319,35 @@ export function CanonicalPayouts({ onOpenAccount, onToast }: { onOpenAccount: (i
     }));
     // Authoritative lifetime paid.
     let totalPaidMicros = 0;
-    try { const p = await api.get<{ hero: { lifetimePaidTraderShareMicros: number } }>('/api/v1/portal/progress'); totalPaidMicros = p.hero?.lifetimePaidTraderShareMicros ?? 0; } catch { /* fall back to cert sum below */ }
-    // History from authoritative PAYOUT certificates.
-    const byId = new Map(view.accounts.map((a) => [a.id, a]));
+    try { const p = await api.get<{ hero: { lifetimePaidTraderShareMicros: number } }>('/api/v1/portal/progress'); totalPaidMicros = p.hero?.lifetimePaidTraderShareMicros ?? 0; } catch { /* fall back to history sum below */ }
+    // History + in-review from the authoritative payout-requests projection.
     let history: PayoutHistoryRow[] = [];
+    let inReviewMicros = 0;
+    let cyclesText = '';
     try {
-      const certs = await api.get<{ certificates: Cert[] }>('/api/v1/portal/certificates');
-      history = certs.certificates
-        .filter((c) => c.type === 'PAYOUT' && c.amountMicros != null)
-        .map((c) => {
-          const trader = c.amountMicros!;
-          const gross = split && split > 0 ? Math.round(trader / split) : trader;
-          const acct = c.accountId ? byId.get(c.accountId) : undefined;
-          return { id: c.id, dateMs: c.issuedAt, accountLabel: acct ? productLabel(acct) : 'Funded account', grossMicros: gross, traderMicros: trader, state: 'PAID' as const };
-        })
+      const h = await api.get<{ payouts: Array<{ id: string; accountName: string | null; state: string; requestedGrossMicros: number; grossEligibleMicros: number | null; traderShareMicros: number | null; paidAt: number | null; requestedAt: number }> }>('/api/v1/portal/payouts/history');
+      const PENDING = new Set(['REQUESTED', 'UNDER_REVIEW', 'APPROVED', 'PROCESSING', 'ON_HOLD']);
+      const mapState = (s: string): PayoutHistoryRow['state'] =>
+        s === 'PAID' ? 'PAID' : s === 'PROCESSING' ? 'PROCESSING' : s === 'APPROVED' ? 'APPROVED' : 'UNDER_REVIEW';
+      // Terminal-but-not-paid states (FAILED/CANCELLED/REJECTED) aren't shown as history rows.
+      history = h.payouts
+        .filter((p) => p.state === 'PAID' || PENDING.has(p.state))
+        .map((p) => ({
+          id: p.id,
+          dateMs: p.paidAt ?? p.requestedAt,
+          accountLabel: p.accountName ?? 'Funded account',
+          grossMicros: p.grossEligibleMicros ?? p.requestedGrossMicros,
+          traderMicros: p.traderShareMicros ?? 0,
+          state: mapState(p.state),
+        }))
         .sort((x, y) => y.dateMs - x.dateMs);
-      if (totalPaidMicros === 0) totalPaidMicros = history.reduce((s, h) => s + h.traderMicros, 0);
+      inReviewMicros = h.payouts.filter((p) => PENDING.has(p.state)).reduce((s, p) => s + (p.grossEligibleMicros ?? p.requestedGrossMicros), 0);
+      const paidCount = h.payouts.filter((p) => p.state === 'PAID').length;
+      if (totalPaidMicros === 0) totalPaidMicros = h.payouts.filter((p) => p.state === 'PAID').reduce((s, p) => s + (p.traderShareMicros ?? 0), 0);
+      cyclesText = paidCount > 0 ? String(paidCount) : '—';
     } catch { /* history unavailable → shown as none; never a fabricated row */ }
-    return { totalPaidMicros, availableMicros, inReviewMicros: 0, cyclesText: '', standing, history };
+    void split;
+    return { totalPaidMicros, availableMicros, inReviewMicros, cyclesText, standing, history };
   }, []);
 
   if (res.status === 'error') return <ErrorPanel message={res.message} onRetry={retry} />;

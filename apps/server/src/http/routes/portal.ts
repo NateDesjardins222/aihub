@@ -59,6 +59,8 @@ import {
   upsertPersonalControl,
   PersonalControlError,
 } from '../../platform/personal-risk.js';
+import { acknowledgeCelebration, listPendingCelebrations } from '../../platform/celebrations.js';
+import { listPayoutHistoryForUser } from '../../platform/portal-payouts.js';
 import type { PersonalControlMode, PersonalControlType, PersonalControlValue } from '@atlas/contracts';
 import { PERSONAL_CONTROL_TYPES } from '@atlas/contracts';
 
@@ -461,6 +463,22 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       mapGoalError(err);
     }
+  });
+
+  // ---- Payout history (read-only, owner-scoped projection) ----------------
+  app.get('/payouts/history', async (request, reply) => {
+    return reply.send({ payouts: await listPayoutHistoryForUser(db, request.user!.id) });
+  });
+
+  // ---- Celebrations (presentation support; idempotent, owner-scoped) -------
+  // The customer's UNSEEN milestone moments, derived from authoritative achievements.
+  // Acknowledging one stops it replaying — a major moment is celebrated once (§23).
+  app.get('/celebrations', async (request, reply) => {
+    return reply.send({ pending: await listPendingCelebrations(db, request.user!.id) });
+  });
+  app.post<{ Body: { eventKey?: string } }>('/celebrations/ack', async (request, reply) => {
+    const acknowledged = await acknowledgeCelebration(db, request.user!.id, String(request.body?.eventKey ?? ''));
+    return reply.send({ acknowledged });
   });
 
   // ---- Profile (public display identity, presentation-only) ---------------

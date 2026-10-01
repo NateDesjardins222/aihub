@@ -2091,6 +2091,34 @@ export const personalGoals = pgTable(
   ],
 );
 
+/**
+ * Celebration acknowledgements (Portal V2 Experience Layer Phase 2).
+ *
+ * PRESENTATION SUPPORT ONLY — a per-customer "has seen this milestone celebration"
+ * flag so a major moment (funded, first payout, club) is celebrated ONCE, not on
+ * every refresh. Owner-scoped by customer identity; `eventKey` is the stable
+ * `achievement:<id>` of an exactly-once authoritative achievement. No business
+ * truth lives here. Unique on (identity, eventKey) for idempotent acknowledgement.
+ */
+export const celebrationAcks = pgTable(
+  'celebration_acks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerIdentityId: uuid('customer_identity_id')
+      .notNull()
+      .references(() => customerIdentities.id, { onDelete: 'cascade' }),
+    /** Stable authoritative event key, e.g. `achievement:<uuid>`. */
+    eventKey: varchar('event_key', { length: 80 }).notNull(),
+    seenAt: now(),
+  },
+  (t) => [
+    uniqueIndex('celebration_acks_identity_event_key').on(t.customerIdentityId, t.eventKey),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Native copy trading (Atlas Native Copy Trading V1)
 // ---------------------------------------------------------------------------

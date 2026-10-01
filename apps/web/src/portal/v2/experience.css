@@ -1,0 +1,290 @@
+/*
+ * HAPPY TRADER — Portal V2 EXPERIENCE LAYER (Phase 2).
+ *
+ * The systemic layer that makes the canonical /portal feel ALIVE without becoming a
+ * casino or a generic SaaS dashboard. Everything is scoped under `.htv2`, builds on
+ * tokens.css (`--ht-*`) + motion.css (`--motion-*`, `--aura-*`), animates only
+ * transform/opacity, and is fully neutralised under prefers-reduced-motion.
+ *
+ * Contents: living background · glow hierarchy · interactive card · focus ring ·
+ * page transition · skeleton loaders · progress ring · journey · number flow ·
+ * celebration overlay. Each primitive is opt-in — nothing here styles every box.
+ */
+
+/* ============================ Living background (§10) ============================ */
+/* A single fixed atmospheric layer rendered ONCE behind the workspace. Very large,
+   very soft rose-gold + champagne radials over near-black, with an extremely faint
+   grid and a slow ambient drift. It must be FELT before noticed; content always wins. */
+.htv2-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: var(--ht-bg);
+}
+.htv2-bg::before,
+.htv2-bg::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  will-change: transform;
+}
+/* Upper-right rose-gold aurora. */
+.htv2-bg::before {
+  width: 70vw; height: 70vw;
+  top: -26vw; right: -18vw;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ht-rose) 10%, transparent), transparent 62%);
+  animation: htv2-bg-drift-a 38s ease-in-out infinite alternate;
+}
+/* Lower-left champagne reflection, cooler and quieter. */
+.htv2-bg::after {
+  width: 60vw; height: 60vw;
+  bottom: -24vw; left: -16vw;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ht-champagne) 7%, transparent), transparent 60%);
+  animation: htv2-bg-drift-b 46s ease-in-out infinite alternate;
+}
+/* Faint financial grid + curved "smile-arrow" light motif (abstract, not the logo). */
+.htv2-bg-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.016) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.016) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(120% 90% at 50% 10%, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 10%, #000 30%, transparent 78%);
+}
+.htv2-bg-arc {
+  position: absolute; left: 50%; top: 42%;
+  width: 150vw; height: 150vw; transform: translate(-50%, 0);
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-top-color: rgba(230, 199, 189, 0.05);
+  mask-image: radial-gradient(60% 40% at 50% 0%, #000, transparent 70%);
+  -webkit-mask-image: radial-gradient(60% 40% at 50% 0%, #000, transparent 70%);
+}
+@keyframes htv2-bg-drift-a { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-3vw, 2vw, 0) scale(1.08); } }
+@keyframes htv2-bg-drift-b { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(3vw, -2vw, 0) scale(1.06); } }
+
+/* ============================ Glow utilities (§12) ============================ */
+/* Intensity communicates hierarchy. Applied to focal surfaces only. */
+.htv2-glow-low { box-shadow: var(--ht-glow-low); }
+.htv2-glow-med { box-shadow: var(--ht-glow-med); }
+.htv2-glow-high { box-shadow: var(--ht-glow-high); }
+.htv2-glow-success { box-shadow: var(--ht-glow-success); }
+/* A hover-reveal glow for interactive focal cards. */
+.htv2-glow-hover { transition: box-shadow var(--motion-standard) var(--motion-ease-out); }
+.htv2-glow-hover:hover { box-shadow: var(--ht-glow-low); }
+
+/* ============================ Interactive card (§15) ============================ */
+/* Premium interactive surface: a 1–2px lift, a quiet border illumination and an
+   optional rose reflection that follows the cursor. Never a dramatic tilt; financial
+   data stays perfectly readable. Compose with .htv2-card. */
+.htv2-icard {
+  position: relative;
+  isolation: isolate;
+  transition:
+    transform var(--motion-standard) var(--motion-ease-out),
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-standard) var(--motion-ease-out);
+  will-change: transform;
+}
+.htv2-icard:hover {
+  transform: translateY(var(--motion-lift-lg));
+  border-color: var(--ht-border-strong);
+  box-shadow: var(--ht-elevate-hover), var(--ht-glow-low);
+}
+.htv2-icard:active { transform: translateY(var(--motion-press)); transition-duration: var(--motion-instant); }
+/* Cursor-follow rose reflection (opt-in: wrap content, set --mx/--my in JS). */
+.htv2-icard-sheen {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(180px 180px at var(--mx, 50%) var(--my, 0%),
+    var(--ht-rose-soft), transparent 70%);
+  opacity: 0; transition: opacity var(--motion-standard) var(--motion-ease);
+}
+.htv2-icard:hover .htv2-icard-sheen { opacity: 1; }
+
+/* ============================ Focus ring (§6) ============================ */
+/* One consistent, accessible focus ring across interactive elements. */
+.htv2 :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--ht-focus-ring);
+  border-radius: var(--ht-radius-sm);
+}
+
+/* ============================ Page transition (§18) ============================ */
+/* Very fast: a small rise + fade on the workspace content when the route key changes.
+   Keyed by the caller remounting a wrapper with a `key`. */
+@keyframes htv2-page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.htv2-page-transition { animation: htv2-page-in var(--motion-emphasis) var(--motion-ease-out) both; }
+
+/* ============================ Skeleton loaders (§20) ============================ */
+/* Layout-matching skeletons — never fake business numbers. A quiet chrome shimmer. */
+.htv2-skel {
+  position: relative; overflow: hidden;
+  background: var(--ht-surface-1);
+  border-radius: var(--ht-radius-sm);
+}
+.htv2-skel::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,0.04) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: htv2-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes htv2-shimmer { to { transform: translateX(100%); } }
+.htv2-skel-line { height: 12px; margin: 8px 0; }
+.htv2-skel-line.sm { height: 10px; width: 40%; }
+.htv2-skel-line.lg { height: 22px; width: 55%; }
+.htv2-skel-block { height: 96px; }
+.htv2-skel-row { display: grid; grid-template-columns: 1fr auto; gap: var(--ht-space-4); padding: var(--ht-space-4) 0; border-bottom: 1px solid var(--ht-border-subtle); }
+
+/* ============================ Progress ring (§37) ============================ */
+.htv2-ring { display: inline-grid; place-items: center; position: relative; }
+.htv2-ring svg { transform: rotate(-90deg); display: block; }
+.htv2-ring-track { stroke: var(--ht-border); fill: none; }
+.htv2-ring-fill { stroke: var(--ht-rose); fill: none; stroke-linecap: round;
+  transition: stroke-dashoffset var(--motion-emphasis) var(--motion-ease-out); }
+.htv2-ring-fill.is-done { stroke: var(--ht-positive); }
+.htv2-ring-label { position: absolute; inset: 0; display: grid; place-items: center; }
+
+/* ============================ The Journey (§40–42) ============================ */
+.htv2-journey { position: relative; margin-top: var(--ht-space-4); }
+/* Desktop: a horizontal rail with a connecting line; mobile: a vertical spine. */
+.htv2-journey-track {
+  display: flex; gap: 0; align-items: stretch;
+  overflow-x: auto; overflow-y: visible; scrollbar-width: thin;
+  padding-bottom: var(--ht-space-3);
+}
+.htv2-jnode { position: relative; flex: 1 0 150px; min-width: 150px; padding: var(--ht-space-4) var(--ht-space-3) 0; }
+/* The connector line runs through the dot row. */
+.htv2-jnode::before {
+  content: ""; position: absolute; top: calc(var(--ht-space-4) + 7px); left: 0; right: 0; height: 1px;
+  background: var(--ht-border); z-index: 0;
+}
+.htv2-jnode:first-child::before { left: 50%; }
+.htv2-jnode:last-child::before { right: 50%; }
+.htv2-jnode.is-past::before, .htv2-jnode.is-now::before { background: var(--ht-rose-line); }
+.htv2-jdot {
+  position: relative; z-index: 1; width: 15px; height: 15px; border-radius: 999px;
+  background: var(--ht-surface-2); border: 1px solid var(--ht-border-strong); margin: 0 auto;
+}
+.htv2-jnode.is-past .htv2-jdot { background: var(--ht-rose-deep); border-color: var(--ht-rose); }
+.htv2-jnode.is-now .htv2-jdot {
+  background: var(--ht-rose); border-color: var(--ht-rose);
+  box-shadow: 0 0 0 4px var(--ht-rose-soft);
+  animation: htv2-now-pulse 2.6s ease-in-out infinite;
+}
+.htv2-jnode.is-future .htv2-jdot { background: transparent; border-style: dashed; }
+@keyframes htv2-now-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--ht-rose-soft); }
+  50% { box-shadow: 0 0 0 7px rgba(230,199,189,0.05); }
+}
+.htv2-jnode-body { text-align: center; margin-top: var(--ht-space-3); }
+.htv2-jnode-when { display: block; color: var(--ht-text-muted); }
+.htv2-jnode-label { display: block; margin-top: 2px; color: var(--ht-text); }
+.htv2-jnode.is-now .htv2-jnode-label { color: var(--ht-text-strong); }
+.htv2-jnode-detail { display: block; margin-top: 2px; color: var(--ht-text-muted); }
+.htv2-jnode-interactive { cursor: pointer; background: none; border: 0; width: 100%; font: inherit; color: inherit; }
+.htv2-jnode-interactive:hover .htv2-jnode-label { color: var(--ht-text-strong); }
+
+@media (max-width: 720px) {
+  .htv2-journey-track { flex-direction: column; overflow-x: visible; }
+  .htv2-jnode { flex: none; min-width: 0; padding: var(--ht-space-3) 0 var(--ht-space-3) var(--ht-space-6); }
+  .htv2-jnode::before { top: 0; bottom: 0; left: 7px; right: auto; width: 1px; height: auto; }
+  .htv2-jnode:first-child::before { top: 50%; left: 7px; }
+  .htv2-jnode:last-child::before { bottom: 50%; top: 0; }
+  .htv2-jdot { position: absolute; left: 0; top: var(--ht-space-3); margin: 0; }
+  .htv2-jnode-body { text-align: left; margin-top: 0; }
+}
+
+/* ============================ Clubs progression (§44) ============================ */
+/* A single connected track across $10K → $50K → $100K, not three disconnected cards. */
+.htv2-clubline { position: relative; display: grid; gap: var(--ht-space-2); }
+.htv2-clubline-rail { position: relative; height: 4px; border-radius: 999px; background: var(--ht-border); overflow: hidden; }
+.htv2-clubline-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px;
+  background: linear-gradient(90deg, var(--ht-rose-deep), var(--ht-champagne));
+  transition: width var(--motion-emphasis) var(--motion-ease-out); }
+.htv2-clubline-ticks { display: grid; grid-template-columns: repeat(3, 1fr); }
+.htv2-clubtick { display: grid; gap: 2px; }
+.htv2-clubtick-head { display: flex; align-items: baseline; gap: var(--ht-space-2); }
+.htv2-clubtick.is-member .htv2-clubtick-name { color: var(--ht-text-strong); }
+
+/* ============================ Number flow (§19) ============================ */
+/* Tabular, so digits don't jiggle while counting up to an authoritative value. */
+.htv2-num-flow { font-variant-numeric: tabular-nums; }
+
+/* ============================ Checkbox (§31/§32) ============================ */
+.htv2-check {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px; flex: none; margin: 0;
+  border: 1px solid var(--ht-border-strong); border-radius: var(--ht-radius-sm);
+  background: var(--ht-surface-1); cursor: pointer; position: relative;
+  transition: border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease);
+}
+.htv2-check:hover:not(:disabled) { border-color: var(--ht-rose); }
+.htv2-check:checked {
+  background: var(--ht-rose-deep); border-color: var(--ht-rose);
+}
+.htv2-check:checked::after {
+  content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px;
+  border: solid #1a1412; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  animation: htv2-check-pop var(--motion-standard) var(--motion-ease-out);
+}
+.htv2-check:disabled { cursor: not-allowed; opacity: 0.55; }
+.htv2-check.is-tracked { border-radius: 999px; }
+@keyframes htv2-check-pop { from { opacity: 0; transform: rotate(45deg) scale(0.6); } to { opacity: 1; transform: rotate(45deg) scale(1); } }
+/* A brief rose pop around a goal that was just completed. */
+@keyframes htv2-goal-done { 0% { box-shadow: 0 0 0 0 var(--ht-rose-soft); } 60% { box-shadow: 0 0 0 6px rgba(230,199,189,0.12); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.htv2-just-done { animation: htv2-goal-done 700ms var(--motion-ease-out); }
+
+/* ============================ Celebration overlay (§22–26) ============================ */
+.htv2-celebrate-scrim {
+  position: fixed; inset: 0; z-index: 80;
+  display: grid; place-items: center; padding: var(--ht-space-6);
+  background: rgba(5, 5, 6, 0.72);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  animation: htv2-scrim-in var(--motion-standard) var(--motion-ease-out);
+}
+@keyframes htv2-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+.htv2-celebrate-canvas { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.htv2-celebrate-card {
+  position: relative; z-index: 1; width: min(440px, 100%);
+  background: linear-gradient(180deg, var(--ht-surface-2), var(--ht-surface-1));
+  border: 1px solid var(--ht-rose-line); border-radius: var(--ht-radius-lg);
+  box-shadow: var(--ht-glow-high), var(--ht-shadow-pop);
+  padding: var(--ht-space-8) var(--ht-space-6) var(--ht-space-6);
+  text-align: center;
+  animation: htv2-celebrate-in var(--motion-emphasis) var(--motion-ease-out) both;
+}
+@keyframes htv2-celebrate-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+.htv2-celebrate-kicker { color: var(--ht-rose); letter-spacing: 0.14em; text-transform: uppercase; }
+.htv2-celebrate-title { margin: var(--ht-space-3) 0 var(--ht-space-2); }
+.htv2-celebrate-sub { color: var(--ht-text-muted); }
+.htv2-celebrate-meta { display: flex; justify-content: center; gap: var(--ht-space-6); margin: var(--ht-space-5) 0; flex-wrap: wrap; }
+.htv2-celebrate-actions { display: flex; justify-content: center; gap: var(--ht-space-3); margin-top: var(--ht-space-5); flex-wrap: wrap; }
+.htv2-celebrate-also { margin-top: var(--ht-space-4); padding-top: var(--ht-space-4); border-top: 1px solid var(--ht-border-subtle); color: var(--ht-text-muted); }
+.htv2-celebrate-x { position: absolute; top: var(--ht-space-3); right: var(--ht-space-3); background: none; border: 0; color: var(--ht-text-muted); cursor: pointer; font-size: 15px; }
+.htv2-celebrate-emblem {
+  width: 72px; height: 72px; margin: 0 auto; border-radius: 999px;
+  display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 35%, var(--ht-rose-soft), transparent 70%);
+  border: 1px solid var(--ht-rose-line);
+}
+
+/* ============================ Reduced motion (MANDATORY) ============================ */
+@media (prefers-reduced-motion: reduce) {
+  .htv2-bg::before, .htv2-bg::after { animation: none !important; }
+  .htv2-icard:hover { transform: none; }
+  .htv2-skel::after { animation: none !important; }
+  .htv2-jnode.is-now .htv2-jdot { animation: none !important; }
+  .htv2-page-transition,
+  .htv2-celebrate-scrim, .htv2-celebrate-card,
+  .htv2-check:checked::after, .htv2-just-done { animation: none !important; }
+  .htv2-clubline-fill, .htv2-ring-fill { transition: none !important; }
+}
+@media (hover: none) {
+  .htv2-icard:hover { transform: none; box-shadow: none; }
+  .htv2-icard:active { transform: scale(0.995); }
+}

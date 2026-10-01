@@ -267,6 +267,13 @@
       "when": 1790349200000,
       "tag": "0037_personal_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790349300000,
+      "tag": "0038_celebration_acks",
+      "breakpoints": true
     }
   ]
 }

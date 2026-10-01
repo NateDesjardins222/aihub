@@ -1,0 +1,53 @@
+/* Portal V2 — Analytics (Experience Layer Phase 2). Scoped under `.htv2`. */
+
+.htv2-analytics { display: flex; flex-direction: column; gap: var(--ht-space-8); }
+
+/* ---- Account comparison ---- */
+.htv2-cmp { display: flex; flex-direction: column; gap: var(--ht-space-3); }
+.htv2-cmp-row {
+  display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(120px, 1fr) minmax(0, 2.4fr);
+  align-items: center; gap: var(--ht-space-4);
+  width: 100%; text-align: left; cursor: pointer;
+  padding: var(--ht-space-4) var(--ht-space-5);
+  background: var(--ht-surface-1); border: 1px solid var(--ht-border);
+}
+.htv2-cmp-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.htv2-cmp-name { color: var(--ht-text-strong); }
+.htv2-cmp-spark { min-width: 0; height: 40px; }
+.htv2-cmp-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--ht-space-3); }
+.htv2-cmp-metric { display: flex; flex-direction: column; gap: 2px; }
+.htv2-cmp-metric .ht-t-label { color: var(--ht-text-faint); }
+
+@media (max-width: 860px) {
+  .htv2-cmp-row { grid-template-columns: 1fr; gap: var(--ht-space-3); }
+  .htv2-cmp-metrics { grid-template-columns: repeat(2, 1fr); }
+  .htv2-cmp-spark { height: 48px; }
+}
+
+/* ---- Payout history table ---- */
+.htv2-ptable { width: 100%; border-collapse: collapse; }
+.htv2-ptable th { text-align: left; padding: 8px 10px; color: var(--ht-text-muted); font-weight: 500; border-bottom: 1px solid var(--ht-border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.htv2-ptable th.num, .htv2-ptable td.num { text-align: right; }
+.htv2-ptable td { padding: 10px; border-bottom: 1px solid var(--ht-border-subtle); color: var(--ht-text); }
+.htv2-pstate { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--ht-border); }
+.htv2-pstate-paid { color: var(--ht-positive); border-color: color-mix(in srgb, var(--ht-positive) 40%, transparent); background: var(--ht-positive-bg); }
+.htv2-pstate-pending { color: var(--ht-warning); border-color: color-mix(in srgb, var(--ht-warning) 40%, transparent); background: var(--ht-warning-bg); }
+
+/* ---- Performance calendar / heatmap ---- */
+.htv2-cal { display: flex; flex-direction: column; gap: var(--ht-space-3); }
+.htv2-cal-grid { display: flex; gap: 3px; overflow-x: auto; padding-bottom: var(--ht-space-2); }
+.htv2-cal-week { display: flex; flex-direction: column; gap: 3px; }
+.htv2-cal-cell {
+  width: 15px; height: 15px; border-radius: 2px; border: 1px solid var(--ht-border-subtle);
+  background: var(--ht-surface-1); cursor: pointer; padding: 0;
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+.htv2-cal-cell:hover { transform: scale(1.18); }
+.htv2-cal-cell.is-none { background: var(--ht-surface-1); }
+.htv2-cal-cell.is-flat { background: var(--ht-surface-hover); }
+.htv2-cal-cell.is-pos { background: color-mix(in srgb, var(--ht-positive) calc(var(--i, 0.3) * 85% + 15%), transparent); border-color: transparent; }
+.htv2-cal-cell.is-neg { background: color-mix(in srgb, var(--ht-negative) calc(var(--i, 0.3) * 85% + 15%), transparent); border-color: transparent; }
+.htv2-cal-cell.is-sel { outline: 1px solid var(--ht-rose); outline-offset: 1px; }
+.htv2-cal-foot { min-height: 18px; }
+
+@media (prefers-reduced-motion: reduce) { .htv2-cal-cell:hover { transform: none; } }

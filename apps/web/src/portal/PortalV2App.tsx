@@ -27,12 +27,14 @@ import { V2OwnerNotice } from './v2/pages';
 import { type DetailTab } from './v2/AccountDetail';
 import {
   CanonicalDashboard, CanonicalAccounts, CanonicalPayouts, CanonicalCertificates,
-  CanonicalProgress, CanonicalBilling,
+  CanonicalProgress, CanonicalBilling, CanonicalAnalytics,
 } from './v2/containers';
+import { CelebrationHost } from './v2/experience-celebration';
 import { ProfilePage } from './pages/ProfilePage';
 import { PayoutMethodsPage } from './pages/PayoutMethodsPage';
 import './v2/tokens.css';
 import './v2/type.css';
+import './v2/experience.css';
 import './Portal.css';
 
 const BASE = '/portal';
@@ -41,6 +43,7 @@ const DETAIL_TABS: DetailTab[] = ['overview', 'performance', 'controls', 'rules'
 type View =
   | { view: 'dashboard' } | { view: 'accounts' } | { view: 'detail'; id: string }
   | { view: 'payouts' } | { view: 'certificates' } | { view: 'progress' }
+  | { view: 'analytics' }
   | { view: 'billing' } | { view: 'support' } | { view: 'profile' }
   | { view: 'payout-methods' } | { view: 'owner' };
 
@@ -50,7 +53,7 @@ function parseRoute(pathname: string): View {
   const m = /^\/portal\/accounts\/(.+)$/.exec(p);
   if (m) return { view: 'detail', id: decodeURIComponent(m[1]!) };
   if (p === `${BASE}/accounts`) return { view: 'accounts' };
-  const simple = ['payouts', 'certificates', 'progress', 'billing', 'support', 'profile', 'payout-methods', 'owner'] as const;
+  const simple = ['payouts', 'certificates', 'progress', 'analytics', 'billing', 'support', 'profile', 'payout-methods', 'owner'] as const;
   const key = p.slice(BASE.length + 1);
   if ((simple as readonly string[]).includes(key)) return { view: key } as View;
   return { view: 'dashboard' };
@@ -138,7 +141,11 @@ export function PortalV2App(): JSX.Element {
       break;
     case 'progress':
       crumb = ['Progress'];
-      content = <CanonicalProgress onOpenPayouts={() => go(`${BASE}/payouts`)} onAddAccount={addAccount} />;
+      content = <CanonicalProgress onOpenPayouts={() => go(`${BASE}/payouts`)} onAddAccount={addAccount} onOpenCertificates={() => go(`${BASE}/certificates`)} />;
+      break;
+    case 'analytics':
+      crumb = ['Analytics'];
+      content = <CanonicalAnalytics onOpenAccount={openAccount} />;
       break;
     case 'billing':
       crumb = ['Billing'];
@@ -174,9 +181,14 @@ export function PortalV2App(): JSX.Element {
         breadcrumb={<span>Portal · {crumb.map((t, i) => (<span key={t}>{i === crumb.length - 1 ? <strong>{t}</strong> : <>{t} · </>}</span>))}</span>}
         utilities={<V2AccountMenu label={user?.email ?? 'Account'} actions={accountActions} />}
       >
-        {content}
+        {/* A fast page transition on route change (§18): keyed remount → rise + fade. */}
+        <div key={route.view === 'detail' ? `detail:${route.id}` : route.view} className="htv2-page-transition">
+          {content}
+        </div>
       </V2AppShell>
       {toast && <div className="pt-toast" role="status" data-testid="pt-toast">{toast}</div>}
+      {/* Authoritative, idempotent, owner-scoped milestone celebrations (§22–26). */}
+      <CelebrationHost actions={{ onOpenAccount: openAccount, onOpenCertificates: () => go(`${BASE}/certificates`) }} />
     </div>
   );
 }

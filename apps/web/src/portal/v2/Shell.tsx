@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import stackedUrl from './brand/happy-trader-funding-stacked.png';
 import wordmarkUrl from './brand/happy-trader-funding-wordmark.png';
+import { V2Background } from './experience';
 import './Shell.css';
 
 export interface NavItem { key: string; label: string }
@@ -28,6 +29,7 @@ export const PORTAL_V2_NAV: readonly NavItem[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'accounts', label: 'Accounts' },
   { key: 'payouts', label: 'Payouts' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'certificates', label: 'Certificates' },
   { key: 'progress', label: 'Progress' },
   { key: 'billing', label: 'Billing' },
