@@ -1,7 +1,8 @@
 # Whop Commerce Integration — Phase 1 Report (CORE 50K canary)
 
 **Branch:** `claude/futures-trading-simulator-v8qefu`. **Starting commit:** `9ee0e51`
-(tag `whop-commerce-phase1-start`). **Ending commit:** see final chat line.
+(tag `whop-commerce-phase1-start`). **Ending commit:** `14e45f5` (the integration + tests + docs); this
+doc-only finalization records the validation result on top of it.
 **Companion docs:** `WHOP_PROVIDER_CONTRACT.md`, `WHOP_COMMERCE_ARCHITECTURE.md`,
 `WHOP_CORE50_CANARY_RUNBOOK.md`, `WHOP_INTEGRATION_READINESS_MATRIX.md`.
 
@@ -129,8 +130,8 @@ account? (orders/entitlements/accounts) · failed & why? (`provisionNote` / even
 31. **Did we avoid prematurely creating all 10 Whop offerings?** YES — no fabricated Whop ids.
 32. **Is adding the remaining nine a configuration problem not a rewrite?** YES — nine `WHOP_PLAN_MAP` entries.
 33. **Does `customer:certify` FAST pass?** YES — "CUSTOMER SYSTEM CERTIFIED (internal) ✓".
-34. **Does `validate:release` pass?** Running at this commit; result recorded in the follow-up finalization
-    commit (see Validation). Not declared done until it passes.
+34. **Does `validate:release` pass?** YES — exit 0, "RELEASE VALIDATION PASSED", 254 files (253 passed, 1
+    skipped), 3359 tests (3353 passed, 6 skipped), production build clean (see Validation).
 35. **Is PCV-6 still RESOLVED?** YES — no background-worker/test-isolation change; the Whop path adds no
     fire-and-forget worker.
 36. **Are there zero new P0/P1 defects?** YES.
@@ -144,9 +145,10 @@ account? (orders/entitlements/accounts) · failed & why? (`provisionNote` / even
   `commerce-whop` (21 incl. `commerce-provider`), `commerce-fulfillment` (9), `commerce-integrity` (2),
   `provisioning-idempotency` (2), `golden-path.core50k` / `provider-safety` / `env` regression — all green.
 - `customer:certify` FAST: PASS — "CUSTOMER SYSTEM CERTIFIED (internal) ✓" on a freshly re-seeded test DB.
-- `validate:release`: running at this commit; the exact result (exit code + test counts) is recorded in the
-  follow-up documentation-only finalization commit once it completes. The phase is not declared done until it
-  passes.
+- `validate:release`: PASS — exit code 0, "RELEASE VALIDATION PASSED". Test files 253 passed | 1 skipped (254);
+  Tests 3353 passed | 6 skipped (3359); duration ~363s; production build (contracts/instruments/core/@atlas/server)
+  all Done. That is +2 files / +16 tests over the `9ee0e51` baseline (the two new Whop suites), no new failures.
+  PCV-6 remains RESOLVED.
 - `test:determinism`: not required — no concurrency/test-isolation infrastructure changed (the advisory-lock
   provisioning path is unchanged; the Whop adapter adds no background worker).
 
