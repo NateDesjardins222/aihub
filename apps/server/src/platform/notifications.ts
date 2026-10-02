@@ -337,6 +337,13 @@ export function registerNotificationConsumer(db: Database): () => void {
             await enqueue('FUNDED_READY', `funded:${acct}`);
             break;
           }
+          case 'account.completed':
+            // The funded account reached its fifth PAID payout cycle and is now
+            // complete. The type, channels and template already existed; this is
+            // the previously-missing consumer wire (Golden Path GAP-A). Identity
+            // resolves from the account, exactly as account.funded does above.
+            await enqueue('ACCOUNT_COMPLETED', `completed:${event.accountId ?? 'a'}`);
+            break;
           case 'commerce.refunded': {
             const orderId = (event.payload as { orderId?: string })?.orderId ?? 'order';
             await enqueue('REFUND', `refund:${orderId}`);

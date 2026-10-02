@@ -61,6 +61,7 @@ import {
 } from '../../platform/personal-risk.js';
 import { acknowledgeCelebration, listPendingCelebrations } from '../../platform/celebrations.js';
 import { listPayoutHistoryForUser } from '../../platform/portal-payouts.js';
+import { listPortalBilling } from '../../platform/portal-billing.js';
 import type { PersonalControlMode, PersonalControlType, PersonalControlValue } from '@atlas/contracts';
 import { PERSONAL_CONTROL_TYPES } from '@atlas/contracts';
 
@@ -468,6 +469,13 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
   // ---- Payout history (read-only, owner-scoped projection) ----------------
   app.get('/payouts/history', async (request, reply) => {
     return reply.send({ payouts: await listPayoutHistoryForUser(db, request.user!.id) });
+  });
+
+  // ---- Billing provenance (read-only, owner-scoped) -----------------------
+  // Authoritative purchase → entitlement → account provenance from commercial_orders.
+  // No fabricated amounts or states (Golden Path WEB-3); never Whop integration.
+  app.get('/orders', async (request, reply) => {
+    return reply.send(await listPortalBilling(db, request.user!.id));
   });
 
   // ---- Celebrations (presentation support; idempotent, owner-scoped) -------

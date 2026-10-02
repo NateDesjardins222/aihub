@@ -354,9 +354,12 @@ function CertModal({ c, actions, onClose, onOpenAccount }: { c: Cert; actions: C
 
 // ============================================================ Billing =========
 
-export type OrderState = 'PAID' | 'REFUNDED' | 'PENDING';
+export type OrderState = 'PAID' | 'REFUNDED' | 'PENDING' | 'CANCELLED';
 export interface OrderRow {
-  id: string; dateMs: number; item: string; amountMicros: number; state: OrderState; accountId?: string | null;
+  id: string; dateMs: number; item: string;
+  /** Authoritative amount; null when the order recorded none (e.g. a $0 activation). Never fabricated. */
+  amountMicros: number | null;
+  state: OrderState; accountId?: string | null;
 }
 /** Provider-safe payment-method projection. NEVER a raw card number — only the brand,
  *  last four, and expiry the payment provider returns. Null when none is on file. */
@@ -382,6 +385,7 @@ const ORDER_STATE: Record<OrderState, { kind: StatusKind; label: string }> = {
   PAID: { kind: 'funded', label: 'Paid' },
   REFUNDED: { kind: 'neutral', label: 'Refunded' },
   PENDING: { kind: 'hold', label: 'Pending' },
+  CANCELLED: { kind: 'neutral', label: 'Cancelled' },
 };
 
 export function V2BillingPage({ view, onOpenAccount, actions = {} }: {
@@ -455,7 +459,7 @@ export function V2BillingPage({ view, onOpenAccount, actions = {} }: {
                   <tr key={o.id}>
                     <td className="ht-num">{fmtDate(o.dateMs)}</td>
                     <td>{o.item}</td>
-                    <td className="num ht-num">{formatMoney(o.amountMicros)}</td>
+                    <td className="num ht-num">{o.amountMicros != null ? formatMoney(o.amountMicros) : <span className="htv2-tone-muted">—</span>}</td>
                     <td><V2Status kind={ORDER_STATE[o.state].kind}>{ORDER_STATE[o.state].label}</V2Status></td>
                     <td>{o.accountId ? <button className="htv2-link ht-t-nav" onClick={() => onOpenAccount(o.accountId!)}>View account →</button> : <span className="ht-t-meta htv2-tone-muted">—</span>}</td>
                     <td className="num">{actions.onViewReceipt && o.state !== 'PENDING' ? <button className="htv2-link ht-t-nav" onClick={() => actions.onViewReceipt!(o.id)} data-testid="htv2-billing-receipt">Receipt</button> : null}</td>

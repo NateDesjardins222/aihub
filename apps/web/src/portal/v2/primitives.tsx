@@ -44,7 +44,7 @@ export function V2Button({
   );
 }
 
-export type StatusKind = 'evaluation' | 'funded' | 'payout' | 'completed' | 'failed' | 'hold' | 'neutral';
+export type StatusKind = 'evaluation' | 'passed' | 'funded' | 'payout' | 'completed' | 'failed' | 'hold' | 'neutral';
 
 /** A restrained dot + label, never a saturated pill (STEP 20). */
 export function V2Status({ kind, children }: { kind: StatusKind; children: ReactNode }): JSX.Element {

@@ -17,13 +17,19 @@ import './Lifecycle.css';
 export const LIFECYCLE_STAGES = ['Evaluation', 'Funded', 'Payouts', 'Completed'] as const;
 export type LifecycleStage = (typeof LIFECYCLE_STAGES)[number];
 
-/** Map an authoritative portal state to the highest reached stage index. */
+/**
+ * Map an authoritative portal state to the highest stage the account has FULLY
+ * reached. EVALUATION_PASSED has completed Evaluation (index 0) but has NOT yet
+ * reached Funded — its funded account is still being activated — so it sits at 0,
+ * one short of FUNDED_ACTIVE. The passed→funded distinction is drawn by the
+ * component: a passed account shows Funded as an *incoming* stage, never as reached.
+ */
 export function lifecycleActiveIndex(portalState: string): number {
   switch (portalState) {
     case 'PENDING':
     case 'EVALUATION_ACTIVE':
-      return 0;
     case 'EVALUATION_PASSED':
+      return 0;
     case 'FUNDED_ACTIVE':
       return 1;
     case 'COMPLETED_MAX_PAYOUTS':
@@ -44,9 +50,14 @@ export function V2Lifecycle({
 }): JSX.Element {
   const active = lifecycleActiveIndex(portalState);
   const failed = portalState === 'FAILED';
+  // A passed-but-not-yet-funded account has completed Evaluation and is entering
+  // Funded. Its "current" stage is the NEXT one (Funded), shown as incoming — never
+  // as reached — so it reads distinctly from a live FUNDED_ACTIVE account.
+  const passed = portalState === 'EVALUATION_PASSED';
+  const atIndex = passed ? active + 1 : active;
   return (
     <ol
-      className={`htv2-life${failed ? ' is-failed' : ''}${compact ? ' is-compact' : ''}`}
+      className={`htv2-life${failed ? ' is-failed' : ''}${passed ? ' is-transitioning' : ''}${compact ? ' is-compact' : ''}`}
       data-testid="htv2-lifecycle"
       aria-label="Account lifecycle"
       style={{ ['--htv2-life-n' as string]: String(stages.length) }}
@@ -54,7 +65,8 @@ export function V2Lifecycle({
       {stages.map((label, i) => (
         <li
           key={label}
-          className={`htv2-life-stage${i <= active ? ' is-done' : ''}${i === active ? ' is-at' : ''}`}
+          className={`htv2-life-stage${i <= active ? ' is-done' : ''}${i === atIndex ? ' is-at' : ''}${passed && i === atIndex ? ' is-next' : ''}`}
+          aria-current={i === atIndex ? 'step' : undefined}
         >
           <span className="htv2-life-track" aria-hidden>
             <span className="htv2-life-line htv2-life-line-l" />

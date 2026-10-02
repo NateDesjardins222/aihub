@@ -76,6 +76,17 @@
 .htv2-life-stage.is-at .htv2-life-label { color: var(--ht-text-strong); font-weight: 600; }
 .htv2-life.is-failed .htv2-life-stage { color: var(--ht-negative); }
 
+/* Transitional: a passed account is ENTERING this stage (funding in progress). The
+   dot reads as incoming — a champagne ring, not a filled "reached" dot — so a passed
+   account is visibly distinct from a live account that has actually reached the stage. */
+.htv2-life-stage.is-next { color: var(--ht-champagne); }
+.htv2-life-stage.is-next .htv2-life-dot {
+  background: transparent;
+  border-color: var(--ht-champagne);
+  box-shadow: 0 0 0 2px var(--ht-champagne-soft);
+}
+.htv2-life-stage.is-next .htv2-life-label { color: var(--ht-champagne); font-weight: 600; }
+
 /* Compact / narrow: labels shrink; the grid already prevents overflow. Below a
    very narrow width the label hides and only the connected dots remain. */
 .htv2-life.is-compact .htv2-life-label { font-size: 10px; }

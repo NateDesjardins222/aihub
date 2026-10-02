@@ -175,3 +175,44 @@
 .htv2-dash-journey-meta { display: flex; flex-direction: column; gap: 3px; text-align: right; }
 .htv2-dash-journey-meta strong { color: var(--ht-text-strong); font-weight: 600; }
 @media (max-width: 560px) { .htv2-dash-journey-meta { text-align: left; } }
+
+/* --- Next Up command center (Customer Golden Path Phase 1) -------------------
+   The single most important next action, at the top of the dashboard hierarchy.
+   Tone drives emphasis: an action carries the rose/champagne aura; progress/info
+   are restrained. Layout is a row that stacks on narrow widths. */
+.htv2-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--ht-border);
+  border-radius: var(--ht-radius-lg);
+  background: var(--ht-surface-1);
+}
+.htv2-command-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.htv2-command-title { color: var(--ht-text-strong); }
+.htv2-command-action { border-color: var(--ht-rose-line); }
+.htv2-command-progress .htv2-command-title,
+.htv2-command-info .htv2-command-title { font-weight: 600; }
+.htv2-command-bar {
+  margin-top: 6px;
+  height: 4px;
+  width: min(280px, 60vw);
+  max-width: 100%;
+  border-radius: 999px;
+  background: var(--ht-border);
+  overflow: hidden;
+  display: block;
+}
+.htv2-command-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ht-champagne);
+  transition: width 240ms ease;
+}
+@media (prefers-reduced-motion: reduce) { .htv2-command-bar > span { transition: none; } }
+@media (max-width: 560px) {
+  .htv2-command { flex-direction: column; align-items: stretch; gap: 12px; }
+}

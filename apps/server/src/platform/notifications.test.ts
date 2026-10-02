@@ -183,6 +183,37 @@ describe('event consumer', () => {
       stopConsumer();
     }
   });
+
+  it('maps account.completed to a single ACCOUNT_COMPLETED (deduped), addressed to verified contacts', async () => {
+    // Golden Path GAP-A regression: the ACCOUNT_COMPLETED type/channels/template
+    // existed but the consumer had no case, so the fifth-payout completion email
+    // and SMS never enqueued. This locks the wire in.
+    const { userId, identityId } = await makeIdentity('completed-evt');
+    const email = await startContactVerification(db, { identityId, channel: 'EMAIL', value: 'done@y.com' });
+    await confirmContactVerification(db, { challengeId: email.challengeId, code: email.devCode! });
+    const sms = await startContactVerification(db, { identityId, channel: 'SMS', value: '+15554445555' });
+    await confirmContactVerification(db, { challengeId: sms.challengeId, code: sms.devCode! });
+
+    const stopConsumer = registerNotificationConsumer(db);
+    try {
+      const accountId = crypto.randomUUID();
+      await events.publish(db, { type: 'account.completed', organizationId, userId, accountId, payload: { publicId: 'SIM-9', totalTraderShareMicros: 50_000_000_000 } });
+      await events.publish(db, { type: 'account.completed', organizationId, userId, accountId, payload: { publicId: 'SIM-9', totalTraderShareMicros: 50_000_000_000 } });
+
+      const seen = await (async () => {
+        for (let i = 0; i < 40; i += 1) {
+          const rows = await db.select().from(notificationMessages).where(and(eq(notificationMessages.customerIdentityId, identityId), eq(notificationMessages.type, 'ACCOUNT_COMPLETED')));
+          if (rows.length >= 2) return rows; // one EMAIL + one SMS
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return db.select().from(notificationMessages).where(and(eq(notificationMessages.customerIdentityId, identityId), eq(notificationMessages.type, 'ACCOUNT_COMPLETED')));
+      })();
+      expect(seen.filter((r) => r.channel === 'EMAIL')).toHaveLength(1);
+      expect(seen.filter((r) => r.channel === 'SMS')).toHaveLength(1);
+    } finally {
+      stopConsumer();
+    }
+  });
 });
 
 describe('owner resend', () => {

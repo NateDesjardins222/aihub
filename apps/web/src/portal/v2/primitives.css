@@ -93,6 +93,7 @@
 }
 .htv2-status-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; flex: 0 0 auto; }
 .htv2-status-evaluation { color: var(--ht-accent); }
+.htv2-status-passed { color: var(--ht-champagne); }
 .htv2-status-funded { color: var(--ht-positive); }
 .htv2-status-payout { color: var(--ht-champagne-muted); }
 .htv2-status-completed { color: var(--ht-text); }

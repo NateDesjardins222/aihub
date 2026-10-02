@@ -22,7 +22,7 @@ import { V2Dashboard, type V2DashboardData } from './dashboard';
 import { V2PageSkeleton } from './experience';
 import { productLabel, type AccountViewExtra } from './account-view';
 import { PayoutModule } from '../pages/PayoutModule';
-import type { AccountsView, AccountSummary, Cert, PayoutEligibility } from '../lib';
+import type { AccountsView, AccountSummary, Cert, PayoutEligibility, PortalBillingResponse } from '../lib';
 
 const INCLUDE_ARCHIVED = '/api/v1/portal/accounts?includeArchived=false';
 
@@ -270,22 +270,29 @@ export function CanonicalAnalytics({ onOpenAccount }: { onOpenAccount: (id: stri
  *  row per account at its acquisition. Payment method is provider-hosted; we show a
  *  truthful "no method on file" until a provider surface is connected. */
 export function CanonicalBilling({ onOpenAccount, onAddAccount }: { onOpenAccount: (id: string) => void; onAddAccount: () => void }): JSX.Element {
-  const [res, retry] = useResource<AccountsView>(async () => api.get<AccountsView>('/api/v1/portal/accounts?includeArchived=true'), []);
+  const [res, retry] = useResource<{ billing: PortalBillingResponse; accounts: AccountsView }>(async () => {
+    // Authoritative order provenance from commercial_orders (Golden Path WEB-3), plus
+    // accounts for the active-entitlement count. Orders are REAL now — no synthesis.
+    const [billing, accounts] = await Promise.all([
+      api.get<PortalBillingResponse>('/api/v1/portal/orders'),
+      api.get<AccountsView>('/api/v1/portal/accounts?includeArchived=true'),
+    ]);
+    return { billing, accounts };
+  }, []);
   if (res.status === 'error') return <ErrorPanel message={res.message} onRetry={retry} />;
   if (res.status === 'loading') return <div className="htv2-page"><header className="htv2-page-head"><h1 className="ht-t-page-title">Billing</h1><p className="ht-t-meta">Loading…</p></header></div>;
-  const accounts = res.data.accounts;
-  const orders: OrderRow[] = accounts.map((a) => ({
-    id: a.id,
-    dateMs: a.createdAt,
-    item: a.product?.name ?? a.name,
-    amountMicros: a.startingBalanceMicros, // the acquisition is presented at the account's authoritative starting balance (as V1)
-    state: 'PAID' as const,
-    accountId: a.id,
+  const orders: OrderRow[] = res.data.billing.orders.map((o) => ({
+    id: o.id,
+    dateMs: o.dateMs,
+    item: o.item,
+    amountMicros: o.amountMicros, // authoritative; null when the order recorded none
+    state: o.state,
+    accountId: o.accountId,
   }));
   const view: BillingView = {
-    totalSpentMicros: 0, // the portal does not expose order price micros authoritatively; spend roll-up is deferred (never fabricated)
-    orderCount: orders.length,
-    activeEntitlements: accounts.filter((a) => a.consumesSlot).length,
+    totalSpentMicros: res.data.billing.totalSpentMicros, // authoritative sum of settled amounts
+    orderCount: res.data.billing.orderCount,
+    activeEntitlements: res.data.accounts.accounts.filter((a) => a.consumesSlot).length,
     orders,
     paymentMethod: null,
   };

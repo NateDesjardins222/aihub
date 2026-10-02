@@ -13,6 +13,7 @@ import {
 import { V2AccountPanel } from './AccountPanel';
 import { V2PerfChart } from './perf-chart';
 import { toAccountView, type AccountViewExtra } from './account-view';
+import { buildLifecycleView, type NextUpAction } from './lifecycle-model';
 import { formatMoney } from './format';
 import type { SeriesPoint, ActivityItem } from './primitives';
 import type { AccountsView, AccountSummary } from '../lib';
@@ -47,32 +48,47 @@ export function V2Dashboard({ data, onOpenAccount, onTrade, onAddAccount, onOpen
   onOpenProgress: () => void;
 }): JSX.Element {
   const accts = data.accountsView.accounts;
-  const isEval = (a: AccountSummary): boolean => a.portalState.startsWith('EVALUATION');
-  const isFunded = (a: AccountSummary): boolean => a.accountType === 'FUNDED_SIM' && !a.portalState.startsWith('COMPLETED');
-  const activeCount = accts.filter((a) => ['PENDING', 'ACTIVE', 'GOAL_REACHED', 'LOCKED'].includes(a.status)).length;
+  // ONE authoritative derivation of "where am I / what's next" — the same engine every
+  // surface reads. No per-field re-derivation of stage on the dashboard anymore.
+  const lifecycle = useMemo(
+    () => buildLifecycleView({ accounts: accts, extraFor: data.extraFor, progress: data.progress }),
+    [accts, data.extraFor, data.progress],
+  );
   const totalBalance = accts.reduce((s, a) => s + a.balanceMicros, 0);
   const netPnl = accts.reduce((s, a) => s + (a.balanceMicros - a.startingBalanceMicros), 0);
   const breached = accts.filter((a) => a.portalState === 'FAILED');
   const topAccounts = accts.filter((a) => a.portalState !== 'ARCHIVED' && a.portalState !== 'INACTIVE_CLOSED').slice(0, 4);
-  const payoutAvailable = data.payouts.availableMicros;
+
+  const runNextUp = (action: NextUpAction): void => {
+    switch (action.cta.target) {
+      case 'payouts': onOpenPayouts(); break;
+      case 'add-account': onAddAccount(); break;
+      case 'progress': onOpenProgress(); break;
+      case 'account': if (action.accountId) onOpenAccount(action.accountId); break;
+    }
+  };
 
   return (
     <div className="htv2-page">
       <header className="htv2-page-head htv2-page-head-row">
         <div>
+          <span className="ht-t-label htv2-tone-muted">{lifecycle.phaseLabel}</span>
           <h1 className="ht-t-page-title">Dashboard</h1>
-          <p className="ht-t-meta">Your accounts, standing, and what needs attention.</p>
+          <p className="ht-t-meta">{lifecycle.phaseSummary}</p>
         </div>
         <V2Button variant="secondary" size="sm" onClick={onAddAccount}>Add account</V2Button>
       </header>
+
+      {/* Command center: the single most important next action, at the top of the hierarchy. */}
+      {lifecycle.nextUp && accts.length > 0 && <NextUpCommand action={lifecycle.nextUp} onRun={runNextUp} />}
 
       <V2StatStrip
         items={[
           { label: 'Total balance', value: formatMoney(totalBalance, { maxFractionDigits: 0 }) },
           { label: 'Net P&L', value: formatMoney(netPnl, { sign: true, maxFractionDigits: 0 }), tone: netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : 'muted' },
-          { label: 'Active accounts', value: String(activeCount) },
-          { label: 'Evaluations', value: String(accts.filter(isEval).length) },
-          { label: 'Funded', value: String(accts.filter(isFunded).length) },
+          { label: 'Active accounts', value: String(lifecycle.counts.active) },
+          { label: 'Evaluations', value: String(lifecycle.counts.evaluationsActive) },
+          { label: 'Funded', value: String(lifecycle.counts.funded) },
           { label: 'Total paid', value: formatMoney(data.payouts.totalPaidMicros, { maxFractionDigits: 0 }) },
         ]}
       />
@@ -85,21 +101,16 @@ export function V2Dashboard({ data, onOpenAccount, onTrade, onAddAccount, onOpen
         />
       )}
 
-      {breached.length > 0 ? (
+      {/* The breach banner stays (a negative, attention-needed roll-up distinct from the
+          forward Next Up above). The positive payout prompt now lives in Next Up, not here. */}
+      {breached.length > 0 && (
         <V2Attention
           tone="negative"
           title={`${breached.length} account${breached.length > 1 ? 's' : ''} breached`}
           detail="A breached account can no longer trade. Open it to see the breach detail."
           action={<V2Button variant="secondary" size="sm" onClick={() => onOpenAccount(breached[0]!.id)}>Review</V2Button>}
         />
-      ) : payoutAvailable > 0 ? (
-        <V2Attention
-          tone="positive"
-          title={`${formatMoney(payoutAvailable)} available to withdraw`}
-          detail="One of your funded accounts is eligible for a payout."
-          action={<V2Button variant="secondary" size="sm" onClick={onOpenPayouts}>Payouts</V2Button>}
-        />
-      ) : null}
+      )}
 
       {topAccounts.length > 0 && (
         <V2Section
@@ -221,6 +232,35 @@ export function PortfolioPerformance({ series: full }: { series: SeriesPoint[] }
         )}
       </div>
     </V2Section>
+  );
+}
+
+/** The command-center hero: the single most important next action, rendered with
+ *  hierarchy above everything else. Tone drives emphasis; an action gets the aura. */
+function NextUpCommand({ action, onRun }: { action: NextUpAction; onRun: (a: NextUpAction) => void }): JSX.Element {
+  const isAction = action.tone === 'action';
+  const pct = action.progress != null ? Math.round(action.progress * 100) : null;
+  return (
+    <section
+      className={`htv2-command htv2-command-${action.tone}${isAction ? ' htv2-aura htv2-aura-on' : ''}`}
+      data-testid="htv2-nextup-command"
+      data-kind={action.kind}
+      aria-label="Next up"
+    >
+      <div className="htv2-command-body">
+        <span className="ht-t-label htv2-tone-muted">Next up</span>
+        <h2 className="ht-t-fin-md htv2-command-title">{action.title}</h2>
+        <p className="ht-t-body-sm htv2-tone-muted">{action.detail}</p>
+        {pct != null && (
+          <span className="htv2-command-bar" aria-hidden>
+            <span style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+          </span>
+        )}
+      </div>
+      <V2Button variant={isAction ? 'primary' : 'secondary'} size="sm" onClick={() => onRun(action)}>
+        {action.cta.label}
+      </V2Button>
+    </section>
   );
 }
 

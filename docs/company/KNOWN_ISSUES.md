@@ -1093,3 +1093,52 @@ web tests PASS (16); server `celebrations.test.ts` PASS (4 — authoritative sou
 idempotency/no-replay, cross-customer isolation, malformed-key rejection); migration `0038`
 applies cleanly. Human L5 visual acceptance of the Experience Layer is PENDING HUMAN (Nathan),
 with ChatGPT independent review as directed.
+
+## Customer Golden Path — Phase 1 (base `f903424`, 2026-10-02)
+
+Lifecycle connection + customer-experience coherence. Full map in
+`docs/CUSTOMER_GOLDEN_PATH_MAP.md`; experience system in
+`docs/CUSTOMER_LIFECYCLE_EXPERIENCE_SYSTEM.md`; report in
+`docs/CUSTOMER_GOLDEN_PATH_PHASE1_REPORT.md`.
+
+**Repaired this phase (root cause):**
+- **GAP-A (RESOLVED).** `account.completed` had a producer (`payouts.ts`), recognition
+  (cert + achievement + in-portal completion celebration) and a full notification
+  definition (type/channels/template) — but the notification **consumer** had no
+  `case 'account.completed'`, so the completion email/SMS never enqueued. Added the case,
+  mirroring `account.funded` (`apps/server/src/platform/notifications.ts`). Regression test
+  added (`notifications.test.ts`).
+- **WEB-1 (RESOLVED).** `EVALUATION_PASSED` was visually identical to `FUNDED_ACTIVE` (same
+  `funded` status colour; same lifecycle stage index 1). Now a distinct `passed` status kind
+  (champagne) and the lifecycle rail marks Funded as *incoming* (not reached) for a passed
+  account. Tests updated (`lifecycle-layout.test.ts`, `account-view.test.ts`).
+- **WEB-2 (RESOLVED).** Stage/metric logic was re-derived divergently across Dashboard,
+  Accounts and the account adapter. Introduced ONE deterministic lifecycle view model + Next
+  Up engine (`lifecycle-model.ts`, 11 tests); the Dashboard command center + stat strip now
+  read it.
+- **WEB-3 (RESOLVED).** Billing synthesized fake orders from accounts (hard-coded `PAID`,
+  account **size** shown as the amount, `totalSpent` 0). Now reads real `commercial_orders`
+  via `GET /portal/orders` (`portal-billing.ts`, 3 tests): real product name, authoritative
+  amount (or null — never fabricated), customer-safe money state, provisioned-account
+  provenance, owner-scoped.
+
+**Documented, deferred (contained):**
+- **GAP-B (P2).** `payout.eligibility_unlocked` has a consumer (`notifications.ts:350`), a
+  notification type/template, but **no producer** — nothing publishes it, so the proactive
+  "you're now eligible" email never fires. Eligibility is still computed on-demand and shown
+  on Payouts and surfaced by the Next Up engine, so no customer is blocked. Building a
+  not-eligible→eligible transition detector is net-new stateful breadth with idempotency
+  risk; deferred rather than built this phase.
+- **WEB-4 (P2).** Customer Support ticket creation has no account/payout/order **association**
+  field (`support.tsx`), despite the context framing. The owner side already supports object
+  linking (M12-E); adding the customer-facing association field is a contained follow-up.
+- **GP1-CELEBRATION (P3, by design).** No authoritative achievement is issued on evaluation
+  PASS, so there is no pass *celebration* — the first celebration is FUNDED. The pass is given
+  a distinct premium in-portal moment (rose status + incoming rail + Next Up copy) without
+  inventing an achievement. Unchanged from the existing design.
+
+**Validation:** server typecheck PASS; web typecheck PASS; web build PASS; focused tests PASS
+(`lifecycle-model` 11, `portal-billing` 3, `notifications` 8, full portal web suite 214);
+lifecycle rail browser-verified (real Chromium, `portal-v2-lifecycle-overflow.mjs`, 6 widths);
+`customer:certify` FAST PASS. PCV-6 remains RESOLVED (no PCV-6 infra touched). Human L5 /portal
+multi-state acceptance walkthrough is PENDING HUMAN (§47).

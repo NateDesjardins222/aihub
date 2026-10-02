@@ -54,9 +54,13 @@ describe('lifecycleActiveIndex maps authoritative state → stage', () => {
     expect(lifecycleActiveIndex('PENDING')).toBe(0);
     expect(lifecycleActiveIndex('EVALUATION_ACTIVE')).toBe(0);
   });
-  it('passed/funded sit at stage 1', () => {
-    expect(lifecycleActiveIndex('EVALUATION_PASSED')).toBe(1);
+  it('passed has NOT reached Funded; funded has (the two are distinct)', () => {
+    // EVALUATION_PASSED has completed Evaluation but is still being funded, so its
+    // highest FULLY-reached stage is Evaluation (0), one short of FUNDED_ACTIVE (1).
+    // This is the fix for the PASSED-vs-FUNDED conflation (Golden Path WEB-1).
+    expect(lifecycleActiveIndex('EVALUATION_PASSED')).toBe(0);
     expect(lifecycleActiveIndex('FUNDED_ACTIVE')).toBe(1);
+    expect(lifecycleActiveIndex('EVALUATION_PASSED')).not.toBe(lifecycleActiveIndex('FUNDED_ACTIVE'));
   });
   it('completed sits at stage 3', () => {
     expect(lifecycleActiveIndex('COMPLETED_MAX_PAYOUTS')).toBe(3);

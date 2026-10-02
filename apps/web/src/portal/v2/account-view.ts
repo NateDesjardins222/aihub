@@ -34,7 +34,7 @@ export type PortalState =
 const STATE_PRESENTATION: Record<PortalState, { kind: StatusKind; label: string }> = {
   PENDING: { kind: 'neutral', label: 'Provisioning' },
   EVALUATION_ACTIVE: { kind: 'evaluation', label: 'Evaluation' },
-  EVALUATION_PASSED: { kind: 'funded', label: 'Passed' },
+  EVALUATION_PASSED: { kind: 'passed', label: 'Passed' },
   FUNDED_ACTIVE: { kind: 'funded', label: 'Funded' },
   FAILED: { kind: 'failed', label: 'Breached' },
   COMPLETED_MAX_PAYOUTS: { kind: 'completed', label: 'Completed' },

@@ -92,6 +92,14 @@ export interface PortalRulesView {
   maxContracts: number | null;
 }
 export interface AccountsView { accounts: AccountSummary[]; activeSlotsUsed: number; maxActiveSlots: number }
+/** Authoritative billing provenance (GET /portal/orders). Amounts are real or null — never fabricated. */
+export interface PortalOrder {
+  id: string; dateMs: number; item: string; productKey: string | null;
+  amountMicros: number | null; currency: string | null; source: string;
+  state: 'PAID' | 'PENDING' | 'REFUNDED' | 'CANCELLED';
+  accountId: string | null; accountPublicId: string | null; refundedAtMs: number | null;
+}
+export interface PortalBillingResponse { orders: PortalOrder[]; totalSpentMicros: number; orderCount: number }
 export interface Breakdown { key: string; trades: number; netPnlMicros: number; winRate: number | null }
 export interface Analytics {
   accountId: string; currentBalanceMicros: number; startingBalanceMicros: number;
