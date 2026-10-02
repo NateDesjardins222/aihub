@@ -201,6 +201,26 @@ async function handleCommerceWebhook(
         await markCommerceEventRejected(db, eventId, 'UNKNOWN_ORDER');
         throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
       }
+      // Consistency guard (pre-Whop readiness §10): a verified event whose
+      // confirmed amount/currency contradicts the order it names must not provision.
+      // We compare only when BOTH the event and the order assert a value — a provider
+      // that does not surface an amount (the current Whop seam) is not blocked, but a
+      // present mismatch (wrong product's price, wrong currency) is rejected with the
+      // reserved PRICE_MISMATCH reason. The expected amount is the order's pinned
+      // quote (itself derived from the authoritative product-version price).
+      {
+        const amountMismatch =
+          n.amountMicros != null && order.amountMicros != null && n.amountMicros !== order.amountMicros;
+        const currencyMismatch =
+          !!n.currency && !!order.currency && n.currency.toUpperCase() !== order.currency.toUpperCase();
+        if (amountMismatch || currencyMismatch) {
+          await markCommerceEventRejected(db, eventId, 'PRICE_MISMATCH');
+          throw ApiError.badRequest(
+            'PRICE_MISMATCH',
+            'The confirmed payment amount or currency does not match the order.',
+          );
+        }
+      }
       try {
         // Money success is recorded first (durable), then provisioning is gated —
         // so a blocked purchase parks recoverably rather than being lost.

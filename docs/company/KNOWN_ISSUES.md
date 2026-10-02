@@ -1142,3 +1142,55 @@ Lifecycle connection + customer-experience coherence. Full map in
 lifecycle rail browser-verified (real Chromium, `portal-v2-lifecycle-overflow.mjs`, 6 widths);
 `customer:certify` FAST PASS. PCV-6 remains RESOLVED (no PCV-6 infra touched). Human L5 /portal
 multi-state acceptance walkthrough is PENDING HUMAN (§47).
+
+## Pre-Whop Commerce Readiness — Phase 1 (base `09d03c9`, 2026-10-02)
+
+Narrow engineering + ops phase preparing the commerce/provisioning boundary for the
+dedicated Whop phase. Whop NOT integrated. Full map in
+`docs/PRE_WHOP_COMMERCE_BOUNDARY_MAP.md`; matrix in
+`docs/WHOP_INTEGRATION_READINESS_MATRIX.md`; report in
+`docs/PRE_WHOP_COMMERCE_READINESS_PHASE1_REPORT.md`.
+
+**Repaired this phase (root cause):**
+- **GAP-A (RESOLVED).** `provisionAccount` inserted the account before the
+  `provisioning_requests` row with no per-key serialisation; direct callers
+  (admin-direct `POST /admin/accounts`, machine `POST /provisioning`) could
+  double-provision under truly-concurrent identical idempotency keys (the
+  commerce/funding paths were already safe via a FOR UPDATE on the
+  entitlement/qualification). Added a per-`(org, idempotency-key)`
+  `pg_advisory_xact_lock` at the top of the creation transaction with an in-lock
+  re-check that returns the committed account. Test: `provisioning-idempotency.test.ts`.
+- **GAP-B (RESOLVED).** No code compared a confirmed payment amount/currency to the
+  order; `PRICE_MISMATCH` was reserved but never used. The `PAYMENT_SUCCEEDED`
+  handler now rejects a present amount or currency that contradicts the order
+  (`PRICE_MISMATCH`); a provider that asserts no amount is not blocked. Test:
+  `commerce-fulfillment.test.ts`.
+- **GAP-C (RESOLVED).** `integrity:check` detected no commerce-chain breaks. Added
+  two P1 detectors to the existing framework: `ORDER_PROVISIONED_NO_ENTITLEMENT`
+  and `ENTITLEMENT_CONSUMED_NO_ACCOUNT`. Test: `commerce-integrity.test.ts`.
+
+**Documented, deferred to the Whop phase (contained):**
+- **PWC-1 (P2).** Identity binding is to `users.id`, not a `customer_identity_id`
+  column on orders/entitlements/accounts. Since `customer_identities` is 1:1 and
+  permanent with `users` (unique on `userId`), `users.id` IS the permanent identity
+  via a stable bijection — no migration needed. The Whop adapter must resolve the
+  external customer to the Happy Trader `users.id` via the identity spine.
+- **PWC-2 (P2 / WHOP-PHASE).** No external-product-id → internal-version mapping.
+  The current model is Atlas-initiated checkout (product resolved by internal key;
+  provider confirms via `atlasOrderId`), which needs none. A provider-initiated
+  checkout would; `UNKNOWN_PRODUCT` reject reason is already reserved.
+- **PWC-3 (P2).** Commerce domain events ride in-process `events.publish`
+  (`domain_events`) with no drainer; the account itself is durable and recovered by
+  startup sweeps, but the direct-provision (non-purchase) path publishes
+  `account.created`/`account.activated` after commit — a lost-event window for
+  practice/admin-direct provisioning (NOT for purchases). Routing commerce events
+  through the durable outbox is a focused Whop-phase follow-up.
+- **PWC-4 (P3).** Owner web order table does not inline the
+  order↔product↔amount↔entitlement↔account correlation per row (data is in the API);
+  and there is no per-order retry attempt-count column. Non-blocking UI polish.
+
+**Validation:** server typecheck PASS; focused tests PASS (`provisioning-idempotency`,
+`commerce-fulfillment` incl. amount/currency, `commerce-integrity`, plus `commerce` /
+`account-limit` / `state-machine` / `resilience-races` regression); `customer:certify`
+FAST PASS; `validate:release` PASS. PCV-6 remains RESOLVED (infra untouched). No new
+P0/P1. Human acceptance PENDING. Next phase: Whop Commerce Integration.

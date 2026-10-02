@@ -11,7 +11,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { assertNotEngaged } from './kill-switches.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
   accountLifecycles,
@@ -114,6 +114,23 @@ export async function defaultOrganizationId(db: Database): Promise<string> {
   return created!.id;
 }
 
+/**
+ * A per-(org, idempotency-key) transaction advisory lock (ASCII "PRVL"). Taken at
+ * the top of the account-creation transaction so two TRULY concurrent calls with
+ * the same idempotency key serialise: the loser blocks until the winner commits,
+ * then re-reads the committed provisioning_requests row and returns that one
+ * account instead of inserting a second. The pre-transaction SELECT is only a
+ * fast-path; this lock is what makes exactly-once hold for DIRECT callers (admin,
+ * machine provisioning) that do not already serialise on an entitlement row lock.
+ */
+const PROVISION_CLASSID = 0x5052564c | 0;
+function provisionObjId(organizationId: string, idempotencyKey: string): number {
+  return createHash('sha256').update(`${organizationId}:${idempotencyKey}`).digest().readUInt32BE(0) & 0x7fffffff;
+}
+function provisioningLockSql(organizationId: string, idempotencyKey: string) {
+  return sql`select pg_advisory_xact_lock(${PROVISION_CLASSID}, ${provisionObjId(organizationId, idempotencyKey)})`;
+}
+
 export async function provisionAccount(
   db: Database,
   input: ProvisionInput,
@@ -202,6 +219,36 @@ export async function provisionAccount(
     rules.accountSizeMicros;
 
   const created = await db.transaction(async (tx) => {
+    // Exactly-once under TRULY concurrent identical-key delivery: take the
+    // per-key advisory lock first, then re-read the request row INSIDE the lock.
+    // If a racing caller already committed the account, return it (reused) rather
+    // than inserting a second. Closes the direct-caller double-provision window.
+    if (input.idempotencyKey) {
+      await (tx as unknown as Database).execute(
+        provisioningLockSql(input.organizationId, input.idempotencyKey),
+      );
+      const [seen] = await tx
+        .select()
+        .from(provisioningRequests)
+        .where(
+          and(
+            eq(provisioningRequests.organizationId, input.organizationId),
+            eq(provisioningRequests.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+      if (seen) {
+        if (seen.requestHash !== requestHash) {
+          throw new ProvisioningError(
+            'IDEMPOTENCY_CONFLICT',
+            'That idempotency key was used for a different request.',
+          );
+        }
+        if (seen.accountId) {
+          const [existing] = await tx.select().from(accounts).where(eq(accounts.id, seen.accountId));
+          if (existing) return { account: existing, reused: true as const };
+        }
+      }
+    }
     // The five-active-account invariant. Taken here, inside the creation
     // transaction, so the per-user lock is held across the count and the insert:
     // two concurrent provisions for the same trader serialise, and the second
@@ -264,20 +311,27 @@ export async function provisionAccount(
         .onConflictDoNothing();
     }
 
-    return account!;
+    return { account: account!, reused: false as const };
   });
+
+  // A racing identical-key caller already created the account (serialised by the
+  // advisory lock). Return it without re-auditing or re-publishing — exactly once.
+  if (created.reused) {
+    return { accountId: created.account.id, publicId: created.account.publicId, profile, reused: true };
+  }
+  const row = created.account;
 
   await recordAudit(db, {
     organizationId: input.organizationId,
     actor,
     subjectType: 'ACCOUNT',
-    subjectId: created.id,
-    accountId: created.id,
+    subjectId: row.id,
+    accountId: row.id,
     userId: input.userId,
     action: 'account.created',
     newState: {
-      publicId: created.publicId,
-      status: created.status,
+      publicId: row.publicId,
+      status: row.status,
       profileKey: profile.profileKey,
       profileVersion: profile.version,
       startingBalanceMicros: startingBalance,
@@ -293,30 +347,30 @@ export async function provisionAccount(
   await events.publish(db, {
     type: 'account.created',
     organizationId: input.organizationId,
-    accountId: created.id,
+    accountId: row.id,
     userId: input.userId,
     payload: {
-      publicId: created.publicId,
+      publicId: row.publicId,
       profileKey: profile.profileKey,
       profileVersion: profile.version,
       startingBalanceMicros: startingBalance,
-      status: created.status,
+      status: row.status,
     },
   });
 
-  if (created.status === 'ACTIVE') {
+  if (row.status === 'ACTIVE') {
     await events.publish(db, {
       type: 'account.activated',
       organizationId: input.organizationId,
-      accountId: created.id,
+      accountId: row.id,
       userId: input.userId,
-      payload: { publicId: created.publicId },
+      payload: { publicId: row.publicId },
     });
   }
 
   return {
-    accountId: created.id,
-    publicId: created.publicId,
+    accountId: row.id,
+    publicId: row.publicId,
     profile,
     reused: false,
   };

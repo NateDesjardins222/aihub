@@ -214,3 +214,58 @@ describe('server-side mock webhook provisions; a browser cannot', () => {
     expect(await orderAccountId(db, order.id)).toBeNull();
   });
 });
+
+// Pre-Whop readiness §10 — a verified event whose confirmed amount/currency
+// contradicts the order it names must be rejected (PRICE_MISMATCH), never provision.
+describe('amount / currency consistency (pre-Whop §10)', () => {
+  it('rejects a confirmed amount that does not match the order; no account', async () => {
+    const userId = await makeUser('mismatch-amt');
+    await satisfyGate(userId);
+    const product = await resolveProfileByKey(db, organizationId, EVAL_KEY);
+    const order = await createPendingOrder(db, {
+      organizationId, userId, productVersionId: product.versionId, source: 'PURCHASE',
+      amountMicros: 95 * M, currency: 'USD', idempotencyKey: `mm-${crypto.randomUUID()}`,
+    });
+    // Event asserts a DIFFERENT amount than the order was quoted at.
+    const body = JSON.stringify({ id: `mev-${crypto.randomUUID()}`, type: 'payment.succeeded', atlasOrderId: order.id, amountMicros: 1 * M, currency: 'USD' });
+    const headers = { 'content-type': 'application/json', ...signMockCommerceEvent(body) };
+    const res = await app.inject({ method: 'POST', url: '/api/v1/webhooks/mock', headers, payload: body });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error?.code ?? JSON.parse(res.body).code).toBe('PRICE_MISMATCH');
+    expect(await orderAccountId(db, order.id)).toBeNull();
+    const [row] = await db.select().from(commercialOrders).where(eq(commercialOrders.id, order.id));
+    expect(row!.status).not.toBe('PROVISIONED');
+  });
+
+  it('rejects an unexpected currency; no account', async () => {
+    const userId = await makeUser('mismatch-cur');
+    await satisfyGate(userId);
+    const product = await resolveProfileByKey(db, organizationId, EVAL_KEY);
+    const order = await createPendingOrder(db, {
+      organizationId, userId, productVersionId: product.versionId, source: 'PURCHASE',
+      amountMicros: 95 * M, currency: 'USD', idempotencyKey: `mc-${crypto.randomUUID()}`,
+    });
+    const body = JSON.stringify({ id: `mev-${crypto.randomUUID()}`, type: 'payment.succeeded', atlasOrderId: order.id, amountMicros: 95 * M, currency: 'EUR' });
+    const headers = { 'content-type': 'application/json', ...signMockCommerceEvent(body) };
+    const res = await app.inject({ method: 'POST', url: '/api/v1/webhooks/mock', headers, payload: body });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error?.code ?? JSON.parse(res.body).code).toBe('PRICE_MISMATCH');
+    expect(await orderAccountId(db, order.id)).toBeNull();
+  });
+
+  it('provisions when the confirmed amount + currency match the order', async () => {
+    const userId = await makeUser('match-amt');
+    await satisfyGate(userId);
+    const product = await resolveProfileByKey(db, organizationId, EVAL_KEY);
+    const order = await createPendingOrder(db, {
+      organizationId, userId, productVersionId: product.versionId, source: 'PURCHASE',
+      amountMicros: 95 * M, currency: 'USD', idempotencyKey: `ok-${crypto.randomUUID()}`,
+    });
+    const body = JSON.stringify({ id: `mev-${crypto.randomUUID()}`, type: 'payment.succeeded', atlasOrderId: order.id, amountMicros: 95 * M, currency: 'USD' });
+    const headers = { 'content-type': 'application/json', ...signMockCommerceEvent(body) };
+    const res = await app.inject({ method: 'POST', url: '/api/v1/webhooks/mock', headers, payload: body });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).status).toBe('PROVISIONED');
+    expect(await orderAccountId(db, order.id)).toBeTruthy();
+  });
+});

@@ -88,6 +88,34 @@ function defs(): CheckDef[] {
         HAVING count(*) > 1`,
     },
     {
+      // Commerce-chain break (pre-Whop readiness §17): a PROVISIONED order must have
+      // produced an entitlement. If none exists, the purchase→entitlement→account
+      // chain is broken (an account may exist with no entitlement provenance).
+      check: 'ORDER_PROVISIONED_NO_ENTITLEMENT',
+      severity: 'P1',
+      description: 'A commercial order is marked PROVISIONED but has no entitlement — the purchase→entitlement chain is broken.',
+      query: sql`
+        SELECT o.id::text AS key, 1 AS n
+        FROM commercial_orders o
+        WHERE o.status = 'PROVISIONED'
+          AND NOT EXISTS (
+            SELECT 1 FROM entitlements e WHERE e.commercial_order_id = o.id
+          )`,
+    },
+    {
+      // Commerce-chain break (pre-Whop readiness §17): a CONSUMED entitlement must
+      // point at the account it provisioned. A consumed entitlement with a null
+      // account is a contradiction (entitlement spent, no account recorded).
+      check: 'ENTITLEMENT_CONSUMED_NO_ACCOUNT',
+      severity: 'P1',
+      description: 'An entitlement is CONSUMED but has no consumed_by_account_id — the entitlement→account link is broken.',
+      query: sql`
+        SELECT id::text AS key, 1 AS n
+        FROM entitlements
+        WHERE status = 'CONSUMED'
+          AND consumed_by_account_id IS NULL`,
+    },
+    {
       check: 'DRAWDOWN_FLOOR_ABOVE_HWM',
       severity: 'P1',
       description: 'An account drawdown floor sits above its high-water mark (impossible; a corrupted or regressed floor).',
