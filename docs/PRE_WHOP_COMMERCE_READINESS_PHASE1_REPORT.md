@@ -2,7 +2,8 @@
 
 **Phase:** Pre-Whop Commerce Readiness — Phase 1 (Purchase → Entitlement → Provisioning certification).
 **Branch:** `claude/futures-trading-simulator-v8qefu`. **Starting commit:** `09d03c9`
-(tag `pre-whop-commerce-readiness-phase1-start`). **Ending commit:** see final chat line.
+(tag `pre-whop-commerce-readiness-phase1-start`). **Ending commit:** `eddcd01` (the fixes + tests + docs);
+this doc-only finalization records the validation result on top of it.
 **Companion docs:** `PRE_WHOP_COMMERCE_BOUNDARY_MAP.md`, `WHOP_INTEGRATION_READINESS_MATRIX.md`.
 
 ## Summary
@@ -187,8 +188,10 @@ event mapping; optional outbox routing for proactive notifications; optional own
     `commerce_events` → unchanged domain.
 31. **Did we avoid changing Happy Trader business rules?** YES.
 32. **Did we avoid integrating Whop prematurely?** YES — no Whop API/SDK/credential/checkout added.
-33. **Did `customer:certify` FAST pass?** YES (run below).
-34. **Did `validate:release` pass?** YES (run below).
+33. **Did `customer:certify` FAST pass?** YES — "CUSTOMER SYSTEM CERTIFIED (internal) ✓" on a freshly
+    re-seeded test DB (see Validation).
+34. **Did `validate:release` pass?** YES — exit 0, "RELEASE VALIDATION PASSED": 252 test files
+    (251 passed, 1 skipped), 3343 tests (3337 passed, 6 skipped), ~359s, production build clean (see Validation).
 35. **Is PCV-6 still resolved?** YES — background-worker gating, per-worker isolation, harness and the two flake
     fixes untouched.
 36. **Are there zero new P0/P1 defects?** YES.
@@ -198,8 +201,12 @@ event mapping; optional outbox routing for proactive notifications; optional own
 - Server typecheck PASS; focused tests PASS (`provisioning-idempotency` 2, `commerce-fulfillment` incl. 3 new
   GAP-B cases, `commerce-integrity` 2, plus `commerce`, `account-limit`, `state-machine`, `resilience-races`
   regression green).
-- `customer:certify` FAST: PASS (recorded in chat).
-- `validate:release`: PASS (recorded in chat).
+- `customer:certify` FAST: PASS — "CUSTOMER SYSTEM CERTIFIED (internal) ✓" (run on a freshly re-seeded
+  `atlas_test`, after clearing shared-DB residue from the day's ad-hoc test runs; the residue was not caused by
+  this phase's changes).
+- `validate:release`: PASS — exit code 0, "RELEASE VALIDATION PASSED". Test files 251 passed | 1 skipped (252);
+  Tests 3337 passed | 6 skipped (3343); duration ~359s; production build (contracts/instruments/core/@atlas/server)
+  all Done. No new failures; PCV-6 remains RESOLVED.
 - PCV-6 determinism infra untouched; no concurrency-infra change requiring `test:determinism` beyond the
   advisory-lock addition, which is proven by the concurrency tests above.
 
