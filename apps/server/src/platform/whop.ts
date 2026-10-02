@@ -123,19 +123,47 @@ export interface WhopEvent {
   readonly atlasOrderId: string | null;
   /** Whop's own receipt/payment id, stored as the order's external reference. */
   readonly receiptId: string | null;
+  /**
+   * The stable Whop PLAN id the payment is for (verified v1 Payment object:
+   * `data.plan.id`, e.g. `plan_XXXXXXXX`). This is the product-mapping key —
+   * cross-checked against the order's expected plan so a payment for the wrong
+   * product cannot provision the canary. `data.product.id` is the coarser
+   * fallback. Null when the payload carries neither.
+   */
+  readonly productId: string | null;
+  /**
+   * The Whop CUSTOMER id (verified v1 Payment object: `data.user.id`, e.g.
+   * `user_XXXXXXXX`; `data.member.id` as fallback). Stored for provenance and
+   * owner correlation; identity binding is via the Atlas order, never this alone.
+   */
+  readonly customerId: string | null;
+  /**
+   * The confirmed amount the buyer was charged, in DECIMAL dollars exactly as
+   * Whop reports it (the v1 Payment object expresses money as a decimal number,
+   * e.g. `6.9` for $6.90 — NOT cents/micros). We read `subtotal` first (the
+   * plan's own price before tax, which is what our list price equals), then
+   * `total`, then `final_amount`. The caller converts to integer micro-dollars.
+   * Null when the payload asserts no amount.
+   */
+  readonly amountDecimal: number | null;
+  /** The ISO-4217 currency of the charge (verified v1: `data.currency`, e.g. "usd"). */
+  readonly currency: string | null;
 }
 
 /** Whop's event name for a completed payment. */
 const PAYMENT_SUCCESS_TYPES = new Set(['payment.succeeded']);
 
 /**
- * Read the two facts fulfilment needs out of a Whop webhook payload, defensively.
+ * Read the facts fulfilment needs out of a Whop webhook payload, defensively.
  *
- * Whop nests the resource under `data` and echoes the checkout session's
- * `metadata` back, so the Atlas order id we set when creating the session
- * arrives at `data.metadata.atlasOrderId`. Field names are read tolerantly
- * (snake and camel case, a couple of nestings). Returns nulls rather than
- * throwing on anything unexpected.
+ * Whop nests the resource under `data` and echoes the checkout configuration's
+ * `metadata` back, so the Atlas order id we set when creating the checkout
+ * arrives at `data.metadata.atlasOrderId`. The verified v1 Payment object also
+ * carries `plan.id` / `product.id` (the mapping key), `user.id` (the customer),
+ * `subtotal`/`total` (decimal-dollar amount) and `currency`. Field names are
+ * read tolerantly (nested object `.id` and flat `_id`, snake and camel case).
+ * Returns nulls rather than throwing on anything unexpected — a malformed
+ * payload is a safe no-op, never a crash.
  */
 export function parseWhopEvent(payload: unknown): WhopEvent {
   const root = isRecord(payload) ? payload : {};
@@ -157,11 +185,36 @@ export function parseWhopEvent(payload: unknown): WhopEvent {
   const receiptId =
     str(data['id']) ?? str(data['receipt_id']) ?? str(data['payment_id']) ?? str(root['id']) ?? null;
 
+  // The plan is the authoritative product-mapping key; the product id is coarser.
+  const productId =
+    nestedId(data['plan']) ??
+    str(data['plan_id']) ??
+    nestedId(data['product']) ??
+    str(data['product_id']) ??
+    null;
+
+  const customerId =
+    nestedId(data['user']) ??
+    str(data['user_id']) ??
+    nestedId(data['member']) ??
+    str(data['member_id']) ??
+    str(data['customer_id']) ??
+    null;
+
+  // Money as Whop reports it: a decimal number of dollars. Prefer the plan's own
+  // pre-tax price (subtotal), which is what our list price equals.
+  const amountDecimal = dec(data['subtotal']) ?? dec(data['total']) ?? dec(data['final_amount']);
+  const currency = str(data['currency']);
+
   return {
     type,
     isPaymentSuccess: PAYMENT_SUCCESS_TYPES.has(type),
     atlasOrderId,
     receiptId,
+    productId,
+    customerId,
+    amountDecimal,
+    currency,
   };
 }
 
@@ -171,4 +224,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** The `id` of a nested resource object (e.g. `data.plan.id`), or null. */
+function nestedId(value: unknown): string | null {
+  return isRecord(value) ? str(value['id']) : null;
+}
+
+/** A finite decimal number, or null. Strings are parsed; non-finite is null. */
+function dec(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return null;
 }

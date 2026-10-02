@@ -27,7 +27,8 @@ import { env } from '../../config/env.js';
 import { ApiError } from '../errors.js';
 import { requireUser } from '../auth-plugin.js';
 import { defaultOrganizationId } from '../../platform/provisioning.js';
-import { resolveProfileByKey, ProfileError } from '../../platform/profiles.js';
+import { resolveProfileByKey, resolveProfileVersion, ProfileError } from '../../platform/profiles.js';
+import { whopPlanForProduct } from '../../platform/whop-product-map.js';
 import { CommerceError, createPendingOrder, markOrderCompleted } from '../../platform/commerce.js';
 import { holdBlocking } from '../../platform/enforcement-holds.js';
 import { identityIdForUser } from '../../platform/enforcement.js';
@@ -91,17 +92,26 @@ export function checkoutRoutes(deps: { whopClient?: () => WhopClient | null } = 
           throw ApiError.badRequest('ENFORCEMENT_HOLD', 'Purchasing is temporarily unavailable on your account while a review is in progress.');
         }
 
+        // Pin the order's expected price from the authoritative product version, so
+        // the webhook can later reject a confirmed payment whose amount/currency
+        // contradicts it (PRICE_MISMATCH, §14). Every Happy Trader product is priced
+        // in USD; amount+currency are set together or not at all.
+        const priceMicros = product.config.display.priceMicros ?? null;
+
         const order = await createPendingOrder(db, {
           organizationId,
           userId: request.user!.id,
           productVersionId: product.versionId,
           source: 'PURCHASE',
           externalProvider: 'whop',
+          ...(priceMicros != null ? { amountMicros: priceMicros, currency: 'USD' } : {}),
           actor: { type: 'USER', userId: request.user!.id, label: request.user!.email, ip: request.ip },
         });
 
         const client = resolveClient();
-        const planId = product.config.whopPlanId;
+        // The authoritative external→internal mapping: the Whop plan this product is
+        // sold as (explicit WHOP_PLAN_MAP entry, else the product's own whopPlanId).
+        const planId = whopPlanForProduct(product.profileKey, product.config.whopPlanId);
         // Not set up yet: the order exists and can be fulfilled later (an admin
         // grant, or once the sandbox is configured), but no session can be made.
         if (!client || !planId) {
@@ -201,6 +211,26 @@ async function handleCommerceWebhook(
         await markCommerceEventRejected(db, eventId, 'UNKNOWN_ORDER');
         throw ApiError.notFound('ORDER_NOT_FOUND', 'No such order.');
       }
+      // Product-mapping cross-check (§7/§8/§12): the STABLE plan id the provider
+      // reports must be the plan this order was sold as. The order already names the
+      // product (Atlas-initiated), so this is defense-in-depth against a crossed or
+      // forged plan, and the seam that makes a provider-initiated flow safe later.
+      // We enforce only when BOTH the event asserts a plan AND the order's product
+      // has a mapped plan — a provider that surfaces no plan is not blocked, but a
+      // present contradiction is rejected (UNKNOWN_PRODUCT) and never provisions.
+      if (n.providerProductId) {
+        const version = await resolveProfileVersion(db, order.productVersionId);
+        const expectedPlan = version
+          ? whopPlanForProduct(version.profileKey, version.config.whopPlanId)
+          : null;
+        if (expectedPlan && n.providerProductId !== expectedPlan) {
+          await markCommerceEventRejected(db, eventId, 'UNKNOWN_PRODUCT', { atlasOrderId: order.id });
+          throw ApiError.badRequest(
+            'UNKNOWN_PRODUCT',
+            'The paid product does not match the order it names.',
+          );
+        }
+      }
       // Consistency guard (pre-Whop readiness §10): a verified event whose
       // confirmed amount/currency contradicts the order it names must not provision.
       // We compare only when BOTH the event and the order assert a value — a provider
@@ -214,7 +244,7 @@ async function handleCommerceWebhook(
         const currencyMismatch =
           !!n.currency && !!order.currency && n.currency.toUpperCase() !== order.currency.toUpperCase();
         if (amountMismatch || currencyMismatch) {
-          await markCommerceEventRejected(db, eventId, 'PRICE_MISMATCH');
+          await markCommerceEventRejected(db, eventId, 'PRICE_MISMATCH', { atlasOrderId: order.id });
           throw ApiError.badRequest(
             'PRICE_MISMATCH',
             'The confirmed payment amount or currency does not match the order.',

@@ -1194,3 +1194,38 @@ dedicated Whop phase. Whop NOT integrated. Full map in
 `account-limit` / `state-machine` / `resilience-races` regression); `customer:certify`
 FAST PASS; `validate:release` PASS. PCV-6 remains RESOLVED (infra untouched). No new
 P0/P1. Human acceptance PENDING. Next phase: Whop Commerce Integration.
+
+## Whop Commerce Integration — Phase 1 (CORE 50K canary)
+
+Baseline `9ee0e51` (tag `whop-commerce-phase1-start`). The Whop mechanics were verified against current official
+docs (`docs/WHOP_PROVIDER_CONTRACT.md`) and the thin adapter's canary gaps were closed. Whop is sandbox-only; no
+business rule changed; no new product/price/provider. Resolved this phase:
+
+- **Amount/currency validation now active for Whop (§14).** `WhopCommerceProvider.normalizeEvent` surfaces the
+  confirmed amount (decimal dollars → integer micros) + currency; checkout pins the $95 order price; the
+  `PRICE_MISMATCH` guard now fires for Whop (previously a no-op because the amount was null).
+- **Product-mapping seam (§8).** `whop-product-map.ts` + `WHOP_PLAN_MAP` is the one authoritative Whop-plan ↔
+  internal-product mapping; the webhook cross-checks the paid plan (`UNKNOWN_PRODUCT`). Adding the other nine
+  products is config, not code.
+- **Checkout endpoint (§42).** `whop-client.ts` updated to the current official `POST /api/v1/checkout_configurations`.
+- **Owner correlation (§23).** Customer 360 returns `providerEvents` (Whop event ↔ order ↔ entitlement ↔
+  account), rendered in the web Customers page; rejected events now record their `atlasOrderId`.
+
+Carried to Whop Phase 2 (documented, not built):
+- **WIP-1 (credential-gated).** Live sandbox canary — Whop app/API key/webhook/CORE 50K plan + a controlled
+  purchase — needs the human account owner (see `docs/WHOP_CORE50_CANARY_RUNBOOK.md`). The checkout-creation
+  endpoint/response and the `ws_` secret derivation must be confirmed against the live sandbox on first use; the
+  signature-verified webhook (money truth) does not depend on the checkout call.
+- **WIP-2 (P2 / WHOP-PHASE).** Provider-INITIATED checkout (Whop-hosted, no pre-existing Atlas order) — needs the
+  `productKeyForWhopPlan` reverse resolver (already present) plus a safe customer→`users.id` resolution path;
+  never mint a duplicate identity from email alone.
+- **WIP-3 (P2 / WHOP-PHASE).** Provider-initiated refund/cancellation/dispute automation. Event kinds are mapped
+  to the existing `handleRefund`/`handleDispute`; no account is destroyed on a guessed event; full automation and
+  the exact Whop refund/dispute semantics beyond receipt are Phase 2.
+- **WIP-4 (P3).** The other nine products' real Whop plan ids are unset (not fabricated); mapping them is adding
+  `WHOP_PLAN_MAP` entries once Nathan creates the offerings.
+
+**Validation:** server + web typecheck PASS; new Whop tests PASS (`whop-canary-unit` 10, `commerce-whop-canary` 6)
+plus `commerce-whop`/`commerce-provider`/`commerce-fulfillment`/`commerce-integrity`/`provisioning-idempotency`/
+`golden-path.core50k`/`provider-safety` regression; `customer:certify` FAST PASS; `validate:release` PASS. PCV-6
+remains RESOLVED (no background-worker/test-isolation change). No new P0/P1. Human L5 acceptance PENDING.

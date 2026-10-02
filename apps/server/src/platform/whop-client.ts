@@ -1,11 +1,21 @@
 /**
  * Whop REST client — SANDBOX ONLY.
  *
- * The one place Atlas talks to Whop's servers. It exists to create a checkout
- * SESSION so the embedded checkout can carry our Atlas order id as metadata,
- * which the payment webhook then echoes back. Atlas takes no payment here and
- * never sees a card; it asks Whop for a session and hands the session id to the
- * embed.
+ * The one place Atlas talks to Whop's servers. It exists to create a CHECKOUT
+ * CONFIGURATION so the hosted/embedded checkout can carry our Atlas order id as
+ * metadata, which the payment webhook then echoes back (verified: "Payments and
+ * memberships created from a checkout session inherit its metadata",
+ * docs.whop.com/api-reference/checkout-configurations/create-checkout-configuration).
+ * Atlas takes no payment here and never sees a card; it asks Whop for a checkout
+ * and hands the id + purchase URL to the frontend.
+ *
+ * Endpoint per CURRENT official docs: `POST /api/v1/checkout_configurations`
+ * (base `https://api.whop.com/api/v1`, sandbox `https://sandbox-api.whop.com/api/v1`)
+ * → `{ id: "ch_…", plan: { id }, purchase_url: "/checkout/ch_…/" }`. This is a
+ * CREDENTIAL-GATED entry point: it only runs with a sandbox API key, and it is
+ * NOT on the money-truth path (that is the signature-verified webhook, which does
+ * not depend on this call). The exact request/response must be confirmed against
+ * the live sandbox during the canary — see docs/WHOP_CORE50_CANARY_RUNBOOK.md.
  *
  * There is deliberately NO production host in this file. The base URL is always
  * `sandbox-api.whop.com`, and `WHOP_SANDBOX` must be `true`, so this milestone
@@ -14,8 +24,11 @@
  */
 import { env } from '../config/env.js';
 
-/** The Whop SANDBOX REST base. There is no production base in this build. */
-const SANDBOX_API_BASE = 'https://sandbox-api.whop.com/api/v2';
+/** The Whop SANDBOX REST base (current v1 API). No production base in this build. */
+const SANDBOX_API_BASE = 'https://sandbox-api.whop.com/api/v1';
+
+/** Whop's checkout web host, used to absolutize a relative `purchase_url`. */
+const WHOP_CHECKOUT_HOST = 'https://whop.com';
 
 export class WhopNotConfiguredError extends Error {
   constructor(message: string) {
@@ -62,6 +75,17 @@ export function whopClientFromEnv(): WhopClient | null {
   return new SandboxWhopClient(apiKey);
 }
 
+/**
+ * Whop returns `purchase_url` as a relative path (`/checkout/ch_…/`); make it an
+ * absolute URL the frontend can navigate to. Absolute values pass through
+ * unchanged. Null stays null (the frontend then uses the embedded component).
+ */
+function absolutizePurchaseUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${WHOP_CHECKOUT_HOST}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
 class SandboxWhopClient implements WhopClient {
   readonly environment = 'sandbox' as const;
   constructor(private readonly apiKey: string) {}
@@ -71,7 +95,7 @@ class SandboxWhopClient implements WhopClient {
     metadata: Record<string, string>;
     redirectUrl?: string | null;
   }): Promise<WhopCheckoutSession> {
-    const res = await fetch(`${SANDBOX_API_BASE}/checkout_sessions`, {
+    const res = await fetch(`${SANDBOX_API_BASE}/checkout_configurations`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${this.apiKey}`,
@@ -85,10 +109,16 @@ class SandboxWhopClient implements WhopClient {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new WhopApiError(res.status, `Whop sandbox rejected the checkout session: ${detail.slice(0, 200)}`);
+      throw new WhopApiError(res.status, `Whop sandbox rejected the checkout configuration: ${detail.slice(0, 200)}`);
     }
-    const body = (await res.json()) as { id?: string; plan_id?: string; purchase_url?: string | null };
-    if (!body.id) throw new WhopApiError(502, 'Whop returned no checkout session id.');
-    return { id: body.id, planId: body.plan_id ?? input.planId, purchaseUrl: body.purchase_url ?? null };
+    const body = (await res.json()) as {
+      id?: string;
+      plan_id?: string;
+      plan?: { id?: string } | null;
+      purchase_url?: string | null;
+    };
+    if (!body.id) throw new WhopApiError(502, 'Whop returned no checkout configuration id.');
+    const planId = body.plan?.id ?? body.plan_id ?? input.planId;
+    return { id: body.id, planId, purchaseUrl: absolutizePurchaseUrl(body.purchase_url) };
   }
 }

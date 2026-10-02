@@ -361,7 +361,23 @@ export interface CustomerDetail {
   verifications: Array<{ id: string; provider: string; status: string; reasonCode: string | null; createdAt: string }>;
   acceptances: Array<{ id: string; agreementType: string; contentHash: string; acceptedAt: string }>;
   outstandingAgreements: Array<{ agreementType: string; versionId: string; version: number }>;
-  orders: Array<{ id: string; status: string; source: string; amountMicros: number | null; provisionNote: string | null; createdAt: string }>;
+  orders: Array<{ id: string; status: string; source: string; amountMicros: number | null; currency: string | null; externalProvider: string | null; externalReference: string | null; provisionNote: string | null; createdAt: string }>;
+  providerEvents: Array<{
+    id: string;
+    provider: string;
+    providerEventId: string;
+    kind: string | null;
+    status: string;
+    signatureOk: boolean;
+    rejectReason: string | null;
+    atlasOrderId: string | null;
+    providerCustomerId: string | null;
+    receiptId: string | null;
+    amountMicros: number | null;
+    currency: string | null;
+    receivedAt: string;
+    processedAt: string | null;
+  }>;
   entitlements: Array<{ id: string; kind: string; status: string; consumedByAccountId: string | null }>;
   accounts: Array<{ id: string; publicId: string; name: string; accountType: string; status: string; adminHold: string | null; balanceMicros: number }>;
   copyGroups: Array<{

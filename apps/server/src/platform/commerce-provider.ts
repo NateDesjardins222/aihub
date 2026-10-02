@@ -47,10 +47,31 @@ export interface NormalizedCommerceEvent {
   readonly kind: CommerceEventKind;
   readonly atlasOrderId: string | null;
   readonly providerCustomerId: string | null;
+  /**
+   * The provider's stable PRODUCT/PLAN identifier for the purchase (Whop: the
+   * plan id). The product-mapping key — the webhook cross-checks it against the
+   * order's expected plan so a payment for the wrong product cannot provision.
+   * Null when the provider does not surface one.
+   */
+  readonly providerProductId: string | null;
   readonly receiptId: string | null;
   readonly amountMicros: number | null;
   readonly currency: string | null;
   readonly occurredAt: Date | null;
+}
+
+/**
+ * Convert a provider's decimal-dollar amount to integer micro-dollars, the one
+ * money representation used everywhere in the commerce domain. Whop reports money
+ * as a decimal number (e.g. `95` or `6.9`); micro-dollars are `bigint`-safe
+ * integers, so a validated amount never rides a float into a balance. `Math.round`
+ * (not truncation) absorbs binary-float noise like `6.9 * 1e6 = 6900000.0000009`.
+ * Null in → null out (a provider that asserts no amount is not blocked here; the
+ * caller's price guard simply has nothing to compare).
+ */
+export function dollarsToMicros(dollars: number | null): number | null {
+  if (dollars === null || !Number.isFinite(dollars)) return null;
+  return Math.round(dollars * 1_000_000);
 }
 
 export interface CreateCheckoutInput {
@@ -193,6 +214,7 @@ export class MockCommerceProvider implements CommerceProvider {
       kind: kindFromType(type),
       atlasOrderId: str(body['atlasOrderId']) ?? str(body['atlas_order_id']),
       providerCustomerId: str(body['providerCustomerId']) ?? str(body['customerId']),
+      providerProductId: str(body['providerProductId']) ?? str(body['planId']) ?? str(body['productId']),
       receiptId: str(body['receiptId']) ?? str(body['id']),
       amountMicros: num(body['amountMicros']),
       currency: str(body['currency']),
@@ -249,16 +271,20 @@ export class WhopCommerceProvider implements CommerceProvider {
       payload = {};
     }
     const whop = parseWhopEvent(payload);
-    const root = isRecord(payload) ? payload : {};
-    const data = isRecord(root['data']) ? root['data'] : root;
     return {
       providerEventId: header(raw.headers, 'webhook-id'),
       kind: kindFromType(whop.type),
       atlasOrderId: whop.atlasOrderId,
-      providerCustomerId: str(data['user_id']) ?? str(data['customer_id']) ?? str(data['member_id']),
+      providerCustomerId: whop.customerId,
+      providerProductId: whop.productId,
       receiptId: whop.receiptId,
-      amountMicros: null, // Whop amounts are validated against the product, never trusted as a balance.
-      currency: str(data['currency']),
+      // The confirmed amount Whop reports (decimal dollars) as integer micros. This
+      // is VALIDATED against the order's pinned price in the webhook handler
+      // (PRICE_MISMATCH) — never trusted as a balance, only as a consistency check.
+      // Null when Whop asserts no amount, in which case the plan cross-check and the
+      // order's own pinned price remain the price authority.
+      amountMicros: dollarsToMicros(whop.amountDecimal),
+      currency: whop.currency,
       occurredAt: null,
     };
   }

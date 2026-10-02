@@ -96,6 +96,35 @@ export async function customerDetail(db: Database, organizationId: string, ident
     .where(eq(entitlements.userId, identity.userId))
     .orderBy(desc(entitlements.createdAt))
     .limit(50);
+  // Provider correlation (§23): the commerce_events that name this customer's
+  // orders, so the operator can trace Whop → order → entitlement → account and
+  // answer "did the provider send it? was it authentic? which customer/receipt?
+  // was it a duplicate or rejected, and why?" without touching SQL. Keyed by
+  // atlasOrderId on the web side.
+  const orderIds = orders.map((o) => o.id);
+  const providerEvents = orderIds.length
+    ? await db
+        .select({
+          id: commerceEvents.id,
+          provider: commerceEvents.provider,
+          providerEventId: commerceEvents.providerEventId,
+          kind: commerceEvents.kind,
+          status: commerceEvents.status,
+          signatureOk: commerceEvents.signatureOk,
+          rejectReason: commerceEvents.rejectReason,
+          atlasOrderId: commerceEvents.atlasOrderId,
+          providerCustomerId: commerceEvents.providerCustomerId,
+          receiptId: commerceEvents.receiptId,
+          amountMicros: commerceEvents.amountMicros,
+          currency: commerceEvents.currency,
+          receivedAt: commerceEvents.receivedAt,
+          processedAt: commerceEvents.processedAt,
+        })
+        .from(commerceEvents)
+        .where(inArray(commerceEvents.atlasOrderId, orderIds))
+        .orderBy(desc(commerceEvents.receivedAt))
+        .limit(100)
+    : [];
   const accts = await db
     .select({
       id: accounts.id,
@@ -164,6 +193,7 @@ export async function customerDetail(db: Database, organizationId: string, ident
     acceptances,
     outstandingAgreements: outstanding,
     orders,
+    providerEvents,
     entitlements: ents,
     accounts: accts,
     copyGroups,

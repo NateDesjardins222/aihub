@@ -199,10 +199,15 @@ afterAll(async () => {
 function stubSandboxSession(sessionId = 'ch_sandbox_test') {
   globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const href = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
-    if (href.includes('sandbox-api.whop.com') && href.includes('checkout_sessions')) {
+    if (href.includes('sandbox-api.whop.com') && href.includes('checkout_configurations')) {
       const sent = JSON.parse(String(init?.body ?? '{}'));
       return new Response(
-        JSON.stringify({ id: sessionId, plan_id: sent.plan_id, purchase_url: null, metadata: sent.metadata }),
+        JSON.stringify({
+          id: sessionId,
+          plan: { id: sent.plan_id },
+          purchase_url: `/checkout/${sessionId}/`,
+          metadata: sent.metadata,
+        }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     }

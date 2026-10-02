@@ -51,3 +51,22 @@ HAPPY TRADER COMMERCE DOMAIN  (unchanged, provider-neutral)
 
 Business provisioning must never depend on Whop-specific JSON shapes; it depends only on the normalized event
 and the internal order the event names.
+
+## Update — Whop Commerce Integration Phase 1 (CORE 50K canary)
+
+The integration phase (baseline `9ee0e51`, tag `whop-commerce-phase1-start`) verified the Whop mechanics against
+current official docs (`WHOP_PROVIDER_CONTRACT.md`) and closed the canary gaps in the thin adapter. Row deltas:
+
+| # | Responsibility | New status | What changed this phase |
+|---|----------------|-----------|-------------------------|
+| 1 | Webhook authenticity | **READY** (code); secret still needed | Confirmed Standard Webhooks headers/scheme/`ws_` secret + 5-min skew against official docs; impl already matches. Live secret is a Nathan step. |
+| 2 | Event normalisation | **READY** | `parseWhopEvent` now also reads `plan.id`, `user.id`, `subtotal/total`, `currency` from the verified v1 payment object. |
+| 5 | Checkout product mapping | **READY** (canary) | `whop-product-map.ts` (`WHOP_PLAN_MAP`) is the one authoritative seam, both directions; webhook cross-checks the paid plan (`UNKNOWN_PRODUCT`). Other nine = config entries. |
+| 6 | Customer mapping | **READY** (Atlas-initiated) | Identity bound via the order's `users.id`; cases documented. Provider-initiated resolution remains Phase 2. |
+| 8 | Amount / currency validation | **READY** | Whop amount now surfaced (decimal→micros); checkout pins the $95 order price; `PRICE_MISMATCH` enforced. |
+| 9 | Checkout entry | **READY** (code); credential-gated | `whop-client.ts` updated to current `POST /api/v1/checkout_configurations`; live verification is a canary step. |
+| 15/23 | Owner correlation | **READY** | Customer 360 now returns `providerEvents` correlating Whop event ↔ order ↔ entitlement ↔ account; web renders it. |
+| 12/13 | Refund / dispute | **PARTIAL / WHOP-PHASE** | Event kinds mapped to existing handlers; no auto-destruction. Full provider-initiated automation = Phase 2. |
+| — | The other nine products | **WHOP-PHASE** | Internal mapping ready; external Whop ids not fabricated (Nathan creates them when selling). |
+
+Everything else in the table above is unchanged and already READY. No business rule changed; Whop is sandbox-only.

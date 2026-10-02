@@ -155,6 +155,18 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   /** Where Whop returns the buyer after the embedded checkout completes. */
   WHOP_CHECKOUT_RETURN_URL: z.string().optional(),
+  /**
+   * The authoritative external→internal product mapping, as a JSON object of
+   * `{ "<internal product key>": "<Whop plan id>" }`, e.g.
+   * `{"htf-core-50k":"plan_XXXXXXXX"}`. This is the ONE place a Whop plan id binds
+   * to a Happy Trader product; it drives both directions (checkout picks the plan
+   * for the product; the webhook cross-checks the paid plan against the order's
+   * product). The CORE 50K canary needs exactly one entry; adding the other nine
+   * is extending this JSON — configuration, not code. Unset/empty means no explicit
+   * mapping (the product config's own `whopPlanId` is the fallback). A malformed
+   * value fails startup rather than silently mismapping money. Never holds a secret.
+   */
+  WHOP_PLAN_MAP: z.string().optional(),
 
   /**
    * Milestone 6 — certificate artifact object storage. `local` writes to

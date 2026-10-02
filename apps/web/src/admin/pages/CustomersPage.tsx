@@ -264,6 +264,9 @@ function CustomerDetailView({
             <tr>
               <th>Status</th>
               <th>Source</th>
+              <th>Provider</th>
+              <th>Amount</th>
+              <th>Provider ref</th>
               <th>Note</th>
               <th>Created</th>
               <th />
@@ -276,6 +279,11 @@ function CustomerDetailView({
                   <StatusPill status={o.status} />
                 </td>
                 <td>{o.source}</td>
+                <td>{o.externalProvider ?? '—'}</td>
+                <td>{money(o.amountMicros, o.currency)}</td>
+                <td className="adm-dim" title={o.externalReference ?? ''}>
+                  {o.externalReference ? trunc(o.externalReference) : '—'}
+                </td>
                 <td className="adm-dim">{o.provisionNote ?? '—'}</td>
                 <td>{when(Date.parse(o.createdAt))}</td>
                 <td>
@@ -293,6 +301,54 @@ function CustomerDetailView({
             ))}
           </tbody>
         </table>
+      </Panel>
+
+      <Panel title="Commerce — provider events (Whop ↔ order)">
+        {d.providerEvents.length === 0 ? (
+          <p className="adm-muted">No provider events for this customer's orders.</p>
+        ) : (
+          <table className="adm-table" data-testid="customer-provider-events">
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Event id</th>
+                <th>Kind</th>
+                <th>Auth</th>
+                <th>State</th>
+                <th>Customer</th>
+                <th>Receipt</th>
+                <th>Amount</th>
+                <th>Order</th>
+                <th>Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.providerEvents.map((e) => (
+                <tr key={e.id}>
+                  <td>{e.provider}</td>
+                  <td className="adm-dim" title={e.providerEventId}>{trunc(e.providerEventId)}</td>
+                  <td>{e.kind ?? '—'}</td>
+                  <td>{e.signatureOk ? '✓ verified' : '✗ unverified'}</td>
+                  <td>
+                    <StatusPill status={e.status} />
+                    {e.rejectReason ? <span className="adm-dim"> {e.rejectReason}</span> : null}
+                  </td>
+                  <td className="adm-dim" title={e.providerCustomerId ?? ''}>
+                    {e.providerCustomerId ? trunc(e.providerCustomerId) : '—'}
+                  </td>
+                  <td className="adm-dim" title={e.receiptId ?? ''}>
+                    {e.receiptId ? trunc(e.receiptId) : '—'}
+                  </td>
+                  <td>{money(e.amountMicros, e.currency)}</td>
+                  <td className="adm-dim" title={e.atlasOrderId ?? ''}>
+                    {e.atlasOrderId ? trunc(e.atlasOrderId) : '—'}
+                  </td>
+                  <td>{when(Date.parse(e.receivedAt))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Panel>
 
       <Panel title="Entitlements">
@@ -454,4 +510,19 @@ function SimpleTable({ rows, head }: { rows: Array<Array<React.ReactNode>>; head
       </tbody>
     </table>
   );
+}
+
+/** Format integer micro-dollars as a currency string, or an em dash when absent. */
+function money(micros: number | null, currency: string | null): string {
+  if (micros == null) return '—';
+  const amount = micros / 1_000_000;
+  return `${(currency ?? 'USD').toUpperCase() === 'USD' ? '$' : ''}${amount.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}${(currency ?? 'USD').toUpperCase() === 'USD' ? '' : ` ${(currency ?? '').toUpperCase()}`}`;
+}
+
+/** Shorten a long opaque id for table display; the full value stays in the title. */
+function trunc(value: string, head = 10, tail = 4): string {
+  return value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
