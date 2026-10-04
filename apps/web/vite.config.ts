@@ -1,11 +1,28 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+/**
+ * Extra Host headers Vite will serve, beyond localhost (which Vite always
+ * allows). Vite blocks unknown Host headers by default — the protection that
+ * stops a stranger's domain from pointing at your dev server. When the dev
+ * server is reached through a stable tunnel hostname (e.g.
+ * `dev.happytraderfunding.com` via a named Cloudflare Tunnel → :5173), that
+ * host must be allow‑listed here or Vite returns "Blocked request. This host
+ * is not allowed." Driven by `WEB_ALLOWED_HOST` (comma‑separated) so no hostname
+ * is baked into the repo; unset ⇒ `[]` ⇒ localhost‑only. NEVER set to `true`
+ * (that would disable host protection entirely).
+ */
+const allowedHosts = (process.env.WEB_ALLOWED_HOST ?? '')
+  .split(',')
+  .map((h) => h.trim())
+  .filter((h) => h.length > 0);
+
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     host: true,
+    allowedHosts,
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
       '/ws': { target: 'ws://localhost:4000', ws: true },
@@ -16,6 +33,7 @@ export default defineConfig({
   preview: {
     port: 5174,
     host: true,
+    allowedHosts,
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
       '/ws': { target: 'ws://localhost:4000', ws: true },
